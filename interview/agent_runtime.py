@@ -36,6 +36,8 @@ from interview.agent_persistence import (
     mark_interview_failed,
     mark_interview_started,
     persist_answer_scores,
+    persist_latency_signals,
+    persist_session_fingerprint,
     persist_transcript,
     update_interview_status,
 )
@@ -58,7 +60,7 @@ import urllib.error
 from dataclasses import dataclass, field
 from enum import Enum
 
-# ─── Test Event Logger (for /test page debugging) ──────────────────────────────
+# --- Test Event Logger (for /test page debugging) ------------------------------
 async def log_test_event(app_id: str, event_type: str, message: str, data: dict = None) -> None:
     """Send event to /api/test/events for live debugging on /test page."""
     # Always log for test sessions (check if app_id looks like a test app)
@@ -112,7 +114,7 @@ class CoveredTopics:
     """Single source of truth for all covered topics.
 
     Stores rich CoverageRecord per key so directives can tell the LLM
-    *how* and *where* a topic was covered — enabling acknowledgements like
+    *how* and *where* a topic was covered -- enabling acknowledgements like
     "yes, we covered Python during the DataFlow project discussion."
 
     Normalizes every key on every operation so string mismatch can never
@@ -193,7 +195,7 @@ class CoveredTopics:
         """Coverage memory always empty — removed from all directives."""
         return ""
 
-# Module-level singleton — reuses the HTTP/2 connection pool and TLS session
+# Module-level singleton -- reuses the HTTP/2 connection pool and TLS session
 # across all eval, directive, and brief calls for every interview session.
 # Creating AsyncOpenAI() per-session causes a cold TLS handshake on the first
 # call of each session, adding 50–200ms. One shared client eliminates that.
@@ -254,7 +256,7 @@ _LANGUAGE_CODES: dict[str, dict[str, str]] = {
     "English": {"stt": "en-US", "tts": "en"},
     "Hindi":   {"stt": "hi",    "tts": "hi"},
 }
-# ponytail: _TTS_DEFAULT_MODELS deleted — all model values come from org DB row now
+# ponytail: _TTS_DEFAULT_MODELS deleted -- all model values come from org DB row now
 # Compiled once  matches greeting echo fragments that leak back into STT after AI speaks.
 _GREETING_ECHO_RE = re.compile(
     r"^\s*(?:hi|hello|hey|okay|ok|yeah|yes|yep|mmhmm|mhm|good morning|good afternoon)\s*$",
@@ -415,7 +417,7 @@ def _build_probe_directive(
         _mandatory_subconcept = _focus_list[_idx]
         _remaining_subconcepts = [f for i, f in enumerate(_focus_list) if i != _idx]
 
-    # Topic brief block — highlight the MANDATORY sub-concept for this turn so
+    # Topic brief block -- highlight the MANDATORY sub-concept for this turn so
     # the LLM doesn't keep asking about the first angle every time.
     if topic_item is not None:
         parts = [f"TOPIC: {topic_item.title}"]
@@ -448,7 +450,7 @@ def _build_probe_directive(
 
     _asked = "\n".join(f"  - {q}" for q in asked_questions_log[-6:])
 
-    # Full probe context from probe_strategy — what fired, what to do, what to skip
+    # Full probe context from probe_strategy -- what fired, what to do, what to skip
     _probe_ctx = get_probe_context(
         signal=signal,
         signal_reason=signal_reason,
@@ -460,7 +462,7 @@ def _build_probe_directive(
         active_topic=active_topic,
     )
 
-    # Filler guidance — classify prev answer intent so Ishita's reaction is connected
+    # Filler guidance -- classify prev answer intent so Ishita's reaction is connected
     _prev_lower = (prev_answer or "").lower().strip()
     _is_connection_check = any(p in _prev_lower for p in ("can you hear", "are you there", "hello?", "you there?"))
     _is_clarification_ask = _is_connection_check or any(
@@ -480,7 +482,7 @@ def _build_probe_directive(
     else:
         _filler_hint = "FILLER: substantive answer — vary it, e.g. 'Ah, makes sense.' / 'Got it.' / 'That tracks.' Don't reuse recent turns' wording."
 
-    # Short display label for the HARD STOP line — prefer structured topic title,
+    # Short display label for the HARD STOP line -- prefer structured topic title,
     # fall back to the first segment of the full active_topic context string.
     _topic_short = (
         topic_item.title if topic_item
@@ -608,16 +610,16 @@ async def _generate_move_on_directive(
             "Even if the analyst brief mentions a company nearby, do NOT assume this project\n"
             "was built there. Ask about the project on its own terms.\n"
         )
-    # Tag-based framing — the tag tells us exactly what the candidate knows and how to open.
+    # Tag-based framing -- the tag tells us exactly what the candidate knows and how to open.
     # This is the single most important framing rule: wrong tag = wrong question type.
     #
-    # RESUME_TOPIC : candidate did this — we know it. Ask about what they built, owned, or decided.
+    # RESUME_TOPIC : candidate did this -- we know it. Ask about what they built, owned, or decided.
     #                NEVER ask if they did it. NEVER ask why they worked somewhere. They worked there.
     # JD_TOPIC     : role requires this but candidate has NOT claimed it on their resume.
-    #                Ask neutrally — curious about exposure. Do NOT assume they know it.
+    #                Ask neutrally -- curious about exposure. Do NOT assume they know it.
     # ROLE_TOPIC   : comes from expert domain knowledge, NOT resume or JD.
     #                Candidate has no known experience here. Ask a concept/approach question.
-    #                NEVER ask "what was your experience with X" — they may have none.
+    #                NEVER ask "what was your experience with X" -- they may have none.
     _topic_type_hint = (topic_item.topic_type if topic_item else "") or ""
     _probe_focus_str = "; ".join(topic_item.probe_focus[:3]) if (topic_item and topic_item.probe_focus) else ""
 
@@ -810,12 +812,12 @@ async def _generate_move_on_directive(
             raise ValueError("empty response")
         # Sanity check: directive must not contain a scripted question for Ishita to copy
         if "SUGGESTED OPENING QUESTION" in generated.upper():
-            # Strip it — Ishita generates her own from topic context
+            # Strip it -- Ishita generates her own from topic context
             generated = re.sub(
                 r"SUGGESTED OPENING QUESTION.*$", "", generated, flags=re.I | re.DOTALL
             ).strip()
         # Build filler instruction from the actual prev answer so the LLM
-        # picks a reaction that matches what the candidate really said —
+        # picks a reaction that matches what the candidate really said -- 
         # not a generic list it ignores.
         _prev_trimmed = (prev_answer or "").strip()[:300]
         if _prev_trimmed:
@@ -1147,21 +1149,20 @@ def prewarm(proc: JobProcess):
         logger.info("Default TTS prewarmed.")
     except Exception as e:
         logger.warning(f"Failed to prewarm default TTS: {e}")
-    # DB pool initializes lazily on first job — asyncpg requires an async context
+    # DB pool initializes lazily on first job -- asyncpg requires an async context
     # which is not available in the sync prewarm() function.
     logger.info("DB pool will initialize lazily on first job.")
 class _EvalSignalToggles(BaseModel):
-    """Toggle flags for plan-gated signals only.
-    Always-on signals (ownership_ambiguity, ownership_clarified, example_evasion,
-    example_given, weak_technical_hedge, follow_up_collapse, strong_under_pressure,
-    depth_decay) are NOT listed here — they have no toggle and always run.
-    Plan-gated signals default to False when absent from the DB row.
+    """Toggle flags for plan-gated proctoring/integrity signals.
+    Defaults to False when absent from the DB row.
     """
     # Plan-gated behavioral signals
     latency_mismatch: bool = False
-    complexity_latency_mismatch: bool = False
+    answer_integrity: bool = False
     # Plan-gated environmental signals (Python awareness mirrors frontend gating)
     tab_switch: bool = False
+    fullscreen_exit: bool = False
+    window_focus_loss: bool = False
     camera_disabled: bool = False
     microphone_disabled: bool = False
     connection_lost: bool = False
@@ -1179,10 +1180,7 @@ class _EvalSignalToggles(BaseModel):
             return bool(v)
         return False
 def _extract_evaluation_signal_toggles(raw_signals: Any) -> dict[str, bool]:
-    """Parse DB proctoringSignals JSON into a toggle dict for plan-gated signals only.
-    Returns only the 9 plan-gated signal flags. Always-on signals are not in
-    this dict — they are never toggled and run unconditionally in the evaluator.
-    """
+    """Parse DB proctoringSignals JSON into a toggle dict for plan-gated signals."""
     parsed: dict[str, Any] = {}
     if isinstance(raw_signals, dict):
         parsed = raw_signals
@@ -1323,7 +1321,7 @@ async def entrypoint(ctx: JobContext):
         return
     if isinstance(connect_result, Exception):
         raise connect_result
-    # Room is now connected — define the failure helper here so it can use ctx.room.
+    # Room is now connected -- define the failure helper here so it can use ctx.room.
     # Any failure AFTER this point must call _fail_interview() so:
     #   1. DB is marked FAILED (Drive candidates page shows FAILED, not stuck IN_PROGRESS)
     #   2. Frontend receives an error event and shows the support message to the candidate
@@ -1491,8 +1489,8 @@ async def entrypoint(ctx: JobContext):
     )
     _brief_openai_client: AsyncOpenAI = _SHARED_OPENAI_CLIENT
 
-    # ── Band seed: resume-only classification (seniority_level + total_years) ──
-    # Logic lives in interview/band_classifier.py — fully tested, no title heuristics.
+    # -- Band seed: resume-only classification (seniority_level + total_years) --
+    # Logic lives in interview/band_classifier.py -- fully tested, no title heuristics.
     _band_seed, _total_years, _seniority = classify_band(structured_resume)
     logger.info(
         "[BAND] seed=%s | total_years=%.1f | seniority=%s",
@@ -1509,10 +1507,10 @@ async def entrypoint(ctx: JobContext):
         llm_model=str(ctx_data.llmInterviewBrief).strip(),
         usage_sink=_brief_llm_usages.append,
     )
-    # Use the LLM's band assessment — more accurate than mechanical inference
+    # Use the LLM's band assessment -- more accurate than mechanical inference
     candidate_band = _interview_brief.candidate_band
     logger.info("[FLOW] Band=%s | candidate=%s | role=%s", candidate_band, candidate_name, job_title)
-    # Convenience views directly from InterviewBrief — no wrapper objects needed
+    # Convenience views directly from InterviewBrief -- no wrapper objects needed
     _brief_skills    = [t.title for t in _interview_brief.topic_pool if t.topic_type == "skill"]
     _brief_projects  = [t.title for t in _interview_brief.topic_pool if t.topic_type == "project"]
     _brief_work      = [t.title for t in _interview_brief.topic_pool if t.topic_type == "work"]
@@ -1668,7 +1666,7 @@ async def entrypoint(ctx: JobContext):
                     _add(token)
         return terms[:97]  # provider prepends 3 base terms and caps at 100.
     # VAD removed: Flux STT native EOT drives all turn boundaries (turn_detection="stt").
-    # Silero ONNX model is no longer needed — saves ~200ms prewarm startup time.
+    # Silero ONNX model is no longer needed -- saves ~200ms prewarm startup time.
     flux_session_keyterms = _build_flux_session_keyterms()
     logger.info("[STT_FLUX] static session keyterms prepared: %d extra terms", len(flux_session_keyterms))
     try:
@@ -1694,7 +1692,7 @@ async def entrypoint(ctx: JobContext):
     logger.info(f"[TTS] Using %s  voice=%s model=%s", org_tts_provider, voice_id, org_tts_model)
     # For Sarvam v3: build a per-session pronunciation dict that combines the
     # shared base dict (infra/framework terms) with auto-generated pronunciations
-    # for this candidate's specific resume/JD keywords. Zero human maintenance —
+    # for this candidate's specific resume/JD keywords. Zero human maintenance -- 
     # any tech term on any future resume is handled automatically.
     _sarvam_dict_id: str | None = None
     _sarvam_llm_rewrite_transform = None
@@ -1809,7 +1807,7 @@ async def entrypoint(ctx: JobContext):
         model=interview_llm_model,
         temperature=interview_llm_temperature,
     )
-    # Flux provides native end-of-turn detection via EOT events — no separate semantic
+    # Flux provides native end-of-turn detection via EOT events -- no separate semantic
     # turn detector needed. turn_detection="stt" tells LiveKit to use Flux's EOT events.
     logger.info("[TURN_DETECTOR] Flux native EOT active (engine=%s)", getattr(stt_plugin, "_hr_stt_engine", "flux"))
     ai_name = ctx_data.aiName or "Ishita"
@@ -1821,7 +1819,7 @@ async def entrypoint(ctx: JobContext):
         "tts": tts_plugin,
         "turn_handling": TurnHandlingOptions(
             preemptive_generation={"enabled": False},
-            # Flux STT drives turn boundaries — no separate endpointing detector needed.
+            # Flux STT drives turn boundaries -- no separate endpointing detector needed.
             turn_detection="stt",
             interruption=InterruptionOptions(
                 enabled=True,
@@ -1836,8 +1834,8 @@ async def entrypoint(ctx: JobContext):
         "use_tts_aligned_transcript": False,
         # Client-side acronym transform:
         # - Cartesia: needs it (no server-side normalization)
-        # - ElevenLabs: apply_text_normalization='auto' handles it server-side — skip
-        # - Sarvam: dict_id + enable_preprocessing always-on — skip (caused letter-reading bug)
+        # - ElevenLabs: apply_text_normalization='auto' handles it server-side -- skip
+        # - Sarvam: dict_id + enable_preprocessing always-on -- skip (caused letter-reading bug)
         "tts_text_transforms": [
             "filter_emoji",
             *([_tts_acronym_transform] if org_tts_provider == "CARTESIA" else []),
@@ -1859,10 +1857,10 @@ async def entrypoint(ctx: JobContext):
     from livekit.agents import function_tool
     from livekit.agents.beta.tools import EndCallTool
 
-    # ── Candidate meta-intent tools ──────────────────────────────────────────
+    # -- Candidate meta-intent tools ------------------------------------------
     # Replace regex pattern-matching with LLM-driven tool calls.
     # The LLM decides when to call these based on semantic understanding of what
-    # the candidate said — not string matching on their exact words.
+    # the candidate said -- not string matching on their exact words.
 
     @function_tool
     async def candidate_asked_to_repeat() -> str:
@@ -2074,6 +2072,15 @@ async def entrypoint(ctx: JobContext):
     _last_depth_decay_turn: int = -999           # turn when depth_decay last fired; -999 = never
     _last_applied_eval_turn: int = 0             # monotonic guard against stale eval results
     _question_asked_at: float = 0.0
+    # Wall-clock (epoch ms) twin of _question_asked_at -- perf_counter() is
+    # monotonic-from-process-start and can't be compared against browser-side
+    # proctoring event timestamps (Date.now()). This one can, so the report
+    # pipeline can say "tab_switch happened during the Python question."
+    _question_asked_at_wall_ms: int = 0
+    # Set to True the instant a question's text is committed; consumed (and cleared)
+    # by on_agent_state_changed when TTS playback actually finishes, which is the
+    # real "AI stopped talking" instant that starts the reaction-time clock.
+    _question_pending_timestamp: bool = False
     _answer_received_at: float = 0.0
     _candidate_started_speaking_at: float = 0.0  # true reaction-time endpoint (VAD speech-start, not EOT)
     _custom_q_reminder_fired: bool = False
@@ -2082,7 +2089,7 @@ async def entrypoint(ctx: JobContext):
 
     _first_interview_question_asked: bool = False  # True after first post-warmup AI question fires
     _interview_has_started: bool = False  # True when warmup ends and interview directive is injected
-    # Per-topic ground-truth records built at MOVE_ON time — replaces end-of-session
+    # Per-topic ground-truth records built at MOVE_ON time -- replaces end-of-session
     # LLM transcript re-reading for skill extraction. Each entry is appended when the
     # agent closes a topic so eval scores, probe count, exit reason, and candidate
     # answers are captured while the context is live, not inferred afterward.
@@ -2091,7 +2098,7 @@ async def entrypoint(ctx: JobContext):
     _current_topic_answers: list[str] = []
     # Running buffer of QUESTIONS Ishita asked on the CURRENT active topic (reset on MOVE_ON).
     # Snapshotted into CoverageRecord.questions_asked when the topic is closed, so they become
-    # GLOBAL forbidden questions — preventing the same concept being re-asked under a later topic.
+    # GLOBAL forbidden questions -- preventing the same concept being re-asked under a later topic.
     _current_topic_questions: list[str] = []
     # Index into transcript_lines where the CURRENT topic began. Reset on MOVE_ON so that
     # probe directives only see the current topic's Q&A thread, not old-topic conversations.
@@ -2141,7 +2148,7 @@ async def entrypoint(ctx: JobContext):
 
         return pool
 
-    # Unified topic pool — shrinks as topics are covered.
+    # Unified topic pool -- shrinks as topics are covered.
     # _topic_pool is the single source of truth for what remains.
     _topic_pool: list[str] = _build_topic_pool()
 
@@ -2172,7 +2179,7 @@ async def entrypoint(ctx: JobContext):
         Covered = completed, denied, skipped, or probed-to-saturation — all the same.
         """
         excluded_key = _topic_short_key(exclude or "")
-        # Full titles of topics already covered (exclude AUTO_SKILL — those are
+        # Full titles of topics already covered (exclude AUTO_SKILL -- those are
         # inferred sub-skills, not standalone topics, and would over-match).
         _covered_full_titles = [
             rec.display_title
@@ -2235,7 +2242,7 @@ async def entrypoint(ctx: JobContext):
         "using", "based", "developer", "engineer", "intern", "internship", "role",
         "team", "work", "company", "ltd", "pvt", "inc", "technologies", "solutions",
         "services", "private", "limited", "built", "build", "building",
-        # Domain-generic GTM/marketing words — too common to identify a unique topic
+        # Domain-generic GTM/marketing words -- too common to identify a unique topic
         "automation", "automated", "automate", "outreach", "campaign", "campaigns",
         "marketing", "growth", "gtm", "lead", "leads", "outbound", "inbound",
         "workflow", "workflows", "data", "management", "strategy", "systems",
@@ -2273,7 +2280,7 @@ async def entrypoint(ctx: JobContext):
         union = sa | sb
         if union and len(inter) / len(union) >= 0.5:
             return True
-        # Test 2: title containment — catches "Sensex Project" inside
+        # Test 2: title containment -- catches "Sensex Project" inside
         # "Python Developer - Sensex Project". Raised to >= 3 tokens to avoid
         # false positives from short 2-word skill titles like "n8n automation".
         ta = _topic_signature(_topic_short_title(a))
@@ -2300,7 +2307,7 @@ async def entrypoint(ctx: JobContext):
             if (a_role and b_project) or (b_role and a_project):
                 return True
         return False
-    # Inline eval: reuse shared module-level client — no cold TLS handshake per session.
+    # Inline eval: reuse shared module-level client -- no cold TLS handshake per session.
     _eval_openai_client: AsyncOpenAI = _SHARED_OPENAI_CLIENT
     # Accumulated manual interview LLM usage records. Applied to the billing
     # snapshot and org usage at session end so eval/brief/directive calls are tracked.
@@ -2473,7 +2480,7 @@ async def entrypoint(ctx: JobContext):
         async with _session_state_lock:
             # EC-5: stale-turn guard MUST be inside the lock. Without this, two concurrent
             # evals for the same turn both pass the check before either updates the counter,
-            # then both append to answer_scores and _topic_score_histories — duplicate scores.
+            # then both append to answer_scores and _topic_score_histories -- duplicate scores.
             if result_turn <= _last_applied_eval_turn:
                 logger.debug(
                     "[EVAL] skipping stale eval result turn=%d last_applied=%d",
@@ -2530,12 +2537,12 @@ async def entrypoint(ctx: JobContext):
             content = _clean_stt_text(content)
             if not content:
                 return
-            # Turn 2 = warmup response. It's always intentional candidate speech — skip noise filters.
+            # Turn 2 = warmup response. It's always intentional candidate speech -- skip noise filters.
             is_warmup_response = not warmup_complete and turn_snapshot >= 2
             if is_warmup_response:
                 logger.debug(f"[WARMUP] Warmup response (turn={turn_snapshot}): '{content[:60]}' - skipping noise filters")
             else:
-                # Flux handles endpointing and turn completion natively — only filter
+                # Flux handles endpointing and turn completion natively -- only filter
                 # genuine STT hallucinations (high word count, near-zero unique tokens).
                 words = content.strip().split()
                 # Always pass through clarification questions regardless of length.
@@ -2565,7 +2572,7 @@ async def entrypoint(ctx: JobContext):
                 log_test_event(app_id, "response_received", f"Candidate: {content[:60]}..." if len(content) > 60 else f"Candidate: {content}"),
                 "test_event_response_received"
             )
-            # Accumulate candidate answers for the current topic — used at MOVE_ON
+            # Accumulate candidate answers for the current topic -- used at MOVE_ON
             # to build grounded skill records instead of re-reading the transcript later.
             # EC-4: append under the lock so it cannot interleave with the MOVE_ON block
             # that reads then resets _current_topic_answers in the same lock acquisition.
@@ -2658,6 +2665,7 @@ async def entrypoint(ctx: JobContext):
                     if _question_asked_at > 0 and _latency_end > _question_asked_at
                     else None
                 )
+                question_asked_at_wall_ms_snap = _question_asked_at_wall_ms
                 # ---------------------------------------------------------------
                 # Build eval payload for the inline pipeline (run_eval_and_build_directive).
                 # Scoring, signal detection, saturation, and directive generation all run
@@ -2670,6 +2678,7 @@ async def entrypoint(ctx: JobContext):
                     turn=turn_snapshot,
                     turns_since_decay=turns_since_decay_snap,
                     response_latency=response_latency_snap,
+                    question_asked_at_wall_ms=question_asked_at_wall_ms_snap,
                 ) -> dict:
                     resolved_question = (question or "").strip()
                     if len(resolved_question) < 16:
@@ -2687,7 +2696,7 @@ async def entrypoint(ctx: JobContext):
                             if len(_txt) >= 24 and not _greeting_skip.search(_txt):
                                 resolved_question = _txt
                                 break
-                    # Resolve active TopicItem from brief — gives eval accurate probe_focus,
+                    # Resolve active TopicItem from brief -- gives eval accurate probe_focus,
                     # tag, and importance instead of deriving from raw string heuristics.
                     _scoring_topic_full = _active_topic or ""
                     _scoring_topic = _scoring_topic_full.split(" - ")[0].strip() if _scoring_topic_full else None
@@ -2716,6 +2725,7 @@ async def entrypoint(ctx: JobContext):
                         "topic_depth_history": _topic_depth_history_snap,
                         "turns_since_decay": turns_since_decay,
                         "response_latency_sec": response_latency,
+                        "question_asked_at_wall_ms": question_asked_at_wall_ms,
                         "signal_toggles": dict(evaluation_signal_toggles),
                         "org_id": org_id,
                         "llm_model": analysis_model,
@@ -2918,15 +2928,15 @@ async def entrypoint(ctx: JobContext):
                         answer_gist=(payload.get("answer") or ""),
                         questions_asked=_closing_topic_questions,
                     )
-                    # ── Ground-truth topic record ──────────────────────────────
+                    # -- Ground-truth topic record ------------------------------
                     # EC-1/EC-2/EC-4/EC-5: ALL shared state reads and writes for
                     # this topic record must happen under one lock acquisition so
                     # that a concurrent MOVE_ON (different session on same process)
                     # or a concurrent candidate answer append cannot interleave:
-                    #   _topic_states        — read (EC-1)
-                    #   _topic_score_histories / _topic_depth_histories — read (EC-5)
-                    #   _current_topic_answers — read then reset (EC-4)
-                    #   _topic_records       — append (EC-2)
+                    #   _topic_states        -- read (EC-1)
+                    #   _topic_score_histories / _topic_depth_histories -- read (EC-5)
+                    #   _current_topic_answers -- read then reset (EC-4)
+                    #   _topic_records       -- append (EC-2)
                     # The entire block is one atomic snapshot-and-commit.
                     try:
                         async with _session_state_lock:
@@ -2978,17 +2988,17 @@ async def entrypoint(ctx: JobContext):
                             }
                             _topic_records.append(_topic_record)
                             # EC-4: reset happens inside the same lock acquisition as the
-                            # snapshot above — any answer appended after this point belongs
+                            # snapshot above -- any answer appended after this point belongs
                             # to the next topic and will not be incorrectly included here.
                             _current_topic_answers = []
-                            # Reset per-topic question buffer too — already snapshotted into
+                            # Reset per-topic question buffer too -- already snapshotted into
                             # the CoverageRecord via _closing_topic_questions above.
                             _current_topic_questions = []
                             # MOVE_ON: clear the short-term asked-questions deque so that
                             # old-topic questions NEVER appear in the new topic's probe
                             # directive. Global forbidden questions are already preserved
                             # in CoveredTopics.get_memory_block() (coverage_memory), so
-                            # nothing is lost — they still show up as FORBIDDEN in every
+                            # nothing is lost -- they still show up as FORBIDDEN in every
                             # subsequent directive. This is the primary fix for the bug
                             # where Ishita kept asking old-topic questions after MOVE_ON.
                             _asked_questions_log.clear()
@@ -3000,7 +3010,7 @@ async def entrypoint(ctx: JobContext):
                     except Exception as _tr_err:
                         logger.warning("[TOPIC_RECORD] Failed to record topic: %s", _tr_err)
                     _next_topic = _next_uncovered_topic(exclude=_old_topic)
-                    # Pre-fire MOVE_ON directive generation in parallel — by the time
+                    # Pre-fire MOVE_ON directive generation in parallel -- by the time
                     # we reach the await below it will already be done (or nearly so),
                     # eliminating the 5s serial wait after the eval completes.
                     _move_on_directive_task: Optional[asyncio.Task] = None
@@ -3101,7 +3111,7 @@ async def entrypoint(ctx: JobContext):
                     # JD_TOPIC / ROLE_TOPIC). This is the ONLY place that handles how to
                     # treat a topic the candidate may already have touched. The source
                     # framing itself ("we require X" vs "you built X") lives in the
-                    # directive's _angle_guide and Ishita's system prompt — not here.
+                    # directive's _angle_guide and Ishita's system prompt -- not here.
                     _topic_type = _next_brief_item.topic_type if _next_brief_item else ""
                     _cross_ref_rule = _build_cross_ref_rule(_src)
                     # Use the pre-fired directive task if it matches the active topic,
@@ -3118,18 +3128,18 @@ async def entrypoint(ctx: JobContext):
                         _move_on_directive_task is not None
                         and _pre_next_key == _new_topic_key_lc
                     ):
-                        # Task was pre-fired in parallel with eval — await and validate
+                        # Task was pre-fired in parallel with eval -- await and validate
                         _prefired_result = await _move_on_directive_task
                         if _prefired_result:
                             _directive = _prefired_result
                             logger.info("[MOVE_ON_LLM] Used pre-fired directive (parallel) for %r", _new_topic_key_lc)
                         else:
-                            # Pre-fired task returned empty — use rule-based fallback directly.
+                            # Pre-fired task returned empty -- use rule-based fallback directly.
                             # Do NOT attempt a second LLM call; the fallback below handles it.
                             logger.warning("[MOVE_ON_LLM] Pre-fired directive empty for %r — using rule-based fallback", _new_topic_key_lc)
                             _directive = ""
                     else:
-                        # Topic changed or no pre-fired task — generate now
+                        # Topic changed or no pre-fired task -- generate now
                         if _move_on_directive_task is not None:
                             _move_on_directive_task.cancel()
                         _directive = await _generate_move_on_directive(
@@ -3150,7 +3160,7 @@ async def entrypoint(ctx: JobContext):
                         )
                     # If LLM directive generation failed, use a minimal instruction
                     # that lets the LLM generate a natural question from the TOPIC_LOCK context.
-                    # No rule-based template — LLM drives the opener.
+                    # No rule-based template -- LLM drives the opener.
                     if not _directive:
                         _full_ctx = _active_topic or _new_topic_title
                         if _new_topic_item and _new_topic_item.full_description:
@@ -3349,7 +3359,7 @@ async def entrypoint(ctx: JobContext):
             _append_with_elapsed("Candidate", content)
             # If the candidate reciprocated the "how are you doing?" greeting (asked
             # Ishita back), a bare scripted warmup line ignoring that reads as rude.
-            # Prepend a short fixed reciprocal reply — still scripted (no LLM filler
+            # Prepend a short fixed reciprocal reply -- still scripted (no LLM filler
             # variance), just acknowledges the question was heard.
             _content_lc_greet = content.lower()
             _asked_back = bool(re.search(r"\b(and you|how about you|you\?|how are you|and yourself)\b", _content_lc_greet))
@@ -3391,7 +3401,7 @@ async def entrypoint(ctx: JobContext):
         # Dynamic warmup (Option B): LLM decides readiness, not a fixed turn count.
         # Warmup ends when the candidate signals they are ready to begin.
         # We detect this by checking their response for readiness markers.
-        # This fires from turn 2 onward — greeting (turn 1) is never a readiness signal.
+        # This fires from turn 2 onward -- greeting (turn 1) is never a readiness signal.
         # Close the gate immediately so llm_node cannot race ahead and generate the
         # next turn before we've decided completing_warmup and injected the directive.
         if not warmup_complete:
@@ -3426,7 +3436,7 @@ async def entrypoint(ctx: JobContext):
             logger.info("[WARMUP] warmup_complete=True at turn=%d (candidate signalled readiness)", turn_snapshot)
             remove_system_messages(chat_ctx, "[WARMUP PHASE]")
             remove_system_messages(chat_ctx, "[PHASE_STATUS]")
-            # Fix #1: Inject the first interview question directive immediately — no intermediate acknowledgement.
+            # Fix #1: Inject the first interview question directive immediately -- no intermediate acknowledgement.
             # The LLM will open with the anchor topic on the next turn.
             chat_ctx.add_message(role="system", content=interview_directive_cached)
             logger.info("[WARMUP] First interview directive injected at turn=%d | ready to ask anchor topic", turn_snapshot)
@@ -3435,7 +3445,7 @@ async def entrypoint(ctx: JobContext):
         elif not warmup_complete:
             # Candidate answered the warmup question but didn't signal readiness yet
             # (e.g. "I'm doing great" instead of "yes"/"ready"). Ishita should ask a
-            # natural follow-up / re-confirm readiness rather than staying silent —
+            # natural follow-up / re-confirm readiness rather than staying silent -- 
             # release the gate we closed above so the LLM can respond to what they said.
             remove_system_messages(chat_ctx, "[PHASE_STATUS]")
             chat_ctx.add_message(
@@ -3462,7 +3472,7 @@ async def entrypoint(ctx: JobContext):
     # 
     @session.on("conversation_item_added")
     def on_conversation_item_added(event) -> None:
-        nonlocal turn_count, _last_interviewer_question, _question_asked_at, \
+        nonlocal turn_count, _last_interviewer_question, _question_pending_timestamp, \
             _candidate_turn_since_last_assistant, warmup_complete, \
             _answer_received_at, _first_interview_question_asked, \
             _last_question_topic
@@ -3489,7 +3499,7 @@ async def entrypoint(ctx: JobContext):
                     return
                 # Track last question for eval engine -- only for real interview turns.
                 # Nudge messages (session.say() scripted inactivity prompts) must never
-                # count as interview questions — they don't contain a question for the
+                # count as interview questions -- they don't contain a question for the
                 # candidate, they are just "Take your time" filler. Detect them by the
                 # inactivity_nudge_speaking flag set by _deliver_nudge().
                 if inactivity_nudge_speaking:
@@ -3636,11 +3646,11 @@ async def entrypoint(ctx: JobContext):
                         )
                     # Track asked questions for duplicate prevention (keep last 6).
                     # EC-3: _asked_questions_log is now a deque(maxlen=6) so append
-                    # is a single atomic operation — no separate pop() needed, no
+                    # is a single atomic operation -- no separate pop() needed, no
                     # IndexError possible, no lock required in this sync callback.
                     if _last_interviewer_question and _first_interview_question_asked:
                         _asked_questions_log.append(_last_interviewer_question[:120])
-                        # Per-topic question buffer — snapshotted into CoverageRecord on MOVE_ON
+                        # Per-topic question buffer -- snapshotted into CoverageRecord on MOVE_ON
                         # so each question becomes a GLOBAL forbidden question (Fix: cross-topic
                         # duplicate-question prevention). Skip secondary/soft "general" phases.
                         if _last_question_topic not in ("general", "general conversation", None, ""):
@@ -3693,18 +3703,21 @@ async def entrypoint(ctx: JobContext):
                                 source=CoverageSource.CUSTOM_Q,
                             )
                             logger.info("[FLOW] Custom Q %d/%d covered: '%s'", _cqi + 1, len(_custom_questions), _cq.raw[:80])
-                # Increment turn count and track timing
-                _question_asked_at = time.perf_counter()
+                # Increment turn count. Reaction-time clock starts when the AI actually
+                # finishes speaking (agent_state_changed -> "listening"), not here --
+                # this point is only when the question TEXT is committed, before TTS
+                # has played it out. See on_agent_state_changed below.
+                _question_pending_timestamp = True
                 _candidate_turn_since_last_assistant = False
                 turn_count += 1
                 if not warmup_complete and turn_count == 2:
-                    # Ishita just said "Are you ready to begin?" — gate the LLM so it
+                    # Ishita just said "Are you ready to begin?" -- gate the LLM so it
                     # waits for the candidate's answer. The warmup completion handler
                     # will inject the warmup-done directive and release the gate.
                     agent._waiting_for_eval = True
                     agent._directive_ready.clear()
                     # Update PHASE_STATUS so if LLM fires again before candidate replies
-                    # it knows the warmup question is ALREADY spoken — don't repeat it.
+                    # it knows the warmup question is ALREADY spoken -- don't repeat it.
                     remove_system_messages(chat_ctx, "[PHASE_STATUS]")
                     chat_ctx.add_message(
                         role="system",
@@ -3795,7 +3808,8 @@ async def entrypoint(ctx: JobContext):
     _last_speaking_turn_was_nudge = False
     @session.on("agent_state_changed")
     def on_agent_state_changed(event):
-        nonlocal is_agent_speaking, first_agent_turn_committed_at, _last_speaking_turn_was_nudge
+        nonlocal is_agent_speaking, first_agent_turn_committed_at, _last_speaking_turn_was_nudge, \
+            _question_asked_at, _question_asked_at_wall_ms, _question_pending_timestamp
         if event.new_state == "speaking":
             is_agent_speaking = True
             if inactivity_nudge_speaking:
@@ -3809,6 +3823,13 @@ async def entrypoint(ctx: JobContext):
             is_agent_speaking = False
             if first_agent_turn_committed_at is None:
                 first_agent_turn_committed_at = time.monotonic()
+            # Reaction-time clock starts HERE -- the instant TTS playback of the
+            # question actually finishes, not when the question text was committed.
+            # Skip scripted nudges; only real questions start the clock.
+            if _question_pending_timestamp and not _last_speaking_turn_was_nudge:
+                _question_asked_at = time.perf_counter()
+                _question_asked_at_wall_ms = int(time.time() * 1000)
+                _question_pending_timestamp = False
             # Start inactivity countdown immediately when AI finishes speaking.
             # If the turn that just ended was a nudge, preserve the sent-flags so
             # the schedule escalates (7s -> 15s -> 25s) instead of the same nudge
@@ -4169,7 +4190,7 @@ async def entrypoint(ctx: JobContext):
         "test_event_session_ended"
     )
     await asyncio.sleep(2)
-    # Ã¢ Final definitive save - Phase 5 includes proctoring report + answer scores
+    # â Final definitive save - Phase 5 includes proctoring report + answer scores
     proctoring_data = _build_proctoring_data(
         "time_expired" if time_expired else "interview_finished"
     )
@@ -4181,6 +4202,8 @@ async def entrypoint(ctx: JobContext):
         proctoring_data=proctoring_data,
         final_status="COMPLETED",
     )
+    await persist_latency_signals(app_id, answer_scores)
+    await persist_session_fingerprint(app_id)
     await persist_answer_scores(app_id, answer_scores)
     # CRITICAL: Mark as COMPLETED immediately after first save to prevent re-dispatch
     # This must happen before any async work (summary, report, billing) that could fail
@@ -4223,10 +4246,10 @@ async def entrypoint(ctx: JobContext):
         _transcript_snap = list(transcript_lines)
         _proctoring_snap = dict(proctoring_data) if proctoring_data else {}
         if _is_test_session and _skip_report:
-            # ponytail: test session with report disabled — skip all LLM report/summary calls
+            # ponytail: test session with report disabled -- skip all LLM report/summary calls
             logger.info("[REPORT] Skipped (test session with skipReport=True) for %s", app_id)
         else:
-            # REC-04: report and summary are independent — run in parallel.
+            # REC-04: report and summary are independent -- run in parallel.
             scores_context = None
             async def _run_report_then_summary() -> None:
                 nonlocal scores_context
@@ -4244,6 +4267,7 @@ async def entrypoint(ctx: JobContext):
                             jd_json=_coerce_jsonish(extracted_details) if extracted_details else None,
                             topic_records=list(_topic_records),
                             candidate_name=candidate_name,
+                            answer_integrity_enabled=bool(evaluation_signal_toggles.get("answer_integrity")),
                         )
                     logger.info("[REPORT] Completed. scores_context keys=%s",
                                 list(scores_context.keys()) if scores_context else None)

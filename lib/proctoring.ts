@@ -4,19 +4,13 @@ export type ProctoringEventType =
   | "microphone_disabled"
   | "connection_lost"
   | "tab_switch"
+  | "fullscreen_exit"
+  | "window_focus_loss"
   | "face_absence"
   | "multiple_faces"
   | "identity_mismatch"
-  | "ownership_ambiguity"
-  | "example_evasion"
   | "latency_mismatch"
-  | "resume_claim_mismatch"
-  | "ownership_clarified"
-  | "example_given"
-  | "strong_under_pressure"
-  | "follow_up_collapse"
-  | "depth_decay"
-  | "complexity_latency_mismatch";
+  | "session_fingerprint";
 export interface ProctoringEvent {
   eventType: string;
   severity?: ProctoringSeverity;
@@ -35,70 +29,46 @@ const EVENT_ALIASES: Record<string, ProctoringEventType> = {
   connectionLost: "connection_lost",
   tab_switch: "tab_switch",
   tabSwitch: "tab_switch",
+  fullscreen_exit: "fullscreen_exit",
+  fullscreenExit: "fullscreen_exit",
+  window_focus_loss: "window_focus_loss",
+  windowFocusLoss: "window_focus_loss",
   face_absence: "face_absence",
   faceAbsence: "face_absence",
   multiple_faces: "multiple_faces",
   multipleFaces: "multiple_faces",
   identity_mismatch: "identity_mismatch",
   identityMismatch: "identity_mismatch",
-  ownership_ambiguity: "ownership_ambiguity",
-  ownershipAmbiguity: "ownership_ambiguity",
-  example_evasion: "example_evasion",
-  exampleEvasion: "example_evasion",
   latency_mismatch: "latency_mismatch",
   latencyMismatch: "latency_mismatch",
-  resume_claim_mismatch: "resume_claim_mismatch",
-  resumeClaimMismatch: "resume_claim_mismatch",
-  ownership_clarified: "ownership_clarified",
-  ownershipClarified: "ownership_clarified",
-  example_given: "example_given",
-  exampleGiven: "example_given",
-  strong_under_pressure: "strong_under_pressure",
-  strongUnderPressure: "strong_under_pressure",
-  follow_up_collapse: "follow_up_collapse",
-  followUpCollapse: "follow_up_collapse",
-  depth_decay: "depth_decay",
-  depthDecay: "depth_decay",
-  complexity_latency_mismatch: "complexity_latency_mismatch",
-  complexityLatencyMismatch: "complexity_latency_mismatch",
+  session_fingerprint: "session_fingerprint",
+  sessionFingerprint: "session_fingerprint",
 };
 export const PROCTORING_SEVERITY_BY_TYPE: Record<ProctoringEventType, ProctoringSeverity> = {
   camera_disabled: "high",
   microphone_disabled: "medium",
   connection_lost: "medium",
   tab_switch: "medium",
+  fullscreen_exit: "high",
+  window_focus_loss: "medium",
   face_absence: "high",
   multiple_faces: "high",
   identity_mismatch: "high",
-  ownership_ambiguity: "medium",
-  example_evasion: "high",
   latency_mismatch: "medium",
-  resume_claim_mismatch: "high",
-  ownership_clarified: "low",
-  example_given: "low",
-  strong_under_pressure: "low",
-  follow_up_collapse: "high",
-  depth_decay: "high",
-  complexity_latency_mismatch: "high",
+  session_fingerprint: "high",
 };
 export const PROCTORING_EVENT_ORDER: ProctoringEventType[] = [
   "camera_disabled",
   "microphone_disabled",
   "connection_lost",
   "tab_switch",
+  "fullscreen_exit",
+  "window_focus_loss",
   "face_absence",
   "multiple_faces",
   "identity_mismatch",
-  "ownership_ambiguity",
-  "example_evasion",
   "latency_mismatch",
-  "resume_claim_mismatch",
-  "ownership_clarified",
-  "example_given",
-  "strong_under_pressure",
-  "follow_up_collapse",
-  "depth_decay",
-  "complexity_latency_mismatch",
+  "session_fingerprint",
 ];
 export function normalizeProctoringEvent(event: ProctoringEvent): ProctoringEvent {
   const rawType = String(event.eventType || "").trim();
