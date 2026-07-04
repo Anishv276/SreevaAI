@@ -1404,10 +1404,10 @@ async def _node_llm_calls(state: ReportState) -> dict:
     if org_id:
         billing_tasks = [
             _persist_billing(
-                org_id, "interviewReport", _llm.usage_dict(eval_usage, llm_model)
+                org_id, "interviewReport", _llm.usage_dict(eval_usage, llmInterviewReport)
             ),
             _persist_billing(
-                org_id, "interviewReport", _llm.usage_dict(skills_usage, llm_model)
+                org_id, "interviewReport", _llm.usage_dict(skills_usage, llmInterviewReport)
             ),
             *[
                 _persist_billing(org_id, "interviewReport", bu)
