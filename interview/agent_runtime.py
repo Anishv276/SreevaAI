@@ -4282,7 +4282,7 @@ async def entrypoint(ctx: JobContext):
                             app_id,
                             _transcript_snap,
                             job_title,
-                            llmInterviewEval=analysis_model,
+                            llmInterviewReport=str(ctx_data.llmInterviewReport).strip(),
                             org_id=org_id,
                             scores_context=scores_context,
                             candidate_name=candidate_name,

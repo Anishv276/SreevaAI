@@ -1729,14 +1729,14 @@ async def generate_interview_summary(
     app_id:              str,
     transcript_lines:    list,
     job_title:           str,
-    llmInterviewEval:    str,
+    llmInterviewReport:  str,
     org_id:              Optional[str]  = None,
     scores_context:      Optional[dict] = None,
     candidate_name:      str = "",
 ) -> None:
     """Generate summary bullets + verdict and write to Interview.interviewSummary.
 
-    Requires org.llmInterviewEval from DB — fail fast if missing.
+    Requires org.llmInterviewReport from DB — fail fast if missing.
     Runs summary and verdict LLM calls in parallel. Does NOT use the full
     transcript — only the structured scores_context, for faster, cheaper calls.
     """
@@ -1785,8 +1785,8 @@ async def generate_interview_summary(
         f"CONCERNS FLAGGED:\n{concerns_block}"
     )
 
-    if not llmInterviewEval:
-        logger.error("[SUMMARY] Missing org.llmInterviewEval from DB for app=%s", app_id)
+    if not llmInterviewReport:
+        logger.error("[SUMMARY] Missing org.llmInterviewReport from DB for app=%s", app_id)
         return
 
     try:
@@ -1801,7 +1801,7 @@ async def generate_interview_summary(
                 call_type="report_summary",
                 org_id=org_id or "",
                 app_id=app_id,
-                _LLM_DEFAULT=llmInterviewEval,
+                _LLM_DEFAULT=llmInterviewReport,
             )),
             _llm.call(LLMCallSpec(
                 system=_VERDICT_SYSTEM,
@@ -1813,17 +1813,17 @@ async def generate_interview_summary(
                 call_type="report_verdict",
                 org_id=org_id or "",
                 app_id=app_id,
-                _LLM_DEFAULT=llmInterviewEval,
+                _LLM_DEFAULT=llmInterviewReport,
             )),
         )
 
         if org_id:
             await asyncio.gather(
                 _persist_billing(
-                    org_id, "interviewReport", _llm.usage_dict(summary_usage, llmInterviewEval)
+                    org_id, "interviewReport", _llm.usage_dict(summary_usage, llmInterviewReport)
                 ),
                 _persist_billing(
-                    org_id, "interviewReport", _llm.usage_dict(verdict_usage, llmInterviewEval)
+                    org_id, "interviewReport", _llm.usage_dict(verdict_usage, llmInterviewReport)
                 ),
             )
 
