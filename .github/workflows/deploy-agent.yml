@@ -21,7 +21,7 @@ jobs:
       - name: Deploy Agent to LiveKit Cloud
         env:
           # The CLI will automatically use these to authenticate
-          LIVEKIT_URL: https://interview-system-3bnh6c3s.livekit.cloud
+          LIVEKIT_URL: wss://interview-system-3bnh6c3s.livekit.cloud
           LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
           LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
         working-directory: ./livekit-python-agent

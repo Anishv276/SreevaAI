@@ -47,7 +47,7 @@ jobs:
             git reset --hard origin/main
 
             echo "==> Building images"
-            docker compose -f docker-compose.prod.yml build
+            docker compose -f aws-deployment/docker-compose.prod.yml build
 
             # NOTE: This project uses `prisma db push` (no migration files), not
             # `prisma migrate`. Schema changes are applied manually/intentionally
@@ -55,13 +55,13 @@ jobs:
             # deploy (db push can be destructive). So the deploy does not touch the DB.
 
             echo "==> Rolling out"
-            docker compose -f docker-compose.prod.yml up -d
+            docker compose -f aws-deployment/docker-compose.prod.yml up -d
 
             echo "==> Pruning old images"
             docker image prune -f
 
             echo "==> Container status"
-            docker compose -f docker-compose.prod.yml ps
+            docker compose -f aws-deployment/docker-compose.prod.yml ps
 
 # -----------------------------------------------------------------------------
 # PHASE 2 (Fargate / multi-host) — replace the SSH job above with:
