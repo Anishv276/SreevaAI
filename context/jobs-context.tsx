@@ -53,7 +53,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         totalPages: 0
     });
     // organization state kept for backwards compat with any consumers,
-    // but we no longer fetch it here — AdminOrgContext handles that.
+    // but we no longer fetch it here -- AdminOrgContext handles that.
     const [organization] = useState<OrganizationSettings | null>(null);
     const pathname = usePathname();
     const searchParams = useSearchParams();
@@ -101,7 +101,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         }
     };
     // Load jobs once per section (admin/careers), no re-fetch per sub-route click
-    // NOTE: refreshOrganization() removed — org data is now server-seeded via AdminOrgContext
+    // NOTE: refreshOrganization() removed -- org data is now server-seeded via AdminOrgContext
     useEffect(() => {
         if (isAdminRoute && !hasLoadedOnceRef.current.admin) {
             hasLoadedOnceRef.current.admin = true;

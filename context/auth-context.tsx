@@ -50,7 +50,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setIsLoading(false);
         }
     }, []);
-    // Only listen for multi-tab logout — do NOT auto-fetch on mount.
+    // Only listen for multi-tab logout -- do NOT auto-fetch on mount.
     // Admin pages get session server-side via layout; callers invoke refreshUser() explicitly when needed.
     useEffect(() => {
         const handleStorageChange = (e: StorageEvent) => {

@@ -21,7 +21,7 @@ interface OrgQuotaStat {
     used: number;
     total: number;
 }
-// Animated donut chart — animates strokeDashoffset from 0 to final value on mount
+// Animated donut chart -- animates strokeDashoffset from 0 to final value on mount
 function DonutChart({
     segments,
     total,

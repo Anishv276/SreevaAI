@@ -326,7 +326,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         await fetchCandidatesInternal(page, limit, driveId, resumeStatus, interviewStatus, startDate, endDate, search, sort, options);
     }, [fetchCandidatesInternal]);
     const scheduleStreamRefresh = useCallback(() => {
-        // Cancel any pending timer and restart — ensures the latest SSE event always
+        // Cancel any pending timer and restart -- ensures the latest SSE event always
         // triggers a refresh, not just the first one in a burst.
         if (refreshTimerRef.current !== null) {
             window.clearTimeout(refreshTimerRef.current);

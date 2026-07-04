@@ -284,7 +284,7 @@ export function HardwareCheck({
                         else setVisualStatusMsg("Stabilizing...");
                         return;
                     }
-                    // Lighting check — sample from face bounding box
+                    // Lighting check -- sample from face bounding box
                     const landmarks = result.faceLandmarks[0];
                     if (landmarks && Array.isArray(landmarks) && landmarks.length > 0) {
                         const xs = landmarks.filter(l => l && typeof l.x === 'number').map(l => l.x);
@@ -409,13 +409,57 @@ export function HardwareCheck({
             setSnapshotUploading(false);
         }
     }, [candidateName, applicationId, interviewToken]);
+    const collectFingerprint = useCallback(() => {
+        const c = document.createElement("canvas");
+        c.width = 256; c.height = 256;
+        const ctx = c.getContext("2d");
+        let canvasHash = "";
+        if (ctx) {
+            ctx.fillStyle = "rgb(255,255,255)";
+            ctx.fillRect(0, 0, 256, 256);
+            ctx.fillStyle = "rgb(0,0,0)";
+            ctx.font = "14px Arial";
+            ctx.fillText("SreevaAI", 10, 50);
+            ctx.fillText(navigator.userAgent, 10, 80);
+            canvasHash = c.toDataURL().slice(-32);
+        }
+        return {
+            screen: `${screen.width}x${screen.height}x${screen.colorDepth}`,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            language: navigator.language,
+            platform: navigator.platform,
+            userAgent: navigator.userAgent,
+            hardwareConcurrency: navigator.hardwareConcurrency ?? null,
+            deviceMemory: (navigator as Record<string, unknown>).deviceMemory ?? null,
+            canvasHash,
+            sessionId: crypto.randomUUID(),
+            collectedAt: Date.now(),
+        };
+    }, []);
+    const sendFingerprint = useCallback(async () => {
+        try {
+            const fingerprint = collectFingerprint();
+            await fetch("/api/interview/proctoring", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    applicationId,
+                    interviewToken,
+                    events: [{
+                        eventType: "ip_registered",
+                        severity: "low",
+                        timestamp: Date.now(),
+                        metadata: { fingerprint },
+                    }],
+                }),
+            });
+        } catch { }
+    }, [applicationId, interviewToken, collectFingerprint]);
     const handleBeginInterview = useCallback(async () => {
-        // Trigger the handshake snapshot. 
-        // We MUST await this to ensure the database record is created 
-        // before the component unmounts (changing the phase).
         await uploadSnapshot("INITIAL_HANDSHAKE");
+        await sendFingerprint();
         onComplete({ cameraId: selectedCameraId || undefined, micId: selectedMicId || undefined });
-    }, [onComplete, selectedCameraId, selectedMicId, uploadSnapshot]);
+    }, [onComplete, selectedCameraId, selectedMicId, uploadSnapshot, sendFingerprint]);
     // -----------------------------------------------------------------
     // SPEECH RECOGNITION
     // Strategy: MediaRecorder captures audio -> Deepgram Flux transcribes

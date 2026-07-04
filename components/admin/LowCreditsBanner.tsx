@@ -7,7 +7,7 @@ type BannerState = "low" | "empty" | null;
 export function LowCreditsBanner({ orgStatus }: { orgStatus?: string }) {
     const adminOrg = useAdminOrg();
     const [dismissed, setDismissed] = useState(false);
-    // ⚡ Read from shared context — no fetch needed (was 2 API calls per page load)
+    // ⚡ Read from shared context -- no fetch needed (was 2 API calls per page load)
     const liveStatus = adminOrg?.status || String(orgStatus || "").trim().toUpperCase();
     const isSuspended = isOrgRestrictedStatus(liveStatus);
     const total = Number(adminOrg?.interviewQuotaTotal ?? 0);

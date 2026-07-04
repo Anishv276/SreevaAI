@@ -3,7 +3,7 @@ import { useEffect, useRef, useCallback } from "react";
 import type { RefObject } from "react";
 import { useRoomContext } from "@livekit/components-react";
 import { RoomEvent, ConnectionQuality, DisconnectReason } from "livekit-client";
-// ms after Reconnecting fires before logging — avoids flagging a blip that self-resolves
+// ms after Reconnecting fires before logging -- avoids flagging a blip that self-resolves
 const RECONNECTING_GRACE_MS = 2_000;
 // Separate cooldowns: a permanent disconnect must always fire even right after a reconnect log
 const RECONNECT_COOLDOWN_MS = 15_000;
@@ -63,7 +63,7 @@ export function ConnectionProctoring({ isActive, interviewStartedAt, onViolation
     const onDisconnected = (reason?: DisconnectReason) => {
       if (!isActiveRef.current || !mountedRef.current) return;
       if (Date.now() - lastDisconnectFiredRef.current < DISCONNECT_COOLDOWN_MS) return;
-      // Cancel pending reconnect grace — disconnect supersedes it
+      // Cancel pending reconnect grace -- disconnect supersedes it
       if (reconnectGraceRef.current) { clearTimeout(reconnectGraceRef.current); reconnectGraceRef.current = null; }
       const now = Date.now();
       lastDisconnectFiredRef.current = now;

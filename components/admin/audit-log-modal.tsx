@@ -49,7 +49,8 @@ const EVENT_LABELS: Record<string, string> = {
     connection_lost: "Connection Lost",
     camera_disabled: "Camera Disabled",
     microphone_disabled: "Microphone Disabled",
-    answer_integrity: "Answer Integrity"
+    answer_integrity: "Answer Integrity",
+    session_fingerprint: "Session Fingerprint",
 };
 export function AuditLogModal({ 
     isOpen, 
