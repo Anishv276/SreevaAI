@@ -387,7 +387,9 @@ class BehavioralAnalyzer:
     """
 
     _SYSTEM = (
-        "You are writing a behavioral and signal-based analysis of a candidate's interview performance for a recruiter.\n"
+        "You are writing a behavioral communication analysis of a candidate's interview performance for a recruiter.\n"
+        "This is NOT a technical assessment and NOT a general summary — those are covered elsewhere in the report.\n"
+        "Your ONLY job is to describe HOW the candidate communicated and behaved during the conversation, not WHAT they knew or whether their answers were technically correct.\n\n"
         "You have been given the full Q&A transcript, per-turn behavioral signals, and answer quality scores.\n\n"
         "SIGNALS YOU KNOW ABOUT (from probe_strategy.py):\n"
         "- ownership_ambiguous: Candidate said 'we/they' instead of 'I'. Unclear personal contribution.\n"
@@ -397,19 +399,22 @@ class BehavioralAnalyzer:
         "- claim_not_demonstrated: Made a strong self-claim with no evidence to back it up.\n\n"
         "YOUR JOB: Write 4-5 analysis points. Each point is a FULL PARAGRAPH (5-8 sentences).\n\n"
         "REQUIRED COVERAGE - You MUST address all of these:\n"
-        "1. Knowledge Depth: Did they explain the mechanics behind their answers? Did they give real numbers, steps, or architecture details? Or did they stay at the definition level?\n"
-        "2. Probe Handling: When the interviewer followed up or dug deeper, what happened? Did they expand with detail, pivot to vague language, evade with examples, or admit gaps?\n"
-        "3. Implementation Evidence: Did they demonstrate real hands-on experience? Or did they speak in theory? Quote the specific answer that best proves or disproves this.\n"
-        "4. Ownership & Credibility: When discussing projects or work, did they use 'I' with specific ownership? Or did they hide behind 'we/the team'? Reference actual Q&A moments.\n"
-        "5. Interview Consistency: Did performance hold across all topics? Where did they peak and where did they collapse? What pattern does this show a recruiter?\n\n"
+        "1. Composure Under Pressure: When challenged, corrected, or asked a hard follow-up, did they stay calm and adapt, or become flustered, defensive, or repetitive? Quote the moment.\n"
+        "2. Communication Style: Were their answers direct and structured, or did they ramble, hedge ('I think maybe', 'kind of', 'sort of'), or circle back without landing a point?\n"
+        "3. Engagement & Responsiveness: Did their energy and attentiveness stay consistent, or did it visibly shift (e.g. sharp and engaged early, flat or checked-out later)? Reference where the shift happened.\n"
+        "4. Handling Not Knowing Something: When they didn't know an answer, did they admit it plainly, reason out loud, bluff, deflect, or go silent? Quote the exact moment.\n"
+        "5. Delivery Consistency: Did their communication style stay stable across topics, or did it change noticeably between rehearsed-sounding topics and unexpected ones?\n\n"
         "HARD RULES:\n"
         "- Every paragraph MUST reference a specific question, topic, or near-exact quote from the transcript.\n"
         "- Do NOT write a sentence that could apply to any other candidate.\n"
         "- Do NOT use filler praise like 'showed enthusiasm' or 'had a positive attitude'.\n"
-        "- Do NOT mention score numbers or dimension names.\n\n"
+        "- Do NOT mention score numbers or dimension names.\n"
+        "- Do NOT judge technical correctness, domain knowledge, or whether an answer was 'right' — that belongs to a different section of the report.\n"
+        "- Do NOT make personality or character judgments (e.g. 'introverted', 'a confident person', 'a team player'). Describe specific observed behavior in THIS interview only, never a trait label.\n\n"
         'Output ONLY a JSON array of 4-5 strings. Each string is a full paragraph. No markdown.\n'
         '["Paragraph one...", "Paragraph two..."]'
     )
+
 
     @staticmethod
     def _build_user(
@@ -560,14 +565,22 @@ This classification changes what "good" looks like on every dimension.
 
 STEP 1 â€” Read the transcript fully. Form your opinions before outputting anything.
 
-"str": Exactly 3 genuine strengths â€” sharp, one sentence each, named to this specific candidate.
+"str": UP TO 3 genuine strengths, one sharp sentence each, named to this specific candidate.
+  A genuine strength is something that would still stand out even for a stronger candidate — not just
+  "answered correctly" or "named the right term."
   Example good: "Explained exactly why they chose Kafka over RabbitMQ and stated the throughput numbers from their own load tests."
   Example bad: "Good communication throughout."
-  No padding. If fewer than 3 genuine strengths exist, return fewer.
+  Do NOT manufacture a minor, surface-level correct answer as a "strength" just to fill the list. Some
+  candidates genuinely have no strengths worth naming, and some genuinely have several — base the count
+  strictly on what the transcript actually shows, in either direction.
 
-"con": Exactly 3 genuine concerns â€” sharp, one sentence each, no softening.
+"con": UP TO 3 genuine concerns, one sharp sentence each, no softening.
   Name the exact topic and what broke down (blank answer, contradicted resume, surface-level only, refused probe).
-  No padding. If fewer than 3 real concerns exist, return fewer.
+  Do NOT invent minor nitpicks just to fill the list. Some candidates genuinely have no real concerns, and
+  some genuinely have several — base the count strictly on what the transcript actually shows, in either
+  direction.
+
+
 
 STEP 2 â€” Score 5 dimensions. Each score requires:
 - "s": integer 0-100 (use the FULL range â€” do NOT cluster around 50-70)
@@ -628,31 +641,37 @@ SCORING ANCHORS:
   81-100: Sophisticated. Framed independently. Named trade-offs unprompted. Showed second-order thinking.
 
 ---
-DIMENSION 3 â€” ec (Experience Credibility, weight 20%)
+DIMENSION 3 — ec (Resume Credibility, weight 20%)
 Did their live answers hold up against what they claimed on their resume or in their intro?
-This is about verifying lived experience, not testing knowledge.
+This measures resume credibility — whether the experience, projects, and skills listed on
+their resume are genuinely theirs, not testing raw technical knowledge.
 
 FRESHER baseline: Do NOT penalize for lacking production experience.
-  Evaluate whether their project/internship descriptions are genuine and specific:
-  - Named the specific problem they solved, not just the technology
+  Evaluate whether the projects/internships listed on their resume are genuine and specific
+  when discussed live:
+  - Named the specific problem they solved, not just the technology on their resume
   - Described their personal contribution (what "I" did vs what "we" did)
-  - When probed on their project, could explain architecture decisions they made
+  - When probed on a resume project, could explain architecture decisions they made
   - Could walk through a specific bug they fixed or feature they built
-  FRESHER with strong project credibility = 60-75. Vague project descriptions = 30-45.
+  FRESHER whose resume claims hold up with strong project credibility = 60-75.
+  Vague descriptions that don't match their resume claims = 30-45.
 
 EXPERIENCED baseline: Much higher bar.
-  - Named specific outcomes with real metrics (latency reduced, coverage increased, users served)
-  - Described their personal decisions ("I chose X over Y because...")
-  - When probed on a claim, gave more detail, not vaguer answers
-  - If they said they "led" something, they could describe what leadership actually meant in that context
-  EXPERIENCED claiming 5 years but giving vague, textbook answers on their own stated work = 20-35.
+  - Named specific outcomes with real metrics matching what's claimed on their resume
+    (latency reduced, coverage increased, users served)
+  - Described their personal decisions behind resume-listed work ("I chose X over Y because...")
+  - When probed on a resume claim, gave more detail, not vaguer answers
+  - If their resume said they "led" something, they could describe what leadership actually
+    meant in that context
+  EXPERIENCED candidate whose resume claims 5 years but gives vague, textbook answers on their
+  own stated resume work = 20-35.
 
 SCORING ANCHORS:
-  0-20:  Major contradictions. Claimed significant experience they cannot explain at all.
-  21-45: Significant vagueness. Most experience was team-framed or contradicted under probing.
-  46-65: Mixed. Some items held, others fell apart or stayed vague despite probing.
-  66-80: Credible. Most experience backed with specific detail. Minor gaps.
-  81-100: Fully credible. Every claim explained with evidence. Nothing contradicted.
+  0-20:  Major contradictions. Resume claims about significant experience they cannot explain at all.
+  21-45: Significant vagueness. Most resume claims were team-framed or contradicted under probing.
+  46-65: Mixed. Some resume claims held up, others fell apart or stayed vague despite probing.
+  66-80: Credible. Most resume claims backed with specific detail. Minor gaps.
+  81-100: Fully credible. Every resume claim explained with evidence. Nothing contradicted.
 
 ---
 DIMENSION 4 â€” cm (Communication, weight 15%)
@@ -812,7 +831,7 @@ _SUMMARY_SYSTEM = """You are a senior talent partner writing a post-interview br
 Write EXACTLY 3 bullet points. Each bullet is ONE crisp sentence.
 Rules:
 - Bullet 1: The single most important technical signal from this interview. Name the exact topic and what they demonstrated or failed to demonstrate. Include what they said.
-- Bullet 2: The biggest behavioral pattern observed across the entire interview. Reference the exact moment or pattern that proves it.
+- Bullet 2: The single biggest overall takeaway about this candidate's fit and trajectory for the role (not a behavioral or communication observation — that's covered in the Behavioral Analysis section). Focus on what it means for the hiring decision.
 - Bullet 3: One sharp hiring implication. What does this person look like in the role 30 days in? What is the risk or gain?
 - No softening. No filler. Every sentence unique to this candidate. No scores or numbers.
 - Start each with a dash (-).
@@ -826,12 +845,24 @@ Make a single, conclusive hiring decision with an evidence-backed score and just
 Recruiters will rely on this to make or kill an offer. Be precise and accountable.
 
 SCORING THE CANDIDATE (0-100):
-Calculate the score holistically, NOT as a mathematical average. Consider:
-1. JD Fit (30%): How well did their demonstrated skills match the role's actual requirements?
-2. Technical Depth (25%): Did they show real working knowledge with mechanics and implementation details?
-3. Problem Solving (20%): Did they reason through hard questions? Handle pressure? Adapt when probed?
-4. Ownership & Credibility (15%): Were their claims backed by concrete evidence? Did they own their work?
-5. Consistency (10%): Did performance hold across all topics or collapse under pressure in key areas?
+You are given a COMPUTED WEIGHTED SCORE derived deterministically from the dimension scores — use it as
+your starting anchor. Adjust it up or down by at most ~10 points based on the evidence, strengths, and
+concerns text; do not ignore it and invent an unrelated number.
+
+Map your judgment to the DIMENSION SCORES you were given:
+1. JD Fit (30%) — maps to JD Knowledge
+2. Problem Solving (25%) — maps to Problem Solving
+3. Resume/Experience Credibility (20%) — maps to Experience/Resume Credibility
+4. Communication (15%) — maps to Communication
+5. Ownership (10%) — maps to Ownership
+
+Score based ONLY on the actual evidence in front of you — do not default to a middling number out of
+caution, and do not push toward the extremes to "spread things out" either. A candidate who is genuinely
+average — solid in some areas, weak in others, unremarkable overall — should score in the middle of the
+range; that is a correct score, not a failure to differentiate. Reserve high scores for evidence of
+genuinely strong, well-rounded performance, and low scores for evidence of genuinely weak or evasive
+performance. The goal is an accurate score for THIS candidate, not an even distribution across candidates.
+
 
 SCORE CALIBRATION:
 0-30: Major gaps in basics. Cannot perform the role.
@@ -840,6 +871,7 @@ SCORE CALIBRATION:
 66-79: Solid candidate. Some depth missing but capable. Hold if senior role, hire if junior.
 80-89: Strong performer. Can contribute immediately. Minor gaps acceptable.
 90-100: Exceptional. Exceeds bar for the role.
+
 
 DECISION RULES:
 - "Hire": score >= 70 AND no critical gaps in role-required skills.
@@ -1025,7 +1057,7 @@ async def _node_llm_calls(state: ReportState) -> dict:
     asyncio.gather runs all three LLM calls concurrently, cutting wall-clock
     time from ~15s sequential to ~7s parallel.
     """
-    _LLM_DEFAULT        = state.get("_LLM_DEFAULT", _LLM_DEFAULT)
+    llm_default        = state.get("_LLM_DEFAULT") or _LLM_DEFAULT
     job_title        = state.get("job_title", "")
     org_id           = state.get("org_id") or ""
     app_id           = state.get("app_id", "")
@@ -1110,7 +1142,7 @@ async def _node_llm_calls(state: ReportState) -> dict:
                 call_type="report_eval",
                 org_id=org_id,
                 app_id=app_id,
-                _LLM_DEFAULT=_LLM_DEFAULT,
+                _LLM_DEFAULT=llm_default,
             )),
             _llm.call(LLMCallSpec(
                 system=skills_system,
@@ -1121,14 +1153,14 @@ async def _node_llm_calls(state: ReportState) -> dict:
                 call_type="report_skills",
                 org_id=org_id,
                 app_id=app_id,
-                _LLM_DEFAULT=_LLM_DEFAULT,
+                _LLM_DEFAULT=llm_default,
             )),
             _behavioral_analyzer.analyze(
                 transcript_lines=transcript_lines,
                 answer_scores=interview_scores,
                 duration_sec=session_duration,
                 behavioral_signals=behavioral_signals,
-                _LLM_DEFAULT=_LLM_DEFAULT,
+                _LLM_DEFAULT=llm_default,
                 org_id=org_id,
                 app_id=app_id,
             ),
@@ -1139,10 +1171,10 @@ async def _node_llm_calls(state: ReportState) -> dict:
     if org_id:
         billing_tasks = [
             _persist_billing(
-                org_id, "interviewReport", _llm.usage_dict(eval_usage, _LLM_DEFAULT)
+                org_id, "interviewReport", _llm.usage_dict(eval_usage, llm_default)
             ),
             _persist_billing(
-                org_id, "interviewReport", _llm.usage_dict(skills_usage, _LLM_DEFAULT)
+                org_id, "interviewReport", _llm.usage_dict(skills_usage, llm_default)
             ),
             *[
                 _persist_billing(org_id, "interviewReport", bu)
@@ -1407,8 +1439,10 @@ async def generate_interview_summary(
     integrity_band  = ctx.get("integrity_band", "HIGH")
     integrity_score = ctx.get("integrity_score", 100)
     signal_summary  = ctx.get("signal_summary", "No signals flagged")
+    computed_overall = ctx.get("overall", None)
 
     dimensions = ctx.get("dimensions", [])
+
     dimension_block = (
         "\n".join(
             f"  {d['name']}: {d['score']}/100 â€” {d.get('evidence', '').strip()}"
@@ -1434,12 +1468,15 @@ async def generate_interview_summary(
     shared_user = (
         f"Role: {job_title}\n"
         f"Integrity: {integrity_band} ({integrity_score}/100)\n"
-        f"Behavioral signals: {signal_summary}\n\n"
+        f"Behavioral signals: {signal_summary}\n"
+        f"COMPUTED WEIGHTED SCORE: {computed_overall if computed_overall is not None else 'Not available'}/100 "
+        f"(deterministic weighted average of the dimension scores below — use this as your anchor point)\n\n"
         f"DIMENSION SCORES + EVIDENCE:\n{dimension_block}\n\n"
         f"SKILL BREAKDOWN:\n{skill_block}\n\n"
         f"STRENGTHS OBSERVED:\n{strengths_block}\n\n"
         f"CONCERNS FLAGGED:\n{concerns_block}"
     )
+
 
     try:
         (summary_text, summary_usage), (verdict_text, verdict_usage) = await asyncio.gather(

@@ -734,7 +734,7 @@ function SignalAnalysisPanelCompact({ analysis }: { analysis: Record<string, any
 const DIMENSION_CONFIG = [
   { key: "jd_knowledge", label: "JD Knowledge", color: "#0EA5E9", desc: "Role alignment vs JD requirements" },
   { key: "problem_solving", label: "Problem Solving", color: "#10B981", desc: "Reasoning, trade-offs, adaptability" },
-  { key: "experience_credibility", label: "Experience", color: "#8B5CF6", desc: "Do their live answers match their claims?" },
+  { key: "experience_credibility", label: "Resume Credibility", color: "#8B5CF6", desc: "Do their live answers match what's on their resume?" },
   { key: "communication", label: "Communication", color: "#6366F1", desc: "Clarity, structure, directness" },
   { key: "ownership", label: "Ownership", color: "#F59E0B", desc: "Evidence of personal responsibility" },
 ] as const;
@@ -1270,10 +1270,10 @@ export function InterviewReportSreevaAI({
       {/* Main Scrollable Content */}
       <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "#CBD5E1 transparent" }}>
         <div className="mx-auto w-full px-4 py-4 lg:px-6 space-y-4">
-          
+
           {/* ===================== SECTION 1 ===================== */}
           <div className="space-y-4">
-            
+
             {/* Header: Profile + Verdict + Hiring Note */}
             <div className="flex flex-col sm:flex-row items-start sm:items-stretch justify-between gap-6 bg-white p-6 rounded-2xl " style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
               <div className="flex items-center gap-5 shrink-0">
@@ -1295,7 +1295,7 @@ export function InterviewReportSreevaAI({
                   </div>
                 </div>
               </div>
-              
+
               <div className="flex-1 bg-rose-50/50 rounded-xl border border-rose-100 p-4 mx-2 flex flex-col justify-center relative">
                 <button
                   type="button"
@@ -1395,7 +1395,7 @@ export function InterviewReportSreevaAI({
                   )}
                 </div>
               </div>
-              
+
               <div className="rounded-2xl bg-white  p-6 flex flex-col h-full min-h-0" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
                 <h3 className="text-[14px] font-bold text-[#111827] mb-5 shrink-0">Skill Ratings</h3>
                 <div className="flex-1 overflow-y-auto pr-2" style={{ scrollbarWidth: "thin" }}>
@@ -1429,7 +1429,7 @@ export function InterviewReportSreevaAI({
 
           {/* ===================== SECTION 2 ===================== */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch h-[600px]">
-            
+
             {/* Column 1: Strengths & Risks */}
             <div className="lg:col-span-4 flex flex-col gap-4 min-h-0">
               <div className="rounded-2xl bg-white  p-5 flex-1 flex flex-col min-h-0" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
@@ -1541,7 +1541,7 @@ export function InterviewReportSreevaAI({
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="mb-6">
                   <h3 className="text-[13px] font-bold text-[#111827] mb-3 flex items-center gap-2"><Folder className="h-4 w-4" /> Drive</h3>
                   <div className="rounded-lg bg-[#F8FAFC] px-3 py-2 text-[12px] font-medium text-[#4B5563]">
