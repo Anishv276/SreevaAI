@@ -1665,7 +1665,7 @@ async def generate_interview_report(
     transcript_lines: list,
     answer_scores:   list,
     job_title:       str,
-    _LLM_DEFAULT:    str,
+    llm_model:       str,
     proctoring_data: Optional[dict] = None,
     org_id:          Optional[str]  = None,
     jd_json:         Optional[dict] = None,
@@ -1683,6 +1683,9 @@ async def generate_interview_report(
         return None
     if not os.environ.get("OPENAI_API_KEY"):
         logger.warning("[REPORT] Skipping: missing OPENAI_API_KEY")
+        return None
+    if not llm_model:
+        logger.error("[REPORT] Missing llm_model (llmInterviewReport) from org config for %s", app_id)
         return None
 
     interview_scores = [s for s in answer_scores if not s.get("is_warmup", False)]
@@ -1725,8 +1728,8 @@ async def generate_interview_summary(
     app_id:          str,
     transcript_lines: list,
     job_title:       str,
+    llm_model:       str,
     org_id:          Optional[str]  = None,
-    _LLM_DEFAULT:       str            = _LLM_DEFAULT,
     scores_context:  Optional[dict] = None,
     candidate_name:  str = "",
 ) -> None:
@@ -1792,7 +1795,7 @@ async def generate_interview_summary(
                 call_type="report_summary",
                 org_id=org_id or "",
                 app_id=app_id,
-                _LLM_DEFAULT=_LLM_DEFAULT,
+                _LLM_DEFAULT=llm_model,
             )),
             _llm.call(LLMCallSpec(
                 system=_VERDICT_SYSTEM,
@@ -1804,17 +1807,17 @@ async def generate_interview_summary(
                 call_type="report_verdict",
                 org_id=org_id or "",
                 app_id=app_id,
-                _LLM_DEFAULT=_LLM_DEFAULT,
+                _LLM_DEFAULT=llm_model,
             )),
         )
 
         if org_id:
             await asyncio.gather(
                 _persist_billing(
-                    org_id, "interviewReport", _llm.usage_dict(summary_usage, _LLM_DEFAULT)
+                    org_id, "interviewReport", _llm.usage_dict(summary_usage, llm_model)
                 ),
                 _persist_billing(
-                    org_id, "interviewReport", _llm.usage_dict(verdict_usage, _LLM_DEFAULT)
+                    org_id, "interviewReport", _llm.usage_dict(verdict_usage, llm_model)
                 ),
             )
 
