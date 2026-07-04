@@ -1028,7 +1028,7 @@ export default function OrgsPage() {
                                 <div className="text-[12px] font-bold uppercase tracking-widest text-gray-500">Total org cost</div>
                                 <div className="text-[28px] font-bold text-gray-900 tracking-tight">
                                     {(() => {
-                                        const allLlmCost = (billingAggregates?.resumeExtraction?.costUsd || 0) + (billingAggregates?.jdExtraction?.costUsd || 0) + (billingAggregates?.interviewReport?.costUsd || 0) + (billingAggregates?.resumeReport?.costUsd || 0) + (billingAggregates?.interview?.costUsd || 0);
+                                        const allLlmCost = (billingAggregates?.resumeExtraction?.costUsd || 0) + (billingAggregates?.jdExtraction?.costUsd || 0) + (billingAggregates?.interviewReport?.costUsd || 0) + (billingAggregates?.resumeReport?.costUsd || 0) + (billingAggregates?.interview?.costUsd || 0) + (billingAggregates?.interviewBrief?.costUsd || 0) + (billingAggregates?.interviewLLMGeneration?.costUsd || 0);
                                         const allTtsCost = billingAggregates?.interview?.ttsCostUsd || 0;
                                         const allSttCost = billingAggregates?.interview?.sttCostUsd || 0;
                                         const grandTotal = allLlmCost + allTtsCost + allSttCost;

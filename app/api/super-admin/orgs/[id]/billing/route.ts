@@ -105,34 +105,27 @@ export async function GET(
             }
         }
 
-        // Extraction phases from org usageMetrics (set by report_pipeline)
-        const pricePerToken = { input: 2.5 / 1_000_000, output: 10 / 1_000_000 };
+        // Extraction / report phases — read from usageMetrics.billing[phase] (structured object,
+        // not a legacy array). billing.py stores all costs pre-computed in costUsd.
+        const billingBucket = (orgUsage.billing && typeof orgUsage.billing === "object")
+            ? (orgUsage.billing as Record<string, any>)
+            : {};
+        // resumeExtraction/jdExtraction/interviewReport/resumeReport: no data from testBillingMetrics,
+        // so read all fields from the billing bucket.
         for (const phase of ["resumeExtraction", "jdExtraction", "interviewReport", "resumeReport"]) {
-            const entries = orgUsage[phase];
-            if (!Array.isArray(entries)) continue;
-            for (const entry of entries) {
-                if (!entry || typeof entry !== "object") continue;
-                const inp = Number(entry.inputTokens || 0);
-                const out = Number(entry.outputTokens || 0);
-                aggregates[phase].runs += 1;
-                aggregates[phase].inputTokens += inp;
-                aggregates[phase].outputTokens += out;
-                aggregates[phase].costUsd += inp * pricePerToken.input + out * pricePerToken.output;
-            }
+            const b = billingBucket[phase];
+            if (!b || typeof b !== "object" || !aggregates[phase]) continue;
+            aggregates[phase].runs         += Number(b.runs || 0);
+            aggregates[phase].inputTokens  += Number(b.inputTokens || 0);
+            aggregates[phase].outputTokens += Number(b.outputTokens || 0);
+            aggregates[phase].costUsd      += Number(b.costUsd || 0);
         }
-
-        // Also check orgUsage for interviewBrief / interviewLLMGeneration if stored there
+        // interviewBrief/interviewLLMGeneration: runs+tokens already accumulated from testBillingMetrics
+        // above (briefGenerations, briefInputTokens etc). Only add cost from billing bucket.
         for (const phase of ["interviewBrief", "interviewLLMGeneration"]) {
-            const entries = orgUsage[phase];
-            if (!Array.isArray(entries)) continue;
-            for (const entry of entries) {
-                if (!entry || typeof entry !== "object") continue;
-                const inp = Number(entry.inputTokens || 0);
-                const out = Number(entry.outputTokens || 0);
-                aggregates[phase].inputTokens += inp;
-                aggregates[phase].outputTokens += out;
-                aggregates[phase].costUsd += inp * pricePerToken.input + out * pricePerToken.output;
-            }
+            const b = billingBucket[phase];
+            if (!b || typeof b !== "object" || !aggregates[phase]) continue;
+            aggregates[phase].costUsd += Number(b.costUsd || 0);
         }
 
         // Round costs
