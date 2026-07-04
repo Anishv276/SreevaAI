@@ -13,11 +13,13 @@ import {
     RoomAudioRenderer,
     useConnectionState,
     useTranscriptions,
+    useTracks,
 } from "@livekit/components-react";
 import type { TextStreamData as TranscriptionSegment } from "@livekit/components-react";
-import { ConnectionState } from "livekit-client";
+import { ConnectionState, Track } from "livekit-client";
 import { AuraVisualizer } from "@/components/agents-ui/aura-visualizer";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { BASIC_PLAN_SIGNALS, normalizeProctoringSignals, type ProctoringSignalToggles } from "@/lib/proctoring-signals";
 import "@livekit/components-styles";
 
 const TEST_KEY = process.env.NEXT_PUBLIC_TEST_KEY || "1285";
@@ -301,8 +303,48 @@ function SimulationViewer({
     );
 }
 
+// --- Camera Video Display (rendered inside LiveKitRoom context) ---
+// Shows the LOCAL participant's own camera (the tester stands in for the candidate here --
+// there is no separate remote candidate device publishing a track in this dev sandbox).
+function CameraDisplay() {
+    const videoRef = useRef<HTMLVideoElement>(null);
+
+    // useTracks with no filter re-renders whenever any track (local or remote) changes,
+    // so we pick up the local camera publication as soon as it's ready.
+    const tracks = useTracks([Track.Source.Camera]);
+    const localVideoTrack = tracks.find(t => t.participant.isLocal)?.publication?.track;
+
+    useEffect(() => {
+        if (videoRef.current && localVideoTrack) {
+            localVideoTrack.attach(videoRef.current);
+            return () => {
+                localVideoTrack.detach(videoRef.current!);
+            };
+        }
+    }, [localVideoTrack]);
+
+    if (!localVideoTrack) {
+        return (
+            <div className="w-[180px] h-[140px] bg-black rounded-lg overflow-hidden flex items-center justify-center flex-shrink-0 shadow-lg border-2 border-red-600">
+                <div className="text-gray-400 text-[10px] text-center px-2">Waiting for camera feed...</div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="w-[180px] h-[140px] bg-black rounded-lg overflow-hidden flex items-center justify-center flex-shrink-0 shadow-lg border-2 border-red-600">
+            <video
+                ref={videoRef}
+                autoPlay={true}
+                muted={true}
+                className="w-full h-full object-cover"
+            />
+        </div>
+    );
+}
+
 // --- Interview Room ----------------------------------------------------------
-function InterviewRoom({ applicationId, onUpdate, timerStartedAtRef }: { applicationId: string; onUpdate: (state: any) => void; timerStartedAtRef: React.MutableRefObject<number | null> }) {
+function InterviewRoom({ applicationId, onUpdate, timerStartedAtRef, enableCamera }: { applicationId: string; onUpdate: (state: any) => void; timerStartedAtRef: React.MutableRefObject<number | null>; enableCamera: boolean }) {
     const connectionState = useConnectionState();
     const lines = useLiveTranscript();
     // timerStartedAtRef is owned by the parent (SimulationTestPage), which stays
@@ -380,6 +422,7 @@ function TestPageContent() {
     const [loadingCandidates, setLoadingCandidates] = useState(false);
 
     const [enableReport, setEnableReport] = useState(false);
+    const [enableCamera, setEnableCamera] = useState(false);
     const [starting, setStarting] = useState(false);
     const [livekitToken, setLivekitToken] = useState<string | null>(null);
     const [livekitUrl, setLivekitUrl] = useState<string | null>(null);
@@ -395,6 +438,25 @@ function TestPageContent() {
     // Owned here (parent survives LiveKitRoom/InterviewRoom remounts on reconnect) so
     // the interview timer keeps counting from its real start instead of resetting to 0.
     const timerStartedAtRef = useRef<number | null>(null);
+    // Set from /api/test/token response once the session starts -- required to authenticate
+    // /api/interview/proctoring posts and to gate which focus/fullscreen signals are enabled,
+    // exactly like the real interview page.
+    const [interviewToken, setInterviewToken] = useState<string | null>(null);
+    const [proctoringSignals, setProctoringSignals] = useState<ProctoringSignalToggles>(BASIC_PLAN_SIGNALS);
+    const interviewStartedAtRef = useRef<number | null>(null);
+    // On-screen violation board (mirrors the real interview's full-screen alert overlay).
+    type FocusSignalKind = "tab_switch" | "fullscreen_exit" | "window_focus_loss";
+    const [activeFocusViolation, setActiveFocusViolation] = useState<FocusSignalKind | null>(null);
+    const [focusSignalCounts, setFocusSignalCounts] = useState<Record<FocusSignalKind, number>>({
+        tab_switch: 0,
+        fullscreen_exit: 0,
+        window_focus_loss: 0,
+    });
+    const [focusViolationElapsed, setFocusViolationElapsed] = useState<string | null>(null);
+    // Tracked independently of the violation modal so a persistent "return to fullscreen"
+    // banner can show any time the session is active but the browser isn't in fullscreen --
+    // not just the instant the exit is first detected.
+    const [isFullscreen, setIsFullscreen] = useState(false);
 
     const handleUpdate = useCallback((state: any) => {
         setDisplayState(state);
@@ -418,6 +480,7 @@ function TestPageContent() {
         return () => { cancelled = true; };
     }, []);
 
+
     useEffect(() => {
         if (!selectedOrg) { setDrives([]); setSelectedDrive(null); return; }
         setLoadingDrives(true);
@@ -434,6 +497,27 @@ function TestPageContent() {
         }).catch(() => setLoadingCandidates(false));
     }, [selectedDrive]);
 
+    const requestFullscreenMode = useCallback(async () => {
+        try {
+            const elem = document.documentElement as any;
+            const rfs = elem.requestFullscreen || elem.webkitRequestFullscreen || elem.mozRequestFullScreen || elem.msRequestFullscreen;
+            if (rfs) await rfs.call(elem);
+        } catch (err) {
+            console.warn("Fullscreen request failed:", err);
+        }
+    }, []);
+
+    const exitFullscreenMode = useCallback(async () => {
+        try {
+            const doc = document as any;
+            const isFullscreen = !!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement);
+            const exit = doc.exitFullscreen || doc.webkitExitFullscreen || doc.mozCancelFullScreen || doc.msExitFullscreen;
+            if (isFullscreen && exit) await exit.call(doc);
+        } catch (err) {
+            console.warn("Fullscreen exit failed:", err);
+        }
+    }, []);
+
     const handleStart = async () => {
         if (!selectedCandidate) return;
         setStarting(true);
@@ -444,9 +528,11 @@ function TestPageContent() {
             events: [],
             elapsedSeconds: 0,
             timerStarted: false,
-            isConnected: false
+            isConnected: false,
+            sessionEnded: false,
         });
         timerStartedAtRef.current = null;
+        interviewStartedAtRef.current = null;
 
         try {
             // Clear backend events for this candidate
@@ -454,12 +540,20 @@ function TestPageContent() {
             const res = await fetch("/api/test/token", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ applicationId: selectedCandidate.id, skipReport: !enableReport, key: TEST_KEY }),
+                body: JSON.stringify({
+                    applicationId: selectedCandidate.id,
+                    skipReport: !enableReport,
+                    key: TEST_KEY
+                }),
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || "Failed to start");
             setLivekitToken(data.token);
             setLivekitUrl(data.url);
+            setInterviewToken(data.interviewToken || null);
+            setProctoringSignals(normalizeProctoringSignals(data.proctoringSignals));
+            interviewStartedAtRef.current = Date.now();
+            await requestFullscreenMode();
         } catch (e) {
             setError(e instanceof Error ? e.message : "Unknown error");
         } finally {
@@ -470,8 +564,9 @@ function TestPageContent() {
     const handleEnd = useCallback(() => {
         setLivekitToken(null);
         setLivekitUrl(null);
+        void exitFullscreenMode();
         toast.success(enableReport ? "Simulation ended. Eval report generation triggered." : "Simulation ended. Report skipped.");
-    }, [enableReport]);
+    }, [enableReport, exitFullscreenMode]);
 
     const handleLogout = async () => {
         setIsLoggingOut(true);
@@ -485,6 +580,138 @@ function TestPageContent() {
     };
 
     const isActive = !!(livekitToken && livekitUrl);
+
+    // Live fullscreen state -- drives the persistent "return to fullscreen" banner below,
+    // independent of the one-shot violation modal (which only fires once per exit and can
+    // be dismissed, leaving no other way back in otherwise).
+    useEffect(() => {
+        if (!isActive) { setIsFullscreen(false); return; }
+        const check = () => {
+            const doc = document as any;
+            setIsFullscreen(!!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement));
+        };
+        check();
+        document.addEventListener("fullscreenchange", check);
+        document.addEventListener("webkitfullscreenchange", check);
+        document.addEventListener("mozfullscreenchange", check);
+        document.addEventListener("MSFullscreenChange", check);
+        return () => {
+            document.removeEventListener("fullscreenchange", check);
+            document.removeEventListener("webkitfullscreenchange", check);
+            document.removeEventListener("mozfullscreenchange", check);
+            document.removeEventListener("MSFullscreenChange", check);
+        };
+    }, [isActive]);
+
+    // Tab-switch / fullscreen-exit / window-focus-loss detection -- mirrors the real
+    // interview page's proctoring logic 1:1, gated by the same org-configured toggles.
+    useEffect(() => {
+        const isTabSwitchEnabled = Boolean(proctoringSignals.tab_switch);
+        const isFullscreenExitEnabled = Boolean(proctoringSignals.fullscreen_exit);
+        const isWindowFocusLossEnabled = Boolean(proctoringSignals.window_focus_loss);
+        const anyFocusSignalEnabled = isTabSwitchEnabled || isFullscreenExitEnabled || isWindowFocusLossEnabled;
+        if (!isActive || !selectedCandidate || !anyFocusSignalEnabled) return;
+
+        const applicationId = selectedCandidate.id;
+        let focusEventInFlight = false;
+        let debounceTimer: number | null = null;
+        let wasFullscreen = false;
+        let fullscreenStable = false;
+        // Grace period: don't flag exits during the first 10s (browser/LiveKit/audio startup).
+        const stabilizeTimer = window.setTimeout(() => { fullscreenStable = true; }, 10000);
+
+        const elapsedLabel = () => {
+            if (!interviewStartedAtRef.current) return null;
+            const secs = Math.floor((Date.now() - interviewStartedAtRef.current) / 1000);
+            return `${Math.floor(secs / 60)}m ${secs % 60}s into interview`;
+        };
+
+        const postViolation = (kind: FocusSignalKind, severity: "medium" | "high", reason: string) => {
+            fetch("/api/interview/proctoring", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    applicationId,
+                    interviewToken: interviewToken || "",
+                    events: [{ eventType: kind, severity, timestamp: Date.now(), reason }],
+                }),
+            }).catch(() => {});
+            setFocusSignalCounts(prev => ({ ...prev, [kind]: prev[kind] + 1 }));
+            setFocusViolationElapsed(elapsedLabel());
+            setActiveFocusViolation(kind);
+        };
+
+        const logFocusViolation = (kind: FocusSignalKind, reason: string, severity: "medium" | "high") => {
+            if (debounceTimer !== null) return;
+            // 1500ms grace: OS notifications typically steal focus briefly and self-resolve.
+            debounceTimer = window.setTimeout(() => {
+                debounceTimer = null;
+                focusEventInFlight = false;
+                const label = elapsedLabel();
+                postViolation(kind, severity, label ? `${reason} (${label})` : reason);
+            }, 1500);
+        };
+
+        const logFullscreenExit = () => {
+            focusEventInFlight = true;
+            const label = elapsedLabel();
+            postViolation("fullscreen_exit", "high", label ? `Fullscreen Exited (${label})` : "Fullscreen Exited");
+        };
+
+        const onVisibilityChange = () => {
+            if (document.hidden) {
+                if (focusEventInFlight || !isTabSwitchEnabled) return;
+                focusEventInFlight = true;
+                logFocusViolation("tab_switch", "Tab Switched", "medium");
+            } else {
+                focusEventInFlight = false;
+                if (debounceTimer !== null) { window.clearTimeout(debounceTimer); debounceTimer = null; }
+            }
+        };
+        const onWindowBlur = () => {
+            if (focusEventInFlight || !isWindowFocusLossEnabled) return;
+            focusEventInFlight = true;
+            logFocusViolation("window_focus_loss", "Window Lost Focus", "medium");
+        };
+        const onWindowFocus = () => {
+            focusEventInFlight = false;
+            if (debounceTimer !== null) { window.clearTimeout(debounceTimer); debounceTimer = null; }
+        };
+        const onFullscreenChange = () => {
+            const doc = document as any;
+            const isFS = !!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement);
+            if (!isFS && wasFullscreen && fullscreenStable && isFullscreenExitEnabled) {
+                logFullscreenExit();
+            }
+            if (isFS) {
+                focusEventInFlight = false;
+                if (debounceTimer !== null) { window.clearTimeout(debounceTimer); debounceTimer = null; }
+            }
+            wasFullscreen = isFS;
+        };
+
+        const doc = document as any;
+        wasFullscreen = !!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement);
+
+        document.addEventListener("visibilitychange", onVisibilityChange);
+        window.addEventListener("blur", onWindowBlur);
+        window.addEventListener("focus", onWindowFocus);
+        document.addEventListener("fullscreenchange", onFullscreenChange);
+        document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+        document.addEventListener("mozfullscreenchange", onFullscreenChange);
+        document.addEventListener("MSFullscreenChange", onFullscreenChange);
+        return () => {
+            window.clearTimeout(stabilizeTimer);
+            if (debounceTimer !== null) window.clearTimeout(debounceTimer);
+            document.removeEventListener("visibilitychange", onVisibilityChange);
+            window.removeEventListener("blur", onWindowBlur);
+            window.removeEventListener("focus", onWindowFocus);
+            document.removeEventListener("fullscreenchange", onFullscreenChange);
+            document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
+            document.removeEventListener("mozfullscreenchange", onFullscreenChange);
+            document.removeEventListener("MSFullscreenChange", onFullscreenChange);
+        };
+    }, [isActive, selectedCandidate, proctoringSignals, interviewToken]);
 
     return (
         <div className="flex flex-col h-screen overflow-hidden bg-white" style={{ background: "linear-gradient(180deg, #FFFFFF 0%, #FAFAFC 45%, #F5F3FF 100%)" }}>
@@ -607,6 +834,7 @@ function TestPageContent() {
                             </Select>
                         </div>
                     </div>
+
                 </div>
 
                 <div className="flex items-center gap-5">
@@ -620,7 +848,19 @@ function TestPageContent() {
                                 {enableReport ? <ToggleRight className="w-6 h-6" strokeWidth={1.5} /> : <ToggleLeft className="w-6 h-6" strokeWidth={1.5} />}
                             </div>
                         </button>
-                        
+
+                        <div className="w-px h-5 bg-gray-200"></div>
+
+                        <button
+                            onClick={() => setEnableCamera(!enableCamera)}
+                            className="flex items-center gap-2 cursor-pointer group transition-all hover:opacity-80 disabled:opacity-50"
+                            disabled={isActive}>
+                            <span className="text-[12px] font-semibold text-gray-600 group-hover:text-gray-900 transition-colors">Enable Camera</span>
+                            <div className="flex items-center transition-colors duration-300" style={{ color: enableCamera ? "#10B981" : "#EF4444" }}>
+                                {enableCamera ? <ToggleRight className="w-6 h-6" strokeWidth={1.5} /> : <ToggleLeft className="w-6 h-6" strokeWidth={1.5} />}
+                            </div>
+                        </button>
+
                         <div className="w-px h-5 bg-gray-200"></div>
 
                         {!isActive ? (
@@ -654,42 +894,152 @@ function TestPageContent() {
             </div>
 
             {/* MAIN TRANSCRIPT AREA */}
-            <div className="flex-1 flex flex-col min-w-0 bg-white/40 overflow-hidden items-center p-4">
-                <div className="w-full h-full flex-1 flex flex-col min-h-0 relative">
-                    {error && (
-                        <div className="mb-4 flex items-start gap-2.5 rounded-2xl px-5 py-3 text-sm text-red-700 bg-red-50 border border-red-100 shadow-sm animate-in fade-in">
-                            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                            {error}
+            {isActive && (
+                <LiveKitRoom
+                    token={livekitToken!}
+                    serverUrl={livekitUrl!}
+                    connect={true}
+                    audio={true}
+                    video={enableCamera}
+                    onDisconnected={handleEnd}
+                >
+                    <div className="flex-1 flex flex-col min-w-0 bg-white/40 overflow-hidden items-center p-4 relative">
+                        {error && (
+                            <div className="mb-4 flex items-start gap-2.5 rounded-2xl px-5 py-3 text-sm text-red-700 bg-red-50 border border-red-100 shadow-sm animate-in fade-in">
+                                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                                {error}
+                            </div>
+                        )}
+
+                        {/* Full Screen Transcript */}
+                        <div className="w-full h-full flex-1 flex flex-col min-h-0">
+                            <SimulationViewer
+                                lines={displayState.lines}
+                                events={displayState.events}
+                                elapsedSeconds={displayState.elapsedSeconds}
+                                isConnected={displayState.isConnected}
+                                timerStarted={displayState.timerStarted}
+                                sessionEnded={displayState.sessionEnded}
+                            />
                         </div>
-                    )}
 
-                    {/* Persistent UI Area */}
-                    <SimulationViewer 
-                        lines={displayState.lines} 
-                        events={displayState.events} 
-                        elapsedSeconds={displayState.elapsedSeconds} 
-                        isConnected={displayState.isConnected} 
-                        timerStarted={displayState.timerStarted} 
-                        sessionEnded={displayState.sessionEnded}
-                    />
-                </div>
+                        {/* Camera Preview - Top Right Corner (proctoring view only, not recorded) */}
+                        {enableCamera && (
+                            <div className="absolute top-4 right-4 z-50 flex flex-col items-end gap-2">
+                                <div className="flex items-center gap-2 bg-violet-600 text-white px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider shadow-lg">
+                                    <div className="w-2 h-2 bg-violet-300 rounded-full animate-pulse"></div>
+                                    Camera On
+                                </div>
+                                <CameraDisplay />
+                            </div>
+                        )}
 
-                {/* Headless LiveKit Connection */}
-                {isActive && (
-                    <div className="hidden">
-                        <LiveKitRoom
-                            token={livekitToken!}
-                            serverUrl={livekitUrl!}
-                            connect={true}
-                            audio={true}
-                            video={false}
-                            onDisconnected={handleEnd}
-                        >
-                            <InterviewRoom applicationId={selectedCandidate?.id || ""} onUpdate={handleUpdate} timerStartedAtRef={timerStartedAtRef} />
-                        </LiveKitRoom>
+                        {/* Proctoring Violation Board -- mirrors the real interview's alert overlay */}
+                        {activeFocusViolation && (() => {
+                            const kind = activeFocusViolation;
+                            const count = focusSignalCounts[kind];
+                            const isHighSeverity = kind === "fullscreen_exit" || count >= 3;
+                            const COPY: Record<FocusSignalKind, { title: string; body: string }> = {
+                                tab_switch: {
+                                    title: "Focus Lost",
+                                    body: count === 1
+                                        ? "You switched away from this tab. This incident has been logged for review."
+                                        : `You have switched tabs ${count} times. Repeated incidents are flagged for recruiter review.`,
+                                },
+                                fullscreen_exit: {
+                                    title: "Fullscreen Exited",
+                                    body: "You exited fullscreen mode. Please stay in fullscreen during the interview.",
+                                },
+                                window_focus_loss: {
+                                    title: "Window Focus Lost",
+                                    body: count === 1
+                                        ? "Your browser window lost focus. This incident has been logged for review."
+                                        : `Your browser window has lost focus ${count} times. Repeated incidents are flagged for recruiter review.`,
+                                },
+                            };
+                            const copy = COPY[kind];
+                            return (
+                                <div className="fixed inset-0 z-[300] bg-zinc-950/90 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-200">
+                                    <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-2xl text-center space-y-6 animate-in zoom-in-95 duration-200">
+                                        <div className={cn("mx-auto w-20 h-20 rounded-2xl flex items-center justify-center", isHighSeverity ? "bg-red-500/10" : "bg-violet-500/10")}>
+                                            <ShieldAlert className={cn("w-10 h-10", isHighSeverity ? "text-red-500" : "text-violet-500")} />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <h2 className="text-2xl font-black text-white uppercase tracking-tight">{copy.title}</h2>
+                                            <p className="text-zinc-400 text-sm font-medium leading-relaxed">{copy.body}</p>
+                                        </div>
+                                        <div className="pt-4 flex flex-col gap-3">
+                                            <button
+                                                onClick={() => {
+                                                    setActiveFocusViolation(null);
+                                                    // Re-entering fullscreen needs a user gesture -- this click is it.
+                                                    if (kind === "fullscreen_exit") void requestFullscreenMode();
+                                                }}
+                                                className={cn(
+                                                    "w-full text-white font-black uppercase tracking-widest py-4 rounded-2xl transition-all active:scale-95",
+                                                    isHighSeverity ? "bg-red-500 hover:bg-red-600" : "bg-violet-500 hover:bg-violet-600"
+                                                )}
+                                            >
+                                                {kind === "fullscreen_exit" ? "Return to Fullscreen" : "I Understand & Continue"}
+                                            </button>
+                                            <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+                                                Incident {count > 1 ? `${count} of session` : "logged"} · Under review
+                                            </div>
+                                            {focusViolationElapsed && (
+                                                <div className="text-[10px] font-medium text-zinc-600 uppercase tracking-widest">
+                                                    Detected at {focusViolationElapsed}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+
+                        {/* Persistent return-to-fullscreen banner -- stays up the whole time the
+                            session is out of fullscreen, so there's always a way back in even
+                            after the one-shot violation modal above has been dismissed. */}
+                        {!isFullscreen && !activeFocusViolation && displayState.timerStarted && (
+                            <div className="fixed inset-0 z-[290] bg-zinc-950/95 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-200">
+                                <div className="max-w-sm w-full bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-2xl text-center space-y-5">
+                                    <div className="mx-auto w-16 h-16 rounded-2xl flex items-center justify-center bg-violet-500/10">
+                                        <ShieldAlert className="w-8 h-8 text-violet-500" />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <h2 className="text-lg font-black text-white uppercase tracking-tight">Fullscreen Required</h2>
+                                        <p className="text-zinc-400 text-sm font-medium leading-relaxed">
+                                            The interview continues in the background. Click below to return to fullscreen and resume.
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={() => void requestFullscreenMode()}
+                                        className="w-full bg-violet-500 hover:bg-violet-600 text-white font-black uppercase tracking-widest py-4 rounded-2xl transition-all active:scale-95"
+                                    >
+                                        Return to Fullscreen
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
-                )}
-            </div>
+                    <InterviewRoom applicationId={selectedCandidate?.id || ""} onUpdate={handleUpdate} timerStartedAtRef={timerStartedAtRef} enableCamera={enableCamera} />
+                </LiveKitRoom>
+            )}
+
+            {/* Non-active state (no recording) */}
+            {!isActive && (
+                <div className="flex-1 flex flex-col min-w-0 bg-white/40 overflow-hidden items-center p-4">
+                    <div className="w-full h-full flex-1 flex flex-col min-h-0 relative">
+                        <SimulationViewer
+                            lines={displayState.lines}
+                            events={displayState.events}
+                            elapsedSeconds={displayState.elapsedSeconds}
+                            isConnected={displayState.isConnected}
+                            timerStarted={displayState.timerStarted}
+                            sessionEnded={displayState.sessionEnded}
+                        />
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

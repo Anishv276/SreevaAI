@@ -9,11 +9,10 @@ import { prisma } from './lib/prisma';
 import redisConnection, { createRedisConnection, getBullPrefix } from './lib/redis';
 import { putObject, getObjectBuffer, headObjectStrict } from "./lib/s3";
 import { generateId } from "./lib/ids";
-import { isInterviewTokenRequired, isSchedulingGateBypassed } from "./lib/interview-access";
+import { isInterviewTokenRequired } from "./lib/interview-access";
 import { appendCandidateActivity } from "./lib/candidate-activity";
 import { getPythonExecutable } from "./lib/python-exec";
 import { recordOrgBillingUsage } from "./lib/usage-metrics";
-import { buildInterviewLink } from "./lib/interview-links";
 import { Prisma } from "@prisma/client";
 import { recordingRetentionQueue, invitationDeliveryQueue } from "./lib/queue";
 import { JD_EXTRACTION_QUEUE_NAME } from "./lib/jd-extraction";
@@ -990,22 +989,10 @@ if (isQueueEnabled("invitation-delivery-queue")) {
         scheduleLink = `${appUrl}/schedule/${interviewRecord.accessToken}`;
         interviewAccessToken = interviewRecord.accessToken;
       }
-      const { sendScheduleInviteEmail, sendInterviewInviteEmail, sendRejectionEmail } = await import('./lib/mail');
+      const { sendScheduleInviteEmail, sendRejectionEmail } = await import('./lib/mail');
       let mailResult: { success: boolean; error?: string };
       if (action === "shortlist") {
         if (!scheduleLink) throw new Error(`scheduleLink required for action=shortlist`);
-        if (isSchedulingGateBypassed()) {
-          // ponytail: test mode -- skip slot booking, send the direct interview link
-          const interviewLink = buildInterviewLink(appUrl, applicationId, { token: interviewAccessToken });
-          mailResult = await sendInterviewInviteEmail({
-            email: application.email,
-            fullName: application.fullName || "Candidate",
-            jobTitle: application.drive?.title || "Unknown Role",
-            orgName: application.drive?.organization?.name || "Sreeva AI",
-            interviewLink,
-            schedulingDeadline: application.drive?.deadline ? new Date(application.drive.deadline) : null,
-          });
-        } else {
         mailResult = await sendScheduleInviteEmail({
           email: application.email,
           fullName: application.fullName || "Candidate",
@@ -1013,7 +1000,6 @@ if (isQueueEnabled("invitation-delivery-queue")) {
           orgName: application.drive?.organization?.name || "Sreeva AI",
           scheduleLink,
         });
-        }
       } else if (action === "reject") {
         mailResult = await sendRejectionEmail({
           email: application.email,

@@ -271,11 +271,12 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         setPhase("check");
                     } else {
                         const titleMap: Record<string, string> = {
-                            DRIVE_CLOSED: "Job Closed",
+                            DRIVE_CLOSED: "Job Posting Expired",
+                            LINK_EXPIRED: "Link Expired",
                             SLOT_EXPIRED: "Slot Expired",
                             NOT_SCHEDULED: "Not Scheduled",
                             INTERVIEW_COMPLETED: "Interview Completed",
-                            IN_PROGRESS: "Interview In Progress",
+                            INTERVIEW_IN_PROGRESS: "Interview In Progress",
                         };
                         setBlockedAccessTitle(titleMap[data.code] || "Access Restricted");
                         setBlockedAccessMessage(data.error);
@@ -534,17 +535,16 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 }
                 const apiError = String(data?.error || "Invalid token payload");
                 const errorCode = String(data?.code || "").toUpperCase();
-                const isInProgress = errorCode === "IN_PROGRESS" || errorCode === "INTERVIEW_IN_PROGRESS" || /in progress/i.test(apiError);
-                const isCompleted = errorCode === "INTERVIEW_COMPLETED" || /interview has been completed|already completed|completed interview/i.test(apiError);
+                const isInProgress = errorCode === "INTERVIEW_IN_PROGRESS" || /in progress/i.test(apiError);
+                const isCompleted = errorCode === "INTERVIEW_COMPLETED";
                 const isDriveClosed = errorCode === "DRIVE_CLOSED";
                 const isSlotExpired = errorCode === "SLOT_EXPIRED";
                 const isTooEarly = errorCode === "TOO_EARLY";
-                const isLinkExpired = errorCode === "LINK_EXPIRED" || isSlotExpired;
-                const isFinalized = !isDriveClosed && !isLinkExpired && !isTooEarly && /already finalized|session has expired|invalid token|invalid token payload|token expiry|token expired/i.test(apiError);
+                const isLinkExpired = errorCode === "LINK_EXPIRED";
                 if (isInProgress) {
                     return {
                         ok: false,
-                        title: "Interview is in progress",
+                        title: "Interview in progress",
                         message: "This interview is already in progress. Please wait for the current session to finish.",
                     };
                 }
@@ -552,28 +552,28 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     return {
                         ok: false,
                         title: "Interview completed",
-                        message: "Interview has been completed. Please contact support to rejoin or reschedule.",
+                        message: apiError,
                     };
                 }
                 if (isDriveClosed) {
                     return {
                         ok: false,
-                        title: "Job closed",
-                        message: "This job posting is no longer accepting applications. The recruitment drive has ended.",
+                        title: "Job posting expired",
+                        message: apiError,
                     };
                 }
                 if (isSlotExpired) {
                     return {
                         ok: false,
                         title: "Slot expired",
-                        message: "You missed your scheduled interview slot. Please contact your recruiter to reschedule.",
+                        message: apiError,
                     };
                 }
-                if (isLinkExpired || isFinalized) {
+                if (isLinkExpired) {
                     return {
                         ok: false,
-                        title: "Access restricted",
-                        message: "This interview session is no longer available. Please contact support for help.",
+                        title: "Link expired",
+                        message: apiError,
                     };
                 }
                 console.warn(

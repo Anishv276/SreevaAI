@@ -1,7 +1,7 @@
 import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { isInterviewTokenRequired, isSchedulingGateBypassed } from "@/lib/interview-access";
+import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/drive-limits";
 import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
 
@@ -23,21 +23,36 @@ async function resolveInterview(applicationId: string) {
     });
 }
 
-function checkSchedulingGate(interview: { scheduledAt: Date | null; status: string; startedAt: Date | null }): {
-    ok: boolean; code?: string; error?: string; status?: number;
+function checkDriveExpiration(drive: { closedAt?: Date | null; deadline?: Date | null } | null | undefined): {
+    ok: boolean; code?: string; error?: string;
 } {
-    if (isSchedulingGateBypassed()) return { ok: true };
+    if (!drive) return { ok: true };
 
+    if (drive.closedAt && new Date(drive.closedAt) < new Date()) {
+        return {
+            ok: false,
+            code: "DRIVE_CLOSED",
+            error: "Job posting has been expired. Please contact support@sreevaai.com",
+        };
+    }
+
+    return { ok: true };
+}
+
+function checkSchedulingGate(interview: { scheduledAt: Date | null; status: string; startedAt: Date | null; linkStatus?: string | null }): {
+    ok: boolean; code?: string; error?: string; status?: number; remainingMs?: number;
+} {
     const interviewStatus = String(interview.status || "").toUpperCase();
+    const linkStatus = String(interview.linkStatus || "").toUpperCase();
 
     if (interviewStatus === "COMPLETED") {
-        return { ok: false, code: "INTERVIEW_COMPLETED", error: "This interview has been completed.", status: 409 };
+        return { ok: false, code: "INTERVIEW_COMPLETED", error: "Interview completed. Please contact support@sreevaai.com for assistance.", status: 409 };
     }
 
-    // If in progress (another session is live), block re-entry
-    if (interviewStatus === "IN_PROGRESS" && !interview.startedAt) {
-        return { ok: false, code: "INTERVIEW_IN_PROGRESS", error: "Interview is currently in progress.", status: 409 };
+    if (linkStatus === "EXPIRED") {
+        return { ok: false, code: "LINK_EXPIRED", error: "Interview link has expired. Please contact support@sreevaai.com", status: 403 };
     }
+
 
     if (!interview.scheduledAt) {
         return { ok: false, code: "NOT_SCHEDULED", error: "No slot booked yet. Please schedule your interview first.", status: 403 };
@@ -45,27 +60,28 @@ function checkSchedulingGate(interview: { scheduledAt: Date | null; status: stri
 
     const now = Date.now();
     const slotMs = interview.scheduledAt.getTime();
+    const remainingMs = slotMs - now;
 
-    if (now < slotMs - PRE_OPEN_MS) {
+    if (remainingMs > PRE_OPEN_MS) {
         return {
             ok: false,
             code: "TOO_EARLY",
             error: "Waiting room is not open yet. Please return 5 minutes before your scheduled time.",
             status: 403,
-            // ponytail: pass scheduledAt so frontend can show countdown
+            remainingMs,
         };
     }
 
-    if (now > slotMs + LATE_CLOSE_MS) {
+    if (remainingMs < -LATE_CLOSE_MS) {
         return {
             ok: false,
             code: "SLOT_EXPIRED",
-            error: "Your slot has been expired, contact recruiter.",
+            error: "Your slot has expired. Please contact your recruiter to reschedule.",
             status: 403,
         };
     }
 
-    return { ok: true };
+    return { ok: true, remainingMs };
 }
 
 export async function POST(
@@ -88,6 +104,14 @@ export async function POST(
             return NextResponse.json({ error: "Invalid interview token" }, { status: 401 });
         }
 
+        const driveCheck = checkDriveExpiration(application.drive);
+        if (!driveCheck.ok) {
+            return NextResponse.json(
+                { error: driveCheck.error, code: driveCheck.code },
+                { status: 403 }
+            );
+        }
+
         const gate = checkSchedulingGate(interview);
         if (!gate.ok) {
             if (gate.code === "SLOT_EXPIRED" && interview.linkStatus !== "EXPIRED") {
@@ -97,7 +121,7 @@ export async function POST(
                 }).catch(() => {});
             }
             return NextResponse.json(
-                { error: gate.error, code: gate.code, scheduledAt: interview.scheduledAt?.toISOString() },
+                { error: gate.error, code: gate.code, scheduledAt: interview.scheduledAt?.toISOString(), remainingMs: gate.remainingMs },
                 { status: gate.status }
             );
         }
@@ -187,7 +211,10 @@ export async function GET(
 
         const application = await prisma.application.findUnique({
             where: { id: applicationId },
-            include: { interview: true },
+            include: {
+                drive: true,
+                interview: true
+            },
         });
         if (!application || !application.interview) {
             return NextResponse.json({ error: "Interview session not found" }, { status: 404 });
@@ -195,6 +222,14 @@ export async function GET(
         const interview = application.interview;
         if (requireToken && interview.accessToken !== interviewToken) {
             return NextResponse.json({ error: "Invalid interview token" }, { status: 401 });
+        }
+
+        const driveCheck = checkDriveExpiration(application.drive);
+        if (!driveCheck.ok) {
+            return NextResponse.json(
+                { error: driveCheck.error, code: driveCheck.code },
+                { status: 403 }
+            );
         }
 
         const gate = checkSchedulingGate(interview);
@@ -206,12 +241,12 @@ export async function GET(
                 }).catch(() => {});
             }
             return NextResponse.json(
-                { error: gate.error, code: gate.code, scheduledAt: interview.scheduledAt?.toISOString() },
+                { error: gate.error, code: gate.code, scheduledAt: interview.scheduledAt?.toISOString(), remainingMs: gate.remainingMs },
                 { status: gate.status }
             );
         }
 
-        return NextResponse.json({ ok: true, code: "ACTIVE", scheduledAt: interview.scheduledAt?.toISOString() });
+        return NextResponse.json({ ok: true, code: "ACTIVE", scheduledAt: interview.scheduledAt?.toISOString(), remainingMs: gate.remainingMs });
     } catch (error) {
         console.error("Status check error:", error);
         return NextResponse.json({ error: "Failed to check status" }, { status: 500 });
