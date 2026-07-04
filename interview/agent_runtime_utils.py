@@ -56,14 +56,20 @@ class AgentConfig:
 
     def __init__(self) -> None:
         # STT Configuration — stt_model comes from org DB, not env
-        self._flux_eot_threshold = float(os.environ.get("FLUX_EOT_THRESHOLD", "0.70"))
+        # eot_threshold raised 0.70 -> 0.80 and eot_timeout_ms raised 3500 -> 6000: Flux
+        # was firing native end-of-turn mid-answer on ordinary thinking pauses (candidates
+        # pausing ~4-8s between sentences), splitting one answer into two separate turns.
+        # This tolerates a longer natural pause before forcing EOT, and requires higher
+        # confidence before committing early, without waiting so long every real
+        # answer-end feels unresponsive.
+        self._flux_eot_threshold = float(os.environ.get("FLUX_EOT_THRESHOLD", "0.80"))
         self._flux_eager_eot_threshold_str = os.environ.get("FLUX_EAGER_EOT_THRESHOLD", "").strip()
         self._flux_eager_eot_threshold = (
             float(self._flux_eager_eot_threshold_str)
             if self._flux_eager_eot_threshold_str and self._flux_eager_eot_threshold_str.lower() != "none"
             else None
         )
-        self._flux_eot_timeout_ms = int(os.environ.get("FLUX_EOT_TIMEOUT_MS", "3500"))
+        self._flux_eot_timeout_ms = int(os.environ.get("FLUX_EOT_TIMEOUT_MS", "6000"))
 
         # LLM models are now per-org from DB (set via Super Admin → AI Models).
         # Only temperature is still env-configurable (not model-specific, applies globally).

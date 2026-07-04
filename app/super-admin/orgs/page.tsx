@@ -1011,11 +1011,6 @@ export default function OrgsPage() {
                                                                                 {provider}
                                                                             </span>
                                                                         ))}
-                                                                        {providers.map((provider) => (
-                                                                            <span key={provider} className="px-3 py-1 bg-gray-50 text-gray-500 text-[10px] font-semibold rounded-md border border-gray-200 uppercase tracking-wide">
-                                                                                {provider}
-                                                                            </span>
-                                                                        ))}
                                                                     </>
                                                                 ) : (
                                                                     <span className="text-[10px] font-semibold text-gray-500 italic">NO RECORDED STT</span>

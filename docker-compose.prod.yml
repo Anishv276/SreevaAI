@@ -1,0 +1,149 @@
+# =============================================================================
+# SreevaAI — Production stack for a single EC2 box (LiveKit on LiveKit Cloud)
+#
+# LiveKit server + egress (recording) now run on LiveKit Cloud — NOT on this box.
+# This box runs only: traefik (TLS) + redis (BullMQ) + app + worker + python agent.
+#
+# All LiveKit/egress connections go to the Cloud URL from .env:
+#   NEXT_PUBLIC_LIVEKIT_URL = wss://<your-project>.livekit.cloud   (browser + server)
+#   LIVEKIT_URL             = wss://<your-project>.livekit.cloud   (server/agent + egress API)
+#   LIVEKIT_API_KEY / LIVEKIT_API_SECRET = from the LiveKit Cloud dashboard
+# The app's egress route (startRoomCompositeEgress) derives the egress host from
+# LIVEKIT_URL, so recording is dispatched to Cloud automatically — no container.
+#
+# AWS security group now only needs:  80/tcp + 443/tcp  (no UDP/7881 — media is on Cloud)
+#
+# Bring up:  docker compose -f docker-compose.prod.yml up -d --build
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Reverse proxy + automatic TLS for www/apex (lk subdomain no longer used)
+  # ---------------------------------------------------------------------------
+  traefik:
+    # NOTE: older Traefik (<=v3.1) hard-codes Docker API v1.24, which modern
+    # Docker daemons reject. `latest` ships a Docker client that negotiates a
+    # supported version. (Pin to a specific recent v3.x tag once verified.)
+    image: traefik:latest
+    container_name: traefik
+    restart: always
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--certificatesresolvers.mytlschallenge.acme.tlschallenge=true"
+      - "--certificatesresolvers.mytlschallenge.acme.email=${ACME_EMAIL}"
+      - "--certificatesresolvers.mytlschallenge.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "letsencrypt:/letsencrypt"
+    networks:
+      - web
+
+  # ---------------------------------------------------------------------------
+  # Redis — BullMQ queues (LiveKit/egress no longer use this; they're on Cloud)
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: always
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis-data:/data
+    networks:
+      - web
+
+  # ---------------------------------------------------------------------------
+  # Next.js app + API
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        NEXT_PUBLIC_LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL}   # wss://<project>.livekit.cloud
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+    image: sreeva-app:latest
+    container_name: Frontend
+    restart: always
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL}        # server-side token minting + egress API
+      NEXT_PUBLIC_LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - redis
+    networks:
+      - web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.hr-app.rule=Host(`www.sreevaai.com`) || Host(`sreevaai.com`)"
+      - "traefik.http.routers.hr-app.entrypoints=websecure"
+      - "traefik.http.routers.hr-app.tls=true"
+      - "traefik.http.routers.hr-app.tls.certresolver=mytlschallenge"
+      - "traefik.http.services.hr-app.loadbalancer.server.port=3000"
+
+  # ---------------------------------------------------------------------------
+  # Background worker — all BullMQ queues
+  # ---------------------------------------------------------------------------
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        NEXT_PUBLIC_LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+    image: sreeva-app:latest        # same build+tag as hr-frontend -> built once, reused
+    container_name: Normal-worker
+    restart: always
+    command: ["npm", "exec", "--", "tsx", "worker.ts"]
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL}
+      NEXT_PUBLIC_LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL}
+      REDIS_URL: redis://redis:6379
+      WORKER_QUEUES: "resume-processing,invitation-delivery-queue,interview-start,interview-finalization,interview-snapshots,interview-recording,recording-retention-cleanup,jd-upload,jd-extraction,backup-queue"
+    depends_on:
+      - redis
+      - frontend
+    networks:
+      - web
+
+  # ---------------------------------------------------------------------------
+  # Python LiveKit AI agent — connects OUT to LiveKit Cloud via the URL in .env
+  # ---------------------------------------------------------------------------
+  python-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: Backend-python-agent
+    restart: always
+    env_file:
+      - .env
+    environment:
+      # LiveKit + egress are on LiveKit Cloud. The agent uses LIVEKIT_URL /
+      # LIVEKIT_API_KEY / LIVEKIT_API_SECRET from .env (wss://<project>.livekit.cloud).
+      LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - redis
+    networks:
+      - web
+
+networks:
+  web:
+    driver: bridge
+
+volumes:
+  redis-data:
+  letsencrypt:

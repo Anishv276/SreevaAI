@@ -4,6 +4,13 @@ Builds a per-turn debug PDF for a local test interview (AI question, candidate
 answer, scores, signal, decision, probe directive) and posts it to Slack.
 
 Only ever called for local test sessions (isTest=true) — see agent_runtime.py.
+
+Env vars (set in .env — see .env.example for instructions):
+  SLACK_BOT_TOKEN     — xoxb-... Bot User OAuth Token (needs files:write scope)
+  SLACK_DEBUG_CHANNEL — Channel ID (e.g. C01234ABCDE) where PDFs are posted
+
+Fallback: If the env vars are not set, shared team defaults are used so every
+toolkit member automatically gets debug PDFs without extra per-machine setup.
 """
 from __future__ import annotations
 
@@ -11,6 +18,10 @@ import io
 import logging
 import os
 from typing import Any, Optional
+
+# Load .env first so SLACK_BOT_TOKEN / SLACK_DEBUG_CHANNEL are present
+from dotenv import load_dotenv
+load_dotenv(override=False)
 
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -22,12 +33,16 @@ from reportlab.platypus import (
 
 logger = logging.getLogger("interview-agent")
 
-# Load from .env.local via python-dotenv
-from dotenv import load_dotenv
-load_dotenv()
+# ---------------------------------------------------------------------------
+# Shared team fallbacks — same pattern as slack_error_logger.py.
+# These ensure every teammate gets debug PDFs without individual .env setup.
+# Override in your .env (see .env.example) if you need a different channel.
+# ---------------------------------------------------------------------------
+_FALLBACK_BOT_TOKEN = "xoxb-11101596499317-11476936267733-spYXNpaxgbwNi9EVrqPK4DzE"
+_FALLBACK_DEBUG_CHANNEL = "C0BDNLYGD2B"
 
-SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "")
-SLACK_DEBUG_CHANNEL = os.environ.get("SLACK_DEBUG_CHANNEL", "")
+SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "").strip() or _FALLBACK_BOT_TOKEN
+SLACK_DEBUG_CHANNEL = os.environ.get("SLACK_DEBUG_CHANNEL", "").strip() or _FALLBACK_DEBUG_CHANNEL
 
 
 def _styles() -> dict:
@@ -191,44 +206,115 @@ def build_debug_pdf(
 
 
 async def post_pdf_to_slack(pdf_bytes: bytes, filename: str, title: str) -> None:
-    """Uploads the debug PDF to Slack via files.getUploadURLExternal + complete. No-op if unconfigured."""
-    if not SLACK_BOT_TOKEN or not SLACK_DEBUG_CHANNEL:
-        logger.warning("[DEBUG_REPORT] SLACK_BOT_TOKEN / SLACK_DEBUG_CHANNEL not set — skipping Slack upload")
+    """
+    Uploads the debug PDF to Slack using the files.getUploadURLExternal → upload → complete flow.
+    Requires SLACK_BOT_TOKEN (xoxb-..., files:write scope) and SLACK_DEBUG_CHANNEL (channel ID).
+    No-op with a clear warning if either env var is missing.
+    """
+    # Re-read env at call time so tokens set after module import are picked up.
+    # Fall back to the shared team defaults if the env var is absent.
+    bot_token = os.environ.get("SLACK_BOT_TOKEN", "").strip() or _FALLBACK_BOT_TOKEN
+    channel_id = os.environ.get("SLACK_DEBUG_CHANNEL", "").strip() or _FALLBACK_DEBUG_CHANNEL
+
+    if not bot_token:
+        logger.error(
+            "[DEBUG_REPORT] SLACK_BOT_TOKEN is not set and fallback is missing — "
+            "PDF will NOT be sent. See .env.example for setup instructions."
+        )
         return
+    if not channel_id:
+        logger.error(
+            "[DEBUG_REPORT] SLACK_DEBUG_CHANNEL is not set and fallback is missing — "
+            "PDF will NOT be sent. See .env.example for setup instructions."
+        )
+        return
+
+    logger.info(
+        "[DEBUG_REPORT] Uploading PDF to Slack | file=%s bytes=%d channel=%s",
+        filename, len(pdf_bytes), channel_id,
+    )
+
     import aiohttp
 
-    headers = {"Authorization": f"Bearer {SLACK_BOT_TOKEN}"}
-    async with aiohttp.ClientSession(headers=headers) as session:
-        async with session.post(
-            "https://slack.com/api/files.getUploadURLExternal",
-            data={"filename": filename, "length": str(len(pdf_bytes))},
-        ) as resp:
-            data = await resp.json()
-        if not data.get("ok"):
-            logger.error("[DEBUG_REPORT] getUploadURLExternal failed: %s", data)
-            return
-        upload_url = data["upload_url"]
-        file_id = data["file_id"]
+    _timeout = aiohttp.ClientTimeout(total=60)
+    auth_headers = {"Authorization": f"Bearer {bot_token}"}
 
-        form = aiohttp.FormData()
-        form.add_field("file", pdf_bytes, filename=filename, content_type="application/pdf")
-        async with session.post(upload_url, data=form) as resp:
-            await resp.read()
+    try:
+        async with aiohttp.ClientSession(headers=auth_headers, timeout=_timeout) as http:
+            # ── Step 1: Get a pre-signed upload URL ────────────────────────
+            logger.debug("[DEBUG_REPORT] Step 1: Requesting upload URL from Slack...")
+            async with http.post(
+                "https://slack.com/api/files.getUploadURLExternal",
+                data={"filename": filename, "length": str(len(pdf_bytes))},
+            ) as resp:
+                url_resp = await resp.json()
 
-        message = f"```\n=======\n```\n{title}\n```\n=======\n```"
-        async with session.post(
-            "https://slack.com/api/files.completeUploadExternal",
-            json={
-                "files": [{"id": file_id, "title": title}],
-                "channel_id": SLACK_DEBUG_CHANNEL,
-                "initial_comment": message,
-            },
-        ) as resp:
-            complete = await resp.json()
-        if not complete.get("ok"):
-            logger.error("[DEBUG_REPORT] completeUploadExternal failed: %s", complete)
-        else:
-            logger.info("[DEBUG_REPORT] Uploaded debug PDF to Slack: %s", filename)
+            if not url_resp.get("ok"):
+                logger.error(
+                    "[DEBUG_REPORT] Step 1 FAILED — files.getUploadURLExternal error: %s | "
+                    "Check that your bot token has the 'files:write' OAuth scope.",
+                    url_resp,
+                )
+                return
+
+            upload_url: str = url_resp["upload_url"]
+            file_id: str = url_resp["file_id"]
+            logger.debug("[DEBUG_REPORT] Step 1 OK — file_id=%s upload_url=%s", file_id, upload_url[:60])
+
+            # ── Step 2: Upload the raw PDF bytes to the pre-signed URL ─────
+            logger.debug("[DEBUG_REPORT] Step 2: Uploading PDF bytes to pre-signed URL...")
+            form = aiohttp.FormData()
+            form.add_field(
+                "file", pdf_bytes,
+                filename=filename,
+                content_type="application/pdf",
+            )
+            # Upload URL is unauthenticated — do NOT send the Authorization header
+            async with aiohttp.ClientSession(timeout=_timeout) as upload_http:
+                async with upload_http.post(upload_url, data=form) as up_resp:
+                    up_body = await up_resp.text()
+                    if up_resp.status not in (200, 204):
+                        logger.error(
+                            "[DEBUG_REPORT] Step 2 FAILED — upload status %d body=%s",
+                            up_resp.status, up_body[:200],
+                        )
+                        return
+            logger.debug("[DEBUG_REPORT] Step 2 OK — PDF bytes uploaded successfully")
+
+            # ── Step 3: Complete the upload and share to channel ───────────
+            logger.debug("[DEBUG_REPORT] Step 3: Completing upload and posting to channel...")
+            initial_comment = (
+                f"📋 *Interview Debug Report*\n"
+                f"*{title}*\n"
+                f"Turns: {len(pdf_bytes) // 1024}KB PDF attached"
+            )
+            async with http.post(
+                "https://slack.com/api/files.completeUploadExternal",
+                json={
+                    "files": [{"id": file_id, "title": title}],
+                    "channel_id": channel_id,
+                    "initial_comment": initial_comment,
+                },
+            ) as comp_resp:
+                complete = await comp_resp.json()
+
+            if not complete.get("ok"):
+                logger.error(
+                    "[DEBUG_REPORT] Step 3 FAILED — files.completeUploadExternal error: %s | "
+                    "Check that the bot is invited to the channel (channel_id=%s).",
+                    complete, channel_id,
+                )
+                return
+
+            logger.info(
+                "[DEBUG_REPORT] ✅ PDF uploaded to Slack successfully | file=%s channel=%s",
+                filename, channel_id,
+            )
+
+    except aiohttp.ClientError as net_err:
+        logger.error("[DEBUG_REPORT] Network error during Slack upload: %s", net_err, exc_info=True)
+    except Exception as exc:
+        logger.error("[DEBUG_REPORT] Unexpected error during Slack upload: %s", exc, exc_info=True)
 
 
 async def generate_and_send_debug_report(
@@ -241,14 +327,32 @@ async def generate_and_send_debug_report(
     covered_topics: Optional[list[dict]] = None,
     topic_records: Optional[list[dict]] = None,
 ) -> None:
+    """
+    Builds the per-turn debug PDF and posts it to Slack.
+    Called at interview completion for test sessions (isTest=True).
+    All exceptions are caught and logged — never raises to the caller.
+    """
+    logger.info(
+        "[DEBUG_REPORT] Generating interview debug PDF | app_id=%s candidate=%s turns=%d",
+        app_id, candidate_name, len(answer_scores),
+    )
     try:
         pdf_bytes = build_debug_pdf(
-            app_id=app_id, candidate_name=candidate_name, job_title=job_title,
-            answer_scores=answer_scores, topic_pool=topic_pool,
-            covered_topics=covered_topics, topic_records=topic_records,
+            app_id=app_id,
+            candidate_name=candidate_name,
+            job_title=job_title,
+            answer_scores=answer_scores,
+            topic_pool=topic_pool,
+            covered_topics=covered_topics,
+            topic_records=topic_records,
         )
+        logger.info("[DEBUG_REPORT] PDF built — size=%d bytes", len(pdf_bytes))
         filename = f"interview_debug_{app_id}.pdf"
         title = f"Interview Debug — {candidate_name} ({len(answer_scores)} turns) — {app_id}"
         await post_pdf_to_slack(pdf_bytes, filename, title)
     except Exception as e:
-        logger.error("[DEBUG_REPORT] Failed to generate/send debug report for %s: %s", app_id, e, exc_info=True)
+        logger.error(
+            "[DEBUG_REPORT] Failed to generate/send debug report for %s: %s",
+            app_id, e, exc_info=True,
+        )
+

@@ -4,7 +4,7 @@ Scores the candidate's answer on the current topic.
 Returns: scores, one signal + reason, saturation state, action (PROBE/MOVE_ON).
 
 Architecture:
-  evaluate_answer()   — single LLM call: scores + detects ONE signal with reason
+  evaluate_answer()   — two parallel LLM calls: scores answer, detects ONE signal with reason
   TopicState          — per-topic saturation tracking
   run_eval_and_build_directive() — orchestrates everything, returns result dict to agent
 """
@@ -18,7 +18,7 @@ from openai import AsyncOpenAI
 
 from interview.agent_scoring import evaluate_answer
 from interview.slack_error_logger import log_llm_error
-_EVAL_DEFAULT = "gpt-4.1-nano"  # ponytail: fallback — callers pass org's llmInterviewEval
+_EVAL_DEFAULT = "gpt-4.1-mini"  # ponytail: fallback — callers pass org's llmInterviewEval. mini beat nano on signal-detection accuracy — see tests/test_signal_ab.py
 
 logger = logging.getLogger("interview-agent")
 
@@ -76,54 +76,92 @@ class TopicState:
         self.opened_at_turn = 0
         self.signals_fired: list[str] = []
 
-        # Dry-topic exit: consecutive low-yield turns before forcing MOVE_ON
-        self.consecutive_low_yield = 0
-        self.dry_topic_cap = 1 if band == "fresher" else 2
+        # Dry-topic: if two consecutive answers score 0, candidate is stuck on this topic.
+        self.last_score = None
+        self.consecutive_zero_scores = 0
 
-        # Per-turn scores for trajectory detection
-        self.per_turn_scores: list[float] = []
-        self.last_turn_new_tech: bool = False  # positive signal — suppress weak_exit
+        # Response signal tracking: if clarification_request fires twice, escalate to MOVE_ON
+        self.clarification_request_count = 0
 
-        self.progress_check_turns = 3
-        self.progress_check_pct = {
-            "fresher":    {"CRITICAL": 0.75, "HIGH": 0.80, "MEDIUM": 0.90, "LOW": 0.90},
-            "mid":        {"CRITICAL": 0.45, "HIGH": 0.45, "MEDIUM": 0.80, "LOW": 0.65},
-            "experienced":{"CRITICAL": 0.28, "HIGH": 0.30, "MEDIUM": 0.45, "LOW": 0.60},
-            "senior":     {"CRITICAL": 0.20, "HIGH": 0.22, "MEDIUM": 0.35, "LOW": 0.50},
-        }.get(band, {"CRITICAL": 0.45, "HIGH": 0.45, "MEDIUM": 0.80, "LOW": 0.65}).get(importance, 0.45)
+        # Sub-concept rotation: advances by 1 each PROBE turn so consecutive follow-ups
+        # on this topic hit DIFFERENT items from the topic's probe_focus list. Persisted
+        # so the agent can pick probe_focus[index % len(probe_focus)] each turn.
+        self.probe_rotation_index = 0
+
+    # Weak-exit checkpoints per importance: (turn3_floor, turn5_floor).
+    # Uniform 50% floor at turn 3: after 3 probes, if the candidate hasn't reached
+    # half the threshold, they're not going to. Cap at 5 probes per topic (turn5_floor
+    # = 1.0 forces MOVE_ON at turn 5 regardless of progress).
+    _WEAK_EXIT_BY_IMPORTANCE: dict[str, tuple[float, float]] = {
+        "CRITICAL": (0.50, 1.00),
+        "HIGH":     (0.50, 1.00),
+        "MEDIUM":   (0.50, 1.00),
+        "LOW":      (0.50, 1.00),
+    }
 
     def is_weak_candidate_exit(self) -> bool:
-        if self.follow_up_turns < self.progress_check_turns:
+        if self.saturation_threshold <= 0:
             return False
-        raw_base = self.base_turn_credit * self.follow_up_turns
-        effective = max(self.saturation_score, raw_base)
-        if effective >= self.saturation_threshold * self.progress_check_pct:
-            return False
-        if len(self.per_turn_scores) >= 2 and self.per_turn_scores[-1] > self.per_turn_scores[-2]:
-            return False
-        if self.last_turn_new_tech:
-            return False
-        return True
+        sat_pct = self.saturation_score / self.saturation_threshold
+        turn3_floor, turn5_floor = self._WEAK_EXIT_BY_IMPORTANCE.get(
+            self.importance, self._WEAK_EXIT_BY_IMPORTANCE["HIGH"]
+        )
+        return (
+            (self.follow_up_turns >= 3 and sat_pct < turn3_floor) or
+            (self.follow_up_turns >= 5 and sat_pct < turn5_floor)
+        )
 
     def is_dry_topic(self) -> bool:
-        if self.follow_up_turns < self.dry_topic_cap:
-            return False
-        return self.consecutive_low_yield >= self.dry_topic_cap
+        # Two CONSECUTIVE answers with score 0 -> candidate is stuck, move on.
+        # consecutive_zero_scores tracks a real streak (reset to 0 the moment any
+        # answer scores above 0) -- checking last_score alone only knows the single
+        # most recent score, so a single zero at turn >= 2 (after prior non-zero
+        # answers) incorrectly looked like two-in-a-row and forced a premature MOVE_ON.
+        return self.consecutive_zero_scores >= 2
+
+    # Signals where Ishita is re-asking / rephrasing / redirecting the SAME question
+    # instead of asking a new follow-up. The candidate has not yet had a real attempt,
+    # so this turn must not count toward follow_up_turns, saturation, dry_topic, or
+    # the fired-signals variety ban. Score contribution is zero regardless.
+    _NON_FOLLOWUP_SIGNALS = frozenset({
+        "clarification_request",
+        "rephrase_request",
+        "off_topic",
+    })
 
     def add_contribution(self, weighted: float, signal: str | None, turn: int | None = None) -> None:
+        # Re-ask turns (candidate asked to rephrase, restarted their own answer, or
+        # answered a different question) don't count as a real follow-up. Skip all
+        # scoring/counter updates so the candidate isn't penalised for asking us to
+        # repeat the question. The turn still fires an [SIGNAL] event upstream — we
+        # just don't debit their 3-question budget for it.
+        if signal in self._NON_FOLLOWUP_SIGNALS:
+            # Track the last turn for logging continuity, but nothing else changes.
+            if turn is not None:
+                self.updated_turn = turn
+            return
+
         contribution = max(0.0, _score_to_contribution(weighted))
-        effective_base = self.base_turn_credit if contribution > 0.0 else 0.0
+        # Base credit ramps smoothly with answer quality so mid-quality answers still advance
+        # saturation. weighted < 1.0 = no credit (essentially a non-answer). weighted 1.0-3.0
+        # scales linearly from 0 to full base. weighted >= 3.0 = full base credit.
+        if weighted >= 3.0:
+            effective_base = self.base_turn_credit
+        elif weighted >= 1.0:
+            effective_base = self.base_turn_credit * (weighted - 1.0) / 2.0
+        else:
+            effective_base = 0.0
         self.saturation_score += effective_base + contribution
         self.follow_up_turns += 1
-        self.per_turn_scores.append(weighted)
         self.is_saturated = self.saturation_score >= self.saturation_threshold
-        self.last_turn_new_tech = (signal == "new_tech_thread")
+        if weighted == 0.0:
+            self.consecutive_zero_scores += 1
+        else:
+            self.consecutive_zero_scores = 0
         if signal:
             self.signals_fired.append(signal)
-        if weighted <= 1.0:
-            self.consecutive_low_yield += 1
-        else:
-            self.consecutive_low_yield = 0
+        # Track last score for dry_topic detection (two consecutive 0s)
+        self.last_score = weighted
         if turn is not None:
             self.updated_turn = turn
 
@@ -136,13 +174,13 @@ class TopicState:
             "saturation_score":    round(self.saturation_score, 2),
             "follow_up_turns":     self.follow_up_turns,
             "base_turn_credit":    self.base_turn_credit,
-            "progress_check_turns":self.progress_check_turns,
-            "progress_check_pct":  self.progress_check_pct,
             "signals_fired":       self.signals_fired,
             "is_saturated":        self.is_saturated,
             "updated_turn":        self.updated_turn,
-            "consecutive_low_yield":self.consecutive_low_yield,
-            "dry_topic_cap":       self.dry_topic_cap,
+            "last_score":          self.last_score,
+            "clarification_request_count": self.clarification_request_count,
+            "consecutive_zero_scores": self.consecutive_zero_scores,
+            "probe_rotation_index": self.probe_rotation_index,
         }
 
     @classmethod
@@ -158,18 +196,14 @@ class TopicState:
         obj.is_saturated        = bool(d.get("is_saturated", False))
         obj.signals_fired       = list(d.get("signals_fired", []) or [])
         obj.opened_at_turn      = int(d.get("opened_at_turn", 0) or 0)
-        obj.consecutive_low_yield = int(d.get("consecutive_low_yield", 0) or 0)
-        obj.per_turn_scores     = []
-        if "dry_topic_cap" in d:
-            obj.dry_topic_cap = int(d["dry_topic_cap"])
+        obj.last_score          = float(d.get("last_score")) if d.get("last_score") is not None else None
+        obj.clarification_request_count = int(d.get("clarification_request_count", 0) or 0)
+        obj.consecutive_zero_scores = int(d.get("consecutive_zero_scores", 0) or 0)
+        obj.probe_rotation_index = int(d.get("probe_rotation_index", 0) or 0)
         if "saturation_threshold" in d:
             obj.saturation_threshold = float(d["saturation_threshold"])
         if "base_turn_credit" in d:
             obj.base_turn_credit = float(d["base_turn_credit"])
-        if "progress_check_turns" in d:
-            obj.progress_check_turns = int(d["progress_check_turns"])
-        if "progress_check_pct" in d:
-            obj.progress_check_pct = float(d["progress_check_pct"])
         return obj
 
 
@@ -186,11 +220,13 @@ class TopicImportanceClassifier:
 
 
 def _weighted_score(quality: dict) -> float:
+    # Weights must match the "overall" formula in agent_scoring.py — kept in sync
+    # so the logged/scored value and the saturation-driving value never diverge.
     return (
         quality.get("clarity", 0.0) * 0.20
         + quality.get("depth", 0.0) * 0.35
-        + quality.get("specificity", 0.0) * 0.30
-        + quality.get("grounding", 0.0) * 0.15
+        + quality.get("specificity", 0.0) * 0.20
+        + quality.get("grounding", 0.0) * 0.25
     )
 
 
@@ -281,14 +317,18 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     logger.info("[QA] turn=%d  Q: %s\n              A: %s",
                 p.turn, (p.question or "")[:200], (p.answer or "")[:200])
 
-    # -- Run scoring (single LLM call: scores + signal) -----------------------
+    # -- Run scoring (two parallel LLM calls: score + signal) -----------------
     _captured_usage: list[dict] = []
 
     async def _score_and_capture(**kwargs):
         result = await evaluate_answer(**kwargs)
         usage = result.pop("_llm_usage", None)
-        if usage and (usage.get("inputTokens") or usage.get("outputTokens")):
-            _captured_usage.append(usage)
+        # evaluate_answer returns a list of up to 2 usage dicts (score call + signal
+        # call) on the success path, or a single dict/None on the short-circuit paths.
+        usages = usage if isinstance(usage, list) else ([usage] if usage else [])
+        for u in usages:
+            if u.get("inputTokens") or u.get("outputTokens"):
+                _captured_usage.append(u)
         return result
 
     _follow_up_count = (current_topic_state.follow_up_turns + 1) if current_topic_state else 0
@@ -310,6 +350,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
                 topic_tag=p.topic_tag,
                 topic_probe_focus=p.topic_probe_focus,
                 job_title=p.job_title,
+                signals_already_fired=current_topic_state.signals_fired if current_topic_state else [],
             ),
             timeout=10.0,
         )
@@ -339,8 +380,13 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     quality = {k: raw.get(k, 0.0) for k in ("clarity", "depth", "specificity", "grounding")}
     _weighted = _weighted_score(quality)
     action: str = str(raw.get("action", "PROBE")).upper()
-    if action not in ("PROBE", "MOVE_ON"):
+    valid_actions = ("PROBE", "MOVE_ON", "REPHRASE", "REDIRECT", "ACCEPT_REPHRASE", "CAP_SCORES")
+    if action not in valid_actions:
         action = "PROBE"
+    # forced_action = deterministic short-circuit (response signals: pure_denial/clarification_request/etc)
+    # Response signals override saturation logic (don't need to check dry_topic/weak_exit if pure_denial fires).
+    forced_action = bool(raw.get("forced_action"))
+    _forced_response_signal = forced_action and action in ("MOVE_ON", "REPHRASE", "REDIRECT", "ACCEPT_REPHRASE")
 
     signal: str | None = raw.get("signal")
     signal_reason: str | None = raw.get("signal_reason")
@@ -353,9 +399,17 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         quality["specificity"], quality["grounding"], _weighted, depth_signal,
     )
     logger.info("[EVAL] turn=%d action=%s signal=%s weighted=%.2f",
-                p.turn, action, signal or "none", _weighted)
+                p.turn, action, signal, _weighted)
     if signal:
         logger.info("[SIGNAL] %s | reason=%r", signal, signal_reason)
+
+    # -- Track response signal patterns -----------------------------------------------
+    # If clarification_request fires twice, escalate to MOVE_ON (question is unclear or candidate confused)
+    if current_topic_state and signal == "clarification_request":
+        current_topic_state.clarification_request_count += 1
+    elif current_topic_state and signal != "clarification_request":
+        # Reset counter on any other signal
+        current_topic_state.clarification_request_count = 0
 
     # -- Update saturation state ----------------------------------------------
     if current_topic_state:
@@ -377,19 +431,29 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
                     pct_done, sat_score, remaining,
                     current_topic_state.importance if current_topic_state else "?")
 
-    # -- Decision (priority order) --------------------------------------------
-    if _dry_topic:
+    # -- Decision (priority order; response signals override saturation) ----
+    # Response signals (pure_denial, clarification_request, etc) fire immediately with forced_action=True.
+    # They override saturation logic entirely — no need to check dry_topic/weak_exit/saturated.
+    # ESCALATION: if clarification_request or rephrase_request fires 2+ times, upgrade to MOVE_ON
+    _escalate_to_move_on = False
+    if _forced_response_signal and current_topic_state:
+        if action == "REPHRASE" and current_topic_state.clarification_request_count >= 2:
+            action = "MOVE_ON"
+            _escalate_to_move_on = True
+            logger.info("[DECISION] MOVE_ON reason=clarification_escalation (asked 2x) turn=%d", p.turn)
+        else:
+            logger.info("[DECISION] %s (forced response signal) reason=%s turn=%d", action, raw.get("reason", "forced"), p.turn)
+    elif _forced_response_signal:
+        logger.info("[DECISION] %s (forced response signal) reason=%s turn=%d", action, raw.get("reason", "forced"), p.turn)
+    elif not _escalate_to_move_on and _dry_topic:
         action = "MOVE_ON"
-        logger.info("[DECISION] MOVE_ON reason=dry_topic (low_yield=%d>=cap=%d) turn=%d",
-                    current_topic_state.consecutive_low_yield, current_topic_state.dry_topic_cap, p.turn)
+        logger.info("[DECISION] MOVE_ON reason=dry_topic (two consecutive zero scores) turn=%d", p.turn)
     elif _weak_exit:
         action = "MOVE_ON"
         logger.info("[DECISION] MOVE_ON reason=weak_exit turn=%d", p.turn)
     elif is_saturated:
         action = "MOVE_ON"
         logger.info("[DECISION] MOVE_ON reason=saturated turn=%d", p.turn)
-    elif action == "MOVE_ON":
-        logger.info("[DECISION] MOVE_ON reason=llm_judge turn=%d", p.turn)
     else:
         action = "PROBE"
 
@@ -413,8 +477,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         "topic":                   p.active_topic or "general",
         "topic_saturation_score":  sat_score,
         "topic_saturation_threshold": sat_threshold,
-        "response_latency_sec":    p.response_latency_sec,  # time from AI question to candidate reply
-        # ponytail: debug-report fields — cheap to stash here, avoids reconstructing later
+        "response_latency_sec":    p.response_latency_sec,
         "action":                  action,
         "band":                    p.band,
         "is_saturated":            is_saturated,
@@ -425,7 +488,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
 
     logger.info("[RESULT] turn=%d action=%s quality=%.2f/%s signal=%s sat=%.1f/%.1f",
                 p.turn, action, _weighted, depth_signal,
-                signal or "none", sat_score, sat_threshold)
+                signal, sat_score, sat_threshold)
 
     return {
         "action":        action,

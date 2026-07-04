@@ -91,10 +91,11 @@ def build_evaluation_layer_prompt(
         if tag == "RESUME_TOPIC":
             return (
                 "SOURCE=RESUME  ▸ Candidate HAS done this. We know it.\n"
-                "    HOW TO ASK: ground in what they built/decided/broke. "
-                "Never ask 'do you have experience' or 'why did you work there'. They worked there.\n"
-                "    WRONG: 'Why did you work on this?' / 'What drew you to X?'\n"
-                "    RIGHT: 'What was specifically yours in this?' / 'What broke and how did you fix it?'"
+                "    HOW TO ASK: ground in ONE concrete detail from their actual description — a specific "
+                "mechanism, decision, number, or failure — not a generic 'what was yours' shape that would "
+                "fit any resume item. Never ask 'do you have experience' or 'why did you work there'. "
+                "They worked there. Vary the framing every time — never repeat the same question shape twice.\n"
+                "    WRONG: 'Why did you work on this?' / 'What drew you to X?' / 'What was specifically yours in this?'"
             )
         elif tag == "JD_TOPIC":
             return (
