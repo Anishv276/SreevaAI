@@ -44,9 +44,12 @@ const EVENT_LABELS: Record<string, string> = {
     multiple_faces: "Multiple Faces",
     identity_mismatch: "Identity Mismatch",
     tab_switch: "Tab Switch",
+    fullscreen_exit: "Fullscreen Exit",
+    window_focus_loss: "Window Focus Loss",
     connection_lost: "Connection Lost",
     camera_disabled: "Camera Disabled",
-    microphone_disabled: "Microphone Disabled"
+    microphone_disabled: "Microphone Disabled",
+    answer_integrity: "Answer Integrity"
 };
 export function AuditLogModal({ 
     isOpen, 

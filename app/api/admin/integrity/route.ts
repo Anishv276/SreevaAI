@@ -38,8 +38,18 @@ const EVENT_MAP: Record<string, string> = {
     // Browser signals
     tab_switch:             "tab_switch",
     tabSwitch:              "tab_switch",
+    fullscreen_exit:        "fullscreen_exit",
+    fullscreenExit:         "fullscreen_exit",
+    window_focus_loss:      "window_focus_loss",
+    windowFocusLoss:        "window_focus_loss",
+    // Content-layer signal (post-interview LLM analysis)
+    answer_integrity:       "answer_integrity",
+    answerIntegrity:        "answer_integrity",
     // Metadata-only - never a violation
     ip_registered:          "__skip__",
+    // Fingerprint / session integrity signal (post-interview backend detection)
+    session_fingerprint:    "session_fingerprint",
+    sessionFingerprint:     "session_fingerprint",
 };
 function getRangeStart(range: string, from?: string, to?: string): Date {
     const now = new Date();
@@ -148,7 +158,11 @@ export async function GET(req: NextRequest) {
             "camera_disabled",
             "microphone_disabled",
             "tab_switch",
+            "fullscreen_exit",
+            "window_focus_loss",
             "connection_lost",
+            "answer_integrity",
+            "session_fingerprint",
         ];
         const LABELS: Record<string, { title: string; abbr: string; getDesc: (v: typeof violationCounts[string]) => string }> = {
             face_absence:               { title: "Face not visible",                   abbr: "FA", getDesc: v => {
@@ -159,12 +173,16 @@ export async function GET(req: NextRequest) {
             identity_mismatch:          { title: "Identity mismatch",                   abbr: "IM", getDesc: v => `${v.incidents} mismatch checks triggered` },
             camera_disabled:            { title: "Camera disabled mid-session",          abbr: "CD", getDesc: v => `${v.incidents} camera disable events` },
             microphone_disabled:        { title: "Microphone disabled mid-session",      abbr: "MD", getDesc: v => `${v.incidents} mic disable events` },
-            tab_switch:                 { title: "Tab switching / App switching",       abbr: "TS", getDesc: v => `${v.incidents} switch events recorded` },
+            tab_switch:                 { title: "Tab switching",                       abbr: "TS", getDesc: v => `${v.incidents} tab switch events recorded` },
+            fullscreen_exit:            { title: "Fullscreen exited",                   abbr: "FE", getDesc: v => `${v.incidents} fullscreen exit events recorded` },
+            window_focus_loss:          { title: "Window focus lost",                   abbr: "WF", getDesc: v => `${v.incidents} focus loss events recorded` },
             connection_lost:            { title: "Connection drops",                   abbr: "CL", getDesc: v => `${v.incidents} connection loss events` },
+            answer_integrity:       { title: "Answer integrity flagged",           abbr: "AI", getDesc: v => `${v.incidents} interview(s) flagged for AI-generated phrasing or cross-turn contradictions` },
+            session_fingerprint:    { title: "Session fingerprint mismatch",      abbr: "SF", getDesc: v => `${v.incidents} fingerprint change(s) detected (VPN/VM/device swap)` },
         };
         // Severity determination per category using event data
-        const HIGH_SEVERITY_KEYS   = new Set(["face_absence", "multiple_faces", "identity_mismatch", "camera_disabled"]);
-        const MEDIUM_SEVERITY_KEYS = new Set(["tab_switch", "microphone_disabled", "connection_lost"]);
+        const HIGH_SEVERITY_KEYS   = new Set(["face_absence", "multiple_faces", "identity_mismatch", "camera_disabled", "fullscreen_exit", "answer_integrity", "session_fingerprint"]);
+        const MEDIUM_SEVERITY_KEYS = new Set(["tab_switch", "window_focus_loss", "microphone_disabled", "connection_lost"]);
         const violations = ORDER
             .filter((k: string) => violationCounts[k as keyof typeof violationCounts] && LABELS[k as keyof typeof LABELS])
             .map((k: string) => ({

@@ -219,7 +219,7 @@ const interviewReportVerdict = typeof interviewSummaryData?.decision_note === "o
         interviewStatusNormalized === "FINISHED" ||
         Boolean(candidate?.interview?.completedAt);
     const interviewReportLocked = !interviewIsFinished;
-    // ── Parse integritySignals — frontend tab-switch/proctoring events ──
+    // -- Parse integritySignals -- frontend tab-switch/proctoring events --
     const rawProctoringEvents: any[] = (() => {
         const raw = candidate?.interview?.integritySignals;
         if (Array.isArray(raw)) return raw;
@@ -228,17 +228,46 @@ const interviewReportVerdict = typeof interviewSummaryData?.decision_note === "o
         }
         return [];
     })();
-    const groupedProctoringSignals = rawProctoringEvents.reduce((acc: any[], ev: any) => {
-        const key = String(ev?.eventType || ev?.type || "signal");
-        const severity = String(ev?.severity || "low").toLowerCase();
+const groupedProctoringSignals = rawProctoringEvents.reduce((acc: any[], ev: any) => {
+    const key = String(ev?.eventType || ev?.type || "signal");
+    // Skip metadata-only events (ip_registered = fingerprint bookkeeping)
+    if (key === "ip_registered") return acc;
+    const severity = String(ev?.severity || "low").toLowerCase();
+        // Each occurrence keeps its own during_question/during_topic (attached by
+        // report_pipeline.py's _attach_question_context) so the UI can say
+        // "left the tab during the Python question" per incident, not just once.
+        const occurrence = {
+            severity,
+            timestamp: ev?.timestamp,
+            during_question: ev?.during_question,
+            during_topic: ev?.during_topic,
+            reason: ev?.reason,
+        };
         const existing = acc.find((row: any) => row.key === key);
         if (existing) {
             existing.count += 1;
+            existing.occurrences.push(occurrence);
             if (severity === "high") existing.severity = "high";
             else if (severity === "medium" && existing.severity !== "high") existing.severity = "medium";
+            // Keep the highest-score occurrence's extra fields (score/reason/quotes/turns)
+            // for content-layer/aggregate signals like answer_integrity, latency_mismatch.
+            if (typeof ev?.score === "number" && (existing.score === undefined || ev.score > existing.score)) {
+                existing.score = ev.score;
+                existing.reason = ev.reason;
+                existing.quotes = ev.quotes;
+            }
+            if (Array.isArray(ev?.turns)) existing.turns = ev.turns;
             return acc;
         }
-        acc.push({ key, label: key.replace(/_/g, " "), count: 1, severity });
+        acc.push({
+            key,
+            label: key.replace(/_/g, " "),
+            count: 1,
+            severity,
+            occurrences: [occurrence],
+            ...(typeof ev?.score === "number" ? { score: ev.score, reason: ev.reason, quotes: ev.quotes } : {}),
+            ...(Array.isArray(ev?.turns) ? { turns: ev.turns } : {}),
+        });
         return acc;
     }, []);
     // Parse org-enabled proctoring signal keys (from super-admin config)
@@ -254,11 +283,12 @@ const interviewReportVerdict = typeof interviewSummaryData?.decision_note === "o
             );
         } catch { return new Set<string>(); }
     })();
-    // Full proctoring event list — filtered to org-enabled signals only
+    // Full proctoring event list -- filtered to org-enabled signals only
     const proctoringEventsFull: { time: string; eventType: string; reason: string; severity: string; elapsedSeconds: number }[] =
         rawProctoringEvents
         .filter((ev: any) => {
             const key = String(ev?.eventType || ev?.type || ev?.signal_name || "");
+            if (key === "ip_registered") return false;
             return !key || enabledProctoringSignals.size === 0 || enabledProctoringSignals.has(key);
         })
         .map((ev: any) => {
@@ -274,7 +304,7 @@ const interviewReportVerdict = typeof interviewSummaryData?.decision_note === "o
             };
         });
     const signalTimeline = rawProctoringEvents
-        .filter((e: any) => e?.signal_name || e?.eventType || e?.event)
+        .filter((e: any) => (e?.signal_name || e?.eventType || e?.event) && e?.eventType !== "ip_registered")
         .map((e: any) => {
             const elapsed = Number(e?.metadata?.elapsedSeconds ?? e?.elapsedSeconds ?? e?.elapsed_sec ?? 0);
             return {
@@ -287,9 +317,9 @@ const interviewReportVerdict = typeof interviewSummaryData?.decision_note === "o
                 recruiter_visible: true,
             };
         })
-        // Show only org-enabled proctoring signals — exclude behavioral/evaluation signals
+        // Show only org-enabled proctoring signals -- exclude behavioral/evaluation signals
         .filter((e) => enabledProctoringSignals.size === 0 || enabledProctoringSignals.has(e.signal_name));
-    // ── Parse answerScores — stored as JSON string in DB ──
+    // -- Parse answerScores -- stored as JSON string in DB --
     const answerScoresParsed: { question: string; answer: string; depth: number; clarity: number; specificity: number; grounding: number; overall: number; signals: string[]; response_latency_sec: number }[] = (() => {
         const raw = candidate?.interview?.questionByQuestionAnalysis;
         const parsed = (() => {
@@ -326,7 +356,7 @@ const interviewReportVerdict = typeof interviewSummaryData?.decision_note === "o
                 };
             });
     })();
-    // ── Compute avg response time from real per-question data ──
+    // -- Compute avg response time from real per-question data --
     const avgResponseTimeSec = (() => {
         const latencies = answerScoresParsed
             .map((s: any) => Number(s.response_latency_sec ?? 0))
@@ -372,7 +402,7 @@ const interviewReportVerdict = typeof interviewSummaryData?.decision_note === "o
         return 0;
     })();
     const combinedScore = interviewScore; // 0-100, no normalization needed
-    // ── Proctoring verdict — if fallback report but real events exist, say so ──
+    // -- Proctoring verdict -- if fallback report but real events exist, say so --
     const proctoringVerdictSummary = (() => {
         const aiSummary = String(interviewReportData?.integrity?.summary || "").trim();
         if (aiSummary && !isFallbackReport) return aiSummary;
