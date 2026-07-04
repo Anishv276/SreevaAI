@@ -30,12 +30,38 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: EC2 SSH deploy (temporarily disabled — instance not reachable)
-        run: |
-          echo "⚠️  EC2 SSH deploy disabled pending network fix"
-          echo "Instance is not publicly accessible (timeout on port 22)"
-          echo "LiveKit agent deployment is active and working"
-          echo "TODO: Fix EC2 network connectivity and re-enable this step"
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          timeout: 60s
+          command_timeout: 30m
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.APP_DIR }}"
+
+            echo "==> Pulling latest code"
+            git fetch --all
+            git reset --hard origin/main
+
+            echo "==> Building Docker images"
+            docker compose -f aws-deployment/docker-compose.prod.yml build
+
+            echo "==> Starting containers"
+            docker compose -f aws-deployment/docker-compose.prod.yml up -d
+
+            echo "==> Cleaning up old images"
+            docker image prune -f
+
+            echo "==> Container status"
+            docker compose -f aws-deployment/docker-compose.prod.yml ps
+        continue-on-error: true
 
 # -----------------------------------------------------------------------------
 # PHASE 2 (Fargate / multi-host) — replace the SSH job above with:
