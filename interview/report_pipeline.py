@@ -1269,7 +1269,9 @@ async def _node_llm_calls(state: ReportState) -> dict:
     asyncio.gather runs all three LLM calls concurrently, cutting wall-clock
     time from ~15s sequential to ~7s parallel.
     """
-    _LLM_DEFAULT        = state.get("_LLM_DEFAULT", "claude-opus-4-8")
+    llm_model           = state.get("_LLM_DEFAULT") or state.get("llm_model")
+    if not llm_model:
+        raise ValueError("llm_model not provided in report state — fetch from DB org config")
     job_title        = state.get("job_title", "")
     org_id           = state.get("org_id") or ""
     app_id           = state.get("app_id", "")
@@ -1347,7 +1349,7 @@ async def _node_llm_calls(state: ReportState) -> dict:
     _answer_integrity_task = (
         _answer_integrity_analyzer.analyze(
             transcript_lines=transcript_lines,
-            _LLM_DEFAULT=_LLM_DEFAULT,
+            _LLM_DEFAULT=llm_model,
             org_id=org_id,
             app_id=app_id,
         )
@@ -1372,7 +1374,7 @@ async def _node_llm_calls(state: ReportState) -> dict:
                 call_type="report_eval",
                 org_id=org_id,
                 app_id=app_id,
-                _LLM_DEFAULT=_LLM_DEFAULT,
+                _LLM_DEFAULT=llm_model,
             )),
             _llm.call(LLMCallSpec(
                 system=skills_system,
@@ -1383,14 +1385,14 @@ async def _node_llm_calls(state: ReportState) -> dict:
                 call_type="report_skills",
                 org_id=org_id,
                 app_id=app_id,
-                _LLM_DEFAULT=_LLM_DEFAULT,
+                _LLM_DEFAULT=llm_model,
             )),
             _behavioral_analyzer.analyze(
                 transcript_lines=transcript_lines,
                 answer_scores=interview_scores,
                 duration_sec=session_duration,
                 behavioral_signals=behavioral_signals,
-                _LLM_DEFAULT=_LLM_DEFAULT,
+                _LLM_DEFAULT=llm_model,
                 org_id=org_id,
                 app_id=app_id,
             ),
@@ -1402,10 +1404,10 @@ async def _node_llm_calls(state: ReportState) -> dict:
     if org_id:
         billing_tasks = [
             _persist_billing(
-                org_id, "interviewReport", _llm.usage_dict(eval_usage, _LLM_DEFAULT)
+                org_id, "interviewReport", _llm.usage_dict(eval_usage, llm_model)
             ),
             _persist_billing(
-                org_id, "interviewReport", _llm.usage_dict(skills_usage, _LLM_DEFAULT)
+                org_id, "interviewReport", _llm.usage_dict(skills_usage, llm_model)
             ),
             *[
                 _persist_billing(org_id, "interviewReport", bu)
@@ -1663,9 +1665,9 @@ async def generate_interview_report(
     transcript_lines: list,
     answer_scores:   list,
     job_title:       str,
+    _LLM_DEFAULT:    str,
     proctoring_data: Optional[dict] = None,
     org_id:          Optional[str]  = None,
-    _LLM_DEFAULT:       str            = _LLM_DEFAULT,
     jd_json:         Optional[dict] = None,
     topic_records:   Optional[list] = None,
     candidate_name:  str = "",

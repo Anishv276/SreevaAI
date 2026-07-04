@@ -946,6 +946,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         };
         const onFullscreenChange = () => {
             const isFS = !!(document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement);
+            // Only log exit if we were definitely in fullscreen before (state change from true to false)
             if (!isFS && wasFullscreenRef.current) {
                 if (isFullscreenExitEnabled) {
                     logFullscreenExit();
@@ -957,6 +958,10 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             }
             wasFullscreenRef.current = isFS;
         };
+        // Initialize wasFullscreenRef to current state when attaching listeners
+        const initialIsFS = !!(document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement);
+        wasFullscreenRef.current = initialIsFS;
+
         document.addEventListener("visibilitychange", onVisibilityChange);
         window.addEventListener("blur", onWindowBlur);
         window.addEventListener("focus", onWindowFocus);
