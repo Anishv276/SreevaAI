@@ -143,7 +143,7 @@ export async function alertError(alert: ErrorAlert): Promise<void> {
 }
 
 /**
- * Wrapper for login errors — logs both success and failure
+ * Wrapper for login errors -- logs both success and failure
  */
 export async function logLoginAttempt(params: {
   userId: string;

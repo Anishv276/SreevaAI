@@ -22,7 +22,7 @@ if str(_repo_root) not in sys.path:
     sys.path.insert(0, str(_repo_root))
 
 
-# ── Text extraction from file ─────────────────────────────────────────────────
+# -- Text extraction from file -------------------------------------------------
 
 def _extract_text(file_path: str) -> str:
     """Extract plain text from PDF or text file."""
@@ -57,7 +57,7 @@ def _extract_text(file_path: str) -> str:
     return path.read_text(encoding="utf-8", errors="replace").strip()
 
 
-# ── Pipeline ──────────────────────────────────────────────────────────────────
+# -- Pipeline ------------------------------------------------------------------
 
 class Pipeline:
     def run_jd(self, file_path: str) -> dict:
@@ -136,7 +136,7 @@ class Pipeline:
         }
 
 
-# ── CLI entry point ───────────────────────────────────────────────────────────
+# -- CLI entry point -----------------------------------------------------------
 
 def main():
     args = sys.argv[1:]
@@ -146,7 +146,7 @@ def main():
 
     file_path = args[0]
     doc_type  = args[1].upper()
-    # args[2] and args[3] are model overrides from worker — accepted, ignored (MODEL is fixed)
+    # args[2] and args[3] are model overrides from worker -- accepted, ignored (MODEL is fixed)
 
     pipeline = Pipeline()
 

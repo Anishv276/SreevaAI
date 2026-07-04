@@ -1,4 +1,4 @@
-// Canonical voice/model data lives in ai-models-config.ts — this file re-exports for backward compat.
+// Canonical voice/model data lives in ai-models-config.ts -- this file re-exports for backward compat.
 export { ALL_VOICES, getVoiceById } from "@/lib/ai-models-config";
 
 export type Voice = {

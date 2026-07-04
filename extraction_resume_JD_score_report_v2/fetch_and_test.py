@@ -25,7 +25,7 @@ from openai import OpenAI
 from extraction_resume_JD_score_report_v2.scorer import compute_score as score_v2
 
 
-# ── DB fetch ──────────────────────────────────────────────────────────────────
+# -- DB fetch ------------------------------------------------------------------
 
 def get_conn():
     url = os.environ["DATABASE_URL"]
@@ -117,7 +117,7 @@ def fetch_vamsi_application(cur, drive_id: str | None = None) -> dict | None:
     }
 
 
-# ── Comparison runner ─────────────────────────────────────────────────────────
+# -- Comparison runner ---------------------------------------------------------
 
 def run(drive_id_override: str | None = None):
     conn = get_conn()
@@ -153,13 +153,13 @@ def run(drive_id_override: str | None = None):
     if not resume_data:
         print("ERROR: Application has no resumeData (resume not yet parsed).")
         return
-    # resumeData is stored as {"source": {...}, "parsed": {...}} — unwrap
+    # resumeData is stored as {"source": {...}, "parsed": {...}} -- unwrap
     if "parsed" in resume_data:
         resume_data = resume_data["parsed"]
 
     screening = drive["screening_criteria"]
 
-    # ── Run scorer ────────────────────────────────────────────────────────────
+    # -- Run scorer ------------------------------------------------------------
     oai = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
     print("=== Running scorer ===")
@@ -171,7 +171,7 @@ def run(drive_id_override: str | None = None):
         cur.close(); conn.close()
         return
 
-    # ── Print results ─────────────────────────────────────────────────────────
+    # -- Print results ---------------------------------------------------------
     print("\n" + "=" * 80)
     print(f"  RESULTS: {app['full_name']} vs {drive['title']}")
     print("=" * 80)

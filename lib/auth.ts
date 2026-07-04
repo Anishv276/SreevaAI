@@ -37,7 +37,7 @@ export async function createSession(user: SessionUser): Promise<string> {
         .setExpirationTime(SESSION_DURATION)
         .sign(getSecretKey());
 }
-// ─── Request-Level Session Cache ───────────────────────────────────────────────
+// --- Request-Level Session Cache -----------------------------------------------
 // Caches verified sessions to avoid repeated Redis round-trips on every route.
 // TTL is 60s in dev (Redis is remote, so per-navigation Redis calls are expensive)
 // and 5s in production (short enough that revocations propagate quickly).
@@ -49,20 +49,20 @@ function pruneExpiredCache() {
         if (entry.expiresAt <= now) _sessionCache.delete(key);
     }
 }
-// ───────────────────────────────────────────────────────────────────────────────
+// -------------------------------------------------------------------------------
 function cacheSet(token: string, user: SessionUser | null) {
     pruneExpiredCache();
     _sessionCache.set(token, { user, expiresAt: Date.now() + CACHE_TTL_MS });
 }
 export async function verifySession(token: string): Promise<SessionUser | null> {
-    // 1. Check in-memory cache first (zero network cost — eliminates duplicate trips)
+    // 1. Check in-memory cache first (zero network cost -- eliminates duplicate trips)
     const cached = _sessionCache.get(token);
     if (cached) {
         if (cached.expiresAt > Date.now()) return cached.user;
         _sessionCache.delete(token);
     }
     try {
-        // 2. Verify JWT — try current secret, then previous (handles rotation grace period)
+        // 2. Verify JWT -- try current secret, then previous (handles rotation grace period)
         let payload: any = null;
         for (const key of allSecretKeys()) {
             try {
@@ -75,9 +75,9 @@ export async function verifySession(token: string): Promise<SessionUser | null> 
         }
         if (!payload) throw new Error("invalid token");
         const sessionUser = payload as unknown as SessionTokenPayload;
-        // 3. REVOCATION CHECK — UNCONDITIONAL in every environment.
+        // 3. REVOCATION CHECK -- UNCONDITIONAL in every environment.
         //    The latency optimization is the in-memory cache above + the single
-        //    batched mget below — never the skipping of the security check.
+        //    batched mget below -- never the skipping of the security check.
         if (redis && sessionUser?.userId) {
             const [isBlacklisted, lastPwdChange] = await redis.mget(
                 `blacklist:${token}`,
@@ -124,7 +124,7 @@ export async function refreshSessionCookie(request: NextRequest, response: NextR
     const expSeconds = Number(tokenPayload.exp || 0);
     if (expSeconds > 0) {
         const remainingMs = expSeconds * 1000 - Date.now();
-        // Re-issue when less than 30 min left on the 2h token — sliding window
+        // Re-issue when less than 30 min left on the 2h token -- sliding window
         if (remainingMs > 30 * 60 * 1000) {
             return response;
         }

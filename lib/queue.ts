@@ -6,7 +6,7 @@ import { Queue } from 'bullmq';
  *  - Completed jobs: auto-deleted 60s after finishing   (keeps Redis lean)
  *  - Failed jobs:    auto-deleted 60s after failure     (never block new jobs)
  *
- * Nothing ever accumulates — no manual cleanup needed.
+ * Nothing ever accumulates -- no manual cleanup needed.
  *
  * Every queue is namespaced by `prefix` (BULLMQ_PREFIX) so dev/prod deployments
  * sharing one Redis instance never consume each other's jobs. The worker uses

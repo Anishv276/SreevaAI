@@ -17,5 +17,5 @@ export function getOpenAIClient(): OpenAI {
     });
     return _openai;
 }
-// Transcription and embedding logic removed — handled by LiveKit/Deepgram and Python workers respectively.
-// JD extraction removed — handled by the Python worker (scripts/extract_pdf.py) for billing consistency.
+// Transcription and embedding logic removed -- handled by LiveKit/Deepgram and Python workers respectively.
+// JD extraction removed -- handled by the Python worker (scripts/extract_pdf.py) for billing consistency.

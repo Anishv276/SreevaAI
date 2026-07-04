@@ -56,7 +56,7 @@ export const createCandidateSchema = z.object({
 export const bulkDeleteCandidatesSchema = z.object({
   ids: z.array(z.string().min(1)).min(1, "At least one ID required"),
 });
-// PATCH /api/candidates/[id] — allowlist of mutable status fields. Free-form
+// PATCH /api/candidates/[id] -- allowlist of mutable status fields. Free-form
 // values are capped in length to prevent junk being persisted; the route applies
 // its own canonicalization on top of this.
 export const updateCandidateStatusSchema = z.object({

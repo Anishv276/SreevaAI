@@ -120,7 +120,7 @@ export async function syncOrgStatusWithInterviewQuota(orgId: string): Promise<st
     return currentStatus;
 }
 export async function getEffectiveOrgStatus(orgId: string): Promise<string | null> {
-    // ⚡ Single query — fetch all needed columns in one round-trip
+    // ⚡ Single query -- fetch all needed columns in one round-trip
     const rows = await prisma.$queryRaw<Array<{
         status: string | null;
         interviewQuotaTotal: number | null;

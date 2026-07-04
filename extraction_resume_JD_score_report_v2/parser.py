@@ -163,7 +163,7 @@ class DocumentParser:
         client = _get_client()
         return self._parse_resume(client, text, model_override or MODEL, jd_criteria=jd_criteria)
 
-    # ── JD ────────────────────────────────────────────────────────────────────
+    # -- JD --------------------------------------------------------------------
 
     def _parse_jd(self, client: OpenAI, text: str, model: str) -> dict:
         print("--- [AI] Extracting JD structure... ---", file=sys.stderr, flush=True)
@@ -171,7 +171,7 @@ class DocumentParser:
         data = _normalise_jd(data)
         return {"data": data, "usage": usage}
 
-    # ── Resume: two-pass ──────────────────────────────────────────────────────
+    # -- Resume: two-pass ------------------------------------------------------
 
     def _parse_resume(
         self, client: OpenAI, text: str, model: str, jd_criteria: list[dict] | None
@@ -191,7 +191,7 @@ class DocumentParser:
         }
         return {"data": merged, "usage": usage}
 
-    # ── Score ─────────────────────────────────────────────────────────────────
+    # -- Score -----------------------------------------------------------------
 
     def _run_score(self, client: OpenAI, json_text: str, model_override: str | None) -> dict:
         # Load payload
@@ -255,7 +255,7 @@ class DocumentParser:
                 return v
             report = {k: _clean(v) for k, v in report.items()}
 
-            # Assemble final output — scorer data takes precedence over LLM fields
+            # Assemble final output -- scorer data takes precedence over LLM fields
             final = {
                 "score": score_result["score"],
                 "base_score": score_result["base_score"],

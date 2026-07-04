@@ -15,7 +15,7 @@ from typing import Optional
 from pydantic import BaseModel, Field, model_validator
 
 
-# ── Enums ─────────────────────────────────────────────────────────────────────
+# -- Enums ---------------------------------------------------------------------
 
 class OwnershipLevel(str, Enum):
     owner = "owner"
@@ -61,7 +61,7 @@ class MatchType(str, Enum):
     none = "none"
 
 
-# ── Resume: Pass 1 (structural) ───────────────────────────────────────────────
+# -- Resume: Pass 1 (structural) -----------------------------------------------
 
 class WorkRoleStructural(BaseModel):
     id: str
@@ -102,7 +102,7 @@ class ResumeStructural(BaseModel):
     parse_confidence: str = "medium"
 
 
-# ── Resume: Pass 2 (semantic assessment) ─────────────────────────────────────
+# -- Resume: Pass 2 (semantic assessment) -------------------------------------
 
 class EvidenceItem(BaseModel):
     id: str
@@ -173,7 +173,7 @@ class ResumeEvidence(BaseModel):
     candidate_summary: str = ""
 
 
-# ── Merged Resume (what the scorer receives) ──────────────────────────────────
+# -- Merged Resume (what the scorer receives) ----------------------------------
 
 class MergedResume(BaseModel):
     """
@@ -206,7 +206,7 @@ class MergedResume(BaseModel):
     _years_corrected: bool = False
 
 
-# ── JD ────────────────────────────────────────────────────────────────────────
+# -- JD ------------------------------------------------------------------------
 
 class JDCriterion(BaseModel):
     id: str = ""
@@ -247,7 +247,7 @@ class JDData(BaseModel):
         return self.experience.get("max_years")
 
 
-# ── Scoring ───────────────────────────────────────────────────────────────────
+# -- Scoring -------------------------------------------------------------------
 
 class MatchSource(BaseModel):
     """Full trace of how a criterion was matched — powers explainability."""
