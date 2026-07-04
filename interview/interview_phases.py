@@ -1,4 +1,4 @@
-﻿"""
+"""
 Interview phase helpers -- single unified 20-minute interview.
 Flow: greeting -> warmup -> unified interview stage (full 20min)
 The single stage covers resume projects/work and JD skills. Hard moments
@@ -102,7 +102,7 @@ def build_interview_directive(
         f"ONE question only. Stay on {anchor_name} until a [NEXT_TURN_DIRECTIVE] tells you to move."
     )
     cq_block = _build_custom_questions_block(custom_questions)
-    # Skills block — when brief is available, use its skill TopicItems directly
+    # Skills block -- when brief is available, use its skill TopicItems directly
     # (richer: per-skill probe_focus, source, why_relevant). Fall back to
     # resume_brief.skills + jd_skills when brief is not provided.
     _skill_probe_style = {
@@ -183,7 +183,7 @@ def build_interview_directive(
             skills_block = ""
     # Band-aware follow-up pacing note. Coverage itself (which topics, in what
     # order, situational/behavioral weaving) comes from interview_brief.topic_pool
-    # and interview_brief.interview_strategy — both already candidate- and
+    # and interview_brief.interview_strategy -- both already candidate- and
     # role-specific, so it isn't re-derived generically here per band.
     _pacing_note = {
         "fresher":     "  -> BREADTH FIRST -- 2-3 follow-ups per topic. Move on when you have signal. Accept incomplete answers, they're learning.\n",

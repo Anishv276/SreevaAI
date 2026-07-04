@@ -52,7 +52,7 @@ async def _validate_sarvam_api_key(api_key: str) -> bool:
 
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            # Try a simple GET to the list endpoint — doesn't require a dict, just validates auth
+            # Try a simple GET to the list endpoint -- doesn't require a dict, just validates auth
             resp = await client.get(
                 _BASE_URL,
                 headers={"api-subscription-key": api_key},
@@ -73,7 +73,7 @@ async def _validate_sarvam_api_key(api_key: str) -> bool:
         logger.error("[SARVAM_DICT] API key validation failed: %s", e)
         return False
 
-# ── Base dictionary: universal tech terms all interviews share ─────────────────
+# -- Base dictionary: universal tech terms all interviews share -----------------
 # These are words Sarvam's engine consistently mispronounces even with
 # enable_preprocessing on. Human-curated, rarely changes.
 _BASE_PRONUNCIATIONS: dict[str, str] = {
@@ -117,11 +117,11 @@ _BASE_PRONUNCIATIONS: dict[str, str] = {
     "lambda":        "lam dah",
 }
 
-# ── Auto-pronunciation engine ──────────────────────────────────────────────────
+# -- Auto-pronunciation engine --------------------------------------------------
 # For any word extracted from a candidate's resume/JD that is NOT in the base
 # dict, we auto-generate a pronunciation. Rules applied in order:
 
-# Words Sarvam reads correctly without help — skip them
+# Words Sarvam reads correctly without help -- skip them
 _SARVAM_READS_OK: frozenset[str] = frozenset({
     "sql", "aws", "gcp", "git", "ssh", "pdf", "url", "http", "html", "css",
     "json", "yaml", "rest", "crud", "cors", "uuid", "gpu", "cpu", "ram",
@@ -227,7 +227,7 @@ def _auto_pronounce(word: str) -> Optional[str]:
             spaced = " ".join(letters)
             return (spaced + " " + plural) if plural else spaced
 
-    # Word is all-lowercase or mixed — let Sarvam handle it
+    # Word is all-lowercase or mixed -- let Sarvam handle it
     return None
 
 
@@ -260,7 +260,7 @@ def build_session_pronunciations(keywords: list[str]) -> dict[str, str]:
     return result
 
 
-# ── Sarvam API helpers ─────────────────────────────────────────────────────────
+# -- Sarvam API helpers ---------------------------------------------------------
 
 _BASE_ENV_KEY = "SARVAM_DICT_ID"
 
@@ -363,12 +363,12 @@ async def _delete_dict(api_key: str, dict_id: str) -> None:
             params={"dict_id": dict_id},
             headers={"api-subscription-key": api_key},
         )
-        # 404 is fine — already deleted
+        # 404 is fine -- already deleted
         if resp.status_code not in (200, 204, 404):
             resp.raise_for_status()
 
 
-# ── Public API ─────────────────────────────────────────────────────────────────
+# -- Public API -----------------------------------------------------------------
 
 async def get_or_create_base_dict_id(api_key: str) -> Optional[str]:
     """Return the base pronunciation dict ID, creating it if needed.
@@ -455,7 +455,7 @@ async def get_session_dict_id(
             logger.info("[SARVAM_DICT] Updated base dict %s with session words", base_dict_id)
             return base_dict_id
 
-        # Need a new dict slot — check if we're at the cap
+        # Need a new dict slot -- check if we're at the cap
         existing_ids = await _list_dicts(api_key)
         non_base = [d for d in existing_ids if d and d != base_dict_id]
 
@@ -474,7 +474,7 @@ async def get_session_dict_id(
         return base_dict_id
 
 
-# ── Legacy compat (keep old callers working) ───────────────────────────────────
+# -- Legacy compat (keep old callers working) -----------------------------------
 
 async def get_or_create_dict_id(api_key: str) -> Optional[str]:
     """Backward-compat wrapper. Returns base dict ID."""

@@ -34,7 +34,7 @@ from reportlab.platypus import (
 logger = logging.getLogger("interview-agent")
 
 # ---------------------------------------------------------------------------
-# Shared team fallbacks — same pattern as slack_error_logger.py.
+# Shared team fallbacks -- same pattern as slack_error_logger.py.
 # These ensure every teammate gets debug PDFs without individual .env setup.
 # Override in your .env (see .env.example) if you need a different channel.
 # ---------------------------------------------------------------------------
@@ -101,7 +101,7 @@ def build_debug_pdf(
     story.append(pool_table)
     story.append(Spacer(1, 0.2 * inch))
 
-    # -- Covered topics (CoveredTopics store — gist + forbidden questions) -----
+    # -- Covered topics (CoveredTopics store -- gist + forbidden questions) -----
     story.append(Paragraph("2. Covered Topics", ss["Heading2"]))
     if covered_topics:
         cov_rows = [["Title", "Source", "Via Topic", "Gist", "Questions Asked"]]
@@ -241,7 +241,7 @@ async def post_pdf_to_slack(pdf_bytes: bytes, filename: str, title: str) -> None
 
     try:
         async with aiohttp.ClientSession(headers=auth_headers, timeout=_timeout) as http:
-            # ── Step 1: Get a pre-signed upload URL ────────────────────────
+            # -- Step 1: Get a pre-signed upload URL ------------------------
             logger.debug("[DEBUG_REPORT] Step 1: Requesting upload URL from Slack...")
             async with http.post(
                 "https://slack.com/api/files.getUploadURLExternal",
@@ -261,7 +261,7 @@ async def post_pdf_to_slack(pdf_bytes: bytes, filename: str, title: str) -> None
             file_id: str = url_resp["file_id"]
             logger.debug("[DEBUG_REPORT] Step 1 OK — file_id=%s upload_url=%s", file_id, upload_url[:60])
 
-            # ── Step 2: Upload the raw PDF bytes to the pre-signed URL ─────
+            # -- Step 2: Upload the raw PDF bytes to the pre-signed URL -----
             logger.debug("[DEBUG_REPORT] Step 2: Uploading PDF bytes to pre-signed URL...")
             form = aiohttp.FormData()
             form.add_field(
@@ -269,7 +269,7 @@ async def post_pdf_to_slack(pdf_bytes: bytes, filename: str, title: str) -> None
                 filename=filename,
                 content_type="application/pdf",
             )
-            # Upload URL is unauthenticated — do NOT send the Authorization header
+            # Upload URL is unauthenticated -- do NOT send the Authorization header
             async with aiohttp.ClientSession(timeout=_timeout) as upload_http:
                 async with upload_http.post(upload_url, data=form) as up_resp:
                     up_body = await up_resp.text()
@@ -281,7 +281,7 @@ async def post_pdf_to_slack(pdf_bytes: bytes, filename: str, title: str) -> None
                         return
             logger.debug("[DEBUG_REPORT] Step 2 OK — PDF bytes uploaded successfully")
 
-            # ── Step 3: Complete the upload and share to channel ───────────
+            # -- Step 3: Complete the upload and share to channel -----------
             logger.debug("[DEBUG_REPORT] Step 3: Completing upload and posting to channel...")
             initial_comment = (
                 f"📋 *Interview Debug Report*\n"

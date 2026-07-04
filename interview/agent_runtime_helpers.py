@@ -17,7 +17,7 @@ import re
 from interview.agent_runtime_support import logger
 from interview.agent_runtime_utils import TextSanitizer, TranscriptManager
 
-# ── ElevenLabs text normalization ─────────────────────────────────────────────
+# -- ElevenLabs text normalization ---------------------------------------------
 # flash_v2_5 has weaker normalization than multilingual_v2. Pre-normalize before
 # sending to ElevenLabs so numbers, symbols, and double-punctuation are clean.
 _EL_NORMALIZE: tuple[tuple[re.Pattern, str], ...] = (
@@ -69,7 +69,7 @@ async def _elevenlabs_normalize_transform(text_stream):
     if buf.strip():
         yield _normalize_for_elevenlabs(buf.strip())
 
-# ── LLM TTS rewrite prompt ────────────────────────────────────────────────────
+# -- LLM TTS rewrite prompt ----------------------------------------------------
 # Used by make_sarvam_llm_rewrite_transform(). Kept here so it's easy to tune.
 _TTS_REWRITE_SYSTEM_PROMPT = """\
 You rewrite text so it sounds natural when spoken aloud by a text-to-speech engine.
@@ -82,9 +82,9 @@ Rules:
 """
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 # TEXT SANITIZATION API (delegated to TextSanitizer)
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 
 def sanitize_candidate_facing_text(text: str) -> str:
     """Remove internal control directives from candidate-facing text.
@@ -134,9 +134,9 @@ def _enforce_single_question(text: str) -> str:
     return text
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 # TTS TRANSFORMS (async generators for streaming)
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 
 # Initialize TTS processor for acronym/phonetic handling
 try:
@@ -197,7 +197,7 @@ def make_sarvam_llm_rewrite_transform(openai_client, model: str = "gpt-4.1-nano"
     """
     import re as _re
 
-    # Sentence-ending punctuation — captures the punctuation + any trailing space
+    # Sentence-ending punctuation -- captures the punctuation + any trailing space
     # so the space is included in the flushed chunk, not dropped between sentences.
     _SENT_END = _re.compile(r'[.!?][ \t]*')
 
@@ -207,7 +207,7 @@ def make_sarvam_llm_rewrite_transform(openai_client, model: str = "gpt-4.1-nano"
         if not sentence:
             return sentence
 
-        # Skip rewrite if the sentence has no ALL-CAPS words or camelCase — no-op
+        # Skip rewrite if the sentence has no ALL-CAPS words or camelCase -- no-op
         if not _re.search(r'[A-Z]{2,}|[a-z][A-Z]', sentence):
             return sentence
 
@@ -288,9 +288,9 @@ async def _tts_sanitize_transform(text_stream):
         yield chunk
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 # TRANSCRIPT CONTEXT BUILDING
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 
 def _build_recent_context_block(
     transcript_lines: list[str],
@@ -346,9 +346,9 @@ def _build_recent_context_block(
     return "\n".join(lines)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 # SYSTEM MESSAGE REMOVAL (chat_ctx manipulation)
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 
 def remove_system_messages(chat_ctx, marker: str) -> None:
     """Remove system messages containing a marker.
@@ -411,9 +411,9 @@ def remove_system_messages_multi(chat_ctx, markers: tuple) -> None:
     items[:] = [msg for msg in list(items) if not _matches_any(msg)]
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 # TRANSCRIPT APPENDING (delegated to TranscriptManager for O(n) efficiency)
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 
 def append_transcript_line(transcript_lines: list[str], speaker: str, text: str) -> None:
     """Append a transcript line with dedup and merge logic.

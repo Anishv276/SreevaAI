@@ -1,4 +1,4 @@
-﻿"""
+"""
 agent_scoring.py
 Two dedicated LLM calls per turn: one scores the answer, one classifies the signal.
 Splitting the calls eliminates conjunctive-logic collapse — the scoring call focuses
@@ -22,11 +22,11 @@ _EVAL_DEFAULT = "gpt-4.1-mini"  # ponytail: fallback — callers pass org's llmI
 
 
 # ---------------------------------------------------------------------------
-# Signal definitions — what each signal means and what it maps to.
+# Signal definitions -- what each signal means and what it maps to.
 # Used here to train the scoring LLM. Also imported by probe_strategy.py.
 # ---------------------------------------------------------------------------
 
-# Response-level signals (G0) — fire if candidate's response type is special
+# Response-level signals (G0) -- fire if candidate's response type is special
 RESPONSE_SIGNALS = {
     "pure_denial": {
         "description": "Answer is ONLY denial, zero attempt, nothing substantive.",
@@ -50,7 +50,7 @@ RESPONSE_SIGNALS = {
     },
 }
 
-# Content-level signals (G1-G6) — fire based on answer quality/pattern
+# Content-level signals (G1-G6) -- fire based on answer quality/pattern
 SIGNAL_DEFINITIONS = {
 
     # PATTERN: answer is a rule/habit, not a real event
@@ -58,11 +58,11 @@ SIGNAL_DEFINITIONS = {
         "trigger": "Question asked for ONE real past instance. Answer describes how they GENERALLY operate — a rule, not a memory.",
         "pattern": "The shape is 'usually I...', 'normally...', 'I always...', 'typically we...' — a description of a type of behaviour, not one specific event that happened.",
         "examples": [
-            # tech — describes habit not event
+            # tech -- describes habit not event
             "Q: Tell me about a time your model gave wrong results. A: Usually I check the training data first and retrain.",
-            # sales — describes approach not incident
+            # sales -- describes approach not incident
             "Q: Tell me about a deal you almost lost. A: I always follow up quickly and stay persistent with the client.",
-            # HR — describes process not moment
+            # HR -- describes process not moment
             "Q: Describe a time you handled a difficult hire. A: Normally I involve the team and keep the process structured.",
         ],
         "not_this": "NOT this if they gave any real specific instance, even briefly or imperfectly — then null or a different signal. "
@@ -75,11 +75,11 @@ SIGNAL_DEFINITIONS = {
         "trigger": "They engaged and tried, then visibly ran out of knowledge — partial start that trails off, one-word non-denial, or 'I don't have much idea' after attempting.",
         "pattern": "Not dodging, not giving a habit — just empty. They reached the edge of what they know and stopped. The answer starts with intent but has no landing.",
         "examples": [
-            # tech — started, ran out
+            # tech -- started, ran out
             "I've used FAISS but I don't really have a lot of idea about how the indexing actually works.",
-            # sales — started, ran out
+            # sales -- started, ran out
             "I've done territory planning but the forecasting side... yeah, I'm not too sure how that part worked.",
-            # HR — one word after a real question
+            # HR -- one word after a real question
             "Q: Walk me through how you structured the interview panel. A: Okay.",
         ],
         "not_this": "NOT this if it is a flat 'I don't know' with zero attempt — that is a denial, return null. "
@@ -92,11 +92,11 @@ SIGNAL_DEFINITIONS = {
         "trigger": "'We/team/they' throughout — no 'I did', 'I decided', 'I built' anywhere. Contribution is invisible.",
         "pattern": "The work sounds real but collective. Every verb is plural. You cannot tell what this one person specifically did, decided, or delivered.",
         "examples": [
-            # tech — all team verbs
+            # tech -- all team verbs
             "We built the retrieval pipeline, the team set up the vector store, they handled the deployment.",
-            # sales — team credit
+            # sales -- team credit
             "Our team closed the deal, we handled the negotiation together, the account manager did the follow-up.",
-            # HR — collective ownership
+            # HR -- collective ownership
             "The hiring team ran the process, we interviewed together, and the decision was made as a group.",
         ],
         "not_this": "NOT this if they said 'I did X' or 'my part was Y' anywhere — ownership is clear. "
@@ -109,11 +109,11 @@ SIGNAL_DEFINITIONS = {
         "trigger": "Strong personal ownership claim ('I built it all', 'I'm really strong at X', 'entire thing by me') + description that reads like an outsider's — no internals, no decisions, no friction.",
         "pattern": "Ownership is asserted loudly; understanding is absent. A real owner can open the box. This person describes the label. Works across every domain — the claim can be about a technical build, a sales skill, or an HR process.",
         "examples": [
-            # tech — ownership claim + no internals
+            # tech -- ownership claim + no internals
             "Entire functionality is completely built by me. It's a RAG-based system. [Claims it all, explains none of it.]",
-            # sales — ability claim + no substance
+            # sales -- ability claim + no substance
             "I'm really strong at closing deals. I always know what the client needs and I close it. [Bold claim, zero example or mechanic.]",
-            # HR — process claim + no detail
+            # HR -- process claim + no detail
             "I designed the whole onboarding programme myself. It covers everything a new hire needs. [Owns it, can't describe any of it.]",
         ],
         "not_this": "NOT this if they only named a tool or method without a personal strength/ownership claim — that is tool_named_not_used. "
@@ -127,11 +127,11 @@ SIGNAL_DEFINITIONS = {
         "trigger": "A specific tool / method / framework / process is NAMED — then immediately defined, listed, or abandoned. Zero operational memory of using it.",
         "pattern": "The name appears but there is no 'I did X with it', no step they ran, no problem it caused or solved. Could be a tech tool, a sales methodology, an HR framework — any named thing with no usage shown.",
         "examples": [
-            # tech — list of names
+            # tech -- list of names
             "Vector database — ChromaDB, FAISS, Pinecone. [Three names, zero usage behind any of them.]",
-            # sales — methodology named, defined, not used
+            # sales -- methodology named, defined, not used
             "I use SPIN selling. It stands for Situation, Problem, Implication, Need-payoff. [Names and defines it, never shows using it.]",
-            # HR — framework named, defined, not applied
+            # HR -- framework named, defined, not applied
             "We used a competency framework. It's a structured way to evaluate candidates against defined criteria. [Names it, describes what it is, not what they did with it.]",
         ],
         "not_this": "NOT this if they showed real usage — 'I stored embeddings in ChromaDB', 'I ran discovery calls using SPIN', 'I scored candidates against the framework' — that is tech_choice_unjustified. "
@@ -144,11 +144,11 @@ SIGNAL_DEFINITIONS = {
         "trigger": "Real usage IS shown — they operated it, built with it, ran it — but never said WHY that tool/method over alternatives.",
         "pattern": "Usage is evident; the decision behind the choice is absent. You can't tell if they chose it deliberately or just defaulted to it. Applies to any domain — tech stack, sales method, HR process — wherever a choice was made but not reasoned.",
         "examples": [
-            # tech — used it, no why
+            # tech -- used it, no why
             "I stored the embeddings in ChromaDB and queried them through LangChain. It worked fine. [Clear usage — but why ChromaDB over FAISS or Pinecone?]",
-            # sales — used it, no why
+            # sales -- used it, no why
             "I ran discovery calls and used SPIN to structure my questions. It went well with most clients. [Used it — but why SPIN over MEDDIC or BANT?]",
-            # HR — used it, no why
+            # HR -- used it, no why
             "I ran structured interviews using a scorecard for every candidate. [Clear process — but why a scorecard over panel discussion or work sample?]",
         ],
         "not_this": "NOT this if there is no evidence they used it — that is tool_named_not_used. "
@@ -161,11 +161,11 @@ SIGNAL_DEFINITIONS = {
         "trigger": "Correct, complete, process-level description — technically accurate, no specific tool to chase, no personal claim — but reads memorised not lived. No edge case, no failure, no friction.",
         "pattern": "The answer is right but frictionless. It is the version from the documentation or a training course, not from having actually done it. A practitioner would remember something that was hard or broke — this person has only the clean flow.",
         "examples": [
-            # tech — correct flow, zero texture
+            # tech -- correct flow, zero texture
             "Embedding goes into chunks, chunks become vectors, vectors go into the store, similarity search retrieves top results. [Correct — but no lived friction anywhere in this.]",
-            # sales — correct process, no friction
+            # sales -- correct process, no friction
             "You qualify the lead, do discovery, present the solution, handle objections, then close. [Textbook sales process — no real deal, no real friction.]",
-            # HR — correct sequence, no texture
+            # HR -- correct sequence, no texture
             "You define the role, write the JD, post it, screen CVs, do interviews, then make an offer. [Correct sequence — but anyone who read an HR guide could say this.]",
         ],
         "not_this": "NOT this if a specific named tool is the center of the answer with no usage — that is tool_named_not_used. "
@@ -175,12 +175,12 @@ SIGNAL_DEFINITIONS = {
 }
 
 # ---------------------------------------------------------------------------
-# SIGNAL DETECTION — direct classification.
+# SIGNAL DETECTION -- direct classification.
 #
 # Tested against a feature-extraction + code-resolver alternative (see
 # tests/test_signal_ab.py): direct classification won on both gpt-4.1-nano
 # (6/10 vs 4/10) and gpt-4.1-mini (7/10 vs 6/10). Splitting the judgment into
-# 11 boolean features gave the model 11 chances to be wrong instead of 1 —
+# 11 boolean features gave the model 11 chances to be wrong instead of 1 -- 
 # worse, not better. Keeping it as a single classification call.
 # ---------------------------------------------------------------------------
 
@@ -386,7 +386,7 @@ async def _classify_signal_from_answer(
             return chosen, reason
     except Exception as exc:
         logger.warning("[EVAL] _classify_signal_from_answer failed (%s) — rotating fallback", exc)
-    # Deterministic rotation across banned/unfired signals — never always the same one.
+    # Deterministic rotation across banned/unfired signals -- never always the same one.
     _rotation_order = [
         "tool_named_not_used", "tech_choice_unjustified", "ownership_ambiguous",
         "example_evaded", "scenario_untested", "explanation_shallow", "depth_ceiling_hit",
@@ -752,7 +752,7 @@ async def evaluate_answer(
     )
 
     try:
-        # Fire both calls concurrently — scoring and signal classification are independent.
+        # Fire both calls concurrently -- scoring and signal classification are independent.
         (scoring_data, _scoring_usage), (raw_signal, signal_reason, _signal_usage) = (
             await asyncio.gather(
                 _call_scoring(
@@ -791,7 +791,7 @@ async def evaluate_answer(
                 return 0.0
 
         # answers_question=false means the answer did not address the question at all.
-        # Force all scores to 0 immediately — no saturation credit for irrelevant answers.
+        # Force all scores to 0 immediately -- no saturation credit for irrelevant answers.
         answers_question = data.get("answers_question", True)
         if answers_question is False:
             logger.info("[EVAL] answers_question=false — forcing all scores to 0")
@@ -837,7 +837,7 @@ async def evaluate_answer(
             signal = None
 
         # If signal is still None, compare the answer against all content-level signal
-        # definitions and pick the best match — never fall back to the default probe.
+        # definitions and pick the best match -- never fall back to the default probe.
         if signal is None and not zero_scores and not cap_scores_at_5:
             signal, signal_reason = await _classify_signal_from_answer(
                 candidate_answer=candidate_answer,
@@ -855,7 +855,7 @@ async def evaluate_answer(
 
         # Post-hoc variety enforcement: even if the eval LLM ignored the ban above,
         # rewrite banned content-signals to an unfired one. Response signals (G0)
-        # legitimately re-fire — only content signals are ever banned.
+        # legitimately re-fire -- only content signals are ever banned.
         _CONTENT = {
             "depth_ceiling_hit", "ownership_ambiguous", "explanation_shallow",
             "tool_named_not_used", "tech_choice_unjustified", "example_evaded",

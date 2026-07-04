@@ -15,12 +15,12 @@ from __future__ import annotations
 # HOW THESE PROBES WORK
 #
 # Each probe has:
-#   what          — what the candidate did (1 line, factual)
-#   goal          — the ONE thing the next question is trying to surface
-#   question_type — the cognitive demand placed on the candidate
-#   principles    — HOW to frame the question (not what to say — principles)
-#   voice_note    — how a real human interviewer would sound asking this
-#   skip          — hard rules on what NOT to do
+#   what          -- what the candidate did (1 line, factual)
+#   goal          -- the ONE thing the next question is trying to surface
+#   question_type -- the cognitive demand placed on the candidate
+#   principles    -- HOW to frame the question (not what to say -- principles)
+#   voice_note    -- how a real human interviewer would sound asking this
+#   skip          -- hard rules on what NOT to do
 #
 # The interview LLM reads these and writes its OWN question grounded in
 # the candidate's actual words. The probes teach the framing principle,
@@ -243,7 +243,7 @@ _DEFAULT_PROBE = {
 
 
 # ---------------------------------------------------------------------------
-# Band overlays — per-signal, per-band.
+# Band overlays -- per-signal, per-band.
 # Adjusts the depth and stakes of the probe based on seniority.
 # ---------------------------------------------------------------------------
 _BAND_OVERLAYS: dict[str, dict[str, str]] = {
@@ -296,7 +296,7 @@ _BAND_OVERLAYS: dict[str, dict[str, str]] = {
 # ---------------------------------------------------------------------------
 # Intent-based reactions.
 # The opener ("filler") must match the INTENT of what the candidate just said,
-# not a fixed "Mm". The signal that fired encodes that intent — so we map each
+# not a fixed "Mm". The signal that fired encodes that intent -- so we map each
 # signal to a reaction TONE plus example openers. The model is told to react in
 # that tone and ground it in a specific word they used, so openers vary
 # naturally turn to turn instead of defaulting to "Mm".
@@ -351,7 +351,7 @@ def get_reaction_hint(signal: str | None, prev_answer: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Question-generation system prompt — injected into the interview LLM.
+# Question-generation system prompt -- injected into the interview LLM.
 # This is what makes Ishita sound like a real human interviewer.
 # ---------------------------------------------------------------------------
 QUESTION_GENERATION_SYSTEM = """\
@@ -411,7 +411,7 @@ def get_probe_context(
         and _signals_history[-2] == signal
     )
 
-    # Denial override — always highest priority
+    # Denial override -- always highest priority
     _prev_lower = prev_answer.lower()
     _is_denial = any(p in _prev_lower for p in (
         "i forgot", "i don't remember", "i dont remember",

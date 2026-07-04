@@ -23,9 +23,9 @@ from pydantic import BaseModel, Field, field_validator
 logger = logging.getLogger("interview-agent")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 1 — AgentConfig (Singleton Configuration)
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
+# SECTION 1 -- AgentConfig (Singleton Configuration)
+# ===============================================================================
 
 class VoiceProviderMapping(BaseModel):
     """Type-safe voice provider mapping."""
@@ -55,7 +55,7 @@ class AgentConfig:
     _instance: Optional[AgentConfig] = None
 
     def __init__(self) -> None:
-        # STT Configuration — stt_model comes from org DB, not env
+        # STT Configuration -- stt_model comes from org DB, not env
         # eot_threshold raised 0.70 -> 0.80 and eot_timeout_ms raised 3500 -> 6000: Flux
         # was firing native end-of-turn mid-answer on ordinary thinking pauses (candidates
         # pausing ~4-8s between sentences), splitting one answer into two separate turns.
@@ -100,7 +100,7 @@ class AgentConfig:
         """Reset singleton (for testing)."""
         cls._instance = None
 
-    # ── STT Properties ──
+    # -- STT Properties --
     @property
     def flux_eot_threshold(self) -> float:
         return self._flux_eot_threshold
@@ -113,7 +113,7 @@ class AgentConfig:
     def flux_eot_timeout_ms(self) -> int:
         return self._flux_eot_timeout_ms
 
-    # ── LLM Properties ──
+    # -- LLM Properties --
     @property
     def interview_temperature(self) -> float:
         return self._interview_temperature
@@ -122,12 +122,12 @@ class AgentConfig:
     def eval_temperature(self) -> float:
         return self._eval_temperature
 
-    # ── Interview Properties ──
+    # -- Interview Properties --
     @property
     def fixed_interview_duration_minutes(self) -> int:
         return self._fixed_interview_duration_minutes
 
-    # ── Database Properties ──
+    # -- Database Properties --
     @property
     def database_url(self) -> str:
         return self._database_url
@@ -142,9 +142,9 @@ class AgentConfig:
 
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 2 — MutableStateManager (Centralized State Management)
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
+# SECTION 2 -- MutableStateManager (Centralized State Management)
+# ===============================================================================
 
 class MutableStateManager:
     """Centralized manager for mutable module-level state.
@@ -208,9 +208,9 @@ class MutableStateManager:
         self._pending_manual_billing.clear()
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 3 — TextSanitizer (Centralized Text Cleaning)
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
+# SECTION 3 -- TextSanitizer (Centralized Text Cleaning)
+# ===============================================================================
 
 class TextSanitizer:
     """Centralized text sanitization patterns and logic.
@@ -292,7 +292,7 @@ class TextSanitizer:
     # This is only applied to CamelCase words (not ALL-CAPS, which are handled above).
     _CAMEL_RE: re.Pattern = re.compile(r"([a-z])([A-Z])")
 
-    # Known words that look like acronyms but Sarvam reads correctly — leave them alone.
+    # Known words that look like acronyms but Sarvam reads correctly -- leave them alone.
     _SARVAM_READS_OK: frozenset[str] = frozenset({
         "SQL", "AWS", "GCP", "GIT", "SSH", "PDF", "URL", "HTTP", "HTML", "CSS",
         "JSON", "YAML", "REST", "CRUD", "CORS", "UUID", "GPU", "CPU", "RAM",
@@ -417,9 +417,9 @@ class TextSanitizer:
         return text
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 4 — TranscriptManager (Efficient Transcript Assembly)
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
+# SECTION 4 -- TranscriptManager (Efficient Transcript Assembly)
+# ===============================================================================
 
 class TranscriptManager:
     """Manages transcript line assembly with intelligent merging.

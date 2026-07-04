@@ -27,7 +27,7 @@ logger = logging.getLogger("interview-agent")
 
 
 # ---------------------------------------------------------------------------
-# Output schema — InterviewBrief returned to agent_runtime
+# Output schema -- InterviewBrief returned to agent_runtime
 # ---------------------------------------------------------------------------
 
 class TopicItem(BaseModel):
@@ -92,7 +92,7 @@ class InterviewBrief(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# LLM system prompt — lean: no parsing, only strategy + scoring + role topics
+# LLM system prompt -- lean: no parsing, only strategy + scoring + role topics
 # ---------------------------------------------------------------------------
 
 _BRIEF_SYSTEM = """\

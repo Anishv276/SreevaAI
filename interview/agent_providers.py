@@ -129,14 +129,14 @@ def build_sarvam_tts(
         })
     else:
         tts_kwargs["temperature"] = d["sarvam_temperature"]
-        # enable_preprocessing is v2-only in the plugin's send_task — the plugin
+        # enable_preprocessing is v2-only in the plugin's send_task -- the plugin
         # silently drops it for v3. v3 always preprocesses server-side. No-op here.
         # dict_id: server-side pronunciation dictionary (v3 only). Passes custom
         # pronunciations (kubernetes, vite, etc.) so the TTS engine gets them right
         # without any client-side text mangling.
         if dict_id:
             tts_kwargs["dict_id"] = dict_id
-    # Return sarvam.TTS directly — fresh WS per turn, no persistent connection.
+    # Return sarvam.TTS directly -- fresh WS per turn, no persistent connection.
     # The persistent-WS manager caused "no audio frames" failures because Sarvam
     # closes the socket after each "final" event and reusing it produced a silent
     # ACK on the next turn. Fresh-per-turn is reliable and simple.
@@ -157,20 +157,20 @@ def build_elevenlabs_tts(
         voice_id = _ELEVENLABS_DEFAULT_VOICE
     resolved_model = model or _ELEVENLABS_DEFAULT_MODEL
     voice_settings = elevenlabs.VoiceSettings(
-        # 0.35 — low stability = more emotional variation per sentence.
+        # 0.35 -- low stability = more emotional variation per sentence.
         # High stability sounds robotic/monotone; 0.35 lets the voice
         # respond to the emotional weight of what it's saying.
         stability=0.35,
-        # 0.85 — high fidelity to the original voice recording.
+        # 0.85 -- high fidelity to the original voice recording.
         # Keeps the voice sounding like itself even with low stability.
         similarity_boost=0.85,
-        # 0.25 — small non-zero style amplifies the voice's natural
+        # 0.25 -- small non-zero style amplifies the voice's natural
         # expressiveness. Zero is flat; anything above 0.4 adds latency.
         style=0.25,
-        # True — speaker boost enhances clarity and presence on turbo_v2_5.
+        # True -- speaker boost enhances clarity and presence on turbo_v2_5.
         # Worth the small latency cost for interview quality on this model.
         use_speaker_boost=True,
-        # 0.95 — very slightly below 1.0 gives a calmer, more considered
+        # 0.95 -- very slightly below 1.0 gives a calmer, more considered
         # interviewer pace. Turbo is already fast; 0.95 keeps it natural.
         speed=0.95,
     )
@@ -183,9 +183,9 @@ def build_elevenlabs_tts(
         "model":                 resolved_model,
         "voice_id":              voice_id,
         "voice_settings":        voice_settings,
-        # 'auto' lets ElevenLabs decide — 'on' was spelling out tech terms letter-by-letter.
+        # 'auto' lets ElevenLabs decide -- 'on' was spelling out tech terms letter-by-letter.
         "apply_text_normalization": "auto",
-        # SSML off — we don't send SSML tags.
+        # SSML off -- we don't send SSML tags.
         "enable_ssml_parsing":   False,
         # No chunk_length_schedule → auto_mode=True → ElevenLabs uses its own SentenceTokenizer.
         # This is better than our manual chunking: it waits for full phrases before synthesizing
@@ -239,7 +239,7 @@ def build_stt(language_code: str = "en", keyterms: Sequence[str] | None = None, 
         "keyterm":        flux_keyterms,
     }
     # eager_eot_threshold: fires EagerEndOfTurn ~200ms earlier to pre-warm LLM.
-    # Only enable if FLUX_EAGER_EOT_THRESHOLD is set (non-None) — requires that
+    # Only enable if FLUX_EAGER_EOT_THRESHOLD is set (non-None) -- requires that
     # the eval gate handles TurnResumed cancellation to avoid double-firing.
     if FLUX_EAGER_EOT_THRESHOLD is not None:
         stt_kwargs["eager_eot_threshold"] = FLUX_EAGER_EOT_THRESHOLD

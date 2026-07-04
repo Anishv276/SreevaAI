@@ -36,7 +36,7 @@ logger = logging.getLogger("interview-agent")
 
 
 # ---------------------------------------------------------------------------
-# Pydantic input models — validate raw DB JSON at the boundary
+# Pydantic input models -- validate raw DB JSON at the boundary
 # ---------------------------------------------------------------------------
 
 class RawSkillEntry(BaseModel):
@@ -174,7 +174,7 @@ class RawResumeJSON(BaseModel):
         # Unwrap single-key wrapper like {"resumeData": {...}}
         if len(v) == 1 and "resumeData" in v and isinstance(v["resumeData"], dict):
             v = v["resumeData"]
-        # Unwrap {"source": ..., "parsed": {...}} — DB stores resume as {source, parsed}
+        # Unwrap {"source": ..., "parsed": {...}} -- DB stores resume as {source, parsed}
         _RESUME_FIELDS = {"work_history", "workHistory", "projects", "skills", "experience", "full_name"}
         if "parsed" in v and isinstance(v["parsed"], dict) and not _RESUME_FIELDS.intersection(v.keys()):
             v = v["parsed"]
@@ -223,7 +223,7 @@ class RawResumeJSON(BaseModel):
                     continue
                 for item in raw_list:
                     try:
-                        # domain_skills are plain strings — RawSkillEntry._normalise handles them
+                        # domain_skills are plain strings -- RawSkillEntry._normalise handles them
                         e = RawSkillEntry.model_validate(item)
                         if e.name:
                             entries.append(e)
@@ -279,7 +279,7 @@ class RawJDCriterion(BaseModel):
             # DB schema uses source_text instead of description
             if not v.get("description") and v.get("source_text"):
                 v = {**v, "description": v["source_text"]}
-            # DB schema uses weight field — map to priority if priority missing
+            # DB schema uses weight field -- map to priority if priority missing
             if not v.get("priority") and v.get("weight") is not None:
                 weight = float(v["weight"])
                 v = {**v, "priority": "high" if weight >= 15 else "medium"}
@@ -345,7 +345,7 @@ class RawJDJSON(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Clean extracted models — outputs of extractors
+# Clean extracted models -- outputs of extractors
 # ---------------------------------------------------------------------------
 
 class ExtractedProject(BaseModel):
@@ -376,7 +376,7 @@ class ExtractedJDItem(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# OOP Extractors — single responsibility
+# OOP Extractors -- single responsibility
 # ---------------------------------------------------------------------------
 
 class ResumeExtractor:
@@ -552,7 +552,7 @@ def _node_build_llm_input(state: BriefExtractionState) -> dict:
                 lines.append(f"  Tech used: {', '.join(w.tech)}")
         lines.append("")
 
-    # --- Resume skills (raw, as extracted — LLM handles overlap with JD) ---
+    # --- Resume skills (raw, as extracted -- LLM handles overlap with JD) ---
     skills = state["resume_skills"]
     if skills:
         lines.append("=== RESUME SKILLS ===")
@@ -608,7 +608,7 @@ def _node_build_llm_input(state: BriefExtractionState) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Graph — parallel extract → build_llm_input (no merge node)
+# Graph -- parallel extract → build_llm_input (no merge node)
 # ---------------------------------------------------------------------------
 
 def _build_graph() -> Any:
