@@ -1,7 +1,7 @@
 import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { isInterviewTokenRequired } from "@/lib/interview-access";
+import { isInterviewTokenRequired, isSchedulingGateBypassed } from "@/lib/interview-access";
 import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/drive-limits";
 import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
 
@@ -26,6 +26,8 @@ async function resolveInterview(applicationId: string) {
 function checkSchedulingGate(interview: { scheduledAt: Date | null; status: string; startedAt: Date | null }): {
     ok: boolean; code?: string; error?: string; status?: number;
 } {
+    if (isSchedulingGateBypassed()) return { ok: true };
+
     const interviewStatus = String(interview.status || "").toUpperCase();
 
     if (interviewStatus === "COMPLETED") {
