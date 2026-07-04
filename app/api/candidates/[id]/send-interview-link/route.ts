@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { sendScheduleInviteEmail } from "@/lib/mail";
+import { sendScheduleInviteEmail, sendInterviewInviteEmail } from "@/lib/mail";
 import { buildInterviewLink } from "@/lib/interview-links";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
 import { getOrgBillingStatus } from "@/lib/credits";
 import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
 import { appendCandidateActivity } from "@/lib/candidate-activity";
 import { generateId } from "@/lib/ids";
-import { isInterviewTokenRequired } from "@/lib/interview-access";
+import { isInterviewTokenRequired, isSchedulingGateBypassed } from "@/lib/interview-access";
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
     try {
         const session = await getSession();
@@ -89,15 +89,29 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             },
         });
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-        
-        const scheduleLink = `${baseUrl}/schedule/${interviewRecord.accessToken}`;
-        let mailResult = await sendScheduleInviteEmail({
-            email: application.email,
-            fullName: application.fullName || "Candidate",
-            jobTitle: application.drive?.title || "Unknown Role",
-            orgName: application.drive?.organization?.name || "Sreeva AI",
-            scheduleLink,
-        });
+
+        let mailResult;
+        if (isSchedulingGateBypassed()) {
+            // ponytail: test mode — skip slot booking, send the direct interview link
+            const interviewLink = buildInterviewLink(baseUrl, applicationId, { token: interviewRecord.accessToken });
+            mailResult = await sendInterviewInviteEmail({
+                email: application.email,
+                fullName: application.fullName || "Candidate",
+                jobTitle: application.drive?.title || "Unknown Role",
+                orgName: application.drive?.organization?.name || "Sreeva AI",
+                interviewLink,
+                schedulingDeadline: driveDeadline,
+            });
+        } else {
+            const scheduleLink = `${baseUrl}/schedule/${interviewRecord.accessToken}`;
+            mailResult = await sendScheduleInviteEmail({
+                email: application.email,
+                fullName: application.fullName || "Candidate",
+                jobTitle: application.drive?.title || "Unknown Role",
+                orgName: application.drive?.organization?.name || "Sreeva AI",
+                scheduleLink,
+            });
+        }
 
         if (!mailResult.success) {
             return NextResponse.json({

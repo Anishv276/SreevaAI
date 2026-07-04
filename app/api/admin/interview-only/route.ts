@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession, isAdminRole } from "@/lib/auth";
 import { generateId } from "@/lib/ids";
-import { sendScheduleInviteEmail } from "@/lib/mail";
+import { sendScheduleInviteEmail, sendInterviewInviteEmail } from "@/lib/mail";
 import { buildInterviewLink } from "@/lib/interview-links";
-import { isInterviewTokenRequired } from "@/lib/interview-access";
+import { isInterviewTokenRequired, isSchedulingGateBypassed } from "@/lib/interview-access";
 import { resumeQueue } from "@/lib/queue";
 
 // POST /api/admin/interview-only
@@ -103,18 +103,29 @@ export async function POST(request: Request) {
                     select: { accessToken: true },
                 });
 
-                // Schedule link uses the interview accessToken so only this candidate can book
-                const scheduleLink = `${baseUrl}/schedule/${interview?.accessToken}`;
-
                 let sent = false;
                 try {
-                    await sendScheduleInviteEmail({
-                        email,
-                        fullName,
-                        jobTitle: drive.title,
-                        scheduleLink,
-                        orgName: drive.organization?.name || "The Company",
-                    });
+                    if (isSchedulingGateBypassed()) {
+                        // ponytail: test mode — skip slot booking, send the direct interview link
+                        const interviewLink = buildInterviewLink(baseUrl, appId, { token: interview?.accessToken });
+                        await sendInterviewInviteEmail({
+                            email,
+                            fullName,
+                            jobTitle: drive.title,
+                            orgName: drive.organization?.name || "The Company",
+                            interviewLink,
+                        });
+                    } else {
+                        // Schedule link uses the interview accessToken so only this candidate can book
+                        const scheduleLink = `${baseUrl}/schedule/${interview?.accessToken}`;
+                        await sendScheduleInviteEmail({
+                            email,
+                            fullName,
+                            jobTitle: drive.title,
+                            scheduleLink,
+                            orgName: drive.organization?.name || "The Company",
+                        });
+                    }
                     sent = true;
                 } catch (e) {
                     console.error(`[interview-only] Failed to send email to ${email}:`, e);
