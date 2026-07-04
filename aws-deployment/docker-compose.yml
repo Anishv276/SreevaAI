@@ -2,7 +2,7 @@ services:
   # Next.js Frontend + API
   frontend:
     build:
-      context: .
+      context: ..
       dockerfile: Dockerfile.frontend
       args:
         NEXT_PUBLIC_LIVEKIT_URL: "${NEXT_PUBLIC_LIVEKIT_URL}" # Pulls from .env (e.g. wss://your-project.livekit.cloud)
@@ -31,7 +31,7 @@ services:
   # Background Worker (Handles Scoring & Emails)
   worker:
     build:
-      context: .
+      context: ..
       dockerfile: Dockerfile.frontend
     container_name: Normal-worker
     command: ["npm", "exec", "--", "tsx", "worker.ts"]
@@ -49,23 +49,7 @@ services:
       - 8.8.8.8
       - 8.8.4.4
 
-  # Python AI Agent (Backend)
-  python-backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: Backend-python-agent
-    networks:
-      - traefik-proxy
-    env_file:
-      - .env
-    environment:
-      LIVEKIT_URL: "${LIVEKIT_URL}"
-      REDIS_URL: "${REDIS_URL}"
-    restart: always
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
+
 
   # Local Redis Database
   redis:

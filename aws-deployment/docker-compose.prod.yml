@@ -64,7 +64,7 @@ services:
   # ---------------------------------------------------------------------------
   frontend:
     build:
-      context: .
+      context: ..
       dockerfile: Dockerfile.frontend
       args:
         NEXT_PUBLIC_LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL}   # wss://<project>.livekit.cloud
@@ -96,7 +96,7 @@ services:
   # ---------------------------------------------------------------------------
   worker:
     build:
-      context: .
+      context: ..
       dockerfile: Dockerfile.frontend
       args:
         NEXT_PUBLIC_LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL}
@@ -119,26 +119,7 @@ services:
     networks:
       - web
 
-  # ---------------------------------------------------------------------------
-  # Python LiveKit AI agent — connects OUT to LiveKit Cloud via the URL in .env
-  # ---------------------------------------------------------------------------
-  python-backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: Backend-python-agent
-    restart: always
-    env_file:
-      - .env
-    environment:
-      # LiveKit + egress are on LiveKit Cloud. The agent uses LIVEKIT_URL /
-      # LIVEKIT_API_KEY / LIVEKIT_API_SECRET from .env (wss://<project>.livekit.cloud).
-      LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL}
-      REDIS_URL: redis://redis:6379
-    depends_on:
-      - redis
-    networks:
-      - web
+
 
 networks:
   web:

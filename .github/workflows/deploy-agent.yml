@@ -1,0 +1,30 @@
+name: Deploy LiveKit Agent
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      # Only run this action if the agent code changes
+      - 'livekit-python-agent/**'
+
+jobs:
+  deploy-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install LiveKit CLI
+        run: curl -sSL https://get.livekit.io/cli | bash
+
+      - name: Deploy Agent to LiveKit Cloud
+        env:
+          # The CLI will automatically use these to authenticate
+          LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
+          LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
+        working-directory: ./livekit-python-agent
+        run: |
+          # The CLI installs to ~/.local/bin/lk by default
+          export PATH=$PATH:$HOME/.local/bin
+          lk agent deploy
