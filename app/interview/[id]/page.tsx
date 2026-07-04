@@ -135,6 +135,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const connectionAttemptRef = useRef(0);
     const launchRecoveryTimerRef = useRef<number | null>(null);
     const wasFullscreenRef = useRef(false);
+    const fullscreenStableRef = useRef(false);
     const [isAgentReady, setIsAgentReady] = useState(false);
     const [agentReadyLatencyMs, setAgentReadyLatencyMs] = useState<number | null>(null);
     const [launchTimeoutCheck, setLaunchTimeoutCheck] = useState(0);
@@ -720,6 +721,12 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             setRemainingSeconds(dur);
             setTimerExpired(false);
         }
+        // Grace period: don't flag fullscreen exits during first 2 seconds of interview
+        // (browser startup, LiveKit connection, audio initialization may cause spurious events)
+        fullscreenStableRef.current = false;
+        const stabilizeTimer = window.setTimeout(() => {
+            fullscreenStableRef.current = true;
+        }, 2000);
         let cancelled = false;
         const persistInterviewStart = async (attempt = 0) => {
             if (cancelled) return;
@@ -763,6 +770,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         void persistInterviewStart();
         return () => {
             cancelled = true;
+            window.clearTimeout(stabilizeTimer);
         };
     }, [id, interviewToken, phase, resetToHardwareCheck]);
     // Hard timeout: if agent never becomes ready within 1.5 minutes (90s), show a popup and return to check.
@@ -946,8 +954,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         };
         const onFullscreenChange = () => {
             const isFS = !!(document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement);
-            // Only log exit if we were definitely in fullscreen before (state change from true to false)
-            if (!isFS && wasFullscreenRef.current) {
+            // Only log exit if: (1) we were in fullscreen, (2) we're now out, (3) interview is stable (2s grace period passed)
+            if (!isFS && wasFullscreenRef.current && fullscreenStableRef.current) {
                 if (isFullscreenExitEnabled) {
                     logFullscreenExit();
                 }
