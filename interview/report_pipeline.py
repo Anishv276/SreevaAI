@@ -301,7 +301,7 @@ class ReportLLMClient:
                 kwargs: dict[str, Any] = dict(
                     model=spec._LLM_DEFAULT,
                     temperature=spec.temperature,
-                    max_tokens=spec.max_tokens,
+                    max_completion_tokens=spec.max_tokens,
                     stream=True,
                     stream_options={"include_usage": True},
                     response_format=spec.response_format,

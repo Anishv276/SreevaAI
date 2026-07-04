@@ -721,12 +721,13 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             setRemainingSeconds(dur);
             setTimerExpired(false);
         }
-        // Grace period: don't flag fullscreen exits during first 2 seconds of interview
+        // Grace period: don't flag fullscreen exits during first 10 seconds of interview
         // (browser startup, LiveKit connection, audio initialization may cause spurious events)
+        // Fullscreen request takes time, greeting audio plays, room connection stabilizes
         fullscreenStableRef.current = false;
         const stabilizeTimer = window.setTimeout(() => {
             fullscreenStableRef.current = true;
-        }, 2000);
+        }, 10000);
         let cancelled = false;
         const persistInterviewStart = async (attempt = 0) => {
             if (cancelled) return;
