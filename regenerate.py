@@ -25,7 +25,7 @@ async def main():
             FROM "Application" a
             JOIN "Interview" i ON i."applicationId" = a.id
             JOIN "Drive" d ON a."driveId" = d.id
-            WHERE a."fullName" ILIKE '%vadla vamsi krishna%'
+WHERE a.id = 'app-resume-for-tcs-1-8498-9eb226f6'
         ''')
 
     if not rows:
@@ -75,7 +75,7 @@ async def main():
             job_title=job_title,
             proctoring_data={"events": []},
             org_id=org_id,
-            llm_model="gpt-4o-mini",
+            _LLM_DEFAULT="gpt-4o-mini",
             jd_json=jd_json,
         )
 
@@ -85,7 +85,7 @@ async def main():
                 transcript_lines=transcript_lines,
                 job_title=job_title,
                 org_id=org_id,
-                llm_model="gpt-4o-mini",
+                _LLM_DEFAULT="gpt-4o-mini",
                 scores_context=scores_context
             )
             print(f"Successfully generated report and summary for {app_id}")
