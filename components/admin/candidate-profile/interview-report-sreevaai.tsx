@@ -232,6 +232,7 @@ function buildIntegritySignals(
     turns?: { turn: number; question: string; latency_sec: number; gap_before_sec: number | null }[];
   }[],
   _integrityScore: number,
+  integritySignalsAnalysis?: Record<string, string[]>,
 ): IntelSignalRow[] {
   // Only include events that actually occurred (exclude the "No flags" clean placeholder)
   const realRows = rows.filter(r => r.key !== "clean");
@@ -241,7 +242,12 @@ function buildIntegritySignals(
     const display = PROCTORING_DISPLAY[r.key];
     const title = display?.title || r.label.replace(/\b\w/g, c => c.toUpperCase());
     const details: string[] = [];
-    if (display) {
+    // LLM's 3 sharp points (whole-session analysis of every occurrence of this
+    // signal type) take priority over the generic static why/risk copy.
+    const llmPoints = integritySignalsAnalysis?.[r.key];
+    if (llmPoints?.length) {
+      for (const p of llmPoints) details.push(`- ${p}`);
+    } else if (display) {
       details.push(`- ${display.why}`);
       details.push(`Risk: ${display.risk}`);
     }
@@ -336,7 +342,7 @@ export function buildSreevaAIInterviewViewModel(i: {
   groupedProctoringSignals: {
     key: string; label: string; count: number; severity: string;
     score?: number; reason?: string; quotes?: string[];
-    occurrences?: { severity: string; timestamp?: number; during_question?: string; during_topic?: string; reason?: string }[];
+    occurrences?: { severity: string; timestamp?: number; during_question?: string; during_topic?: string; reason?: string; explanation?: string }[];
     turns?: { turn: number; question: string; latency_sec: number; gap_before_sec: number | null }[];
   }[];
   wordCount: number;
@@ -400,7 +406,7 @@ export function buildSreevaAIInterviewViewModel(i: {
   const proctoringRows: {
     key: string; label: string; value: string; bad: boolean;
     score?: number; reason?: string; quotes?: string[];
-    occurrences?: { severity: string; timestamp?: number; during_question?: string; during_topic?: string; reason?: string }[];
+    occurrences?: { severity: string; timestamp?: number; during_question?: string; during_topic?: string; reason?: string; explanation?: string }[];
     turns?: { turn: number; question: string; latency_sec: number; gap_before_sec: number | null }[];
   }[] =
     (i.groupedProctoringSignals || []).slice(0, 8).map((g) => ({
@@ -429,7 +435,7 @@ export function buildSreevaAIInterviewViewModel(i: {
       return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : (proctoringRows.some((r) => r.bad) ? 65 : 95);
     } catch { return 95; }
   })();
-  const integritySignals = buildIntegritySignals(proctoringRows, rawIntegrityScore);
+  const integritySignals = buildIntegritySignals(proctoringRows, rawIntegrityScore, behavAnalysis?.integrity_signals_analysis);
   // Skills -- sourced only from skillRatings DB column (agent_persistence.py)
   const skills = (i.interviewReportSkills || [])
     .map((s: any) => {
@@ -1416,7 +1422,7 @@ export function InterviewReportSreevaAI({
                     <span className="text-[12px] font-bold text-[#10B981]">{model.integrityScore} / 100</span>
                   )}
                 </div>
-                <div className="flex-1 overflow-y-auto pr-2" style={{ scrollbarWidth: "thin" }}>
+                <div className="flex-1 overflow-visible pr-2">
                   {model.integritySignals.length === 1 && model.integritySignals[0].id === "clean" ? (
                     <div className="flex items-start gap-2.5">
                       <span className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />

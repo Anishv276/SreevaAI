@@ -482,7 +482,7 @@ export default function CandidatesPage() {
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                             Add Candidate
                         </button>
-                        <button className="flex items-center justify-center w-7 h-7 rounded-r-xl bg-violet-600 border-l border-violet-500 text-white shadow-sm hover:bg-violet-700 transition-colors cursor-pointer">
+                        <button className="flex items-center justify-center w-8 h-10 rounded-r-xl bg-violet-600 border-l border-violet-500 text-white shadow-sm hover:bg-violet-700 transition-colors cursor-pointer">
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                         </button>
                     </div>
@@ -566,7 +566,7 @@ export default function CandidatesPage() {
                                 <TableHead className="w-[240px] h-7 font-bold text-[10px] uppercase tracking-wider text-[11px] text-gray-500">Candidate</TableHead>
                                 <TableHead className="w-[180px] h-7 font-bold text-[10px] uppercase tracking-wider text-[11px] text-gray-500">Job Role</TableHead>
                                 <TableHead className="h-7 font-bold text-[10px] uppercase tracking-wider text-[11px] text-gray-500">Score</TableHead>
-                                <TableHead className="h-7 font-bold text-[10px] uppercase tracking-wider text-[11px] text-gray-500">ATS</TableHead>
+                                <TableHead className="h-7 font-bold text-[10px] uppercase tracking-wider text-[11px] text-gray-500">Resume</TableHead>
                                 <TableHead className="h-7 font-bold text-[10px] uppercase tracking-wider text-[11px] text-gray-500">Interview</TableHead>
                                 <TableHead className="h-7 font-bold text-[10px] uppercase tracking-wider text-[11px] text-gray-500">Reports</TableHead>
                                 <TableHead className="h-7 font-bold text-[10px] uppercase tracking-wider text-[11px] text-gray-500">Added On</TableHead>
@@ -651,9 +651,9 @@ export default function CandidatesPage() {
                                                 <Link
                                                     href={orgIdParam ? `/admin/candidates/${candidate.id}?report=resume&orgId=${encodeURIComponent(orgIdParam)}` : `/admin/candidates/${candidate.id}?report=resume`}
                                                     className="inline-flex h-7 px-2 items-center justify-center gap-1.5 rounded-md bg-violet-50 text-violet-700 hover:bg-violet-100 transition-colors border border-violet-100"
-                                                    title="ATS Report">
+                                                    title="Resume Report">
                                                     <FileText className="h-3 w-3" />
-                                                    <span className="text-[10px] font-bold uppercase tracking-wider">ATS</span>
+                                                    <span className="text-[10px] font-bold uppercase tracking-wider">Resume</span>
                                                 </Link>
                                                 {interviewReportUnlocked ? (
                                                     <Link

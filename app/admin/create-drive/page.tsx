@@ -548,7 +548,7 @@ function CreateDriveForm() {
             </div>
           </Card>
 
-          {/* Screening — ATS only */}
+          {/* Screening — Resume only */}
           {formData.interviewMode !== "interview-only" && (
             <Card>
               <CardHeader icon={<SlidersHorizontal className="h-3.5 w-3.5" />} title="Screening Settings" subtitle="Threshold and criteria for resume scoring" />

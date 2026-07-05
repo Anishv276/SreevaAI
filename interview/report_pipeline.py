@@ -48,6 +48,7 @@ from typing_extensions import TypedDict
 
 from interview.agent_utils import truncate_to_tokens
 from interview.agent_runtime_support import logger, DATABASE_URL
+from interview.brief_extraction import RawResumeJSON, ResumeExtractor
 
 from billing.billing import record_external_billing_usage as _persist_billing
 from interview.slack_error_logger import log_llm_error
@@ -114,6 +115,7 @@ class ReportState(TypedDict, total=False):
     org_id:            str | None
     llm_model:         str
     jd_json:           dict | None
+    resume_json:       dict | None  # structured resume -- feeds experience_credibility eval
     topic_records:     list[dict]   # per-topic MOVE_ON ground-truth from agent
     answer_integrity_enabled: bool  # org toggle — gates the AnswerIntegrityAnalyzer LLM call
     # -- Computed by node: signals --------------------------------------------
@@ -624,7 +626,7 @@ class AnswerIntegrityAnalyzer:
 
     @staticmethod
     def _build_user(transcript_lines: list[str]) -> str:
-        transcript_text = truncate_to_tokens("\n".join(transcript_lines), 3500)
+        transcript_text = truncate_to_tokens("\n".join(transcript_lines), 5000)
         return f"Full Interview Transcript:\n{transcript_text}"
 
     @staticmethod
@@ -702,6 +704,153 @@ class AnswerIntegrityAnalyzer:
 
 _answer_integrity_analyzer = AnswerIntegrityAnalyzer()
 
+
+# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
+# SECTION 6c — IntegrityNarrator (OOP)
+#
+# Looks at ALL fired proctoring events across the whole session at once (with
+# timestamps + which question/topic was live) and writes exactly 3 sharp
+# bullet points per SIGNAL TYPE explaining why it fired. Grouped by type, not
+# per-event, so a signal that fired 5 times still gets one crisp 3-point
+# verdict instead of 5 near-duplicate paragraphs. Skipped entirely when no
+# events fired (clean session).
+# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
+
+_INTEGRITY_NARRATIVE_SYSTEM = (
+    "You are a proctoring analyst reviewing an interview session's integrity flags for a recruiter.\n\n"
+    "You are given every fired proctoring event across the whole session, grouped by signal type -- "
+    "each occurrence includes its timestamp and which question/topic was live at that moment.\n\n"
+    "For EACH signal type, analyze all of its occurrences together (timing, which questions they "
+    "clustered around, patterns across occurrences) and write EXACTLY 3 sharp bullet points:\n"
+    "1. WHAT fired and when, concretely -- reference the actual questions/topics/timing given, not "
+    "a generic description.\n"
+    "2. WHY it most likely fired, your best inference from the pattern across all occurrences (e.g. "
+    "tab switches clustering right after hard technical questions suggests looking up answers; face "
+    "absence during long answers suggests reading off-camera; a switch to a different room/desk shows up "
+    "as fullscreen_exit + face_absence together — call that out as a combined pattern, not separate).\n"
+    "3. WHAT IT MEANS for hiring judgment -- should this be dismissed as incidental, or does it "
+    "materially undermine trust in this candidate's answers.\n\n"
+    "Ground every point in the specific data given — never invent details not present. If the context "
+    "is too thin to infer a cause, say plainly that the cause can't be determined and it should be "
+    "checked against the recording.\n"
+    "Output ONLY valid JSON: {\"signals\": [{\"signal_name\": \"<exact signal name from input>\", "
+    "\"points\": [\"<point 1>\", \"<point 2>\", \"<point 3>\"]}]}. Exactly 3 points per signal type, "
+    "one entry per distinct signal type given."
+)
+
+_INTEGRITY_NARRATIVE_JSON_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "integrity_narrative_response",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "signals": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "signal_name": {"type": "string"},
+                            "points": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "minItems": 3,
+                                "maxItems": 3,
+                            },
+                        },
+                        "required": ["signal_name", "points"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["signals"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+
+class IntegrityNarrator:
+    """Turns all fired proctoring events into a 3-sharp-points verdict per signal type.
+
+    One LLM call per report, only when events actually fired. Input events are
+    the same dicts IntegrityEngine scores -- each already carries
+    during_question/during_topic (attached by _attach_question_context),
+    timestamp, severity, and any event-specific fields (score/reason/quotes
+    for answer_integrity, latency_sec for latency events, etc).
+    """
+
+    @staticmethod
+    def _describe_occurrence(evt: dict) -> str:
+        parts = [f"severity={evt.get('severity', 'unknown')}"]
+        if evt.get("during_question"):
+            parts.append(f"during_question=\"{evt['during_question']}\"")
+        elif evt.get("during_topic"):
+            parts.append(f"during_topic=\"{evt['during_topic']}\"")
+        if evt.get("timestamp"):
+            parts.append(f"elapsed_ms={evt['timestamp']}")
+        if evt.get("latency_sec") is not None:
+            parts.append(f"latency_sec={evt['latency_sec']}")
+        if evt.get("reason"):
+            parts.append(f"raw_reason=\"{evt['reason']}\"")
+        if evt.get("quotes"):
+            parts.append(f"quotes={evt['quotes']}")
+        return " | ".join(parts)
+
+    async def analyze(
+        self,
+        events: list[dict],
+        *,
+        _LLM_DEFAULT: str,
+        org_id: str = "",
+        app_id: str = "",
+    ) -> tuple[dict[str, list[str]], list[dict]]:
+        """Returns ({signal_name: [3 points]}, [usage_dict]). Empty dict if no events."""
+        if not events:
+            return {}, []
+
+        grouped: dict[str, list[dict]] = {}
+        for evt in events:
+            name = str(evt.get("signal_name") or evt.get("eventType") or "unknown")
+            grouped.setdefault(name, []).append(evt)
+
+        lines: list[str] = []
+        for name, occs in grouped.items():
+            lines.append(f"SIGNAL: {name} (x{len(occs)})")
+            for occ in occs:
+                lines.append(f"  - {self._describe_occurrence(occ)}")
+        user = "\n".join(lines)
+
+        spec = LLMCallSpec(
+            system=_INTEGRITY_NARRATIVE_SYSTEM,
+            user=user,
+            max_tokens=250 * max(1, len(grouped)),
+            timeout=45.0,
+            response_format=_INTEGRITY_NARRATIVE_JSON_SCHEMA,
+            call_type="report_integrity_narrative",
+            temperature=0.2,
+            org_id=org_id,
+            app_id=app_id,
+            _LLM_DEFAULT=_LLM_DEFAULT,
+        )
+        try:
+            raw, usage = await _llm.call(spec)
+            data = json.loads(raw)
+            points_by_signal: dict[str, list[str]] = {}
+            for item in data.get("signals", []):
+                name = str(item.get("signal_name", "")).strip()
+                pts = [str(p).strip() for p in item.get("points", []) if str(p).strip()]
+                if name and pts:
+                    points_by_signal[name] = pts
+            return points_by_signal, ([_llm.usage_dict(usage, _LLM_DEFAULT)] if usage else [])
+        except Exception as e:
+            logger.error("[INTEGRITY_NARRATIVE] LLM call failed: %s", e, exc_info=True)
+            return {}, []
+
+
+_integrity_narrator = IntegrityNarrator()
+
 # Fires as an integrity event when the overall score crosses this threshold.
 _ANSWER_INTEGRITY_FLAG_THRESHOLD = 60
 
@@ -710,6 +859,42 @@ async def _answer_integrity_noop() -> tuple[dict, list[dict]]:
     """Stand-in for a disabled answer_integrity toggle -- skips the LLM call
     and cost entirely while keeping the same gather() tuple shape."""
     return AnswerIntegrityAnalyzer._empty_result(), []
+
+
+def _build_resume_claims_block(resume_json: dict) -> str:
+    """Turn raw resume JSON into a checkable claims list for the eval prompt.
+
+    Reuses the same deterministic ResumeExtractor the interview brief pipeline
+    uses (interview/brief_extraction.py) -- zero extra LLM cost. A flat JSON
+    dump truncated by char count risks cutting off the project/impact fields
+    that actually matter for Resume Credibility scoring; extracting only
+    projects/work_history/skills into short claim lines keeps every concrete,
+    checkable claim (tech, duration, impact numbers) inside the token budget.
+    """
+    if not resume_json:
+        return "No resume provided — score Resume Credibility based on self-reported claims in the transcript only."
+
+    try:
+        raw = RawResumeJSON.model_validate(resume_json)
+        projects, work, skills = ResumeExtractor().extract(raw)
+    except Exception:
+        return "Resume provided but could not be parsed — score Resume Credibility based on self-reported claims in the transcript only."
+
+    if not projects and not work and not skills:
+        return "Resume provided but contained no extractable projects/work history/skills — score Resume Credibility based on self-reported claims in the transcript only."
+
+    lines: list[str] = []
+    for w in work[:6]:
+        tech = ", ".join(w.tech) or "—"
+        lines.append(f"WORK: {w.title} ({w.duration or 'duration unknown'}) — {w.description[:300]} [tech: {tech}]")
+    for p in projects[:6]:
+        tech = ", ".join(p.tech) or "—"
+        impact = f" — impact claimed: {p.impact}" if p.impact else ""
+        lines.append(f"PROJECT: {p.title} ({p.duration or 'duration unknown'}) — {p.description[:300]} [tech: {tech}]{impact}")
+    if skills:
+        lines.append("SKILLS CLAIMED: " + ", ".join(s.name for s in skills[:20]))
+
+    return "\n".join(lines)
 
 
 # â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
@@ -935,35 +1120,6 @@ SCORING ADJUSTMENTS:
 - If they answered confidently AND held up to 1+ follow-up probes -> bump up by 1.
 
 OUTPUT ONLY valid JSON matching the schema exactly. No markdown."""
-
-_SKILLS_QA_SYSTEM = """You are a senior technical evaluator writing a skill breakdown for the hiring team after an AI-conducted interview.
-You will receive every question-answer pair from the interview session.
-
-YOUR JOB:
-Group the skills, topics, and technologies discussed in the interview into 3-5 broad DOMAIN CATEGORIES.
-Do NOT create a category for something that was never asked about.
-
-FOR EACH CATEGORY:
-- skill: Industry-standard category name (e.g. "Backend Development", "Database Design", "Cloud & Infrastructure")
-- score: 1-10 reflecting actual demonstrated ability. Use the FULL range honestly.
-  1-3: Couldn't explain even basics. Gave wrong answers or stayed silent.
-  4-5: Knew vocabulary but not mechanics. No practical detail when probed.
-  6-7: Solid conceptual understanding. Some hands-on detail. Slight gaps at depth.
-  8-9: Real working knowledge. Gave specific implementation steps, trade-offs, or error scenarios.
-  10: Mastery-level. Taught it, held every probe, cited real systems or numbers.
-- evidence: A 4-6 sentence paragraph explaining the score with specific proof from the transcript.
-  MUST include: what question was asked, what they actually said, how deep their answer went,
-  whether they could give implementation details, and whether they crumbled or held firm under follow-ups.
-  NO generic statements like "showed good understanding" without quoting what they said.
-
-SCORING RULES:
-- If they said "I don't know" -> score 1-2 for that category.
-- If they stayed at definitions without HOW or WHY -> score 4-5.
-- If they gave mechanics + 1 real example -> score 6-7.
-- If they gave mechanics + real example + held a probe -> score 8-9.
-
-OUTPUT ONLY valid JSON matching the schema exactly. No markdown."""
-
 
 _SKILLS_JSON_SCHEMA = {
     "type": "json_schema",
@@ -1300,12 +1456,11 @@ async def _node_llm_calls(state: ReportState) -> dict:
     asyncio.gather runs all three LLM calls concurrently, cutting wall-clock
     time from ~15s sequential to ~7s parallel.
     """
-    llm_default        = state["_LLM_DEFAULT"]
+    llm_default        = state["llm_model"]
     job_title        = state.get("job_title", "")
     org_id           = state.get("org_id") or ""
     app_id           = state.get("app_id", "")
     integrity_result = state["integrity_result"]
-    all_scores       = state.get("all_scores", [])
     topic_records    = state.get("topic_records") or []
     behavioral_signals = state.get("behavioral_signals", [])
     transcript_lines = state.get("transcript_lines", [])
@@ -1313,57 +1468,43 @@ async def _node_llm_calls(state: ReportState) -> dict:
 
     # Build eval user prompt (dynamic vars -> user msg, system is static)
     lines_to_use  = transcript_lines[4:] if len(transcript_lines) > 4 else transcript_lines
-    transcript_text = truncate_to_tokens("\n".join(lines_to_use), 3500)
+    transcript_text = truncate_to_tokens("\n".join(lines_to_use), 5000)
+    resume_context = _build_resume_claims_block(state.get("resume_json") or {})
     eval_user = (
         f"Role: {job_title}\n"
         f"JD Context: {state['jd_context']}\n"
+        f"CANDIDATE RESUME (ground truth for Resume Credibility dimension):\n{resume_context}\n\n"
         f"Integrity Score: {integrity_result['score']}/100 ({integrity_result['band']})\n"
         f"Behavioral flags: {state['signal_context']}\n\n"
         f"Full Interview Transcript:\n{transcript_text}"
     )
 
-    # Build skills user prompt — prefer rich topic_records over raw QA fallback
-    if topic_records:
-        records_lines: list[str] = []
-        for i, rec in enumerate(topic_records, 1):
-            sc = rec.get("scores", {})
-            answers_text = " | ".join(rec.get("candidate_answers", [])[:4]) or "No answers recorded."
-            tech = ", ".join(rec.get("tech_skills", [])) or "—"
-            records_lines.append(
-                f"[TOPIC {i}]\n"
-                f"topic: {rec.get('topic', '')}\ntopic_type: {rec.get('topic_type', 'project')}\n"
-                f"exit_reason: {rec.get('exit_reason', 'unknown')}\nprobe_count: {rec.get('probe_count', 0)}\n"
-                f"avg_overall: {sc.get('avg_overall', 0):.1f}\navg_depth: {sc.get('avg_depth', 0):.1f}\n"
-                f"last_specificity: {sc.get('last_specificity', 0):.1f}\n"
-                f"last_grounding: {sc.get('last_grounding', 0):.1f}\n"
-                f"tech_skills: {tech}\ndenied: {rec.get('denied', False)}\n"
-                f"candidate_answers: {answers_text}\n"
+    # Build skills user prompt from topic_records, enriched with each topic's
+    # actual per-turn scores (matched by topic name from interview_scores) so
+    # the LLM sees turn-by-turn granularity, not just the topic-level average.
+    records_lines: list[str] = []
+    for i, rec in enumerate(topic_records, 1):
+        topic_turns = [s for s in interview_scores if s.get("topic") == rec.get("topic")]
+        turns_block = (
+            "\n".join(
+                f"  Q: {str(t.get('question', '')).strip()[:200]}\n"
+                f"  A: {str(t.get('answer', '')).strip()[:300]}\n"
+                f"  [clarity={t.get('clarity', 0)} depth={t.get('depth', 0)} "
+                f"specificity={t.get('specificity', 0)} grounding={t.get('grounding', 0)} "
+                f"overall={t.get('overall', 0)}]"
+                for t in topic_turns
             )
-        skills_system = _SKILLS_FROM_RECORDS_SYSTEM
-        skills_user   = f"Role: {job_title}\n\n" + "\n".join(records_lines)
-        logger.info("[REPORT] Skills: anchored topic_records path (%d topics)", len(topic_records))
-    else:
-        qa_items = [
-            s for s in all_scores
-            if not s.get("is_warmup", False) and (s.get("question") or s.get("ai_question"))
-        ]
-        qa_lines: list[str] = []
-        for i, s in enumerate(qa_items, 1):
-            sb = s.get("score_breakdown") or {}
-            qa_lines.append(
-                f"Q{i}: {s.get('question') or s.get('ai_question', '')}\n"
-                f"A: {s.get('answer') or s.get('candidate_answer', '')}\n"
-                f"[clarity={sb.get('clarity', s.get('clarity', 0))} "
-                f"depth={sb.get('depth', s.get('depth', 0))} "
-                f"specificity={sb.get('specificity', s.get('specificity', 0))} "
-                f"grounding={sb.get('grounding', s.get('grounding', 0))}]"
-            )
-        skills_system = _SKILLS_QA_SYSTEM
-        skills_user = (
-            f"Role: {job_title}\n\n" + "\n".join(qa_lines)
-            if qa_lines else f"Role: {job_title}\n\nNo interview questions found."
+            if topic_turns else "  No per-turn scores available."
         )
-        logger.info("[REPORT] Skills: falling back to QA-block path")
+        records_lines.append(
+            f"[TOPIC {i}] {rec.get('topic', '')}\n{turns_block}\n"
+        )
+    skills_system = _SKILLS_FROM_RECORDS_SYSTEM
+    skills_user = (
+        f"Role: {job_title}\n\n" + "\n".join(records_lines)
+        if records_lines else f"Role: {job_title}\n\nNo interview topics found."
+    )
+    logger.info("[REPORT] Skills: topic_records path (%d topics)", len(topic_records))
 
     # Duration for behavioral analysis
     _total_turns   = len(interview_scores)
@@ -1386,12 +1527,24 @@ async def _node_llm_calls(state: ReportState) -> dict:
         else _answer_integrity_noop()
     )
 
-    # -- Run all 4 LLM calls in parallel ------------------------------------
+    # Explain every fired proctoring event in depth (tab switch, face absence,
+    # low latency, camera off, etc). Skipped (no LLM call) when the session is
+    # clean -- IntegrityNarrator.analyze returns immediately for an empty list.
+    proctoring_events = (state.get("proctoring_data") or {}).get("events", [])
+    _integrity_narrative_task = _integrity_narrator.analyze(
+        proctoring_events,
+        _LLM_DEFAULT=llm_default,
+        org_id=org_id,
+        app_id=app_id,
+    )
+
+    # -- Run all 5 LLM calls in parallel ------------------------------------
     (
         (eval_raw, eval_usage),
         (skills_raw, skills_usage),
         (behavioral_result, beh_usages),
         (answer_integrity_result, answer_integrity_usages),
+        (integrity_narratives, integrity_narrative_usages),
     ) = (
         await asyncio.gather(
             _llm.call(LLMCallSpec(
@@ -1426,6 +1579,7 @@ async def _node_llm_calls(state: ReportState) -> dict:
                 app_id=app_id,
             ),
             _answer_integrity_task,
+            _integrity_narrative_task,
         )
     )
 
@@ -1446,6 +1600,10 @@ async def _node_llm_calls(state: ReportState) -> dict:
             *[
                 _persist_billing(org_id, "interviewReport", au)
                 for au in answer_integrity_usages
+            ],
+            *[
+                _persist_billing(org_id, "interviewReport", nu)
+                for nu in integrity_narrative_usages
             ],
         ]
         try:
@@ -1479,6 +1637,7 @@ async def _node_llm_calls(state: ReportState) -> dict:
         "skills_result":      skills_result,
         "behavioral_analysis": behavioral_result,
         "answer_integrity_result": answer_integrity_result,
+        "integrity_narratives": integrity_narratives,
     }
 
 
@@ -1498,6 +1657,7 @@ async def _node_assemble(state: ReportState) -> dict:
     behavioral_analysis = state.get("behavioral_analysis") or {"points": []}
     behavioral_signals  = state.get("behavioral_signals", [])
     answer_integrity_result = state.get("answer_integrity_result") or AnswerIntegrityAnalyzer._empty_result()
+    integrity_signals_analysis = state.get("integrity_narratives") or {}
 
     # Content-layer integrity signal: fold the answer-integrity verdict into the
     # same browser-events list that drives the deterministic integrity score,
@@ -1575,11 +1735,14 @@ async def _node_assemble(state: ReportState) -> dict:
 
     proctoring_events = proctoring_data.get("events", [])
 
-    # signalAnalysis column: LLM narrative + both signal lists clearly separated
+    # signalAnalysis column: integrity and behavioral analyses kept as two
+    # clearly separate JSON blocks so the UI can render each independently.
     signal_analysis = {
         "points":             behavioral_analysis.get("points", []),
         "behavioral_signals": behavioral_signals,
         "proctoring_events":  proctoring_events,
+        "integrity_signals_analysis": integrity_signals_analysis,
+        "behavioral_signals_analysis": behavioral_analysis.get("points", []),
         "answer_integrity": {
             "enabled":             answer_integrity_enabled,
             "score":               answer_integrity_result["score"],
@@ -1660,6 +1823,9 @@ async def _node_assemble(state: ReportState) -> dict:
         "skill_ratings":          skill_ratings_list,
         "strengths":              eval_result.strengths,
         "concerns":               eval_result.concerns,
+        "behavioral_points":      behavioral_analysis.get("points", []),
+        "integrity_signals_analysis": integrity_signals_analysis,
+        "answer_integrity":       signal_analysis["answer_integrity"],
     }
     return {"scores_context": scores_context}
 
@@ -1702,6 +1868,7 @@ async def generate_interview_report(
     proctoring_data:       Optional[dict] = None,
     org_id:                Optional[str]  = None,
     jd_json:               Optional[dict] = None,
+    resume_json:           Optional[dict] = None,
     topic_records:         Optional[list] = None,
     candidate_name:        str = "",
     answer_integrity_enabled: bool = False,
@@ -1731,8 +1898,9 @@ async def generate_interview_report(
         "job_title":        job_title,
         "proctoring_data":  proctoring_data or {},
         "org_id":           org_id,
-        "_LLM_DEFAULT":        llmInterviewReport,
+        "llm_model":        llmInterviewReport,
         "jd_json":          jd_json,
+        "resume_json":      resume_json,
         "topic_records":    topic_records or [],
         "answer_integrity_enabled": answer_integrity_enabled,
     }
@@ -1770,8 +1938,10 @@ async def generate_interview_summary(
     """Generate summary bullets + verdict and write to Interview.interviewSummary.
 
     Requires org.llmInterviewReport from DB — fail fast if missing.
-    Runs summary and verdict LLM calls in parallel. Does NOT use the full
-    transcript — only the structured scores_context, for faster, cheaper calls.
+    Runs summary and verdict LLM calls in parallel. Both see everything the
+    earlier report stages produced (eval, skills, behavioral, integrity) PLUS
+    the full transcript, so the final score/verdict is grounded in the same
+    evidence a human reviewer would use, not just the aggregated scores.
     """
     if not transcript_lines or not DATABASE_URL:
         logger.warning("[SUMMARY] Skipping: missing transcript or DATABASE_URL")
@@ -1810,6 +1980,29 @@ async def generate_interview_summary(
     strengths_block = "\n".join(f"  - {s}" for s in strengths) if strengths else "  None identified"
     concerns_block  = "\n".join(f"  - {c}" for c in concerns)  if concerns  else "  None flagged"
 
+    behavioral_points = ctx.get("behavioral_points", [])
+    behavioral_block = (
+        "\n\n".join(f"  - {p}" for p in behavioral_points) if behavioral_points else "  Not available"
+    )
+
+    integrity_signals_analysis = ctx.get("integrity_signals_analysis", {})
+    integrity_signals_block = (
+        "\n".join(
+            f"  {name}:\n" + "\n".join(f"    - {p}" for p in points)
+            for name, points in integrity_signals_analysis.items()
+        )
+        if integrity_signals_analysis else "  No proctoring signals fired."
+    )
+
+    answer_integrity = ctx.get("answer_integrity", {})
+    answer_integrity_block = (
+        f"  Flagged: {answer_integrity.get('flagged', False)} | Score: {answer_integrity.get('score', 0)}/100\n"
+        f"  Reason: {answer_integrity.get('reason', 'Not available')}"
+        if answer_integrity.get("enabled") else "  Not enabled for this org."
+    )
+
+    transcript_text = truncate_to_tokens("\n".join(transcript_lines), 5000)
+
     shared_user = (
         f"Role: {job_title}\n"
         f"Integrity: {integrity_band} ({integrity_score}/100)\n"
@@ -1819,7 +2012,11 @@ async def generate_interview_summary(
         f"DIMENSION SCORES + EVIDENCE:\n{dimension_block}\n\n"
         f"SKILL BREAKDOWN:\n{skill_block}\n\n"
         f"STRENGTHS OBSERVED:\n{strengths_block}\n\n"
-        f"CONCERNS FLAGGED:\n{concerns_block}"
+        f"CONCERNS FLAGGED:\n{concerns_block}\n\n"
+        f"BEHAVIORAL ANALYSIS:\n{behavioral_block}\n\n"
+        f"INTEGRITY SIGNALS ANALYSIS:\n{integrity_signals_block}\n\n"
+        f"ANSWER INTEGRITY:\n{answer_integrity_block}\n\n"
+        f"FULL INTERVIEW TRANSCRIPT:\n{transcript_text}"
     )
 
 

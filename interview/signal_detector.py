@@ -16,7 +16,6 @@ from typing import Optional
 from openai import AsyncOpenAI
 
 logger = logging.getLogger("interview-agent")
-_SIGNAL_DETECT_MODEL = "gpt-4.1-mini"
 
 
 # ---------------------------------------------------------------------------
@@ -144,8 +143,8 @@ async def detect_response_signal(
     candidate_answer: str,
     last_question: str,
     client: AsyncOpenAI,
+    llm_model: str,
     org_id: Optional[str] = None,
-    llm_model: str = _SIGNAL_DETECT_MODEL,
 ) -> dict:
     """
     Single LLM call to detect response-level signals.

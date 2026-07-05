@@ -553,6 +553,21 @@ class UsageSummarizer:
                 }},
             }
 
+        # LLM tokens are billed per-turn via the interviewLLMGeneration hook
+        # (every live-agent turn is directive-driven, never generic chat) --
+        # zero them here to avoid double-billing the same tokens under the
+        # session-total "interview" bucket. sessionDuration is kept: it's not
+        # a token count and isn't captured anywhere else.
+        llm_bucket = summary.get("llm")
+        if llm_bucket:
+            for pub in ("inputTokens", "inputCachedTokens", "inputAudioTokens",
+                        "inputCachedAudioTokens", "inputTextTokens", "inputCachedTextTokens",
+                        "inputImageTokens", "inputCachedImageTokens",
+                        "outputTokens", "outputAudioTokens", "outputTextTokens"):
+                llm_bucket["totals"][pub] = 0
+                for mb in llm_bucket["byModel"].values():
+                    mb[pub] = 0
+
         return summary
 
 
@@ -1002,9 +1017,14 @@ class BillingRepository:
         )
         ib = _coerce_jsonish(_coerce_jsonish(snapshot_billing.get("billing")).get("interview"))
 
-        # Fold in manual LLM entries for the 'interview' feature
+        # Fold in manual LLM entries for this interview's own LLM spend: eval/signal
+        # scoring ("interview"), brief generation ("interviewBrief"), and per-turn
+        # question generation ("interviewLLMGeneration"). All three happen inside
+        # this single interview session, so the per-interview snapshot's LLM total
+        # must include all three, not just eval.
+        _INTERVIEW_OWN_LLM_FEATURES = ("interview", "interviewBrief", "interviewLLMGeneration")
         for feature, usage in pending:
-            if feature != "interview":
+            if feature not in _INTERVIEW_OWN_LLM_FEATURES:
                 continue
             model = str(usage.get("model", "") or "").strip()
             if not model:

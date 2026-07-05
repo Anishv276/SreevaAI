@@ -237,7 +237,7 @@ from interview.prompt_layers import (
     build_evaluation_layer_prompt,
     build_system_prompt,
 )
-CLOSING_TRIGGER_SECS = 20   # fire goodbye at T-20s so interview ends exactly at time limit
+CLOSING_TRIGGER_SECS = 10   # fire goodbye at T-10s so interview ends exactly at time limit
 # Custom-question normalisation constants  module-level so they are allocated once.
 _CUSTOM_Q_PREFIXES: tuple[str, ...] = (
     "ask him about",
@@ -556,7 +556,7 @@ async def _generate_move_on_directive(
     memory_block: str,
     cross_ref_rule: str,
     client: Any,
-    llm_model: str = "gpt-4.1-mini",
+    llm_model: str,
     usage_sink: Optional[Any] = None,
     topic_item: Optional[Any] = None,
     prev_answer: str = "",  # candidate's last answer — used to derive the right opening filler
@@ -1804,6 +1804,26 @@ async def entrypoint(ctx: JobContext):
         model=interview_llm_model,
         temperature=interview_llm_temperature,
     )
+    # Every turn on this plugin is triggered by a directive (probe or MOVE_ON) --
+    # there is no generic/undirected conversation turn -- so its full per-turn
+    # usage belongs to interviewLLMGeneration, not the opaque session-total bucket.
+    def _on_llm_metrics_collected(metrics) -> None:
+        prompt_tokens = int(_metric_number(metrics, "prompt_tokens"))
+        completion_tokens = int(_metric_number(metrics, "completion_tokens"))
+        cached_tokens = int(_metric_number(metrics, "prompt_cached_tokens"))
+        if prompt_tokens or completion_tokens:
+            _llmgen_llm_usages.append({
+                "model": interview_llm_model,
+                "inputTokens": prompt_tokens,
+                "outputTokens": completion_tokens,
+                "cachedInputTokens": cached_tokens,
+            })
+    try:
+        on_method = getattr(llm_plugin, "on", None)
+        if callable(on_method):
+            on_method("metrics_collected", _on_llm_metrics_collected)
+    except Exception as e:
+        logger.warning("[USAGE] Failed to attach LLM metrics hook: %s", e)
     # Flux provides native end-of-turn detection via EOT events -- no separate semantic
     # turn detector needed. turn_detection="stt" tells LiveKit to use Flux's EOT events.
     logger.info("[TURN_DETECTOR] Flux native EOT active (engine=%s)", getattr(stt_plugin, "_hr_stt_engine", "flux"))
@@ -3033,7 +3053,7 @@ async def entrypoint(ctx: JobContext):
                                 memory_block="",
                                 cross_ref_rule=_pre_cross_ref,
                                 client=_eval_openai_client,
-                                llm_model=analysis_model,
+                                llm_model=interview_llm_model,
                                 usage_sink=_llmgen_llm_usages.append,
                                 topic_item=_pre_next_item,
                                 prev_answer=(payload.get("answer") or ""),
@@ -4207,6 +4227,12 @@ async def entrypoint(ctx: JobContext):
     if finished_task.done():
         try:
             _agent_dur = (time.time() - session_start_time) if session_start_time else None
+            # Sessions that ran out the fixed time budget always bill/show exactly
+            # time_limit_mins, regardless of goodbye TTS timing shaving a few
+            # seconds off the raw elapsed wall-clock. Early ends (candidate
+            # finished, inactivity timeout) keep their real, shorter duration.
+            if time_expired:
+                _agent_dur = float(time_limit_mins * 60)
             await update_interview_status(app_id, duration_seconds=_agent_dur)
             logger.info("[EARLY_STATUS_UPDATE] Marked COMPLETED to prevent duplicate job dispatch")
         except Exception as e:
@@ -4262,6 +4288,7 @@ async def entrypoint(ctx: JobContext):
                             proctoring_data=_proctoring_snap,
                             org_id=org_id,
                             jd_json=_coerce_jsonish(extracted_details) if extracted_details else None,
+                            resume_json=structured_resume if isinstance(structured_resume, dict) else None,
                             topic_records=list(_topic_records),
                             candidate_name=candidate_name,
                             answer_integrity_enabled=bool(evaluation_signal_toggles.get("answer_integrity")),

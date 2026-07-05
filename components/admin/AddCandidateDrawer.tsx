@@ -71,7 +71,7 @@ export function AddCandidateDrawer({ open, onClose, driveId, driveName, mode, on
         setLoading(true); setError(null);
         try {
             if (mode === "ats") {
-                // ATS: upload resume with form metadata preserved (name/email/phone)
+                // Resume mode: upload resume with form metadata preserved (name/email/phone)
                 // then enqueue screening. Admin manually sends invite after shortlisting.
                 const fd = new FormData();
                 fd.append("file", resumeFile!);

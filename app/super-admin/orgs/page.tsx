@@ -742,12 +742,19 @@ export default function OrgsPage() {
                         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar space-y-6" style={{ background: "#FAFAFC" }}>
                             {(() => {
                                 const ivFeature = billingAggregates?.interview || {};
-                                // Interview donut: ONLY the interview feature's own LLM+TTS+STT cost
-                                const ivLlmCost = Number(ivFeature.costUsd || 0);
+                                const ivBriefFeature = billingAggregates?.interviewBrief || {};
+                                const ivGenFeature = billingAggregates?.interviewLLMGeneration || {};
+                                // Interview donut: the interview session's full LLM spend --
+                                // eval/signal scoring (interview) + brief generation (interviewBrief)
+                                // + per-turn question generation (interviewLLMGeneration) -- plus
+                                // this session's own TTS/STT.
+                                const ivLlmCost = Number(ivFeature.costUsd || 0)
+                                    + Number(ivBriefFeature.costUsd || 0)
+                                    + Number(ivGenFeature.costUsd || 0);
                                 const ivTtsCost = Number(ivFeature.ttsCostUsd || 0);
                                 const ivSttCost = Number(ivFeature.sttCostUsd || 0);
                                 const ivTotalCost = ivLlmCost + ivTtsCost + ivSttCost;
-                                const feature = ivFeature; // alias for interview feature
+                                const feature = ivFeature; // alias for interview feature (TTS/STT/session stats)
                                 const totalCost = ivTotalCost;
                                 const logicCost = ivLlmCost;
                                 const synthCost = ivTtsCost;
@@ -758,7 +765,9 @@ export default function OrgsPage() {
                                 const logicDash = getDash(logicCost);
                                 const synthDash = getDash(synthCost);
                                 const sttDash = getDash(sttCost);
-                                const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
+                                const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0)
+                                    + Number(ivBriefFeature.inputTokens || 0) + Number(ivBriefFeature.outputTokens || 0)
+                                    + Number(ivGenFeature.inputTokens || 0) + Number(ivGenFeature.outputTokens || 0);
                                 return (
                                     <div className="flex flex-col gap-6">
                                         {/* SECTION 1: LLM Models Table */}
@@ -962,9 +971,7 @@ export default function OrgsPage() {
                                                         <div className="space-y-1.5">
                                                             <div className="text-xs font-medium text-gray-400 uppercase tracking-wider">STT Mins</div>
                                                             <div className="text-[28px] font-bold text-gray-900 tabular-nums">
-                                                                {Number(feature.sessionDuration || 0) > 0
-                                                                    ? (Number(feature.sessionDuration || 0) / 60).toFixed(1)
-                                                                    : (Number(feature.sttAudioSeconds || 0) / 60).toFixed(1)}<span className="text-[13px] font-medium ml-1 opacity-40">min</span>
+                                                                {(Number(feature.sttAudioSeconds || 0) / 60).toFixed(1)}<span className="text-[13px] font-medium ml-1 opacity-40">min</span>
                                                             </div>
                                                         </div>
                                                         <div className="space-y-1.5 col-span-2">
@@ -1090,7 +1097,13 @@ export default function OrgsPage() {
                                                                 {row.hasBillingSnapshot ? fmtHistory(row.sttCostUsd) : "-"}
                                                             </td>
                                                             <td className="px-6 py-4 text-right text-sm font-black text-gray-900">
-                                                                {row.hasBillingSnapshot ? fmtHistory(row.totalCostUsd) : "-"}
+                                                                {row.hasBillingSnapshot
+                                                                    ? fmtHistory(
+                                                                        Math.round(Number(row.llmCostUsd || 0) * 100) / 100
+                                                                        + Math.round(Number(row.ttsCostUsd || 0) * 100) / 100
+                                                                        + Math.round(Number(row.sttCostUsd || 0) * 100) / 100
+                                                                    )
+                                                                    : "-"}
                                                             </td>
                                                             <td className="px-6 py-4 text-right text-[11px] font-semibold text-gray-500">
                                                                 {new Date(row.date).toLocaleDateString(undefined, {

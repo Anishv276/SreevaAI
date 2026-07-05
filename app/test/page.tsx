@@ -20,6 +20,8 @@ import { ConnectionState, Track } from "livekit-client";
 import { AuraVisualizer } from "@/components/agents-ui/aura-visualizer";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BASIC_PLAN_SIGNALS, normalizeProctoringSignals, type ProctoringSignalToggles } from "@/lib/proctoring-signals";
+import { FaceProctoring } from "@/components/careers/interview/FaceProctoring";
+import { HardwareHeartbeat } from "@/components/careers/interview/HardwareHeartbeat";
 import "@livekit/components-styles";
 
 const TEST_KEY = process.env.NEXT_PUBLIC_TEST_KEY || "1285";
@@ -580,6 +582,58 @@ function TestPageContent() {
     };
 
     const isActive = !!(livekitToken && livekitUrl);
+    const isCameraDisabledEnabled = Boolean(proctoringSignals.camera_disabled);
+    const isMicrophoneDisabledEnabled = Boolean(proctoringSignals.microphone_disabled);
+    const isFaceAbsenceEnabled = Boolean(proctoringSignals.face_absence);
+    const isMultipleFacesEnabled = Boolean(proctoringSignals.multiple_faces);
+    const isIdentityMismatchEnabled = Boolean(proctoringSignals.identity_mismatch);
+
+    const postProctoringViolation = useCallback((
+        eventType: string,
+        reason: string,
+        severity: "low" | "medium" | "high" = "high",
+        metadata?: Record<string, unknown>,
+    ) => {
+        if (!selectedCandidate) return;
+        fetch("/api/interview/proctoring", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                applicationId: selectedCandidate.id,
+                interviewToken: interviewToken || "",
+                events: [{
+                    eventType,
+                    severity,
+                    timestamp: Date.now(),
+                    reason,
+                    metadata: metadata && Object.keys(metadata).length > 0 ? metadata : undefined,
+                }],
+            }),
+        }).catch(() => {});
+    }, [selectedCandidate, interviewToken]);
+
+    const handleFaceViolation = useCallback((
+        eventType: string,
+        reason: string,
+        severity?: "low" | "medium" | "high",
+        metadata?: Record<string, unknown>,
+    ) => {
+        if (eventType === "face_absence" && !isFaceAbsenceEnabled) return;
+        if (eventType === "multiple_faces" && !isMultipleFacesEnabled) return;
+        if (eventType === "identity_mismatch" && !isIdentityMismatchEnabled) return;
+        postProctoringViolation(eventType, reason, severity, metadata);
+    }, [isFaceAbsenceEnabled, isMultipleFacesEnabled, isIdentityMismatchEnabled, postProctoringViolation]);
+
+    const handleHardwareViolation = useCallback((
+        eventType: string,
+        reason: string,
+        severity: "low" | "medium" | "high" = "high",
+        metadata?: Record<string, unknown>,
+    ) => {
+        if (eventType === "camera_disabled" && !isCameraDisabledEnabled) return;
+        if (eventType === "microphone_disabled" && !isMicrophoneDisabledEnabled) return;
+        postProctoringViolation(eventType, reason, severity, metadata);
+    }, [isCameraDisabledEnabled, isMicrophoneDisabledEnabled, postProctoringViolation]);
 
     // Live fullscreen state -- drives the persistent "return to fullscreen" banner below,
     // independent of the one-shot violation modal (which only fires once per exit and can
@@ -893,6 +947,24 @@ function TestPageContent() {
                 </div>
             </div>
 
+            {isActive && (
+                <>
+                    <FaceProctoring
+                        isActive={isActive}
+                        referenceSnapshotUrl={null}
+                        interviewStartedAt={interviewStartedAtRef}
+                        onViolation={handleFaceViolation}
+                    />
+                    {(isCameraDisabledEnabled || isMicrophoneDisabledEnabled) && (
+                        <HardwareHeartbeat
+                            isActive={isActive}
+                            interviewStartedAt={interviewStartedAtRef}
+                            onViolation={handleHardwareViolation}
+                        />
+                    )}
+                </>
+            )}
+
             {/* MAIN TRANSCRIPT AREA */}
             {isActive && (
                 <LiveKitRoom
@@ -902,8 +974,9 @@ function TestPageContent() {
                     audio={true}
                     video={enableCamera}
                     onDisconnected={handleEnd}
+                    className="flex-1 flex flex-col"
                 >
-                    <div className="flex-1 flex flex-col min-w-0 bg-white/40 items-center p-4 relative min-h-[600px]">
+                    <div className="flex-1 flex flex-col min-w-0 bg-white/40 overflow-hidden items-center p-4 relative">
                         {error && (
                             <div className="mb-4 flex items-start gap-2.5 rounded-2xl px-5 py-3 text-sm text-red-700 bg-red-50 border border-red-100 shadow-sm animate-in fade-in">
                                 <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
@@ -1027,7 +1100,7 @@ function TestPageContent() {
 
             {/* Non-active state (no recording) */}
             {!isActive && (
-                <div className="flex-1 flex flex-col min-w-0 bg-white/40 items-center p-4 min-h-[600px]">
+                <div className="flex-1 flex flex-col min-w-0 bg-white/40 overflow-hidden items-center p-4">
                     <div className="w-full h-full flex-1 flex flex-col min-h-0 relative">
                         <SimulationViewer
                             lines={displayState.lines}
