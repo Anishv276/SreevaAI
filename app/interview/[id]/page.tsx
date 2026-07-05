@@ -113,6 +113,8 @@ function getAttachableTrack(trackRef: TrackReference): AttachableTrack | null {
     }
     return candidate;
 }
+const FATAL_ERROR_MESSAGE = "We're sorry, something went wrong from our side. Please contact our support team at support@sreevaai.com.";
+
 function InterviewContent({ id, params }: { id: string, params: Promise<{ id: string }> }) {
     const [phase, setPhase] = useState<"loading" | "check" | "launching" | "interview" | "finalizing" | "completed">("loading");
     const [endMode, setEndMode] = useState<"normal" | "timeout">("normal");
@@ -181,6 +183,11 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const [supportError, setSupportError] = useState<string | null>(null);
     const [blockedAccessMessage, setBlockedAccessMessage] = useState<string | null>(null);
     const [blockedAccessTitle, setBlockedAccessTitle] = useState<string>("Access Restricted");
+    const showFatalError = useCallback(() => {
+        setBlockedAccessTitle("Technical Issue");
+        setBlockedAccessMessage(FATAL_ERROR_MESSAGE);
+        setIsInitiallyLocked(true);
+    }, []);
     const [supportForm, setSupportForm] = useState({
         name: "",
         email: "",
@@ -1326,6 +1333,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             onAgentDetectedViolation={handleAgentDetectedViolation}
                             setSupportDialogOpen={setSupportDialogOpen}
                             setInstructionsDialogOpen={setInstructionsDialogOpen}
+                            onFatalError={showFatalError}
                         />
                         {/*  Connection Proctoring (lives inside LiveKitRoom for useRoomContext) */}
                         {isConnectionLostEnabled && (
@@ -1395,12 +1403,16 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                 </div>
                                 <div className="pt-4 flex flex-col gap-3">
                                     <Button
-                                        onClick={() => setActiveFocusViolation(null)}
+                                        onClick={() => {
+                                            setActiveFocusViolation(null);
+                                            // Re-entering fullscreen needs a user gesture -- this click is it.
+                                            if (kind === "fullscreen_exit") void requestFullscreenMode();
+                                        }}
                                         className={`w-full text-white font-black uppercase tracking-widest py-6 rounded-2xl transition-all active:scale-95 ${isHighSeverity
                                             ? "bg-red-500 hover:bg-red-600 shadow-[0_10px_20px_-10px_rgba(239,68,68,0.5)]"
                                             : "bg-violet-500 hover:bg-violet-600 shadow-[0_10px_20px_-10px_rgba(124,58,237,0.5)]"}`}
                                     >
-                                        I Understand & Continue
+                                        {kind === "fullscreen_exit" ? "Return to Fullscreen" : "I Understand & Continue"}
                                     </Button>
                                     <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
                                         Incident {count > 1 ? `${count} of session` : "logged"} · Under review
@@ -1644,6 +1656,7 @@ function InterviewRoomContent({
     onAgentDetectedViolation,
     setSupportDialogOpen,
     setInstructionsDialogOpen,
+    onFatalError,
 }: {
     id: string,
     interviewToken: string,
@@ -1663,6 +1676,7 @@ function InterviewRoomContent({
      * Candidate name shown in the interview room.
      */
     onAgentDetectedViolation?: (eventType: string, reason: string, severity?: string) => void;
+    onFatalError?: () => void;
     setSupportDialogOpen: (open: boolean) => void;
     setInstructionsDialogOpen: (open: boolean) => void;
 }) {
@@ -1705,12 +1719,13 @@ function InterviewRoomContent({
         const handleRoomDisconnected = () => {
             if (interviewCompletionHandledRef.current) return;
             console.warn("[Interview] LiveKit room disconnected; waiting for explicit termination signal.");
+            onFatalError?.();
         };
         lkRoom.on(RoomEvent.Disconnected, handleRoomDisconnected);
         return () => {
             lkRoom.off(RoomEvent.Disconnected, handleRoomDisconnected);
         };
-    }, [lkRoom, isInterviewActive]);
+    }, [lkRoom, isInterviewActive, onFatalError]);
     const sanitizeTranscriptText = useCallback((text: string) => {
         let result = text
             .replace(/<wait for response>/gi, "")
@@ -2026,6 +2041,8 @@ function InterviewRoomContent({
                 if (packet.type === "interview_terminated") {
                     setRemoteForceFinishReason(packet.reason === "inactivity_timeout" ? "timeout" : "normal");
                     setRemoteForceFinish(true);
+                } else if (packet.type === "interview_failed") {
+                    onFatalError?.();
                 } else if (packet.type === "launch_prereqs_ready") {
                     setLaunchPrereqsReady(Boolean(packet.ready));
                 } else if (packet.type === "proctoring_violation") {
@@ -2045,7 +2062,7 @@ function InterviewRoomContent({
         return () => {
             lkRoom.off(RoomEvent.DataReceived, onDataReceived);
         };
-    }, [lkRoom, onAgentDetectedViolation]);
+    }, [lkRoom, onAgentDetectedViolation, onFatalError]);
     useEffect(() => {
         if (!transcriptPanelRef.current) return;
         transcriptPanelRef.current.scrollTop = transcriptPanelRef.current.scrollHeight;
