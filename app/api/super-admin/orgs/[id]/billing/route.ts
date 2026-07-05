@@ -25,14 +25,17 @@ export async function GET(
         });
         if (!org) return NextResponse.json({ error: "Organization not found" }, { status: 404 });
 
+        // Interview.interviewDuration is the single source of truth for duration
+        // (see app/api/admin/billing/history/route.ts) -- billingSnapshot.durationSec
+        // comes from a separate, largely-unused write path and must never win over it.
         const interviews = await prisma.$queryRaw<Array<{
             testBillingMetrics: Record<string, any> | null;
             interviewDuration: number | null;
         }>>(Prisma.sql`
             SELECT i."testBillingMetrics",
                    COALESCE(
-                       (i."billingSnapshot"->>'durationSec')::int,
-                       i."interviewDuration"
+                       i."interviewDuration",
+                       (i."billingSnapshot"->>'durationSec')::int
                    ) AS "interviewDuration"
             FROM "Interview" i
             JOIN "Application" a ON a.id = i."applicationId"

@@ -1128,6 +1128,50 @@ class BillingRepository:
         await cls.flush_pending(org_id)
 
     @classmethod
+    async def record_test_report_llm_usage(cls, app_id: str, usage: dict[str, Any]) -> None:
+        """Add one report-pipeline LLM call's accurate cost to a test session's
+        testBillingMetrics.llmCost, instead of the org's real usageMetrics bucket.
+
+        Test-session report/summary calls run the exact same LLM code path as
+        real interviews, so without this the cost would land in
+        Organization.usageMetrics.billing.interviewReport indistinguishable from
+        real candidates. Routing it here at the single _persist_billing call
+        site (report_pipeline.py) keeps test spend fully separate at the source.
+        """
+        if not app_id or not usage or not DATABASE_URL:
+            return
+        model    = str(usage.get("model", "") or "")
+        input_t  = int(usage.get("inputTokens", 0) or 0)
+        cached_t = int(usage.get("cachedInputTokens", 0) or 0)
+        output_t = int(usage.get("outputTokens", 0) or 0)
+        if not model:
+            return
+        try:
+            cost = CostCalculator.openai(model, input_t, cached_t, output_t)
+        except ValueError:
+            return
+        try:
+            pool = await cls._get_pool()
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """UPDATE "Interview" SET "testBillingMetrics" = jsonb_set(
+                           jsonb_set(
+                               COALESCE("testBillingMetrics", '{}'::jsonb),
+                               '{reportLlmCost}',
+                               to_jsonb(COALESCE(("testBillingMetrics"->>'reportLlmCost')::float, 0) + $1::float),
+                               true
+                           ),
+                           '{reportLlmRuns}',
+                           to_jsonb(COALESCE(("testBillingMetrics"->>'reportLlmRuns')::int, 0) + 1),
+                           true
+                       ), "updatedAt" = NOW()
+                       WHERE "applicationId" = $2""",
+                    cost, app_id,
+                )
+        except Exception as e:
+            logger.error("[BILLING] record_test_report_llm_usage failed for app=%s: %s", app_id, e)
+
+    @classmethod
     async def deduct_quota(cls, app_id: str, duration_seconds: Optional[float] = None) -> None:
         """Atomically deduct one interview quota slot. Idempotent via billedAt guard."""
         if not DATABASE_URL:
@@ -1324,6 +1368,14 @@ async def record_external_billing_usage(org_id: Optional[str], feature: str, usa
     if not org_id:
         return
     await BillingRepository.record_org_billing_usage(org_id, feature, usage)
+
+async def record_test_report_billing_usage(app_id: str, usage: dict[str, Any]) -> None:
+    """Record one report-pipeline LLM call's cost for a TEST session only.
+
+    Keeps test-session report/summary spend out of the org's real billing
+    totals — see BillingRepository.record_test_report_llm_usage for why.
+    """
+    await BillingRepository.record_test_report_llm_usage(app_id, usage)
 
 
 def _json_result(ok: bool, **payload: Any) -> None:

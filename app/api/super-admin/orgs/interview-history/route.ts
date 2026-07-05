@@ -50,7 +50,10 @@ export async function GET(request: Request) {
     const result = rows
       .map((row) => {
         const snapshot = (row.billingSnapshot && typeof row.billingSnapshot === "object" ? row.billingSnapshot : {}) as Record<string, unknown>;
-        const durationSec = Number(snapshot.durationSec ?? row.interviewDuration ?? row.recordingDurationSec ?? 0);
+        // Interview.interviewDuration is the single source of truth for duration
+        // (see app/api/admin/billing/history/route.ts) — only fall back to the
+        // recording file length for rows saved before that column existed.
+        const durationSec = Number(row.interviewDuration ?? row.recordingDurationSec ?? 0);
         const date = (row.completedAt ?? row.updatedAt).toISOString();
         const hasExactBreakdown =
           String(snapshot.costSource || "").toLowerCase() === "exact" ||

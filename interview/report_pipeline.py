@@ -51,6 +51,7 @@ from interview.agent_runtime_support import logger, DATABASE_URL
 from interview.brief_extraction import RawResumeJSON, ResumeExtractor
 
 from billing.billing import record_external_billing_usage as _persist_billing
+from billing.billing import record_test_report_billing_usage as _persist_test_report_billing
 from interview.slack_error_logger import log_llm_error
 
 # â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
@@ -118,6 +119,7 @@ class ReportState(TypedDict, total=False):
     resume_json:       dict | None  # structured resume -- feeds experience_credibility eval
     topic_records:     list[dict]   # per-topic MOVE_ON ground-truth from agent
     answer_integrity_enabled: bool  # org toggle — gates the AnswerIntegrityAnalyzer LLM call
+    is_test:           bool  # test session -- routes LLM cost to testBillingMetrics, not org billing
     # -- Computed by node: signals --------------------------------------------
     integrity_result:  dict
     signal_context:    str
@@ -294,6 +296,8 @@ class ReportLLMClient:
     async def call(self, spec: LLMCallSpec) -> tuple[str, Any]:
         """Execute one LLM call with retry. Returns (raw_text, usage_obj)."""
         last_exc: Exception | None = None
+        _call_start = time.monotonic()
+        logger.info("[REPORT] %s started (app=%s)", spec.call_type, spec.app_id or "?")
 
         for attempt, delay in enumerate((*self._RETRY_DELAYS, None), start=1):
             try:
@@ -332,6 +336,11 @@ class ReportLLMClient:
                 raw = "".join(chunks).strip()
                 if not raw:
                     raise ValueError(f"[{spec.call_type}] empty LLM response")
+                _elapsed = time.monotonic() - _call_start
+                logger.info(
+                    "[REPORT] %s ended (%.1fs, app=%s)",
+                    spec.call_type, _elapsed, spec.app_id or "?",
+                )
                 return raw, usage_data
 
             except Exception as exc:
@@ -1465,6 +1474,7 @@ async def _node_llm_calls(state: ReportState) -> dict:
     behavioral_signals = state.get("behavioral_signals", [])
     transcript_lines = state.get("transcript_lines", [])
     interview_scores = state.get("interview_scores", [])
+    is_test          = state.get("is_test", False)
 
     # Build eval user prompt (dynamic vars -> user msg, system is static)
     lines_to_use  = transcript_lines[4:] if len(transcript_lines) > 4 else transcript_lines
@@ -1583,28 +1593,23 @@ async def _node_llm_calls(state: ReportState) -> dict:
         )
     )
 
-    # Persist billing for all 3 calls concurrently — non-fatal so a DB blip
+    # Persist billing for all 5 calls concurrently — non-fatal so a DB blip
     # doesn't take down the entire report and cause a silent "[REPORT] Failed".
-    if org_id:
+    # Test sessions route cost to testBillingMetrics instead of the org's real
+    # usage bucket, so testing spend never shows up in a customer's billing.
+    def _bill(usage: dict) -> Any:
+        return (
+            _persist_test_report_billing(app_id, usage)
+            if is_test
+            else _persist_billing(org_id, "interviewReport", usage)
+        )
+    if org_id or is_test:
         billing_tasks = [
-            _persist_billing(
-                org_id, "interviewReport", _llm.usage_dict(eval_usage, llm_default)
-            ),
-            _persist_billing(
-                org_id, "interviewReport", _llm.usage_dict(skills_usage, llm_default)
-            ),
-            *[
-                _persist_billing(org_id, "interviewReport", bu)
-                for bu in beh_usages
-            ],
-            *[
-                _persist_billing(org_id, "interviewReport", au)
-                for au in answer_integrity_usages
-            ],
-            *[
-                _persist_billing(org_id, "interviewReport", nu)
-                for nu in integrity_narrative_usages
-            ],
+            _bill(_llm.usage_dict(eval_usage, llm_default)),
+            _bill(_llm.usage_dict(skills_usage, llm_default)),
+            *[_bill(bu) for bu in beh_usages],
+            *[_bill(au) for au in answer_integrity_usages],
+            *[_bill(nu) for nu in integrity_narrative_usages],
         ]
         try:
             await asyncio.gather(*billing_tasks)
@@ -1872,6 +1877,7 @@ async def generate_interview_report(
     topic_records:         Optional[list] = None,
     candidate_name:        str = "",
     answer_integrity_enabled: bool = False,
+    is_test:               bool = False,
 ) -> Optional[dict]:
     """Run the full report pipeline.
 
@@ -1903,9 +1909,14 @@ async def generate_interview_report(
         "resume_json":      resume_json,
         "topic_records":    topic_records or [],
         "answer_integrity_enabled": answer_integrity_enabled,
+        "is_test":          is_test,
     }
+    _pipeline_start = time.monotonic()
+    logger.info("[REPORT] Pipeline started for app=%s", app_id)
     try:
         final_state = await _REPORT_GRAPH.ainvoke(initial_state)
+        _pipeline_elapsed = time.monotonic() - _pipeline_start
+        logger.info("[REPORT] Pipeline finished for app=%s (%.1fs)", app_id, _pipeline_elapsed)
         return final_state.get("scores_context")
     except asyncio.TimeoutError as e:
         logger.error("[REPORT] Timed out for %s: %s", app_id, e)
@@ -1934,6 +1945,7 @@ async def generate_interview_summary(
     org_id:              Optional[str]  = None,
     scores_context:      Optional[dict] = None,
     candidate_name:      str = "",
+    is_test:             bool = False,
 ) -> None:
     """Generate summary bullets + verdict and write to Interview.interviewSummary.
 
@@ -2020,6 +2032,8 @@ async def generate_interview_summary(
     )
 
 
+    _summary_start = time.monotonic()
+    logger.info("[SUMMARY] report_summary + report_verdict started (app=%s)", app_id)
     try:
         (summary_text, summary_usage), (verdict_text, verdict_usage) = await asyncio.gather(
             _llm.call(LLMCallSpec(
@@ -2048,19 +2062,26 @@ async def generate_interview_summary(
             )),
         )
 
-        if org_id:
+        if org_id or is_test:
+            def _bill(usage: dict) -> Any:
+                return (
+                    _persist_test_report_billing(app_id, usage)
+                    if is_test
+                    else _persist_billing(org_id, "interviewReport", usage)
+                )
             try:
                 await asyncio.gather(
-                    _persist_billing(
-                        org_id, "interviewReport", _llm.usage_dict(summary_usage, llmInterviewReport)
-                    ),
-                    _persist_billing(
-                        org_id, "interviewReport", _llm.usage_dict(verdict_usage, llmInterviewReport)
-                    ),
+                    _bill(_llm.usage_dict(summary_usage, llmInterviewReport)),
+                    _bill(_llm.usage_dict(verdict_usage, llmInterviewReport)),
                 )
             except Exception as _bill_err:
                 logger.error("[BILLING] interviewReport summary billing failed (non-fatal): %s", _bill_err)
 
+        _summary_elapsed = time.monotonic() - _summary_start
+        logger.info(
+            "[SUMMARY] report_summary + report_verdict ended (%.1fs, app=%s)",
+            _summary_elapsed, app_id,
+        )
         if not summary_text and not verdict_text:
             logger.warning("[SUMMARY] Both outputs empty for %s — skipping save", app_id)
             return

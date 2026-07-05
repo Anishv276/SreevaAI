@@ -128,6 +128,7 @@ export default function OrgsPage() {
     const [syncingOrgs, setSyncingOrgs] = useState<Set<string>>(new Set());
     const [metricsOrg, setMetricsOrg] = useState<Org | null>(null);
     const [billingAggregates, setBillingAggregates] = useState<Record<string, any> | null>(null);
+    const [testBillingData, setTestBillingData] = useState<Record<string, any> | null>(null);
     const [statusModalOrg, setStatusModalOrg] = useState<{ id: string; name: string; currentStatus: string; pendingStatus: string } | null>(null);
     const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
     // Currency toggle state
@@ -174,6 +175,7 @@ export default function OrgsPage() {
     const openMetricsOrg = async (org: Org) => {
         setMetricsOrg(org);
         setBillingAggregates(null);
+        setTestBillingData(null);
         fetchExchangeRate();
         // Fetch per-provider aggregates from backend
         try {
@@ -184,6 +186,16 @@ export default function OrgsPage() {
             }
         } catch (err) {
             console.error("Failed to fetch billing aggregates:", err);
+        }
+        // Test session spend (LLM/TTS/STT/report) — kept separate from the real
+        // billing aggregates above, since it's internal testing cost, not customer usage.
+        try {
+            const res = await fetch(`/api/test/billing?orgId=${encodeURIComponent(org.id)}`);
+            if (res.ok) {
+                setTestBillingData(await res.json());
+            }
+        } catch (err) {
+            console.error("Failed to fetch test billing:", err);
         }
     };
     useEffect(() => {
@@ -1119,6 +1131,78 @@ export default function OrgsPage() {
                                         </div>
                                     )}
                                 </div>
+                                {testBillingData && (
+                                    <div className="mt-6 bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+                                        <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-gray-100 bg-gray-50/60">
+                                            <div className="flex items-center gap-2">
+                                                <div>
+                                                    <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Internal / not billed to org</div>
+                                                    <h4 className="text-lg font-black text-gray-900">Test Usage</h4>
+                                                </div>
+                                            </div>
+                                            <div className="rounded-full border border-gray-100 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                                {testBillingData.count || 0} test session{testBillingData.count === 1 ? "" : "s"}
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 px-6 py-5">
+                                            <div className="bg-gray-50/50 rounded-xl p-4 border border-gray-100">
+                                                <p className="text-[11px] font-semibold text-gray-500 mb-1">LLM</p>
+                                                <p className="text-lg font-black text-gray-900">{fmt(testBillingData.totals?.llmCost || 0)}</p>
+                                            </div>
+                                            <div className="bg-gray-50/50 rounded-xl p-4 border border-gray-100">
+                                                <p className="text-[11px] font-semibold text-gray-500 mb-1">TTS</p>
+                                                <p className="text-lg font-black text-gray-900">{fmt(testBillingData.totals?.ttsCost || 0)}</p>
+                                            </div>
+                                            <div className="bg-gray-50/50 rounded-xl p-4 border border-gray-100">
+                                                <p className="text-[11px] font-semibold text-gray-500 mb-1">STT</p>
+                                                <p className="text-lg font-black text-gray-900">{fmt(testBillingData.totals?.sttCost || 0)}</p>
+                                            </div>
+                                            <div className="bg-gray-50/50 rounded-xl p-4 border border-gray-100">
+                                                <p className="text-[11px] font-semibold text-gray-500 mb-1">Report</p>
+                                                <p className="text-lg font-black text-gray-900">{fmt(testBillingData.totals?.reportCost || 0)}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50">
+                                            <div className="text-[12px] font-bold uppercase tracking-widest text-gray-500">Total spent testing</div>
+                                            <div className="text-xl font-black text-gray-900">{fmt(testBillingData.totals?.totalCost || 0)}</div>
+                                        </div>
+                                        {testBillingData.rows?.length > 0 && (
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full">
+                                                    <thead className="bg-gray-50/80">
+                                                        <tr className="text-left text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                                            <th className="px-6 py-3">Session</th>
+                                                            <th className="px-6 py-3 text-center">Duration</th>
+                                                            <th className="px-6 py-3 text-right">LLM</th>
+                                                            <th className="px-6 py-3 text-right">TTS</th>
+                                                            <th className="px-6 py-3 text-right">STT</th>
+                                                            <th className="px-6 py-3 text-right">Report</th>
+                                                            <th className="px-6 py-3 text-right">Total</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-gray-100 bg-white">
+                                                        {testBillingData.rows.slice(0, 20).map((row: any) => (
+                                                            <tr key={row.id} className="hover:bg-gray-50/70">
+                                                                <td className="px-6 py-4">
+                                                                    <div className="font-bold text-gray-900">{row.candidate}</div>
+                                                                    <div className="text-[11px] font-medium text-gray-500">{row.drive}</div>
+                                                                </td>
+                                                                <td className="px-6 py-4 text-center text-sm font-bold text-gray-900">{row.duration}</td>
+                                                                <td className="px-6 py-4 text-right text-sm font-bold text-gray-900">{fmt(row.llmCost)}</td>
+                                                                <td className="px-6 py-4 text-right text-sm font-bold text-gray-900">{fmt(row.ttsCost)}</td>
+                                                                <td className="px-6 py-4 text-right text-sm font-bold text-gray-900">{fmt(row.sttCost)}</td>
+                                                                <td className="px-6 py-4 text-right text-sm font-bold text-gray-900">
+                                                                    {row.reportEnabled ? fmt(row.reportCost) : <span className="text-gray-300">skipped</span>}
+                                                                </td>
+                                                                <td className="px-6 py-4 text-right text-sm font-black text-gray-900">{fmt(row.totalCost)}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                         </div>
                     </div>
                 </div>

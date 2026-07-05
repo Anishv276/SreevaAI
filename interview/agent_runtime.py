@@ -4292,6 +4292,7 @@ async def entrypoint(ctx: JobContext):
                             topic_records=list(_topic_records),
                             candidate_name=candidate_name,
                             answer_integrity_enabled=bool(evaluation_signal_toggles.get("answer_integrity")),
+                            is_test=_is_test_session,
                         )
                     logger.info("[REPORT] Completed. scores_context keys=%s",
                                 list(scores_context.keys()) if scores_context else None)
@@ -4310,6 +4311,7 @@ async def entrypoint(ctx: JobContext):
                             org_id=org_id,
                             scores_context=scores_context,
                             candidate_name=candidate_name,
+                            is_test=_is_test_session,
                         )
                 except asyncio.TimeoutError:
                     logger.warning(f"[SUMMARY] Timed out for {app_id} after 60s")

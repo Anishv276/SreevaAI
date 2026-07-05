@@ -8,7 +8,6 @@ import { InterviewReportSreevaAI, buildSreevaAIInterviewViewModel } from "@/comp
 import { ResumeReportSreevaAI, buildSreevaAIResumeViewModel } from "@/components/admin/candidate-profile/resume-report-sreevaai";
 import { useAdminOrg } from "@/context/admin-org-context";
 import { isOrgRestrictedStatus } from "@/lib/interview-quota";
-import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/drive-limits";
 function toTextList(value: unknown): string[] {
     const toLine = (item: unknown): string => {
         if (item == null) return "";
@@ -412,20 +411,18 @@ const groupedProctoringSignals = rawProctoringEvents.reduce((acc: any[], ev: any
         if (groupedProctoringSignals.length > 0) return `${groupedProctoringSignals.length} proctoring event type(s) logged — all low severity.`;
         return "No proctoring flags detected during this session.";
     })();
-    // Sessions that ran out the fixed time budget have interviewDuration clamped to
-    // exactly FIXED_INTERVIEW_DURATION_MINUTES by update_interview_status() -- prefer
-    // that exact value over the raw recording file length (which can be a few seconds
-    // short due to goodbye-speech/TTS timing). Early-ended sessions (candidate finished,
-    // inactivity timeout) never hit that exact value, so they keep showing the real
-    // recording length as before.
-    const _fixedDurationSec = FIXED_INTERVIEW_DURATION_MINUTES * 60;
-    const recordingDurationSec = candidate?.interview?.interviewDuration === _fixedDurationSec
-        ? _fixedDurationSec
+    // Interview.interviewDuration is the single source of truth for duration
+    // everywhere (billing history table, credits calc, this page) -- see
+    // app/api/admin/billing/history/route.ts. It's set exactly once by
+    // update_interview_status(), clamped to the fixed session length for
+    // time-limit endings. Only fall back to the raw recording file length for
+    // rows saved before interviewDuration existed, so this page can never show
+    // a different number than the billing table for the same interview.
+    const recordingDurationSec = typeof candidate?.interview?.interviewDuration === "number"
+        ? candidate.interview.interviewDuration
         : typeof candidate?.interview?.recordingDurationSec === "number"
             ? candidate.interview.recordingDurationSec
-            : typeof candidate?.interview?.interviewDuration === "number"
-                ? candidate.interview.interviewDuration
-                : null;
+            : null;
     const communicationStatus = (() => {
         const commScore = interviewReportScores.communication;
         if (commScore > 0) {
