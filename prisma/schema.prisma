@@ -152,6 +152,7 @@ model Interview {
   questionByQuestionAnalysis Json?           @default("[]")
   scoreBreakdown             Json?           @default("{}")
   interviewSummary           Json?           @default("{}")
+  interviewBrief             Json?
   recording                  Json?           @default("{}")
   skillRatings               Json?           @default("[]")
   scheduledAt                DateTime?
