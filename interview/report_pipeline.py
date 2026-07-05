@@ -864,6 +864,27 @@ _integrity_narrator = IntegrityNarrator()
 _ANSWER_INTEGRITY_FLAG_THRESHOLD = 60
 
 
+def _build_answer_integrity_event(answer_integrity_result: dict) -> dict:
+    """Single source of truth for the answer_integrity event shape -- used both
+    when building the full integrity-tab event list for IntegrityNarrator
+    (_node_llm_calls) and when persisting/scoring in _node_assemble. Keeping
+    this in one place means the two call sites can't drift out of sync with
+    each other the way the event-append-ordering bug did."""
+    return {
+        "eventType":   "answer_integrity",
+        "signal_name": "answer_integrity",
+        "severity":    "high" if answer_integrity_result["score"] >= 80 else "medium",
+        "timestamp":   int(time.time() * 1000),
+        "score":              answer_integrity_result["score"],
+        "reason":             answer_integrity_result["reason"],
+        "phrasing_score":     answer_integrity_result["phrasing_score"],
+        "phrasing_reason":    answer_integrity_result["phrasing_reason"],
+        "consistency_score":  answer_integrity_result["consistency_score"],
+        "consistency_reason": answer_integrity_result["consistency_reason"],
+        "quotes":      answer_integrity_result["quotes"],
+    }
+
+
 async def _answer_integrity_noop() -> tuple[dict, list[dict]]:
     """Stand-in for a disabled answer_integrity toggle -- skips the LLM call
     and cost entirely while keeping the same gather() tuple shape."""
@@ -1537,24 +1558,17 @@ async def _node_llm_calls(state: ReportState) -> dict:
         else _answer_integrity_noop()
     )
 
-    # Explain every fired proctoring event in depth (tab switch, face absence,
-    # low latency, camera off, etc). Skipped (no LLM call) when the session is
-    # clean -- IntegrityNarrator.analyze returns immediately for an empty list.
-    proctoring_events = (state.get("proctoring_data") or {}).get("events", [])
-    _integrity_narrative_task = _integrity_narrator.analyze(
-        proctoring_events,
-        _LLM_DEFAULT=llm_default,
-        org_id=org_id,
-        app_id=app_id,
-    )
-
-    # -- Run all 5 LLM calls in parallel ------------------------------------
+    # -- Run the 4 independent LLM calls in parallel ------------------------
+    # IntegrityNarrator runs AFTER this gather, not inside it: it needs the
+    # answer_integrity event (built from answer_integrity_result, below), and
+    # narrating before that event exists silently excluded answer_integrity
+    # from ever getting 3-point narration -- it could only ever see the
+    # browser/proctoring events, never the content-layer signal.
     (
         (eval_raw, eval_usage),
         (skills_raw, skills_usage),
         (behavioral_result, beh_usages),
         (answer_integrity_result, answer_integrity_usages),
-        (integrity_narratives, integrity_narrative_usages),
     ) = (
         await asyncio.gather(
             _llm.call(LLMCallSpec(
@@ -1589,8 +1603,27 @@ async def _node_llm_calls(state: ReportState) -> dict:
                 app_id=app_id,
             ),
             _answer_integrity_task,
-            _integrity_narrative_task,
         )
+    )
+
+    # Build the complete integrity-tab event list -- browser/proctoring events
+    # PLUS the answer_integrity event (same shape/threshold _node_assemble used
+    # to use later) -- so IntegrityNarrator sees every signal that will actually
+    # render in the integrity tab, in one pass, and every one of them gets 3
+    # sharp points instead of only the browser events.
+    _all_integrity_events = list((state.get("proctoring_data") or {}).get("events", []))
+    answer_integrity_flagged = (
+        answer_integrity_enabled
+        and answer_integrity_result["score"] >= _ANSWER_INTEGRITY_FLAG_THRESHOLD
+    )
+    if answer_integrity_flagged:
+        _all_integrity_events.append(_build_answer_integrity_event(answer_integrity_result))
+
+    integrity_narratives, integrity_narrative_usages = await _integrity_narrator.analyze(
+        _all_integrity_events,
+        _LLM_DEFAULT=llm_default,
+        org_id=org_id,
+        app_id=app_id,
     )
 
     # Persist billing for all 5 calls concurrently — non-fatal so a DB blip
@@ -1676,19 +1709,7 @@ async def _node_assemble(state: ReportState) -> dict:
     answer_integrity_enabled = state.get("answer_integrity_enabled", False)
     answer_integrity_flagged = answer_integrity_enabled and answer_integrity_result["score"] >= _ANSWER_INTEGRITY_FLAG_THRESHOLD
     if answer_integrity_flagged:
-        answer_integrity_event = {
-            "eventType":   "answer_integrity",
-            "signal_name": "answer_integrity",
-            "severity":    "high" if answer_integrity_result["score"] >= 80 else "medium",
-            "timestamp":   int(time.time() * 1000),
-            "score":              answer_integrity_result["score"],
-            "reason":             answer_integrity_result["reason"],
-            "phrasing_score":     answer_integrity_result["phrasing_score"],
-            "phrasing_reason":    answer_integrity_result["phrasing_reason"],
-            "consistency_score":  answer_integrity_result["consistency_score"],
-            "consistency_reason": answer_integrity_result["consistency_reason"],
-            "quotes":      answer_integrity_result["quotes"],
-        }
+        answer_integrity_event = _build_answer_integrity_event(answer_integrity_result)
         proctoring_data = {
             **proctoring_data,
             "events": [*proctoring_data.get("events", []), answer_integrity_event],
@@ -1738,26 +1759,29 @@ async def _node_assemble(state: ReportState) -> dict:
     ]
     skills_evaluated = [r["skill"] for r in skill_ratings_list]
 
-    proctoring_events = proctoring_data.get("events", [])
-
-    # signalAnalysis column: integrity and behavioral analyses kept as two
-    # clearly separate JSON blocks so the UI can render each independently.
+    # signalAnalysis column: exactly two top-level blocks -- behavioral (the
+    # 5-point interview-content analysis) and integrity_analysis (everything
+    # integrity-related that isn't already covered by the dedicated
+    # integritySignals DB column). Raw proctoring events are NOT duplicated
+    # here -- the UI's proctoring rows already read from integritySignals
+    # (see groupedProctoringSignals in app/admin/candidates/[id]/page.tsx),
+    # so keeping a second copy here was pure duplication risk with no reader.
     signal_analysis = {
-        "points":             behavioral_analysis.get("points", []),
         "behavioral_signals": behavioral_signals,
-        "proctoring_events":  proctoring_events,
-        "integrity_signals_analysis": integrity_signals_analysis,
         "behavioral_signals_analysis": behavioral_analysis.get("points", []),
-        "answer_integrity": {
-            "enabled":             answer_integrity_enabled,
-            "score":               answer_integrity_result["score"],
-            "flagged":             answer_integrity_flagged,
-            "reason":              answer_integrity_result["reason"],
-            "phrasing_score":      answer_integrity_result["phrasing_score"],
-            "phrasing_reason":     answer_integrity_result["phrasing_reason"],
-            "consistency_score":   answer_integrity_result["consistency_score"],
-            "consistency_reason":  answer_integrity_result["consistency_reason"],
-            "quotes":              answer_integrity_result["quotes"],
+        "integrity_analysis": {
+            "narratives": integrity_signals_analysis,
+            "answer_integrity": {
+                "enabled":             answer_integrity_enabled,
+                "score":               answer_integrity_result["score"],
+                "flagged":             answer_integrity_flagged,
+                "reason":              answer_integrity_result["reason"],
+                "phrasing_score":      answer_integrity_result["phrasing_score"],
+                "phrasing_reason":     answer_integrity_result["phrasing_reason"],
+                "consistency_score":   answer_integrity_result["consistency_score"],
+                "consistency_reason":  answer_integrity_result["consistency_reason"],
+                "quotes":              answer_integrity_result["quotes"],
+            },
         },
     }
 
@@ -1830,7 +1854,7 @@ async def _node_assemble(state: ReportState) -> dict:
         "concerns":               eval_result.concerns,
         "behavioral_points":      behavioral_analysis.get("points", []),
         "integrity_signals_analysis": integrity_signals_analysis,
-        "answer_integrity":       signal_analysis["answer_integrity"],
+        "answer_integrity":       signal_analysis["integrity_analysis"]["answer_integrity"],
     }
     return {"scores_context": scores_context}
 

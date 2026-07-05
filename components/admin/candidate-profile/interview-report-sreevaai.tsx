@@ -435,7 +435,7 @@ export function buildSreevaAIInterviewViewModel(i: {
       return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : (proctoringRows.some((r) => r.bad) ? 65 : 95);
     } catch { return 95; }
   })();
-  const integritySignals = buildIntegritySignals(proctoringRows, rawIntegrityScore, behavAnalysis?.integrity_signals_analysis);
+  const integritySignals = buildIntegritySignals(proctoringRows, rawIntegrityScore, behavAnalysis?.integrity_analysis?.narratives);
   // Skills -- sourced only from skillRatings DB column (agent_persistence.py)
   const skills = (i.interviewReportSkills || [])
     .map((s: any) => {
@@ -755,8 +755,8 @@ function ScrollFade({ children, className, style }: { children: React.ReactNode;
 /* Compact signal analysis — each point truncates to 1 line with dropdown to expand */
 function SignalAnalysisPanelCompact({ analysis }: { analysis: Record<string, any> }) {
   const [openIdx, setOpenIdx] = useState<number | null>(null);
-  const points: string[] = Array.isArray(analysis?.points)
-    ? (analysis.points as string[]).filter((p) => typeof p === "string" && p.trim())
+  const points: string[] = Array.isArray(analysis?.behavioral_signals_analysis)
+    ? (analysis.behavioral_signals_analysis as string[]).filter((p) => typeof p === "string" && p.trim())
     : [];
   if (points.length === 0) {
     return (
