@@ -714,7 +714,7 @@ function TestPageContent() {
     }, [isActive, selectedCandidate, proctoringSignals, interviewToken]);
 
     return (
-        <div className="flex flex-col h-screen overflow-hidden bg-white" style={{ background: "linear-gradient(180deg, #FFFFFF 0%, #FAFAFC 45%, #F5F3FF 100%)" }}>
+        <div className="flex flex-col min-h-screen bg-white" style={{ background: "linear-gradient(180deg, #FFFFFF 0%, #FAFAFC 45%, #F5F3FF 100%)" }}>
             
             {/* LOGOUT CONFIRMATION MODAL */}
             {showLogoutConfirm && (
@@ -903,7 +903,7 @@ function TestPageContent() {
                     video={enableCamera}
                     onDisconnected={handleEnd}
                 >
-                    <div className="flex-1 flex flex-col min-w-0 bg-white/40 overflow-hidden items-center p-4 relative">
+                    <div className="flex-1 flex flex-col min-w-0 bg-white/40 items-center p-4 relative min-h-[600px]">
                         {error && (
                             <div className="mb-4 flex items-start gap-2.5 rounded-2xl px-5 py-3 text-sm text-red-700 bg-red-50 border border-red-100 shadow-sm animate-in fade-in">
                                 <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
@@ -1027,7 +1027,7 @@ function TestPageContent() {
 
             {/* Non-active state (no recording) */}
             {!isActive && (
-                <div className="flex-1 flex flex-col min-w-0 bg-white/40 overflow-hidden items-center p-4">
+                <div className="flex-1 flex flex-col min-w-0 bg-white/40 items-center p-4 min-h-[600px]">
                     <div className="w-full h-full flex-1 flex flex-col min-h-0 relative">
                         <SimulationViewer
                             lines={displayState.lines}

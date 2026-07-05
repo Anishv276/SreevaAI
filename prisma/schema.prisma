@@ -84,7 +84,6 @@ model Drive {
   updatedAt          DateTime          @updatedAt
   screeningCriteria  String?           @default("{}")
   extractedDetails   String?           @default("{}")
-  interviewLanguage  String?           @default("English")
   interviewQuestions String?           @default("[]")
   jdFileName         String?
   jdPreviewUrl       String?

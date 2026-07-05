@@ -1,25 +1,34 @@
 "use client";
 import { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
+
 interface Props {
     needsOnboarding: boolean;
+    children: React.ReactNode;
 }
-export function OnboardingRedirect({ needsOnboarding }: Props) {
+
+export function OnboardingRedirect({ needsOnboarding, children }: Props) {
     const router = useRouter();
     const pathname = usePathname();
+    
+    const shouldRedirectToSetup = needsOnboarding && pathname !== "/admin/setup";
+    const shouldRedirectToAdmin = !needsOnboarding && pathname === "/admin/setup";
+
     useEffect(() => {
-        // If the org needs onboarding and we AREN'T already on the setup page,
-        // redirect the user immediately.
-        if (needsOnboarding && pathname !== "/admin/setup") {
-            console.log("[OnboardingRedirect] Redirecting to /admin/setup...");
+        if (shouldRedirectToSetup) {
             router.replace("/admin/setup");
-        }
-        // Conversely, if onboarding is complete but we ARE on the setup page,
-        // send them to the dashboard.
-        if (!needsOnboarding && pathname === "/admin/setup") {
-            console.log("[OnboardingRedirect] Onboarding complete. Redirecting to /admin...");
+        } else if (shouldRedirectToAdmin) {
             router.replace("/admin");
         }
-    }, [needsOnboarding, pathname, router]);
-    return null;
+    }, [shouldRedirectToSetup, shouldRedirectToAdmin, router]);
+
+    if (shouldRedirectToSetup || shouldRedirectToAdmin) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50/50 absolute inset-0 z-50">
+                <div className="w-8 h-8 border-4 border-violet-500 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+        );
+    }
+
+    return <>{children}</>;
 }

@@ -41,7 +41,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 createdAt: true,
                 updatedAt: true,
                 deadline: true,
-                interviewLanguage: true,
                 interviewQuestions: true,
                 jdFileName: true,
                 jdPreviewUrl: true,
@@ -199,8 +198,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             };
             updateData.screeningCriteria = JSON.stringify(mergedCriteria);
         }
-        if (data.interviewLanguage !== undefined) updateData.interviewLanguage = data.interviewLanguage;
-        if (data.interviewQuestions !== undefined) updateData.interviewQuestions = JSON.stringify(data.interviewQuestions);
+        if (data.interviewQuestions !== undefined) updateData.interviewQuestions = data.interviewQuestions ? JSON.stringify(data.interviewQuestions) : undefined;
         Object.assign(
             updateData,
             normalizeDriveAiConfig({

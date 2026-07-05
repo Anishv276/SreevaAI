@@ -7,10 +7,7 @@ import { ALL_VOICES, DEFAULT_VOICE_ID, type Voice } from "@/lib/constants/voices
 interface InterviewProps {
     formData: any;
     updateFormData: (fn: (prev: any) => any) => void;
-    allowLanguageSelection?: boolean;
 }
-
-const LANGUAGES = ["English", "Hindi"];
 
 function safeArray(val: any): string[] {
     if (Array.isArray(val)) return val;
@@ -20,10 +17,8 @@ function safeArray(val: any): string[] {
     return [];
 }
 
-export function InterviewSetup({ formData, updateFormData, allowLanguageSelection = true }: InterviewProps) {
+export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
     const [newQuestion, setNewQuestion] = useState("");
-    const [showLangDropdown, setShowLangDropdown] = useState(false);
-    const dropdownRef = useRef<HTMLDivElement>(null);
     const [previewLoading, setPreviewLoading] = useState(false);
     const [activeAudio, setActiveAudio] = useState<HTMLAudioElement | null>(null);
     const [showVoiceDropdown, setShowVoiceDropdown] = useState(false);
@@ -61,7 +56,6 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
         };
         void loadVoices();
         const handleClickOutside = (event: globalThis.MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) setShowLangDropdown(false);
             if (voiceDropdownRef.current && !voiceDropdownRef.current.contains(event.target as Node)) setShowVoiceDropdown(false);
         };
         document.addEventListener("mousedown", handleClickOutside);
@@ -82,7 +76,6 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
 
     const getAvailableVoices = () => {
         const whitelist: string[] = Array.isArray(formData.allowedVoices) ? formData.allowedVoices : [];
-        // allowedVoices set via Super Admin → AI Models. Empty = org not configured yet.
         return whitelist.length === 0 ? [] : voices.filter(v => whitelist.includes(v.id));
     };
 
@@ -175,49 +168,6 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
 
     return (
         <div className="space-y-6">
-            {/* Language */}
-            <div className="grid sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                    <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                        <Globe className="h-3.5 w-3.5 text-[#7C3AED]" /> Language
-                    </label>
-                    {allowLanguageSelection ? (
-                        <div className="relative" ref={dropdownRef}>
-                            <button
-                                type="button"
-                                onClick={() => setShowLangDropdown(!showLangDropdown)}
-                                className="w-full h-10 px-3 rounded-xl bg-gray-50 text-sm font-medium flex items-center justify-between transition-all hover:bg-white focus:outline-none"
-                                style={{ border: "1px solid #E9E7FF" }}
-                            >
-                                <span className="text-gray-800">{formData.interviewLanguage || "English"}</span>
-                                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showLangDropdown ? "rotate-180" : ""}`} />
-                            </button>
-                            {showLangDropdown && (
-                                <div className="absolute top-full left-0 w-full mt-1 bg-white rounded-xl shadow-lg z-20 overflow-hidden"
-                                    style={{ border: "1px solid #E9E7FF", boxShadow: "0 8px 24px rgba(124,58,237,0.1)" }}>
-                                    {LANGUAGES.map(lang => (
-                                        <button
-                                            key={lang}
-                                            type="button"
-                                            onClick={() => { updateFormData((p: any) => ({ ...p, interviewLanguage: lang })); setShowLangDropdown(false); }}
-                                            className="w-full px-3 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-violet-50 hover:text-[#7C3AED] transition-colors"
-                                        >
-                                            {lang}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    ) : (
-                        <div className="h-10 px-3 rounded-xl bg-gray-50 text-sm font-medium text-gray-500 flex items-center justify-between"
-                            style={{ border: "1px solid #E9E7FF" }}>
-                            <span>English</span>
-                            <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Starter plan</span>
-                        </div>
-                    )}
-                </div>
-            </div>
-
             <div className="h-px" style={{ background: "#F0EEF8" }} />
 
             {/* Interviewer Persona */}

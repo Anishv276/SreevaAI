@@ -158,7 +158,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                 </button>
             </div>
             <div>
-                <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Modify Client</h1>
+                <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Modify Company</h1>
                 <p className="text-sm text-gray-400 mt-0.5">Updating <span className="font-medium text-gray-700">{form.name}</span></p>
             </div>
             <form onSubmit={handleSubmit} className="space-y-5 animate-in fade-in duration-500">

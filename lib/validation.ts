@@ -13,7 +13,7 @@ export const createDriveSchema = z.object({
   jdFileName: z.string().nullable().optional(),
   jdPreviewUrl: z.string().nullable().optional(),
   extractedDetails: z.string().nullable().optional(),
-  interviewLanguage: z.string().optional(),
+  timeLimit: z.number().int().min(5).max(120).default(30),
   interviewQuestions: z.array(z.any()).optional(),
   voiceId: z.string().nullable().optional(),
   aiName: z.string().optional(),

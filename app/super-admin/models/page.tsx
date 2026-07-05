@@ -30,11 +30,23 @@ type OrgConfig = OrgSummary;
 
 function LlmDropdown({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false);
+  const [dropUp, setDropUp] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const selected = LLM_MODELS.find(m => m.id === value);
 
   useEffect(() => {
     if (!open) return;
+    
+    if (ref.current) {
+      const rect = ref.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      if (spaceBelow < 280 && rect.top > spaceBelow) {
+        setDropUp(true);
+      } else {
+        setDropUp(false);
+      }
+    }
+    
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
@@ -50,11 +62,11 @@ function LlmDropdown({ value, onChange }: { value: string; onChange: (v: string)
         style={{ background: "#F9FAFB", borderColor: open ? "#8B5CF6" : "#E5E7EB", color: "#374151" }}
       >
         <span className="truncate">{selected?.label ?? value}</span>
-        <ChevronDown className={`h-3.5 w-3.5 text-gray-400 flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+        <ChevronDown className={`h-3.5 w-3.5 text-gray-400 flex-shrink-0 transition-transform ${open ? (dropUp ? "" : "rotate-180") : ""}`} />
       </button>
       {open && (
         <div
-          className="absolute z-50 top-full left-0 mt-1 w-[260px] bg-white rounded-xl shadow-lg overflow-hidden"
+          className={`absolute z-50 left-0 w-[260px] bg-white rounded-xl shadow-lg overflow-hidden ${dropUp ? "bottom-full mb-1" : "top-full mt-1"}`}
           style={{ border: "1px solid #E9E7FF", boxShadow: "0 8px 24px rgba(124,58,237,0.12)" }}
         >
           {LLM_MODELS.map(m => (
@@ -161,9 +173,25 @@ export default function ModelsPage() {
     // Fixed height layout: left panel fixed, right panel scrolls
     <div className="flex flex-col" style={{ height: "calc(100vh - 48px)" }}>
       {/* Header — fixed */}
-      <div className="flex-shrink-0 pb-5">
-        <h1 className="text-2xl font-bold text-gray-900 tracking-tight">AI Model Configuration</h1>
-        <p className="text-sm text-gray-500 mt-1">Configure LLM, STT, TTS, and voices per organization.</p>
+      <div className="flex-shrink-0 pb-5 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">AI Model Configuration</h1>
+          <p className="text-sm text-gray-500 mt-1">Configure LLM, STT, TTS, and voices per organization.</p>
+        </div>
+        {hasDirty && (
+          <div className="flex items-center gap-4 bg-violet-50 px-4 py-2 rounded-xl border border-violet-100 animate-in fade-in zoom-in duration-200">
+            <span className="text-sm text-violet-700 font-medium">Unsaved changes</span>
+            <button
+              onClick={save}
+              disabled={saving}
+              className="h-9 px-4 rounded-lg text-sm font-semibold text-white flex items-center gap-2 disabled:opacity-60 shadow-sm transition-opacity hover:opacity-90"
+              style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)" }}
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              Save Changes
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex gap-5 flex-1 min-h-0">
@@ -232,25 +260,6 @@ export default function ModelsPage() {
             </div>
           ) : (
             <div className="space-y-4 pb-8">
-              {/* Save bar */}
-              {hasDirty && (
-                <div
-                  className="sticky top-0 z-10 flex items-center justify-between px-5 py-3 rounded-xl"
-                  style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.08), rgba(59,130,246,0.04))", border: "1px solid rgba(139,92,246,0.2)" }}
-                >
-                  <p className="text-sm text-violet-700 font-medium">Unsaved changes</p>
-                  <button
-                    onClick={save}
-                    disabled={saving}
-                    className="h-8 px-4 rounded-lg text-sm font-semibold text-white flex items-center gap-2 disabled:opacity-60"
-                    style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)" }}
-                  >
-                    {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                    Save Changes
-                  </button>
-                </div>
-              )}
-
               {/* LLM Pipelines — dropdowns */}
               <Section icon={Brain} title="LLM Pipelines" subtitle="Model used for each AI pipeline step">
                 <div className="space-y-3">
@@ -398,7 +407,7 @@ function Section({ icon: Icon, title, subtitle, children }: {
   icon: React.ElementType; title: string; subtitle: string; children: React.ReactNode;
 }) {
   return (
-    <div className="bg-white rounded-2xl overflow-hidden" style={{ border: "1px solid #E9E7FF", boxShadow: "0 2px 8px rgba(124,58,237,0.04)" }}>
+    <div className="bg-white rounded-2xl" style={{ border: "1px solid #E9E7FF", boxShadow: "0 2px 8px rgba(124,58,237,0.04)" }}>
       <div className="px-5 py-4 flex items-center gap-3" style={{ borderBottom: "1px solid #F0EEF8" }}>
         <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.12), rgba(59,130,246,0.08))" }}>
           <Icon className="h-4 w-4 text-violet-600" />

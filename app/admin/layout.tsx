@@ -94,31 +94,32 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                             <div className="absolute bottom-[-8%] left-[-5%] w-[32%] h-[32%] rounded-full bg-blue-100/30 blur-[110px] animate-[aurora-float_25s_infinite_ease-in-out_reverse]" />
                         </div>
                         {/* Real-time State Synchronization */}
-                        <OnboardingRedirect needsOnboarding={needsOnboarding} />
-                        <div className="relative z-10 flex w-full">
-                            {showSidebar && (
-                                <Suspense fallback={<div className="w-64 bg-white/50 animate-pulse" />}>
-                                    <Sidebar />
-                                </Suspense>
-                            )}
-                            <div id="admin-main-wrapper" className={cn(
-                                "flex-1 min-w-0 transition-all duration-500 ease-in-out",
-                                showSidebar && "md:pl-[240px]"
-                            )}>
-                                <style dangerouslySetInnerHTML={{
-                                    __html: `
+                        <OnboardingRedirect needsOnboarding={needsOnboarding}>
+                            <div className="relative z-10 flex w-full">
+                                {showSidebar && (
+                                    <Suspense fallback={<div className="w-64 bg-white/50 animate-pulse" />}>
+                                        <Sidebar />
+                                    </Suspense>
+                                )}
+                                <div id="admin-main-wrapper" className={cn(
+                                    "flex-1 min-w-0 transition-all duration-500 ease-in-out",
+                                    showSidebar && "md:pl-[240px]"
+                                )}>
+                                    <style dangerouslySetInnerHTML={{
+                                        __html: `
                         body.reports-mode #global-admin-sidebar { display: none !important; }
                         body.reports-mode #admin-main-wrapper { padding-left: 0 !important; }
                         body.reports-mode #admin-content-inner { padding: 0 !important; max-width: 100% !important; }
                     ` }} />
-                                <main className="min-h-screen flex flex-col">
-                                    <LowCreditsBanner orgStatus={orgData.status} />
-                                    <div id="admin-content-inner" className="flex-1 flex flex-col px-6 pt-6 pb-10 md:px-8 md:pt-8 lg:px-10">
-                                        {children}
-                                    </div>
-                                </main>
+                                    <main className="min-h-screen flex flex-col">
+                                        <LowCreditsBanner orgStatus={orgData.status} />
+                                        <div id="admin-content-inner" className="flex-1 flex flex-col px-6 pt-6 pb-10 md:px-8 md:pt-8 lg:px-10">
+                                            {children}
+                                        </div>
+                                    </main>
+                                </div>
                             </div>
-                        </div>
+                        </OnboardingRedirect>
                     </div>
                 </AdminStatusGate>
             </AdminOrgProvider>

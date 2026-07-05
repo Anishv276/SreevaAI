@@ -153,7 +153,7 @@ export default function DrivesPage() {
                                 : null;
                             const isExpired = drive.deadline ? new Date(drive.deadline) < new Date() : false;
                             const voice = ALL_VOICES.find(v => v.id === drive.voiceId);
-                            const language = drive.interviewLanguage || "English";
+                            const timeLimit = drive.timeLimit || 30;
                             const isInterviewOnly = (drive as any).interviewMode === "interview-only";
 
                             return (
@@ -221,7 +221,7 @@ export default function DrivesPage() {
                                     </div>
 
                                     {/* ── Stats strip ── */}
-                                    <div className="mx-5 mb-4 grid grid-cols-3 rounded-xl divide-x divide-[#F0EEF8] overflow-hidden" style={{ border: "1px solid #F0EEF8", background: "#FAFAFC" }}>
+                                    <div className="mx-5 mb-4 grid grid-cols-2 rounded-xl divide-x divide-[#F0EEF8] overflow-hidden" style={{ border: "1px solid #F0EEF8", background: "#FAFAFC" }}>
                                         <div className="px-3 py-2.5 text-center">
                                             <p className="text-xl font-bold text-gray-900 leading-none tabular-nums">{applicants}</p>
                                             <p className="text-[10px] text-gray-400 font-medium mt-0.5 flex items-center justify-center gap-1">
@@ -241,12 +241,6 @@ export default function DrivesPage() {
                                             )}>
                                                 <Calendar className="h-2.5 w-2.5" />
                                                 {deadlineText ? (isExpired ? "Expired" : "Deadline") : "No deadline"}
-                                            </p>
-                                        </div>
-                                        <div className="px-3 py-2.5 text-center" style={{ borderLeft: "1px solid #F0EEF8" }}>
-                                            <p className="text-xs font-semibold text-gray-900 leading-tight truncate">{language}</p>
-                                            <p className="text-[10px] text-gray-400 font-medium mt-0.5 flex items-center justify-center gap-1">
-                                                <Globe className="h-2.5 w-2.5" /> Language
                                             </p>
                                         </div>
                                     </div>

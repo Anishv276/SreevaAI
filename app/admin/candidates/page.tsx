@@ -11,9 +11,9 @@ import {
     ShieldCheck, Award, Clock, Mail, Loader2, Lock, FileText,
     Eye, Send, RefreshCw, BadgeCheck, XCircle, CheckSquare, Square, Video
 } from "lucide-react";
-import { Link } from 'next-view-transitions';
+import Link from 'next/link';
 import { useSearchParams } from "next/navigation";
-import { useTransitionRouter as useRouter } from "next-view-transitions";
+import { useRouter } from "next/navigation";
 import { toast } from "@/components/ui/toast-custom";
 import {
     DropdownMenu, DropdownMenuContent, DropdownMenuItem,
