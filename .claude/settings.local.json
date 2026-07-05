@@ -81,7 +81,14 @@
       "Bash(git commit -m 'Ensure answer_scores are populated before report generation *)",
       "Bash(git commit -m 'Fix InterviewContext missing interviewStatus field *)",
       "Bash(Get-Content \"C:\\\\Users\\\\vamsi\\\\.claude\\\\projects\\\\c--Users-vamsi-OneDrive-Desktop-HR-updates\\\\7f73403b-16b1-4050-9ba7-21d3c33077a2\\\\tool-results\\\\toolu_01HRCwJjLChJh7VBW9LSfnFa.txt\")",
-      "Bash(Select-Object -First 300)"
+      "Bash(Select-Object -First 300)",
+      "Bash(printf \"John Doe\\\\nSoftware Engineer\\\\n5 years experience in Python and JavaScript.\")",
+      "Bash(curl -s -X POST http://127.0.0.1:8100/extract/resume -F \"file=@/tmp/test_resume.txt\" -F \"model=gpt-4o-mini\")",
+      "Bash(pkill -f \"uvicorn extraction_resume_JD_score_report_v2.service\")",
+      "Read(//c/tmp/**)",
+      "Bash(time python -c ' *)",
+      "Bash(node -e \"const bullmq=require\\('bullmq'\\); console.log\\(Object.keys\\(bullmq\\).join\\(', '\\)\\)\")",
+      "Bash(node -e ' *)"
     ]
   }
 }

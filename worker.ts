@@ -1,10 +1,7 @@
 import 'dotenv/config'; // must be FIRST — ensures .env is loaded before any lib reads process.env
 import { Worker, Queue } from 'bullmq';
 import crypto from 'crypto';
-import { join } from 'path';
 import { spawn } from 'child_process';
-import { tmpdir } from 'os';
-import { writeFile, unlink, readdir, stat } from 'fs/promises';
 import { prisma } from './lib/prisma';
 import redisConnection, { createRedisConnection, getBullPrefix } from './lib/redis';
 import { putObject, getObjectBuffer, headObjectStrict } from "./lib/s3";
@@ -26,6 +23,20 @@ import {
 } from "./lib/recording-retention";
 import { mergeRecordingState, normalizeRecordingState, parseJsonRecord } from "./lib/recording-state";
 import { logRedisError, logResumeUploadError, logDriveError, logWorkerError, logLiveKitError } from "./lib/slack-error-logger";
+import { runWithOrgSlot } from "./lib/org-concurrency";
+
+// Per-org concurrency caps -- how many jobs of a given queue may run
+// simultaneously FOR THE SAME ORG, independent of the worker's own global
+// `concurrency`. See lib/org-concurrency.ts for why (BullMQ OSS has no native
+// per-key/group concurrency; that's a BullMQ Pro-only feature). Override via
+// env if a specific org/queue needs more headroom.
+const ORG_CONCURRENCY = {
+  resumeProcessing: Number(process.env.ORG_CONCURRENCY_RESUME || 2),
+  jdExtraction: Number(process.env.ORG_CONCURRENCY_JD || 2),
+  briefGeneration: Number(process.env.ORG_CONCURRENCY_BRIEF || 2),
+  interviewReport: Number(process.env.ORG_CONCURRENCY_REPORT || 2),
+  invitationDelivery: Number(process.env.ORG_CONCURRENCY_INVITATION || 2),
+};
 
 if (!process.env.REDIS_URL) {
   console.error('FATAL: REDIS_URL is missing from environment variables!');
@@ -38,15 +49,22 @@ void redisConnection.connect().catch((e) => {
     reason: "Redis connection failed on worker startup",
   });
 }); // force-connect before BullMQ workers start
-const pythonCmd = getPythonExecutable();
 // BullMQ key prefix -- MUST match lib/queue.ts so this worker consumes the same
 // queues the API enqueues to. Set BULLMQ_PREFIX to isolate dev/prod on shared Redis.
 const BULL_PREFIX = getBullPrefix();
 console.log(`[Worker] PID=${process.pid}`);
 console.log(`[Worker] BullMQ prefix="${BULL_PREFIX}"`);
 
-// Core spawn runner with hard timeout + guaranteed slot release. `stdinPayload`
-// optional. On timeout the process is SIGKILLed so it can't linger.
+// Persistent FastAPI extraction service (extraction_resume_JD_score_report_v2/service.py)
+// replaces per-job `spawn(python, extract_pdf.py)` -- one warm process holding the
+// openai/pdfplumber imports instead of re-booting Python for every resume.
+const EXTRACT_SERVICE_URL = process.env.EXTRACT_SERVICE_URL || "http://127.0.0.1:8100";
+
+const pythonCmd = getPythonExecutable();
+
+// Spawn runner still used for generate_brief.py / report_worker.py -- unrelated
+// one-shot scripts (not the resume-extraction hot path), not worth moving behind
+// the FastAPI service.
 function spawnPythonJson(args: string[], stdinPayload: string | null, timeoutMs: number): Promise<any> {
   return new Promise((resolve, reject) => {
     let out = "";
@@ -58,7 +76,6 @@ function spawnPythonJson(args: string[], stdinPayload: string | null, timeoutMs:
       finish(() => reject(new Error(`python timed out after ${timeoutMs}ms`)));
     }, timeoutMs);
     p.stdout.on("data", (data) => { out += data.toString(); });
-    // Stream Python progress lines directly to console in real time.
     p.stderr.on("data", (data) => { process.stderr.write(`[PY] ${data}`); });
     p.on("close", (code) => {
       clearTimeout(timer);
@@ -89,35 +106,58 @@ async function runPythonJson(args: string[], timeoutMs = 180000): Promise<any> {
 async function runPythonJsonWithStdin(args: string[], stdinPayload: string, timeoutMs = 180000): Promise<any> {
   return spawnPythonJson(args, stdinPayload, timeoutMs);
 }
-/**
- * TEMP-FILE JANITOR (#10)
- * `finally`-based unlink doesn't run on SIGKILL/OOM, so stale temp PDFs/JSON
- * accumulate and eventually exhaust disk. This sweeps os.tmpdir() for our known
- * prefixes older than 1 hour. Runs at boot and every 6 hours.
- */
-const TEMP_FILE_PREFIXES = ["drive_resume_", "drive_score_", "resume_extract_", "scoring_"];
-async function sweepTempFiles() {
-  const dir = tmpdir();
-  const maxAgeMs = 60 * 60 * 1000; // 1 hour
-  let removed = 0;
+
+async function callExtractService(path: string, form: FormData, timeoutMs: number): Promise<any> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const entries = await readdir(dir);
-    for (const name of entries) {
-      if (!TEMP_FILE_PREFIXES.some((prefix) => name.startsWith(prefix))) continue;
-      const full = join(dir, name);
-      try {
-        const info = await stat(full);
-        if (Date.now() - info.mtimeMs > maxAgeMs) {
-          await unlink(full).catch(() => { });
-          removed += 1;
-        }
-      } catch { /* file vanished — ignore */ }
+    const res = await fetch(`${EXTRACT_SERVICE_URL}${path}`, {
+      method: "POST",
+      body: form,
+      signal: controller.signal,
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) {
+      const detail = body?.detail ?? body;
+      throw new Error(`extract service ${path} failed (${res.status}): ${JSON.stringify(detail).slice(0, 500)}`);
     }
-  } catch (err: any) {
-    console.warn(`[TEMP-JANITOR] Sweep failed: ${err?.message}`);
-    return;
+    return body;
+  } catch (e: any) {
+    if (e.name === "AbortError") throw new Error(`extract service ${path} timed out after ${timeoutMs}ms`);
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
-  if (removed > 0) console.log(`[TEMP-JANITOR] Removed ${removed} stale temp file(s).`);
+}
+
+async function extractResume(fileBuffer: Buffer, fileName: string, model: string, timeoutMs = 180000): Promise<any> {
+  const form = new FormData();
+  form.append("file", new Blob([new Uint8Array(fileBuffer)]), fileName);
+  form.append("model", model);
+  return callExtractService("/extract/resume", form, timeoutMs);
+}
+
+async function extractJd(fileBuffer: Buffer, fileName: string, model: string, timeoutMs = 120000): Promise<any> {
+  const form = new FormData();
+  form.append("file", new Blob([new Uint8Array(fileBuffer)]), fileName);
+  form.append("model", model);
+  return callExtractService("/extract/jd", form, timeoutMs);
+}
+
+async function extractResumeAndScore(
+  fileBuffer: Buffer,
+  fileName: string,
+  extractModel: string,
+  scoreModel: string,
+  jdPayload: string,
+  timeoutMs = 180000,
+): Promise<any> {
+  const form = new FormData();
+  form.append("file", new Blob([new Uint8Array(fileBuffer)]), fileName);
+  form.append("extract_model", extractModel);
+  form.append("score_model", scoreModel);
+  form.append("jd_payload", jdPayload);
+  return callExtractService("/extract/resume-and-score", form, timeoutMs);
 }
 
 async function processInterviewStartJob(job: any) {
@@ -513,9 +553,6 @@ async function processResumeScreeningJob(job: any) {
 
   console.log(`[RESUME-WORKER] Job ${job.id} started for ${applicationId}`);
 
-  const tempExt = String(fileName).match(/\.[a-z0-9]+$/i)?.[0] || ".pdf";
-  const tempFilePath = join(tmpdir(), `resume_extract_${String(job.id)}_${Date.now()}${tempExt}`);
-
   try {
     // -- 10% Upload received ------------------------------------------------
     await job.updateProgress(10);
@@ -528,7 +565,6 @@ async function processResumeScreeningJob(job: any) {
     await job.updateProgress(20);
     console.log(`[RESUME-WORKER] Downloading from R2: ${key}`);
     const sourceBuffer = await getObjectBuffer(bucket, key);
-    await writeFile(tempFilePath, sourceBuffer);
     console.log(`[RESUME-WORKER] Downloaded ${sourceBuffer.length} bytes`);
 
     // -- 30% Load JD config ------------------------------------------------
@@ -590,16 +626,16 @@ async function processResumeScreeningJob(job: any) {
         threshold,
         screening_criteria: screeningCriteria,
       });
-      result = await runPythonJsonWithStdin(
-        ["scripts/extract_pdf.py", tempFilePath, "RESUME_AND_SCORE", org.llmResumeExtraction, org.llmResumeReport],
+      result = await extractResumeAndScore(
+        sourceBuffer,
+        fileName,
+        org.llmResumeExtraction,
+        org.llmResumeReport,
         jdPayload,
         180_000,
       );
     } else {
-      result = await runPythonJson(
-        ["scripts/extract_pdf.py", tempFilePath, "RESUME", org.llmResumeExtraction],
-        120_000,
-      );
+      result = await extractResume(sourceBuffer, fileName, org.llmResumeExtraction, 120_000);
     }
 
     if (result?.error) throw new Error(result.error);
@@ -699,8 +735,6 @@ async function processResumeScreeningJob(job: any) {
       data: { resumeStatus: "failed", updatedAt: new Date() },
     }).catch(() => {});
     throw err;
-  } finally {
-    await unlink(tempFilePath).catch(() => {});
   }
 }
 
@@ -727,49 +761,34 @@ async function processResumeFileExtractJob(job: any) {
     throw new Error("Missing orgOpenAIModel (org LLM config not loaded from DB)");
   }
   console.log(`[RESUME-WORKER] File extraction job ${job.id} started`, { fileName, bucket, key });
-  const tempExt = (() => {
-    const match = String(fileName).match(/\.[a-z0-9]+$/i);
-    return match?.[0] || ".pdf";
-  })();
   const sourceBuffer = await getObjectBuffer(bucket, key);
-  const tempFilePath = join(tmpdir(), `resume_extract_${String(job.id)}_${Date.now()}${tempExt}`);
-  await writeFile(tempFilePath, sourceBuffer);
-  try {
-    const extracted = await runPythonJson([
-      "scripts/extract_pdf.py",
-      tempFilePath,
-      "RESUME",
-      orgOpenAIModel,
-    ]);
-    if (extracted?.error) {
-      throw new Error(extracted.error);
-    }
-    if (orgId && extracted?.usage) {
-      await recordOrgBillingUsage({
-        orgId,
-        feature: "resumeExtraction",
-        usage: {
-          model: extracted.usage.model,
-          inputTokens: extracted.usage.inputTokens || 0,
-          outputTokens: extracted.usage.outputTokens || 0,
-          cachedInputTokens: extracted.usage.cachedInputTokens || 0,
-          eventId: `resume-file-extraction:${job.id}`,
-        },
-      });
-    }
-    console.log(`[RESUME-WORKER] File extraction job ${job.id} completed`);
-    return {
-      text: extracted?.text || "",
-      data: extracted?.data || {},
-      usage: extracted?.usage || {},
-      url: fileUrl,
-      bucket,
-      key,
-      fileName,
-    };
-  } finally {
-    await unlink(tempFilePath).catch(() => { });
+  const extracted = await extractResume(sourceBuffer, fileName, orgOpenAIModel);
+  if (extracted?.error) {
+    throw new Error(extracted.error);
   }
+  if (orgId && extracted?.usage) {
+    await recordOrgBillingUsage({
+      orgId,
+      feature: "resumeExtraction",
+      usage: {
+        model: extracted.usage.model,
+        inputTokens: extracted.usage.inputTokens || 0,
+        outputTokens: extracted.usage.outputTokens || 0,
+        cachedInputTokens: extracted.usage.cachedInputTokens || 0,
+        eventId: `resume-file-extraction:${job.id}`,
+      },
+    });
+  }
+  console.log(`[RESUME-WORKER] File extraction job ${job.id} completed`);
+  return {
+    text: extracted?.text || "",
+    data: extracted?.data || {},
+    usage: extracted?.usage || {},
+    url: fileUrl,
+    bucket,
+    key,
+    fileName,
+  };
 }
 
 // -----------------------------------------------------------------------------
@@ -780,22 +799,25 @@ async function processResumeFileExtractJob(job: any) {
 // Workers continuously poll the queue; as soon as a slot opens the next job starts.
 // -----------------------------------------------------------------------------
 if (isQueueEnabled("resume-processing")) {
-  const resumeWorker = trackWorker("resume-processing", new Worker("resume-processing", async (job) => {
+  const resumeWorker = trackWorker("resume-processing", new Worker("resume-processing", async (job, token) => {
     console.log(`\n=================================================`);
     console.log(`▶ [RESUME WORKER] PID=${process.pid} Job: name="${job.name}" id="${job.id}"`);
     console.log(`=================================================\n`);
 
-    if (job.name === "screen-resume") {
-      return await processResumeScreeningJob(job);
-    }
-    if (job.name === "resume-file-extract") {
-      return await processResumeFileExtractJob(job);
-    }
-    throw new Error(`[RESUME-WORKER] Unknown job name: "${job.name}"`);
+    const orgId = job.data?.orgId as string | undefined;
+    return runWithOrgSlot("resume-processing", job, token, orgId, ORG_CONCURRENCY.resumeProcessing, async () => {
+      if (job.name === "screen-resume") {
+        return await processResumeScreeningJob(job);
+      }
+      if (job.name === "resume-file-extract") {
+        return await processResumeFileExtractJob(job);
+      }
+      throw new Error(`[RESUME-WORKER] Unknown job name: "${job.name}"`);
+    });
   }, {
     connection: createRedisConnection(),
     prefix: BULL_PREFIX,
-    concurrency: 50,
+    concurrency: 10, // global cap raised -- per-org cap (ORG_CONCURRENCY.resumeProcessing) now does the real limiting
     lockDuration: 15 * 60 * 1000,
     stalledInterval: 60 * 1000,
     maxStalledCount: 2,
@@ -870,10 +892,6 @@ if (isQueueEnabled("resume-processing")) {
     })
     .catch((err) => console.error("[resume-processing] Worker failed to become ready:", err));
 
-  // Temp-file janitor: sweep at boot and every 6 hours.
-  void sweepTempFiles();
-  setInterval(() => { void sweepTempFiles(); }, 6 * 60 * 60 * 1000).unref();
-
   // STALE-ROW RECONCILER: the durable guarantee that no candidate hangs on
   // "waiting"/"processing" forever. A row can become orphaned if the enqueue
   // failed silently, the job was stolen+lost by a duplicate worker, or Redis
@@ -930,7 +948,7 @@ async function reconcileResumeQueue() {
 if (isQueueEnabled("invitation-delivery-queue")) {
   const invitationDeliveryWorker = trackWorker("invitation-delivery-queue", new Worker(
     "invitation-delivery-queue",
-    async (job) => {
+    async (job, token) => {
       const {
         applicationId,
         action,
@@ -974,85 +992,89 @@ if (isQueueEnabled("invitation-delivery-queue")) {
         console.warn(`[Invitation Worker] Application ${applicationId} has no email address. Skipping.`);
         return { skipped: true, reason: "missing_email" };
       }
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://sreevaai.com';
-      const now = new Date();
-      let scheduleLink: string | undefined;
-      let interviewAccessToken: string | undefined;
-      if (action === "shortlist") {
-        const driveDeadline = application.drive?.deadline ? new Date(application.drive.deadline) : null;
-        const interviewRecord = await prisma.interview.upsert({
-          where: { applicationId },
-          update: {
-            inviteSentAt: now,
-            status: "PENDING",
-            scheduledAt: null,
-            startedAt: null,
-            completedAt: null,
-            expiresAt: driveDeadline,
-            linkStatus: "ACTIVE",
-          },
-          create: {
-            id: generateId("int", application.fullName || applicationId),
-            applicationId,
-            accessToken: crypto.randomUUID(),
-            inviteSentAt: now,
-            status: "PENDING",
-            expiresAt: driveDeadline,
-            linkStatus: "ACTIVE",
-          },
-        });
-        scheduleLink = `${appUrl}/schedule/${interviewRecord.accessToken}`;
-        interviewAccessToken = interviewRecord.accessToken;
-      }
-      const { sendScheduleInviteEmail, sendRejectionEmail } = await import('./lib/mail');
-      let mailResult: { success: boolean; error?: string };
-      if (action === "shortlist") {
-        if (!scheduleLink) throw new Error(`scheduleLink required for action=shortlist`);
-        mailResult = await sendScheduleInviteEmail({
-          email: application.email,
-          fullName: application.fullName || "Candidate",
-          jobTitle: application.drive?.title || "Unknown Role",
-          orgName: application.drive?.organization?.name || "Sreeva AI",
-          scheduleLink,
-        });
-      } else if (action === "reject") {
-        mailResult = await sendRejectionEmail({
-          email: application.email,
-          fullName: application.fullName || "Candidate",
-          jobTitle: application.drive?.title || "Unknown Role",
-          orgName: application.drive?.organization?.name || "Sreeva AI",
-        });
-      } else {
-        throw new Error(`Unsupported invitation action: ${action}`);
-      }
-      if (!mailResult.success) {
-        const reason = "error" in mailResult && mailResult.error
-          ? mailResult.error
-          : "Unknown email delivery error";
+
+      const orgId = application.drive?.orgId;
+      return runWithOrgSlot("invitation-delivery-queue", job, token, orgId, ORG_CONCURRENCY.invitationDelivery, async () => {
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://sreevaai.com';
+        const now = new Date();
+        let scheduleLink: string | undefined;
+        let interviewAccessToken: string | undefined;
+        if (action === "shortlist") {
+          const driveDeadline = application.drive?.deadline ? new Date(application.drive.deadline) : null;
+          const interviewRecord = await prisma.interview.upsert({
+            where: { applicationId },
+            update: {
+              inviteSentAt: now,
+              status: "PENDING",
+              scheduledAt: null,
+              startedAt: null,
+              completedAt: null,
+              expiresAt: driveDeadline,
+              linkStatus: "ACTIVE",
+            },
+            create: {
+              id: generateId("int", application.fullName || applicationId),
+              applicationId,
+              accessToken: crypto.randomUUID(),
+              inviteSentAt: now,
+              status: "PENDING",
+              expiresAt: driveDeadline,
+              linkStatus: "ACTIVE",
+            },
+          });
+          scheduleLink = `${appUrl}/schedule/${interviewRecord.accessToken}`;
+          interviewAccessToken = interviewRecord.accessToken;
+        }
+        const { sendScheduleInviteEmail, sendRejectionEmail } = await import('./lib/mail');
+        let mailResult: { success: boolean; error?: string };
+        if (action === "shortlist") {
+          if (!scheduleLink) throw new Error(`scheduleLink required for action=shortlist`);
+          mailResult = await sendScheduleInviteEmail({
+            email: application.email,
+            fullName: application.fullName || "Candidate",
+            jobTitle: application.drive?.title || "Unknown Role",
+            orgName: application.drive?.organization?.name || "Sreeva AI",
+            scheduleLink,
+          });
+        } else if (action === "reject") {
+          mailResult = await sendRejectionEmail({
+            email: application.email,
+            fullName: application.fullName || "Candidate",
+            jobTitle: application.drive?.title || "Unknown Role",
+            orgName: application.drive?.organization?.name || "Sreeva AI",
+          });
+        } else {
+          throw new Error(`Unsupported invitation action: ${action}`);
+        }
+        if (!mailResult.success) {
+          const reason = "error" in mailResult && mailResult.error
+            ? mailResult.error
+            : "Unknown email delivery error";
+          await appendCandidateActivity(applicationId, {
+            type: "email_failed",
+            label: "Email delivery failed",
+            details: reason,
+            timestamp: new Date().toISOString(),
+            source: "worker",
+          });
+          throw new Error(reason);
+        }
+        if (action === "shortlist") {
+          await prisma.application.update({
+            where: { id: applicationId },
+            data: { interviewStatus: "pending", updatedAt: new Date() },
+          }).catch(() => { });
+        }
         await appendCandidateActivity(applicationId, {
-          type: "email_failed",
-          label: "Email delivery failed",
-          details: reason,
+          type: "email_sent",
+          label: action === "shortlist" ? "Interview invite sent" : "Rejection email sent",
+          details: `Delivered at ${new Date().toISOString()}`,
           timestamp: new Date().toISOString(),
           source: "worker",
         });
-        throw new Error(reason);
-      }
-      if (action === "shortlist") {
-        await prisma.application.update({
-          where: { id: applicationId },
-          data: { interviewStatus: "pending", updatedAt: new Date() },
-        }).catch(() => { });
-      }
-      await appendCandidateActivity(applicationId, {
-        type: "email_sent",
-        label: action === "shortlist" ? "Interview invite sent" : "Rejection email sent",
-        details: `Delivered at ${new Date().toISOString()}`,
-        timestamp: new Date().toISOString(),
-        source: "worker",
+        console.log(`[Invitation Worker] Delivered ${action} email for ${applicationId}`);
+        return { success: true };
       });
-      console.log(`[Invitation Worker] Delivered ${action} email for ${applicationId}`);
-      return { success: true };
     },
     {
       connection: redisConnection,
@@ -1759,7 +1781,7 @@ if (isQueueEnabled("jd-upload")) {
 if (isQueueEnabled("jd-extraction")) {
   const jdExtractionWorker = trackWorker("jd-extraction", new Worker(
     JD_EXTRACTION_QUEUE_NAME,
-    async (job) => {
+    async (job, token) => {
       console.log(`\n=================================================`);
       console.log(`▶ [JD-EXTRACTION WORKER] PID=${process.pid} Job id="${job.id}" kind="${job.data?.kind}"`);
       console.log(`=================================================\n`);
@@ -1767,48 +1789,24 @@ if (isQueueEnabled("jd-extraction")) {
       if (!kind) throw new Error("Invalid JD extraction job: missing kind");
       if (!orgOpenAIModel) throw new Error("Missing orgOpenAIModel (org LLM config not loaded from DB)");
 
-      let text: string;
-      let tempFilePath: string | null = null;
+      return runWithOrgSlot(JD_EXTRACTION_QUEUE_NAME, job, token, orgId, ORG_CONCURRENCY.jdExtraction, async () => {
+        let fileBuffer: Buffer;
+        let fileName: string;
 
-      if (kind === "text") {
-        // URL-scraped text -- already extracted, just pass as stdin-free direct call
-        text = job.data.text || "";
-      } else if (kind === "file") {
-        // Buffer was serialised by BullMQ -- reconstruct it
-        const raw = job.data.buffer;
-        const buf: Buffer = Buffer.isBuffer(raw) ? raw : Buffer.from(raw?.data ?? raw);
-        const ext = String(job.data.fileName || "jd.pdf").match(/\.[a-z0-9]+$/i)?.[0] || ".pdf";
-        tempFilePath = join(tmpdir(), `jd_extract_${String(job.id)}_${Date.now()}${ext}`);
-        await writeFile(tempFilePath, buf);
-        text = ""; // not used for file path
-      } else {
-        throw new Error(`Unknown JD extraction kind: ${kind}`);
-      }
-
-      try {
-        let result: any;
-        if (kind === "file" && tempFilePath) {
-          result = await runPythonJson([
-            "scripts/extract_pdf.py",
-            tempFilePath,
-            "JD",
-            orgOpenAIModel,
-          ], 120_000);
+        if (kind === "text") {
+          // URL-scraped text -- send as a .txt upload; _extract_text() reads non-PDFs as plain text
+          fileBuffer = Buffer.from(String(job.data.text || ""), "utf8");
+          fileName = `jd_text_${String(job.id)}.txt`;
+        } else if (kind === "file") {
+          // Buffer was serialised by BullMQ -- reconstruct it
+          const raw = job.data.buffer;
+          fileBuffer = Buffer.isBuffer(raw) ? raw : Buffer.from(raw?.data ?? raw);
+          fileName = String(job.data.fileName || "jd.pdf");
         } else {
-          // text/url kind -- write to a temp .txt file
-          const txtPath = join(tmpdir(), `jd_text_${String(job.id)}_${Date.now()}.txt`);
-          await writeFile(txtPath, text, "utf8");
-          try {
-            result = await runPythonJson([
-              "scripts/extract_pdf.py",
-              txtPath,
-              "JD",
-              orgOpenAIModel,
-            ], 120_000);
-          } finally {
-            await unlink(txtPath).catch(() => {});
-          }
+          throw new Error(`Unknown JD extraction kind: ${kind}`);
         }
+
+        const result = await extractJd(fileBuffer, fileName, orgOpenAIModel, 120_000);
         if (result?.error) throw new Error(result.error);
         if (orgId && result?.usage) {
           await recordOrgBillingUsage({
@@ -1829,14 +1827,12 @@ if (isQueueEnabled("jd-extraction")) {
           data: result?.data || {},
           usage: result?.usage || {},
         };
-      } finally {
-        if (tempFilePath) await unlink(tempFilePath).catch(() => {});
-      }
+      });
     },
     {
       connection: redisConnection,
       prefix: BULL_PREFIX,
-      concurrency: 3,
+      concurrency: 10, // global cap raised -- per-org cap (ORG_CONCURRENCY.jdExtraction) does the real limiting
       removeOnComplete: { count: 10 },
       removeOnFail: { count: 25 },
     }
@@ -1884,7 +1880,7 @@ if (isQueueEnabled("jd-extraction")) {
 if (isQueueEnabled("brief-generation")) {
   const briefWorker = trackWorker("brief-generation", new Worker(
     "brief-generation",
-    async (job) => {
+    async (job, token) => {
       const { applicationId } = job.data || {};
       if (!applicationId) throw new Error("[BRIEF-WORKER] Missing applicationId in job data");
 
@@ -1895,7 +1891,10 @@ if (isQueueEnabled("brief-generation")) {
       // Confirm Interview row still exists before spinning up Python
       const interview = await prisma.interview.findUnique({
         where: { applicationId },
-        select: { id: true, isTest: true, scheduledAt: true, interviewBrief: true },
+        select: {
+          id: true, isTest: true, scheduledAt: true, interviewBrief: true,
+          application: { select: { drive: { select: { orgId: true } } } },
+        },
       });
 
       if (!interview) {
@@ -1913,24 +1912,27 @@ if (isQueueEnabled("brief-generation")) {
         return { skipped: true, reason: "brief_already_exists" };
       }
 
-      console.log(`[BRIEF-WORKER] Starting brief generation for ${applicationId}`);
-      const t0 = Date.now();
+      const orgId = interview.application?.drive?.orgId;
+      return runWithOrgSlot("brief-generation", job, token, orgId, ORG_CONCURRENCY.briefGeneration, async () => {
+        console.log(`[BRIEF-WORKER] Starting brief generation for ${applicationId}`);
+        const t0 = Date.now();
 
-      const result = await runPythonJson(
-        ["interview/generate_brief.py", applicationId],
-        180_000, // 3-minute timeout: LLM ~40s + DB fetch + retry headroom
-      );
+        const result = await runPythonJson(
+          ["interview/generate_brief.py", applicationId],
+          180_000, // 3-minute timeout: LLM ~40s + DB fetch + retry headroom
+        );
 
-      if (result?.error) throw new Error(`[BRIEF-WORKER] Python script error: ${result.error}`);
+        if (result?.error) throw new Error(`[BRIEF-WORKER] Python script error: ${result.error}`);
 
-      const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-      console.log(`[BRIEF-WORKER] ✓ Brief saved for ${applicationId} in ${elapsed}s`);
-      return { success: true, applicationId, elapsedSec: parseFloat(elapsed) };
+        const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+        console.log(`[BRIEF-WORKER] ✓ Brief saved for ${applicationId} in ${elapsed}s`);
+        return { success: true, applicationId, elapsedSec: parseFloat(elapsed) };
+      });
     },
     {
       connection: createRedisConnection(),
       prefix: BULL_PREFIX,
-      concurrency: 5,          // 5 briefs in parallel — each takes ~40s of I/O wait
+      concurrency: 10, // global cap raised -- per-org cap (ORG_CONCURRENCY.briefGeneration) does the real limiting
       lockDuration: 4 * 60 * 1000, // 4 min lock — longer than the 3-min timeout
       removeOnComplete: { age: 60 },
       removeOnFail:    { age: 3600 },
@@ -1957,7 +1959,7 @@ if (isQueueEnabled("brief-generation")) {
 if (isQueueEnabled("interview-report")) {
   const interviewReportWorker = trackWorker("interview-report", new Worker(
     "interview-report",
-    async (job) => {
+    async (job, token) => {
       const appId = job.data?.appId;
       if (!appId) throw new Error("[REPORT-WORKER] Missing appId in job data");
 
@@ -1965,20 +1967,28 @@ if (isQueueEnabled("interview-report")) {
       console.log(`▶ [REPORT-WORKER] PID=${process.pid} Job id="${job.id}" appId="${appId}"`);
       console.log(`=================================================\n`);
 
-      const result = await runPythonJsonWithStdin(
-        ["interview/report_worker.py"],
-        JSON.stringify(job.data),
-        340_000, // 340s: just above report_pipeline's own 300s+60s (report+summary) budget
-      );
+      const app = await prisma.application.findUnique({
+        where: { id: appId },
+        select: { drive: { select: { orgId: true } } },
+      });
+      const orgId = app?.drive?.orgId;
 
-      if (result?.error) throw new Error(`[REPORT-WORKER] Python script error: ${result.error}`);
-      console.log(`[REPORT-WORKER] ✓ Report job complete for ${appId}`);
-      return result;
+      return runWithOrgSlot("interview-report", job, token, orgId, ORG_CONCURRENCY.interviewReport, async () => {
+        const result = await runPythonJsonWithStdin(
+          ["interview/report_worker.py"],
+          JSON.stringify(job.data),
+          340_000, // 340s: just above report_pipeline's own 300s+60s (report+summary) budget
+        );
+
+        if (result?.error) throw new Error(`[REPORT-WORKER] Python script error: ${result.error}`);
+        console.log(`[REPORT-WORKER] ✓ Report job complete for ${appId}`);
+        return result;
+      });
     },
     {
       connection: createRedisConnection(),
       prefix: BULL_PREFIX,
-      concurrency: 10,              // LLM/CPU-heavy, not I/O-bound like finalization
+      concurrency: 10,             // global cap raised -- per-org cap (ORG_CONCURRENCY.interviewReport) does the real limiting
       lockDuration: 6 * 60 * 1000,  // 6 min, matches the 340s script timeout + margin
       stalledInterval: 5 * 60 * 1000,
       maxStalledCount: 1,
