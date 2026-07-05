@@ -16,7 +16,12 @@ export async function GET(
 
         const org = await prisma.organization.findUnique({
             where: { id },
-            select: { id: true, usageMetrics: true }
+            select: {
+                id: true, usageMetrics: true,
+                llmResumeExtraction: true, llmJdExtraction: true,
+                llmInterviewReport: true, llmResumeReport: true,
+                llmInterviewEval: true, llmInterviewLive: true, llmInterviewBrief: true,
+            }
         });
         if (!org) return NextResponse.json({ error: "Organization not found" }, { status: 404 });
 
@@ -41,18 +46,18 @@ export async function GET(
             : {};
 
         const aggregates: Record<string, any> = {
-            resumeExtraction:      { runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: "gpt-5.4-mini" },
-            jdExtraction:          { runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: "gpt-5.4-mini" },
-            interviewReport:       { runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: "gpt-5.4-mini" },
-            resumeReport:          { runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: "gpt-5.4-mini" },
-            interviewEvaluation:   { runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: "gpt-4.1-nano" },
-            interviewLLMGeneration:{ runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: "gpt-4.1-mini" },
-            interviewBrief:        { runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: "gpt-4.1-mini" },
+            resumeExtraction:      { runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: org.llmResumeExtraction },
+            jdExtraction:          { runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: org.llmJdExtraction },
+            interviewReport:       { runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: org.llmInterviewReport },
+            resumeReport:          { runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: org.llmResumeReport },
+            interviewEvaluation:   { runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: org.llmInterviewEval },
+            interviewLLMGeneration:{ runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: org.llmInterviewLive },
+            interviewBrief:        { runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: org.llmInterviewBrief },
             interview: {
                 runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0,
                 sessionDuration: 0,
                 ttsCharacters: 0, ttsCostUsd: 0, sttAudioSeconds: 0, sttCostUsd: 0,
-                model: "gpt-4.1-mini",
+                model: org.llmInterviewLive,
                 ttsProviders: {} as Record<string, { characters: number; costUsd: number }>,
                 sttProviders: {} as Record<string, { seconds: number; costUsd: number }>,
             },

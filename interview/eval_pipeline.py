@@ -18,7 +18,6 @@ from openai import AsyncOpenAI
 
 from interview.agent_scoring import evaluate_answer
 from interview.slack_error_logger import log_llm_error
-_EVAL_DEFAULT = "gpt-4.1-mini"  # ponytail: fallback — callers pass org's llmInterviewEval. mini beat nano on signal-detection accuracy — see tests/test_signal_ab.py
 
 logger = logging.getLogger("interview-agent")
 
@@ -253,7 +252,7 @@ class EvaluationPayload(BaseModel):
     question_asked_at_wall_ms: int = 0  # epoch ms; correlates proctoring events to the active question
     signal_toggles: Dict[str, Any] = Field(default_factory=dict)
     org_id: str = ""
-    llm_model: str = _EVAL_DEFAULT
+    llm_model: str
     active_topic: Optional[str] = None
     active_topic_state: Optional[Dict[str, Any]] = None
     anchor_item: Optional[str] = None

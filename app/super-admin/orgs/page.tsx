@@ -78,7 +78,7 @@ interface Org {
         drives: number;
     };
 }
-type BillingFeatureKey = "interview" | "resumeExtraction" | "jdExtraction" | "resumeReport" | "interviewReport";
+type BillingFeatureKey = "interview" | "resumeExtraction" | "jdExtraction" | "resumeReport" | "interviewReport" | "interviewBrief" | "interviewLLMGeneration";
 type BillingFeatureMetrics = {
     runs?: number;
     inputTokens?: number;
@@ -242,14 +242,9 @@ export default function OrgsPage() {
         { key: "jdExtraction", label: "LLM - JD" },
         { key: "resumeReport", label: "LLM - Resume Report" },
         { key: "interviewReport", label: "LLM - Interview Report" },
+        { key: "interviewBrief", label: "LLM - Interview Brief" },
+        { key: "interviewLLMGeneration", label: "LLM - Interview Question Generation" },
     ];
-    const FEATURE_MODEL_DISPLAY_MAP: Record<BillingFeatureKey, string> = {
-        resumeExtraction: "gpt-5.4-mini",
-        jdExtraction: "gpt-5.4-mini",
-        interview: "gpt-4.1-mini",
-        resumeReport: "gpt-5.4-mini",
-        interviewReport: "gpt-5.4-mini",
-    };
     const getBillingFeature = (org: Org, key: BillingFeatureKey): BillingFeatureMetrics => {
         const usage = (org.usageMetrics ?? {}) as Record<string, any>;
         const billing = usage.billing ? (usage.billing as Record<string, any>) : usage;
@@ -274,9 +269,6 @@ export default function OrgsPage() {
     const isUnknownLabel = (value: string) => {
         const normalized = cleanName(String(value || "")).toLowerCase();
         return !normalized || normalized === "unknown" || normalized === "no recorded model";
-    };
-    const displayLlmModel = (feature: BillingFeatureMetrics, key: BillingFeatureKey) => {
-        return [FEATURE_MODEL_DISPLAY_MAP[key]];
     };
     const unique = (values: string[]) => Array.from(new Set(values.filter(Boolean)));
     const getRecordedModels = (models?: Record<string, any>) => {
@@ -796,7 +788,7 @@ export default function OrgsPage() {
                                                         ].map((row) => {
                                                             const feature = billingAggregates?.[row.key as string] || {};
                                                             const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
-                                                            const model = feature.model || "-";
+                                                            const model = feature.model ? cleanName(feature.model) : "-";
                                                             const runs = Number(feature.runs || 0);
                                                             const cost = Number(billingAggregates?.[row.costKey as string]?.costUsd || 0);
                                                             return (
@@ -988,7 +980,7 @@ export default function OrgsPage() {
                                                         <div className="flex flex-wrap gap-2">
                                                             {feature.model && (
                                                                 <span className="px-3 py-1 bg-[#10B981]/10 text-[#10B981] text-[10px] font-semibold rounded-md border border-[#10B981]/20 uppercase tracking-wide">
-                                                                    {feature.model}
+                                                                    {cleanName(feature.model)}
                                                                 </span>
                                                             )}
                                                             <span className="px-3 py-1 bg-gray-50 text-gray-500 text-[10px] font-semibold rounded-md border border-gray-200 uppercase tracking-wide">openai</span>

@@ -48,7 +48,6 @@ from typing_extensions import TypedDict
 
 from interview.agent_utils import truncate_to_tokens
 from interview.agent_runtime_support import logger, DATABASE_URL
-_LLM_DEFAULT = "gpt-4.1-mini"  # ponytail: fallback only — callers should pass org's llmInterviewReport
 
 from billing.billing import record_external_billing_usage as _persist_billing
 from interview.slack_error_logger import log_llm_error
@@ -257,12 +256,12 @@ class LLMCallSpec:
     timeout:         float
     response_format: dict
     call_type:       str
+    _LLM_DEFAULT:    str
     temperature:     float       = 0.0
     org_id:          str        = ""
     app_id:          str        = ""
     candidate_name:  str        = ""
     prediction:      dict | None = None
-    _LLM_DEFAULT:       str        = _LLM_DEFAULT
 
 
 class ReportLLMClient:
@@ -490,7 +489,7 @@ class BehavioralAnalyzer:
         duration_sec:       int,
         behavioral_signals: list[dict],
         *,
-        _LLM_DEFAULT: str = _LLM_DEFAULT,
+        _LLM_DEFAULT: str,
         org_id:    str = "",
         app_id:    str = "",
     ) -> tuple[dict, list[dict]]:
@@ -640,7 +639,7 @@ class AnswerIntegrityAnalyzer:
         self,
         transcript_lines: list[str],
         *,
-        _LLM_DEFAULT: str = _LLM_DEFAULT,
+        _LLM_DEFAULT: str,
         org_id: str = "",
         app_id: str = "",
     ) -> tuple[dict, list[dict]]:
@@ -1301,7 +1300,7 @@ async def _node_llm_calls(state: ReportState) -> dict:
     asyncio.gather runs all three LLM calls concurrently, cutting wall-clock
     time from ~15s sequential to ~7s parallel.
     """
-    llm_default        = state.get("_LLM_DEFAULT") or _LLM_DEFAULT
+    llm_default        = state["_LLM_DEFAULT"]
     job_title        = state.get("job_title", "")
     org_id           = state.get("org_id") or ""
     app_id           = state.get("app_id", "")
@@ -1379,7 +1378,7 @@ async def _node_llm_calls(state: ReportState) -> dict:
     _answer_integrity_task = (
         _answer_integrity_analyzer.analyze(
             transcript_lines=transcript_lines,
-            _LLM_DEFAULT=llmInterviewReport,
+            _LLM_DEFAULT=llm_default,
             org_id=org_id,
             app_id=app_id,
         )
@@ -1856,10 +1855,10 @@ async def generate_interview_summary(
             try:
                 await asyncio.gather(
                     _persist_billing(
-                        org_id, "interviewReport", _llm.usage_dict(summary_usage, _LLM_DEFAULT)
+                        org_id, "interviewReport", _llm.usage_dict(summary_usage, llmInterviewReport)
                     ),
                     _persist_billing(
-                        org_id, "interviewReport", _llm.usage_dict(verdict_usage, _LLM_DEFAULT)
+                        org_id, "interviewReport", _llm.usage_dict(verdict_usage, llmInterviewReport)
                     ),
                 )
             except Exception as _bill_err:

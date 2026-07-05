@@ -251,11 +251,9 @@ _CUSTOM_Q_TOKEN_SYNONYMS: dict[str, set[str]] = {
     "education": {"education", "educational", "study", "studied", "degree", "college", "university", "school", "background", "academics", "academic"},
     "experience": {"experience", "worked", "work", "role", "roles", "internship", "intern"},
 }
-# Language codes for STT and TTS  keyed by DB language field value.
-_LANGUAGE_CODES: dict[str, dict[str, str]] = {
-    "English": {"stt": "en-US", "tts": "en"},
-    "Hindi":   {"stt": "hi",    "tts": "hi"},
-}
+# ponytail: English-only. Re-add a language table if multi-language support returns.
+_STT_LANGUAGE_CODE = "en-US"
+_TTS_LANGUAGE_CODE = "en"
 # ponytail: _TTS_DEFAULT_MODELS deleted -- all model values come from org DB row now
 # Compiled once  matches greeting echo fragments that leak back into STT after AI speaks.
 _GREETING_ECHO_RE = re.compile(
@@ -1445,7 +1443,6 @@ async def entrypoint(ctx: JobContext):
     ]
     if not _custom_questions:
         logger.info("[FLOW] Custom questions  none configured")
-    interview_lang = ctx_data.language
     time_limit_mins = FIXED_INTERVIEW_DURATION_MINUTES
     org_id = ctx_data.orgId
     session_log_context.update(
@@ -1477,9 +1474,6 @@ async def entrypoint(ctx: JobContext):
     interview_llm_model: str         = str(ctx_data.llmInterviewLive).strip()
     interview_llm_temperature: float = INTERVIEW_TEMPERATURE
     analysis_model: str              = str(ctx_data.llmInterviewEval).strip()
-    lang_codes = _LANGUAGE_CODES.get(interview_lang)
-    if not lang_codes:
-        raise RuntimeError(f"Unsupported interview language in DB: {interview_lang}")
     _eval_llm_usages_accumulated: list[dict] = []
     _brief_llm_usages: list[dict] = []
     _llmgen_llm_usages: list[dict] = []
@@ -1670,7 +1664,7 @@ async def entrypoint(ctx: JobContext):
     flux_session_keyterms = _build_flux_session_keyterms()
     logger.info("[STT_FLUX] static session keyterms prepared: %d extra terms", len(flux_session_keyterms))
     try:
-        stt_plugin = build_stt(language_code=lang_codes["stt"], keyterms=flux_session_keyterms, model_override=ctx_data.sttModel)
+        stt_plugin = build_stt(language_code=_STT_LANGUAGE_CODE, keyterms=flux_session_keyterms, model_override=ctx_data.sttModel)
     except Exception as _stt_build_err:
         try:
             await log_stt_error(
@@ -1684,11 +1678,14 @@ async def entrypoint(ctx: JobContext):
         except Exception:
             pass
         raise
-    _tts_builder = {
+    _TTS_BUILDERS = {
         "SARVAM":     build_sarvam_tts,
         "ELEVENLABS": build_elevenlabs_tts,
         "CARTESIA":   build_cartesia_tts,
-    }.get(org_tts_provider, build_cartesia_tts)
+    }
+    if org_tts_provider not in _TTS_BUILDERS:
+        raise ValueError(f"Unknown org ttsProvider {org_tts_provider!r} (expected one of {sorted(_TTS_BUILDERS)})")
+    _tts_builder = _TTS_BUILDERS[org_tts_provider]
     logger.info(f"[TTS] Using %s  voice=%s model=%s", org_tts_provider, voice_id, org_tts_model)
     # For Sarvam v3: build a per-session pronunciation dict that combines the
     # shared base dict (infra/framework terms) with auto-generated pronunciations
@@ -1734,7 +1731,7 @@ async def entrypoint(ctx: JobContext):
         )
     try:
         tts_plugin = _tts_builder(
-            language=lang_codes["tts"],
+            language=_TTS_LANGUAGE_CODE,
             model=org_tts_model,
             voice_id=voice_id,
             **({"dict_id": _sarvam_dict_id} if _sarvam_dict_id else {}),

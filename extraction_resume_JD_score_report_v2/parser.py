@@ -143,13 +143,10 @@ def _merge_resume(structural: dict, semantic: dict) -> dict:
     return merged
 
 
-MODEL = "gpt-5.4-mini"
-
-
 class DocumentParser:
-    def parse(self, text: str, doc_type: str, model_override: str | None = None) -> dict:
+    def parse(self, text: str, doc_type: str, model_override: str) -> dict:
         client = _get_client()
-        model = model_override or MODEL
+        model = model_override
         if doc_type == "JD":
             return self._parse_jd(client, text, model)
         if doc_type == "RESUME":
@@ -158,10 +155,10 @@ class DocumentParser:
             return self._run_score(client, text, model)
         raise ValueError(f"Unknown doc_type: {doc_type!r}")
 
-    def parse_resume_with_jd(self, text: str, jd_criteria: list[dict], model_override: str | None = None) -> dict:
+    def parse_resume_with_jd(self, text: str, jd_criteria: list[dict], model_override: str) -> dict:
         """Used by pipeline when JD is already available — passes criteria to semantic pass."""
         client = _get_client()
-        return self._parse_resume(client, text, model_override or MODEL, jd_criteria=jd_criteria)
+        return self._parse_resume(client, text, model_override, jd_criteria=jd_criteria)
 
     # -- JD --------------------------------------------------------------------
 
@@ -193,7 +190,7 @@ class DocumentParser:
 
     # -- Score -----------------------------------------------------------------
 
-    def _run_score(self, client: OpenAI, json_text: str, model_override: str | None) -> dict:
+    def _run_score(self, client: OpenAI, json_text: str, model: str) -> dict:
         # Load payload
         candidate = str(json_text or "").strip()
         if os.path.isfile(candidate):
@@ -225,7 +222,7 @@ class DocumentParser:
         )
 
         print("--- [AI] Generating report... ---", file=sys.stderr, flush=True)
-        report_model = model_override or MODEL
+        report_model = model
         try:
             report, report_usage = generate_report(
                 jd_data, resume_data, jd_raw_text, resume_raw_text,

@@ -120,11 +120,6 @@ _SARVAM_TTS_RATES_INR: dict[str, float] = {
     "bulbul:v2": 15.0,
 }
 
-# Sarvam STT -- INR per hour (converted to USD at runtime)
-_SARVAM_STT_RATES_INR: dict[str, float] = {
-    "saaras:v3": 30.0,
-}
-
 # Deepgram STT -- USD per minute
 _DEEPGRAM_STT_RATES: dict[str, float] = {
     "nova-3":             0.0048,
@@ -334,8 +329,7 @@ class _SarvamStrategy:
         return (chars / 10_000.0) * rate / max(_INR_PER_USD, 1e-6)
 
     def stt_cost(self, model: str, seconds: float) -> float:
-        rate = _SARVAM_STT_RATES_INR.get(model, _SARVAM_STT_RATES_INR["saaras:v3"])
-        return (seconds / 3600.0) * rate / max(_INR_PER_USD, 1e-6)
+        return 0.0
 
 
 @dataclass(frozen=True)

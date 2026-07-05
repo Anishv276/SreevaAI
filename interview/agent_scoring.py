@@ -18,7 +18,6 @@ from typing import Any, Optional
 
 logger = logging.getLogger("interview-agent")
 from interview.agent_runtime_support import EVAL_TEMPERATURE
-_EVAL_DEFAULT = "gpt-4.1-mini"  # ponytail: fallback — callers pass org's llmInterviewEval. nano scored 6/10 on signal-detection A/B test, mini scored 7/10 — see tests/test_signal_ab.py
 
 
 # ---------------------------------------------------------------------------
@@ -331,7 +330,7 @@ async def _classify_signal_from_answer(
     candidate_answer: str,
     last_question: str,
     client: Any,
-    llm_model: str = _EVAL_DEFAULT,
+    llm_model: str,
     signals_already_fired: list | None = None,
 ) -> tuple[str, str | None]:
     """
@@ -695,8 +694,8 @@ async def evaluate_answer(
     topic_follow_up_count: int,
     transcript_lines: list,
     client,
+    llm_model: str,
     org_id: Optional[str] = None,
-    llm_model: str = _EVAL_DEFAULT,
     is_warmup: bool = False,
     candidate_band: str = "mid",
     active_topic: str = "",

@@ -177,7 +177,7 @@ async def _sarvam_normalize_transform(text_stream):
         yield TextSanitizer.normalize_for_sarvam(chunk)
 
 
-def make_sarvam_llm_rewrite_transform(openai_client, model: str = "gpt-4.1-nano"):
+def make_sarvam_llm_rewrite_transform(openai_client, model: str):
     """Return an async generator transform that rewrites TTS text via LLM.
 
     The transform buffers incoming chunks until a sentence boundary (. ! ?)

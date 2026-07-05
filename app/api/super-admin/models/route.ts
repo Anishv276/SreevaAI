@@ -83,6 +83,7 @@ export async function PATCH(req: NextRequest) {
   // Validate all provided model IDs
   const errors: string[] = [];
   if (fields.sttModel && !ALLOWED_STT_IDS.has(fields.sttModel)) errors.push(`Invalid sttModel: ${fields.sttModel}`);
+  if (fields.ttsProvider && !["ELEVENLABS", "CARTESIA", "SARVAM"].includes(fields.ttsProvider)) errors.push(`Invalid ttsProvider: ${fields.ttsProvider}`);
   if (fields.ttsModel && !ALLOWED_TTS_IDS.has(fields.ttsModel)) errors.push(`Invalid ttsModel: ${fields.ttsModel}`);
   if (fields.voiceId && !ALLOWED_VOICE_IDS.has(fields.voiceId)) errors.push(`Invalid voiceId: ${fields.voiceId}`);
   for (const llmField of ["llmResumeExtraction","llmJdExtraction","llmResumeReport","llmInterviewLive","llmInterviewEval","llmInterviewBrief","llmInterviewReport"] as const) {

@@ -507,6 +507,9 @@ async function processResumeScreeningJob(job: any) {
   if (!applicationId || !key) {
     throw new Error("Missing applicationId or key in screen-resume job");
   }
+  if (!orgId) {
+    throw new Error("Missing orgId in screen-resume job");
+  }
 
   console.log(`[RESUME-WORKER] Job ${job.id} started for ${applicationId}`);
 
@@ -534,18 +537,27 @@ async function processResumeScreeningJob(job: any) {
       where: { id: applicationId },
       data: { resumeStatus: "extracting", updatedAt: new Date() },
     }).catch(() => {});
-    const application = await prisma.application.findUnique({
-      where: { id: applicationId },
-      select: {
-        drive: {
-          select: {
-            extractedDetails: true,
-            screeningCriteria: true,
-            screeningThreshold: true,
+    const [application, org] = await Promise.all([
+      prisma.application.findUnique({
+        where: { id: applicationId },
+        select: {
+          drive: {
+            select: {
+              extractedDetails: true,
+              screeningCriteria: true,
+              screeningThreshold: true,
+            },
           },
         },
-      },
-    });
+      }),
+      prisma.organization.findUnique({
+        where: { id: orgId },
+        select: { llmResumeExtraction: true, llmResumeReport: true },
+      }),
+    ]);
+    if (!org) {
+      throw new Error(`Org ${orgId} not found for screen-resume job`);
+    }
 
     const extractedDetails = (() => {
       try { return JSON.parse(application?.drive?.extractedDetails || "{}"); } catch { return {}; }
@@ -579,13 +591,13 @@ async function processResumeScreeningJob(job: any) {
         screening_criteria: screeningCriteria,
       });
       result = await runPythonJsonWithStdin(
-        ["scripts/extract_pdf.py", tempFilePath, "RESUME_AND_SCORE", "gpt-5.4-mini", "gpt-5.4-mini"],
+        ["scripts/extract_pdf.py", tempFilePath, "RESUME_AND_SCORE", org.llmResumeExtraction, org.llmResumeReport],
         jdPayload,
         180_000,
       );
     } else {
       result = await runPythonJson(
-        ["scripts/extract_pdf.py", tempFilePath, "RESUME", "gpt-5.4-mini"],
+        ["scripts/extract_pdf.py", tempFilePath, "RESUME", org.llmResumeExtraction],
         120_000,
       );
     }
@@ -706,10 +718,13 @@ async function processResumeFileExtractJob(job: any) {
     fileUrl = null,
     fileName = "resume.pdf",
     orgId = null,
-    orgOpenAIModel = "gpt-5.4-mini",
+    orgOpenAIModel,
   } = job.data || {};
   if (!key) {
     throw new Error("Invalid resume extraction job payload");
+  }
+  if (!orgOpenAIModel) {
+    throw new Error("Missing orgOpenAIModel (org LLM config not loaded from DB)");
   }
   console.log(`[RESUME-WORKER] File extraction job ${job.id} started`, { fileName, bucket, key });
   const tempExt = (() => {
@@ -1748,8 +1763,9 @@ if (isQueueEnabled("jd-extraction")) {
       console.log(`\n=================================================`);
       console.log(`▶ [JD-EXTRACTION WORKER] PID=${process.pid} Job id="${job.id}" kind="${job.data?.kind}"`);
       console.log(`=================================================\n`);
-      const { kind, orgOpenAIModel = "gpt-5.4-mini", orgId = null } = job.data || {};
+      const { kind, orgOpenAIModel, orgId = null } = job.data || {};
       if (!kind) throw new Error("Invalid JD extraction job: missing kind");
+      if (!orgOpenAIModel) throw new Error("Missing orgOpenAIModel (org LLM config not loaded from DB)");
 
       let text: string;
       let tempFilePath: string | null = null;

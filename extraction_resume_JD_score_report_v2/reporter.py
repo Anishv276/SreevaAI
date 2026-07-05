@@ -142,7 +142,7 @@ def generate_report(
     resume_raw_text: str,
     score_result: dict,
     client: Any,
-    report_model: str = "gpt-4o-mini",
+    report_model: str,
     screening_criteria: dict | None = None,
 ) -> tuple[dict, dict]:
     """

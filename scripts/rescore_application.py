@@ -67,10 +67,15 @@ def rescore(identifier: str, dry_run: bool = False):
     from billing.billing import record_external_billing_usage
     import asyncio
     try:
-        report, report_usage = generate_report(jd, resume, "", resume_text, score_result, oai, "gpt-4o-mini", screening)
-        # Bill the org that owns this drive for the rescore LLM call
-        cur.execute('SELECT "orgId" FROM "Drive" WHERE id=%s', (drive_id,))
+        # Org's configured model for resume reports -- no hardcoded fallback.
+        cur.execute('SELECT o."id", o."llmResumeReport" FROM "Drive" d JOIN "Organization" o ON o.id = d."orgId" WHERE d.id=%s', (drive_id,))
         org_row = cur.fetchone()
+        if not org_row:
+            print(f"Org not found for drive: {drive_id}")
+            return
+        report_model = org_row[1]
+        report, report_usage = generate_report(jd, resume, "", resume_text, score_result, oai, report_model, screening)
+        # Bill the org that owns this drive for the rescore LLM call
         if org_row and org_row[0] and report_usage.get("inputTokens"):
             asyncio.run(record_external_billing_usage(org_row[0], "resumeReport", report_usage))
             print(f"[BILLING] Recorded resumeReport usage: {report_usage.get('inputTokens')} in / {report_usage.get('outputTokens')} out tokens")

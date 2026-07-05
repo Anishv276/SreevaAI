@@ -325,9 +325,6 @@ OUTPUT SIZE RULES:
 # Public entry point
 # ---------------------------------------------------------------------------
 
-_BRIEF_MODEL = "gpt-4.1"   # faster throughput on large structured outputs than mini
-
-
 async def generate_interview_brief(
     *,
     candidate_name: str,
@@ -337,7 +334,7 @@ async def generate_interview_brief(
     jd_data: dict,
     custom_questions: list[str],
     openai_client: AsyncOpenAI,
-    llm_model: str = _BRIEF_MODEL,
+    llm_model: str,
     usage_sink: Any = None,
 ) -> InterviewBrief:
     # Step 1: deterministic extraction via LangGraph (zero LLM)
