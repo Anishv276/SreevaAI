@@ -138,6 +138,8 @@ _DEEPGRAM_STT_RATES: dict[str, float] = {
 _VALID_FEATURES: frozenset[str] = frozenset({
     "interview",
     "interviewReport",
+    "interviewBrief",
+    "interviewLLMGeneration",
     "resumeExtraction",
     "jdExtraction",
     "resumeReport",
@@ -274,11 +276,13 @@ class OrgBilling(BaseModel):
     chatbot removed: feature is no longer active. Existing DB rows that still
     carry a chatbot key are silently ignored by Pydantic (extra='ignore' default).
     """
-    interview:        FeatureBilling = Field(default_factory=FeatureBilling)
-    interviewReport:  FeatureBilling = Field(default_factory=FeatureBilling)
-    resumeExtraction: FeatureBilling = Field(default_factory=FeatureBilling)
-    jdExtraction:     FeatureBilling = Field(default_factory=FeatureBilling)
-    resumeReport:     FeatureBilling = Field(default_factory=FeatureBilling)
+    interview:              FeatureBilling = Field(default_factory=FeatureBilling)
+    interviewReport:        FeatureBilling = Field(default_factory=FeatureBilling)
+    interviewBrief:         FeatureBilling = Field(default_factory=FeatureBilling)
+    interviewLLMGeneration: FeatureBilling = Field(default_factory=FeatureBilling)
+    resumeExtraction:       FeatureBilling = Field(default_factory=FeatureBilling)
+    jdExtraction:           FeatureBilling = Field(default_factory=FeatureBilling)
+    resumeReport:           FeatureBilling = Field(default_factory=FeatureBilling)
 
 
 class InterviewBillingSnapshot(BaseModel):
@@ -471,6 +475,9 @@ class UsageSummarizer:
             model     = str(getattr(item, "model",    "") or "").strip()
             if not provider or not model:
                 raise ValueError(f"[BILLING] Cannot summarize {kind} usage — provider or model missing")
+            # Normalize OpenAI base-URL variants (e.g. "API.OPENAI.COM") → "OPENAI"
+            if "OPENAI" in provider or provider in ("API", "API.OPENAI.COM"):
+                provider = "OPENAI"
             key    = f"{provider}:{model}"
             bucket = summary[kind]
             bucket["sessions"] = 1
@@ -877,6 +884,14 @@ class BillingRepository:
                     merged = _coerce_jsonish(row["usageMetrics"])
                     for feature, usage in pending:
                         merged = merge_manual_billing_usage(merged, feature, usage)
+                        _fb = _coerce_jsonish(_coerce_jsonish(merged.get("billing")).get(feature))
+                        logger.info(
+                            "[BILLING] flush_pending merged feature=%s model=%s runs=%s "
+                            "inputTokens=%s outputTokens=%s costUsd=%s",
+                            feature, usage.get("model", "?"),
+                            _fb.get("runs"), _fb.get("inputTokens"),
+                            _fb.get("outputTokens"), _fb.get("costUsd"),
+                        )
                     await conn.execute(
                         'UPDATE "Organization" SET "usageMetrics" = $1::jsonb, "updatedAt" = NOW() WHERE id = $2',
                         json.dumps(merged), org_id,

@@ -22,8 +22,13 @@ export async function GET(
 
         const interviews = await prisma.$queryRaw<Array<{
             testBillingMetrics: Record<string, any> | null;
+            interviewDuration: number | null;
         }>>(Prisma.sql`
-            SELECT i."testBillingMetrics"
+            SELECT i."testBillingMetrics",
+                   COALESCE(
+                       (i."billingSnapshot"->>'durationSec')::int,
+                       i."interviewDuration"
+                   ) AS "interviewDuration"
             FROM "Interview" i
             JOIN "Application" a ON a.id = i."applicationId"
             JOIN "Drive" d ON d.id = a."driveId"
@@ -45,6 +50,7 @@ export async function GET(
             interviewBrief:        { runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: "gpt-4.1-mini" },
             interview: {
                 runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0,
+                sessionDuration: 0,
                 ttsCharacters: 0, ttsCostUsd: 0, sttAudioSeconds: 0, sttCostUsd: 0,
                 model: "gpt-4.1-mini",
                 ttsProviders: {} as Record<string, { characters: number; costUsd: number }>,
@@ -52,86 +58,116 @@ export async function GET(
             },
         };
 
+        // testBillingMetrics: only used for sub-feature token breakdowns (eval / brief / llmgen).
+        // Costs and interview-level data (TTS, STT, LLM tokens) come from billing bucket below.
         for (const row of interviews) {
             const m = row.testBillingMetrics as Record<string, any> || {};
             if (m.skipReport) continue;
+            // Accumulate actual session wall-clock time from billingSnapshot.durationSec or interviewDuration
+            aggregates.interview.sessionDuration += Number(row.interviewDuration || 0);
 
-            // Evaluation runs (per-turn scoring)
-            aggregates.interviewEvaluation.runs += Number(m.evaluationRuns || 0);
-            aggregates.interviewEvaluation.inputTokens += Number(m.evalInputTokens || 0);
-            aggregates.interviewEvaluation.outputTokens += Number(m.evalOutputTokens || 0);
+            // Evaluation runs/tokens (per-turn scoring) — cost comes from billing.interview
+            aggregates.interviewEvaluation.runs        += Number(m.evaluationRuns   || 0);
+            aggregates.interviewEvaluation.inputTokens += Number(m.evalInputTokens  || 0);
+            aggregates.interviewEvaluation.outputTokens+= Number(m.evalOutputTokens || 0);
 
-            // LLM generation runs (question generation per turn)
-            aggregates.interviewLLMGeneration.runs += Number(m.llmGenerations || 0);
+            // LLM generation runs/tokens — cost comes from billing.interviewLLMGeneration
+            aggregates.interviewLLMGeneration.runs        += Number(m.llmGenerations    || 0);
             aggregates.interviewLLMGeneration.inputTokens += Number(m.llmgenInputTokens || 0);
-            aggregates.interviewLLMGeneration.outputTokens += Number(m.llmgenOutputTokens || 0);
+            aggregates.interviewLLMGeneration.outputTokens+= Number(m.llmgenOutputTokens|| 0);
 
-            // Brief (one per interview)
-            aggregates.interviewBrief.runs += Number(m.briefGenerations || 0);
-            aggregates.interviewBrief.inputTokens += Number(m.briefInputTokens || 0);
-            aggregates.interviewBrief.outputTokens += Number(m.briefOutputTokens || 0);
-
-            // Total LLM cost (still stored as one figure)
-            const totalLlmCost = Number(m.llmCost || 0);
-            aggregates.interview.runs += 1;
-            aggregates.interview.inputTokens += Number(m.llmInputTokens || 0);
-            aggregates.interview.outputTokens += Number(m.llmOutputTokens || 0);
-            aggregates.interview.costUsd += totalLlmCost;
-
-            // TTS by provider
-            const ttsChars = Number(m.ttsChars || 0);
-            const ttsCost = Number(m.ttsCost || 0);
-            const ttsProvider = (m.ttsProvider || "UNKNOWN").toUpperCase();
-            if (ttsChars > 0 || ttsCost > 0) {
-                if (!aggregates.interview.ttsProviders[ttsProvider])
-                    aggregates.interview.ttsProviders[ttsProvider] = { characters: 0, costUsd: 0 };
-                aggregates.interview.ttsProviders[ttsProvider].characters += ttsChars;
-                aggregates.interview.ttsProviders[ttsProvider].costUsd += ttsCost;
-                aggregates.interview.ttsCharacters += ttsChars;
-                aggregates.interview.ttsCostUsd += ttsCost;
-            }
-
-            // STT by provider
-            const sttSeconds = Number(m.sttSeconds || 0);
-            const sttCost = Number(m.sttCost || 0);
-            const sttProvider = (m.sttProvider || "deepgram").toLowerCase();
-            if (sttSeconds > 0 || sttCost > 0) {
-                if (!aggregates.interview.sttProviders[sttProvider])
-                    aggregates.interview.sttProviders[sttProvider] = { seconds: 0, costUsd: 0 };
-                aggregates.interview.sttProviders[sttProvider].seconds += sttSeconds;
-                aggregates.interview.sttProviders[sttProvider].costUsd += sttCost;
-                aggregates.interview.sttAudioSeconds += sttSeconds;
-                aggregates.interview.sttCostUsd += sttCost;
-            }
+            // Brief runs/tokens — cost comes from billing.interviewBrief
+            aggregates.interviewBrief.runs        += Number(m.briefGenerations  || 0);
+            aggregates.interviewBrief.inputTokens += Number(m.briefInputTokens  || 0);
+            aggregates.interviewBrief.outputTokens+= Number(m.briefOutputTokens || 0);
         }
 
-        // Extraction phases from org usageMetrics (set by report_pipeline)
-        const pricePerToken = { input: 2.5 / 1_000_000, output: 10 / 1_000_000 };
+        // All costs and interview-level aggregates come from usageMetrics.billing (billing.py accurate data).
+        const billingBucket = (orgUsage.billing && typeof orgUsage.billing === "object")
+            ? (orgUsage.billing as Record<string, any>)
+            : {};
+
+        // Extract the primary model name from a byModel map (highest-cost entry wins).
+        const primaryModel = (byModel: Record<string, any> | null | undefined): string | null => {
+            if (!byModel || typeof byModel !== "object") return null;
+            let best: string | null = null;
+            let bestCost = -1;
+            for (const [key, v] of Object.entries(byModel)) {
+                const cost = Number((v as any)?.costUsd || 0);
+                if (cost > bestCost) {
+                    bestCost = cost;
+                    // key is "provider:model" — strip provider prefix
+                    const parts = key.split(":");
+                    best = parts.length >= 2 ? parts.slice(1).join(":") : key;
+                }
+            }
+            return best;
+        };
+
+        // Extraction / report phases: all fields from billing bucket.
         for (const phase of ["resumeExtraction", "jdExtraction", "interviewReport", "resumeReport"]) {
-            const entries = orgUsage[phase];
-            if (!Array.isArray(entries)) continue;
-            for (const entry of entries) {
-                if (!entry || typeof entry !== "object") continue;
-                const inp = Number(entry.inputTokens || 0);
-                const out = Number(entry.outputTokens || 0);
-                aggregates[phase].runs += 1;
-                aggregates[phase].inputTokens += inp;
-                aggregates[phase].outputTokens += out;
-                aggregates[phase].costUsd += inp * pricePerToken.input + out * pricePerToken.output;
-            }
+            const b = billingBucket[phase];
+            if (!b || typeof b !== "object" || !aggregates[phase]) continue;
+            aggregates[phase].runs         += Number(b.runs         || 0);
+            aggregates[phase].inputTokens  += Number(b.inputTokens  || 0);
+            aggregates[phase].outputTokens += Number(b.outputTokens || 0);
+            aggregates[phase].costUsd      += Number(b.costUsd      || 0);
+            const m = primaryModel(b.byModel);
+            if (m) aggregates[phase].model = m;
         }
 
-        // Also check orgUsage for interviewBrief / interviewLLMGeneration if stored there
+        // Brief / LLM gen: runs+tokens from testBillingMetrics above, cost+model from billing bucket.
         for (const phase of ["interviewBrief", "interviewLLMGeneration"]) {
-            const entries = orgUsage[phase];
-            if (!Array.isArray(entries)) continue;
-            for (const entry of entries) {
-                if (!entry || typeof entry !== "object") continue;
-                const inp = Number(entry.inputTokens || 0);
-                const out = Number(entry.outputTokens || 0);
-                aggregates[phase].inputTokens += inp;
-                aggregates[phase].outputTokens += out;
-                aggregates[phase].costUsd += inp * pricePerToken.input + out * pricePerToken.output;
+            const b = billingBucket[phase];
+            if (!b || typeof b !== "object" || !aggregates[phase]) continue;
+            aggregates[phase].costUsd += Number(b.costUsd || 0);
+            const m = primaryModel(b.byModel);
+            if (m) aggregates[phase].model = m;
+        }
+
+        // Interview: all data from billing bucket (accurate Sarvam/Deepgram rates, exact token counts).
+        const ivb = billingBucket.interview;
+        if (ivb && typeof ivb === "object") {
+            aggregates.interview.runs         += Number(ivb.runs         || 0);
+            aggregates.interview.inputTokens  += Number(ivb.inputTokens  || 0);
+            aggregates.interview.outputTokens += Number(ivb.outputTokens || 0);
+            aggregates.interview.costUsd      += Number(ivb.costUsd      || 0);
+
+            // TTS accurate totals
+            aggregates.interview.ttsCharacters += Number(ivb.ttsCharacters || 0);
+            aggregates.interview.ttsCostUsd    += Number(ivb.ttsCostUsd    || 0);
+
+            // TTS per-provider breakdown from billing.py ttsByModel
+            const ttsByModel = (ivb.ttsByModel && typeof ivb.ttsByModel === "object") ? ivb.ttsByModel : {};
+            for (const entry of Object.values(ttsByModel)) {
+                const e = entry as Record<string, any>;
+                const provider = String(e.provider || "UNKNOWN").toUpperCase();
+                if (!aggregates.interview.ttsProviders[provider])
+                    aggregates.interview.ttsProviders[provider] = { characters: 0, costUsd: 0 };
+                aggregates.interview.ttsProviders[provider].characters += Number(e.characters || 0);
+                aggregates.interview.ttsProviders[provider].costUsd    += Number(e.costUsd    || 0);
+            }
+
+            // STT accurate totals
+            aggregates.interview.sttAudioSeconds += Number(ivb.sttAudioSeconds || 0);
+            aggregates.interview.sttCostUsd      += Number(ivb.sttCostUsd      || 0);
+
+            // STT per-provider breakdown from billing.py sttByModel
+            const sttByModel = (ivb.sttByModel && typeof ivb.sttByModel === "object") ? ivb.sttByModel : {};
+            for (const entry of Object.values(sttByModel)) {
+                const e = entry as Record<string, any>;
+                const provider = String(e.provider || "deepgram").toLowerCase();
+                if (!aggregates.interview.sttProviders[provider])
+                    aggregates.interview.sttProviders[provider] = { seconds: 0, costUsd: 0 };
+                aggregates.interview.sttProviders[provider].seconds  += Number(e.audioSeconds || 0);
+                aggregates.interview.sttProviders[provider].costUsd  += Number(e.costUsd      || 0);
+            }
+
+            // Update model labels from actual billing data
+            const evalModel = primaryModel(ivb.byModel);
+            if (evalModel) {
+                aggregates.interview.model = evalModel;
+                aggregates.interviewEvaluation.model = evalModel;
             }
         }
 

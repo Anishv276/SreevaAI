@@ -6,9 +6,16 @@ import { getLandingPackageByName, getLandingPackageForOrgPlan } from "@/lib/land
 import { getSupportComposeUrl } from "@/lib/interview-quota";
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 
+function fmtUsd(usd: number): string {
+    if (usd === 0) return "$0.0000";
+    if (usd < 0.01) return `$${usd.toFixed(4)}`;
+    return `$${usd.toFixed(4)}`;
+}
+
 export function BillingContent(props?: any) {
     const creditsEndpoint = props?.creditsEndpoint || "/api/billing?";
     const historyEndpoint = props?.historyEndpoint || "/api/billing/history?";
+    const showCreditInternals: boolean = !!props?.showCreditInternals;
     const [billingData, setBillingData] = useState<any>(null);
     const [historyData, setHistoryData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -477,6 +484,79 @@ export function BillingContent(props?: any) {
                     </div>
                 </div>
             </div>
+
+            {/* Consumption Hub — super admin only */}
+            {showCreditInternals && billingData?.consumptionHub && (
+                <div className="mt-8 bg-white rounded-2xl border border-gray-100 p-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+                    <div className="flex items-center gap-2 mb-5">
+                        <Sparkles className="h-4 w-4 text-violet-600" />
+                        <h2 className="text-[15px] font-bold text-gray-900">Consumption Hub</h2>
+                        <span className="ml-auto text-[11px] font-bold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-full">Cumulative</span>
+                    </div>
+
+                    {/* LLM cost summary table */}
+                    <div className="overflow-x-auto rounded-xl border border-gray-100 mb-5">
+                        <table className="w-full text-left">
+                            <thead>
+                                <tr className="border-b border-gray-100 bg-gray-50/50">
+                                    <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-gray-400">Feature</th>
+                                    <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-gray-400">Runs</th>
+                                    <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-gray-400">Tokens</th>
+                                    <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest text-gray-400">LLM Cost</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-50">
+                                {[
+                                    { label: "Interview (Live + Eval)", key: "interview" },
+                                    { label: "Interview Brief", key: "interviewBrief" },
+                                    { label: "Interview LLM Gen", key: "interviewLLMGeneration" },
+                                    { label: "Interview Report", key: "interviewReport" },
+                                    { label: "Resume Extraction", key: "resumeExtraction" },
+                                    { label: "JD Extraction", key: "jdExtraction" },
+                                    { label: "Resume Report", key: "resumeReport" },
+                                ].map(({ label, key }) => {
+                                    const b = billingData.consumptionHub[key] ?? {};
+                                    const tokens = (Number(b.inputTokens || 0) + Number(b.outputTokens || 0)).toLocaleString();
+                                    return (
+                                        <tr key={key} className="hover:bg-gray-50/50 transition-colors">
+                                            <td className="px-4 py-3 text-[13px] font-bold text-gray-900">{label}</td>
+                                            <td className="px-4 py-3 text-[13px] text-gray-600">{Number(b.runs || 0)}</td>
+                                            <td className="px-4 py-3 text-[13px] text-gray-600">{tokens}</td>
+                                            <td className="px-4 py-3 text-[13px] font-black text-right text-gray-900">{fmtUsd(Number(b.costUsd || 0))}</td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* TTS + STT summary */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="rounded-xl border border-gray-100 bg-gray-50/50 p-4">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">TTS Characters</p>
+                            <p className="text-xl font-black text-gray-900">{Number(billingData.consumptionHub?.interview?.ttsCharacters || 0).toLocaleString()}</p>
+                        </div>
+                        <div className="rounded-xl border border-gray-100 bg-gray-50/50 p-4">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">TTS Cost</p>
+                            <p className="text-xl font-black text-gray-900">{fmtUsd(billingData.totalCosts?.ttsCostUsd || 0)}</p>
+                        </div>
+                        <div className="rounded-xl border border-gray-100 bg-gray-50/50 p-4">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">STT Minutes</p>
+                            <p className="text-xl font-black text-gray-900">{(Number(billingData.consumptionHub?.interview?.sttAudioSeconds || 0) / 60).toFixed(1)}</p>
+                        </div>
+                        <div className="rounded-xl border border-gray-100 bg-gray-50/50 p-4">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">STT Cost</p>
+                            <p className="text-xl font-black text-gray-900">{fmtUsd(billingData.totalCosts?.sttCostUsd || 0)}</p>
+                        </div>
+                    </div>
+
+                    {/* Grand total */}
+                    <div className="mt-4 flex items-center justify-between rounded-xl bg-violet-50 border border-violet-100 px-5 py-3">
+                        <span className="text-[12px] font-black uppercase tracking-widest text-violet-700">Total AI Cost (LLM + TTS + STT)</span>
+                        <span className="text-lg font-black text-violet-800">{fmtUsd(billingData.totalCosts?.totalCostUsd || 0)}</span>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

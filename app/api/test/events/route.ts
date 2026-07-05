@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 // Store events in memory per interview (simple approach for testing)
 const eventStore = new Map<string, Array<{
     timestamp: number;
-    type: "response_received" | "eval_start" | "eval_done" | "probe" | "saturate" | "move_on" | "llm_generating" | "llm_done" | "signal_fired";
+    type: "response_received" | "eval_start" | "eval_done" | "probe" | "saturate" | "move_on" | "llm_generating" | "llm_done" | "signal_fired" | "session_ended";
     message: string;
     data?: Record<string, unknown>;
 }>>();
