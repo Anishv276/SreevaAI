@@ -97,4 +97,17 @@ export const briefGenerationQueue = new Queue('brief-generation', {
     removeOnFail:    { age: 3600 }, // keep failed jobs for 1h for debugging
   },
 });
+// 11. Post-interview report/summary/billing-snapshot/debug-PDF tail, moved off
+// the LiveKit agent job (which LiveKit Cloud recycles shortly after the room
+// closes) onto this durable worker. attempts: 1 -- billing-usage persistence
+// and the Slack PDF upload are not idempotent, so no automatic retry.
+export const interviewReportQueue = new Queue('interview-report', {
+  connection: redisConnection,
+  prefix,
+  defaultJobOptions: {
+    attempts: 1,
+    removeOnComplete: { age: 3600 },
+    removeOnFail:    { age: 86400 }, // keep failures a day -- silent report loss must be visible
+  },
+});
 export default redisConnection;

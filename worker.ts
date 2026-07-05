@@ -1943,6 +1943,60 @@ if (isQueueEnabled("brief-generation")) {
   });
 }
 
+/**
+ * 📋 INTERVIEW REPORT WORKER
+ * Runs the post-interview report/summary/billing-snapshot/debug-PDF tail that
+ * used to run inline inside the LiveKit agent job. Moved here because LiveKit
+ * Cloud recycles the agent job process shortly after the room closes, which
+ * risked killing the ~300s report pipeline mid-flight. Enqueued by
+ * POST /api/internal/interview-report right after the agent persists the
+ * transcript/scores. All report/billing/Slack logic stays in Python
+ * (report_worker.py) — this just supervises the child process and streams
+ * its logs into this worker's terminal.
+ */
+if (isQueueEnabled("interview-report")) {
+  const interviewReportWorker = trackWorker("interview-report", new Worker(
+    "interview-report",
+    async (job) => {
+      const appId = job.data?.appId;
+      if (!appId) throw new Error("[REPORT-WORKER] Missing appId in job data");
+
+      console.log(`\n=================================================`);
+      console.log(`▶ [REPORT-WORKER] PID=${process.pid} Job id="${job.id}" appId="${appId}"`);
+      console.log(`=================================================\n`);
+
+      const result = await runPythonJsonWithStdin(
+        ["interview/report_worker.py"],
+        JSON.stringify(job.data),
+        340_000, // 340s: just above report_pipeline's own 300s+60s (report+summary) budget
+      );
+
+      if (result?.error) throw new Error(`[REPORT-WORKER] Python script error: ${result.error}`);
+      console.log(`[REPORT-WORKER] ✓ Report job complete for ${appId}`);
+      return result;
+    },
+    {
+      connection: createRedisConnection(),
+      prefix: BULL_PREFIX,
+      concurrency: 10,              // LLM/CPU-heavy, not I/O-bound like finalization
+      lockDuration: 6 * 60 * 1000,  // 6 min, matches the 340s script timeout + margin
+      stalledInterval: 5 * 60 * 1000,
+      maxStalledCount: 1,
+      removeOnComplete: { age: 3600 },
+      removeOnFail:    { age: 86400 },
+    }
+  ));
+
+  interviewReportWorker.on("failed", (job, err) => {
+    console.error(`[REPORT-WORKER] Job ${job?.id} failed permanently for appId=${job?.data?.appId}: ${err.message}`);
+    logWorkerError({
+      error: err.message,
+      reason: "Interview report job failed permanently",
+      context: { jobId: job?.id, appId: job?.data?.appId },
+    });
+  });
+}
+
 console.log("[Worker] Started. Listening for enabled queues.");
 
 /**

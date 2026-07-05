@@ -112,7 +112,7 @@ services:
       LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL}
       NEXT_PUBLIC_LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL}
       REDIS_URL: redis://redis:6379
-      WORKER_QUEUES: "resume-processing,invitation-delivery-queue,interview-start,interview-finalization,interview-snapshots,interview-recording,recording-retention-cleanup,jd-upload,jd-extraction,brief-generation,backup-queue"
+      WORKER_QUEUES: "resume-processing,invitation-delivery-queue,interview-start,interview-finalization,interview-snapshots,interview-recording,recording-retention-cleanup,jd-upload,jd-extraction,brief-generation,backup-queue,interview-report"
     depends_on:
       - redis
       - frontend

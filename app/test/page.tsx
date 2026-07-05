@@ -555,7 +555,7 @@ function TestPageContent() {
             setInterviewToken(data.interviewToken || null);
             setProctoringSignals(normalizeProctoringSignals(data.proctoringSignals));
             interviewStartedAtRef.current = Date.now();
-            await requestFullscreenMode();
+            if (enableCamera) await requestFullscreenMode();
         } catch (e) {
             setError(e instanceof Error ? e.message : "Unknown error");
         } finally {
@@ -594,7 +594,7 @@ function TestPageContent() {
         severity: "low" | "medium" | "high" = "high",
         metadata?: Record<string, unknown>,
     ) => {
-        if (!selectedCandidate) return;
+        if (!selectedCandidate || !enableCamera) return;
         fetch("/api/interview/proctoring", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -610,7 +610,7 @@ function TestPageContent() {
                 }],
             }),
         }).catch(() => {});
-    }, [selectedCandidate, interviewToken]);
+    }, [selectedCandidate, interviewToken, enableCamera]);
 
     const handleFaceViolation = useCallback((
         eventType: string,
@@ -664,7 +664,7 @@ function TestPageContent() {
         const isFullscreenExitEnabled = Boolean(proctoringSignals.fullscreen_exit);
         const isWindowFocusLossEnabled = Boolean(proctoringSignals.window_focus_loss);
         const anyFocusSignalEnabled = isTabSwitchEnabled || isFullscreenExitEnabled || isWindowFocusLossEnabled;
-        if (!isActive || !selectedCandidate || !anyFocusSignalEnabled) return;
+        if (!isActive || !selectedCandidate || !anyFocusSignalEnabled || !enableCamera) return;
 
         const applicationId = selectedCandidate.id;
         let focusEventInFlight = false;
@@ -765,7 +765,7 @@ function TestPageContent() {
             document.removeEventListener("mozfullscreenchange", onFullscreenChange);
             document.removeEventListener("MSFullscreenChange", onFullscreenChange);
         };
-    }, [isActive, selectedCandidate, proctoringSignals, interviewToken]);
+    }, [isActive, selectedCandidate, proctoringSignals, interviewToken, enableCamera]);
 
     return (
         <div className="flex flex-col min-h-screen bg-white" style={{ background: "linear-gradient(180deg, #FFFFFF 0%, #FAFAFC 45%, #F5F3FF 100%)" }}>
@@ -947,7 +947,7 @@ function TestPageContent() {
                 </div>
             </div>
 
-            {isActive && (
+            {isActive && enableCamera && (
                 <>
                     <FaceProctoring
                         isActive={isActive}
