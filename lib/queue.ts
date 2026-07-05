@@ -86,4 +86,15 @@ export const interviewStartQueue = new Queue('interview-start', {
     removeOnFail:    { age: 60 },
   },
 });
+// 10. Pre-generate interview brief at slot confirmation (real candidates only)
+export const briefGenerationQueue = new Queue('brief-generation', {
+  connection: redisConnection,
+  prefix,
+  defaultJobOptions: {
+    attempts: 2,
+    backoff: { type: 'exponential', delay: 5000 },
+    removeOnComplete: { age: 60 },
+    removeOnFail:    { age: 3600 }, // keep failed jobs for 1h for debugging
+  },
+});
 export default redisConnection;

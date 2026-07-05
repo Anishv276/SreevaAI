@@ -180,7 +180,8 @@ async def get_interview_context(app_id: str) -> dict:
            o."proctoringSignals",
            o."sttModel", o."ttsProvider", o."ttsModel",
            o."llmInterviewLive", o."llmInterviewEval", o."llmInterviewBrief", o."llmInterviewReport",
-           i.status AS "interviewStatus"
+           i.status AS "interviewStatus",
+           i."interviewBrief"
     FROM "Application" a
     JOIN "Drive" d ON a."driveId" = d.id
     LEFT JOIN "Organization" o ON d."orgId" = o.id
@@ -214,6 +215,7 @@ async def get_interview_context(app_id: str) -> dict:
                 "proctoringSignals":    row["proctoringSignals"],
                 "interviewQuestions":   row["interviewQuestions"],
                 "interviewStatus":      row["interviewStatus"],
+                "interviewBrief":       row["interviewBrief"],  # None if not yet generated
                 # AI model config -- all from org DB, no hardcoded defaults
                 "sttModel":             row["sttModel"],
                 "ttsProvider":          row["ttsProvider"],

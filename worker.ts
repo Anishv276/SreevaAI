@@ -1874,9 +1874,77 @@ if (isQueueEnabled("jd-extraction")) {
   });
 }
 
-console.log("[Worker] Started. Listening for enabled queues.");
 /**
+ * 📋 BRIEF GENERATION WORKER
+ * Pre-generates the InterviewBrief for real candidates who book a slot.
+ * Called from POST /api/schedule/[token] after scheduledAt is saved.
+ * Runs generate_brief.py which: fetches resume + JD → LLM call → saves to DB.
+ * Test interviews NEVER use this queue — they always generate live in agent_runtime.py.
+ */
+if (isQueueEnabled("brief-generation")) {
+  const briefWorker = trackWorker("brief-generation", new Worker(
+    "brief-generation",
+    async (job) => {
+      const { applicationId } = job.data || {};
+      if (!applicationId) throw new Error("[BRIEF-WORKER] Missing applicationId in job data");
+
+      console.log(`\n=================================================`);
+      console.log(`▶ [BRIEF-WORKER] PID=${process.pid} Job id="${job.id}" applicationId="${applicationId}"`);
+      console.log(`=================================================\n`);
+
+      // Confirm Interview row still exists before spinning up Python
+      const interview = await prisma.interview.findUnique({
+        where: { applicationId },
+        select: { id: true, isTest: true, scheduledAt: true, interviewBrief: true },
+      });
+
+      if (!interview) {
+        console.warn(`[BRIEF-WORKER] Interview not found for ${applicationId} — skipping`);
+        return { skipped: true, reason: "interview_not_found" };
+      }
+      if (interview.isTest) {
+        // Safety guard: should never happen since test token route doesn't enqueue this,
+        // but guard explicitly so we never overwrite a test session's brief.
+        console.warn(`[BRIEF-WORKER] Skipping — isTest=true for ${applicationId}`);
+        return { skipped: true, reason: "is_test_session" };
+      }
+      if (interview.interviewBrief) {
+        console.log(`[BRIEF-WORKER] Brief already exists for ${applicationId} — skipping re-generation`);
+        return { skipped: true, reason: "brief_already_exists" };
+      }
+
+      console.log(`[BRIEF-WORKER] Starting brief generation for ${applicationId}`);
+      const t0 = Date.now();
+
+      const result = await runPythonJson(
+        ["interview/generate_brief.py", applicationId],
+        180_000, // 3-minute timeout: LLM ~40s + DB fetch + retry headroom
+      );
+
+      if (result?.error) throw new Error(`[BRIEF-WORKER] Python script error: ${result.error}`);
+
+      const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+      console.log(`[BRIEF-WORKER] ✓ Brief saved for ${applicationId} in ${elapsed}s`);
+      return { success: true, applicationId, elapsedSec: parseFloat(elapsed) };
+    },
+    {
+      connection: createRedisConnection(),
+      prefix: BULL_PREFIX,
+      concurrency: 5,          // 5 briefs in parallel — each takes ~40s of I/O wait
+      lockDuration: 4 * 60 * 1000, // 4 min lock — longer than the 3-min timeout
+      removeOnComplete: { age: 60 },
+      removeOnFail:    { age: 3600 },
+    }
+  ));
+
+  briefWorker.on("failed", (job, err) => {
+    console.error(`[BRIEF-WORKER] Job ${job?.id} failed for applicationId=${job?.data?.applicationId}: ${err.message}`);
+    // Non-fatal — agent_runtime.py will fall back to live generation
+  });
 }
+
+console.log("[Worker] Started. Listening for enabled queues.");
+
 /**
  * REDIS CONFIGURATION & CRON SETUP
  * Attempts to set safe Redis settings and register repeatable jobs.

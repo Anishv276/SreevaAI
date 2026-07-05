@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendInterviewScheduledEmail } from "@/lib/mail";
+import { briefGenerationQueue } from "@/lib/queue";
 
 const SLOT_DURATION_MS = 30 * 60 * 1000; // 30-min slots
 const TIMEZONE = "Asia/Kolkata";
@@ -158,6 +159,16 @@ export async function POST(
     await prisma.interview.update({
         where: { id: interview.id },
         data: { scheduledAt: slotDate, timezone: TIMEZONE },
+    });
+
+    // Enqueue background brief generation (slot flow only — NOT for test interviews)
+    // The worker fetches resume + JD fresh from DB, generates the LLM brief, and
+    // saves it to Interview.interviewBrief so agent_runtime loads it instantly at launch.
+    void briefGenerationQueue.add("generate-brief", {
+        applicationId: interview.applicationId,
+    }).catch((err) => {
+        console.error("[BRIEF] Failed to enqueue brief-generation job:", err);
+        // Non-fatal: agent_runtime will fall back to live generation
     });
 
     // Build interview link
