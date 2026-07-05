@@ -6,14 +6,20 @@ Generates a structured InterviewBrief from resume + JD data.
 Flow:
   1. brief_extraction.run_extraction() — LangGraph pipeline (pure Python, zero LLM)
        Parallel: extract_resume + extract_jd → merge+dedup → build_llm_input block
-  2. _call_llm_for_brief() — single LLM call on the clean ~800-token text block
-       LLM does: tagging, anchor selection, probe guidance, role topics, strategy
-  3. InterviewBrief.model_validate() — Pydantic validates output before use
+  2. _understand_role() — small LLM call, JD + job_title only (no resume).
+       Answers "what does this role actually need" BEFORE any resume filtering
+       happens, so topic selection is judged against a real bar instead of
+       being decided ad hoc inside the same pass that also writes the topics.
+  3. _call_llm_for_brief() — main LLM call on the extraction block + role
+       understanding. LLM does: tagging, relevance filtering, anchor selection,
+       probe guidance, role topics, strategy.
+  4. InterviewBrief.model_validate() — Pydantic validates output before use
 
 No raw JSON is ever sent to the LLM. Latency target: <20s (was 2+ min).
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -39,6 +45,7 @@ class TopicItem(BaseModel):
     tech_stack: list[str] = Field(default_factory=list)
     impact: str = ""
     is_jd_must_have: bool = False
+    is_custom_question: bool = False
     why_relevant: str = ""
     probe_focus: list[str] = Field(default_factory=list)
     probe_avoid: list[str] = Field(default_factory=list)
@@ -95,6 +102,19 @@ No raw JSON. No parsing needed. Your jobs:
   5. Write interview_strategy, red_flags, candidate_summary — calibrated to role and band
   6. The interview_strategy must be SPECIFIC to this exact role, band, and candidate — not generic filler
 
+━━━ ROLE RELEVANCE FILTER (apply BEFORE selecting any resume item) ━━━
+The user message opens with "WHAT THIS ROLE ACTUALLY NEEDS" — a short brief on what this
+specific role does and what actually matters for it. Treat it as the relevance bar:
+  - A resume project/work-entry/skill only becomes a TopicItem if it demonstrates something
+    that brief says matters for this role. Being ON THE RESUME is not sufficient by itself.
+  - If the role brief names the kind of content this role does NOT care about, DROP resume
+    items that match that description even if they are the candidate's most impressive work —
+    impressive-but-irrelevant is still irrelevant here.
+  - This filter applies on top of, not instead of, the BAND-DRIVEN SOURCE MIX below. The
+    source mix says how many resume items to take; the relevance filter says WHICH ones qualify
+    at all before that count is applied.
+  - JD_TOPIC and ROLE_TOPIC items are exempt from this filter (they are already role-derived).
+
 ━━━ TOPIC TAGS (required on every TopicItem) ━━━
   RESUME_TOPIC — from candidate's resume (projects, work history, resume skills)
   JD_TOPIC     — from the job description (must-have / nice-to-have skills, JD requirements)
@@ -103,16 +123,34 @@ No raw JSON. No parsing needed. Your jobs:
 If a resume skill appears in the JD must-haves → tag=RESUME_TOPIC, is_jd_must_have=true (resume wins)
 If a JD requirement is not on the resume → tag=JD_TOPIC
 
-━━━ TOPIC COUNT — HARD RANGE (10-12, BOTH BOUNDS MANDATORY) ━━━
-topic_pool must contain BETWEEN 10 AND 12 TopicItems TOTAL (including anchor + role topics).
-Neither bound is a suggestion:
-  - Fewer than 10 is INVALID. If your selected items total under 10, you MUST add
-    more — pull in additional JD requirements, resume skills, or work/project detail
-    splits (e.g. a work entry's two distinct ownership areas) until you reach 10.
-  - More than 12 is INVALID. If over 12, DROP the lowest-relevance items down to 12.
-Before returning JSON, COUNT topic_pool. If count < 10 or count > 12, add or remove
-items and recount. Do not submit an output outside 10-12.
-ROLE_TOPIC count: exactly 2, always included in the 10-12 total (not additional).
+━━━ TOPIC COUNT — HARD RANGE, CUSTOM QUESTIONS ARE ADDITIVE ━━━
+Base cap: topic_pool must contain BETWEEN 10 AND 12 TopicItems (including anchor
++ the 2 expert role topics), BEFORE counting custom questions.
+  - Fewer than 10 (excluding custom questions) is INVALID. If your selected items total
+    under 10, you MUST add more — pull in additional JD requirements, resume skills, or
+    work/project detail splits (e.g. a work entry's two distinct ownership areas) until
+    you reach 10. When topping up, prefer JD_TOPIC and ROLE_TOPIC additions (already
+    role-relevant by definition) over resume items that failed the ROLE RELEVANCE FILTER
+    above. Only re-admit a filtered-out resume item as a last resort if JD/role material
+    genuinely runs out.
+  - More than 12 (excluding custom questions) is INVALID. If over 12, DROP the
+    lowest-relevance items down to 12.
+
+Custom questions (if the client provided any) are added ON TOP of this 10-12 base —
+they never displace resume/JD/role topics and are never counted against the 10-12 range:
+  - Every custom question becomes its own TopicItem: tag="ROLE_TOPIC", topic_type=
+    "role_topic", is_custom_question=true.
+  - ALL custom questions are included, always, with no cap. If the client gave 5 custom
+    questions, all 5 appear as 5 additional TopicItems beyond the 10-12 base.
+  - is_custom_question=true items do NOT count toward "EXACTLY 2 role topics" below —
+    that rule is only about the 2 topics YOU generate from expert knowledge.
+  - Do not shrink or drop resume/JD/role topics to "make room" for custom questions —
+    there is no shared budget between them.
+
+Before returning JSON, COUNT topic_pool excluding is_custom_question=true items. That
+count must be 10-12. Then verify every custom question is present as its own item on
+top of that count.
+ROLE_TOPIC (expert-knowledge, non-custom) count: exactly 2, included in the 10-12 base.
 
 ━━━ BAND CALIBRATION ━━━
 Each band changes: probing depth, question difficulty, what counts as a "good" answer,
@@ -196,7 +234,7 @@ Rules:
   - Each role_topic must be specific enough that Ishita can ask one concrete, grounded question about it.
   - Role topics must change based on band: same concept, different depth.
 
-Examples by role (pick the 2 strongest for the actual role):
+Examples for common roles (pick the 2 strongest for the actual role):
   DevOps/SRE:       Observability strategy, Incident management runbooks, Reliability engineering (SLO/SLI/error budgets),
                     Cost optimization approach, Deployment pipeline design, On-call culture, Chaos engineering
   Backend Engineer: Database indexing tradeoffs (B-tree vs hash, N+1), API design principles, Caching strategy and invalidation,
@@ -209,6 +247,14 @@ Examples by role (pick the 2 strongest for the actual role):
                     Campaign performance metrics (open rate vs reply rate vs conversion), Data enrichment approaches
   Product Manager:  Discovery process and user research, Prioritization frameworks (RICE, MoSCoW), Stakeholder alignment,
                     Metrics and success definitions, Trade-off decisions under constraints
+
+If the role does NOT match one of the families above (e.g. Sales, Legal, Design, Finance,
+Support, Marketing, Ops, HR, Recruiting, Hardware, or anything else), do not force-fit it into
+the nearest listed family. Instead derive the 2 role topics the same way: ask yourself "what
+are the 2 concepts that separate a genuinely competent person in THIS role from someone who
+just has the job title?" — the kind of judgment/tradeoff/mechanism question a strong practitioner
+in that exact field would be expected to answer well. Ground each in the role brief and JD, not
+in a generic checklist for the job title.
 
 ━━━ PROBE_FOCUS GENERATION (critical — this is what MOVE_ON questions are built from) ━━━
 probe_focus is not a summary of the topic — it is the set of concrete angles an interviewer
@@ -260,13 +306,15 @@ not item count, is what matters.
   - Correctly tag every topic: RESUME_TOPIC (from resume), JD_TOPIC (from JD,
     no resume match), ROLE_TOPIC (from your expert knowledge only — never
     resume/JD content mislabeled as ROLE_TOPIC).
-  - EXACTLY 2 ROLE_TOPICs from expert knowledge, included within the 10-12 cap.
-  - Custom questions (if provided) are ALWAYS included, counted within the cap,
-    tagged ROLE_TOPIC, topic_type="role_topic" — take priority over lower-band-
-    priority resume/skill items if the cap is tight.
+  - EXACTLY 2 ROLE_TOPICs from expert knowledge (is_custom_question=false), included
+    within the 10-12 base cap.
+  - Custom questions (if provided) are ALWAYS included in full, added on top of the
+    10-12 base — see TOPIC COUNT section above. Never dropped, never counted against
+    the base cap, never displace resume/JD/role topics.
   - anchor_topic must also be the FIRST item in topic_pool.
-  - topic_pool size: 10-12 TopicItems total, BOTH bounds mandatory. Count before
-    output; if under 10, add more items; if over 12, cut the weakest.
+  - topic_pool base size (excluding custom questions): 10-12 TopicItems, BOTH bounds
+    mandatory. Count before output; if under 10, add more items; if over 12, cut the
+    weakest — then append all custom questions on top.
   - Return ONLY valid JSON. No markdown. No explanation.
 
 Schema:
@@ -291,6 +339,7 @@ TopicItem schema:
   "tech_stack": [str],
   "impact": str,
   "is_jd_must_have": bool,
+  "is_custom_question": bool,
   "why_relevant": str,
   "probe_focus": [str],
   "probe_avoid": [str]
@@ -310,6 +359,67 @@ OUTPUT SIZE RULES:
 
 
 # ---------------------------------------------------------------------------
+# Role understanding -- small LLM call, JD only, BEFORE resume is filtered
+# ---------------------------------------------------------------------------
+
+_ROLE_UNDERSTANDING_SYSTEM = """\
+You are an expert hiring manager. You are given a job title and a job description —
+no resume yet. Your only job: explain what this specific role actually needs to
+succeed, so a later step can judge a candidate's resume against a real bar instead
+of just listing everything they've done.
+
+Write 4-6 sentences covering:
+  - What this role actually does day to day (not the generic job-title stereotype —
+    read the JD's actual responsibilities).
+  - The 3-5 skills/competencies that matter MOST for this specific JD (not a generic
+    list for the job title — pull from what this JD emphasizes).
+  - What "irrelevant" looks like for this role — the kind of resume content a
+    candidate might have that this role does NOT care about, so it can be excluded
+    later (e.g. a data-analysis project for a role that's purely about outbound
+    campaign automation, or a leadership skill for an IC-only role).
+
+Be concrete and specific to THIS JD. Do not write generic role descriptions that
+could apply to any job with this title. Return plain text, no markdown, no JSON.
+"""
+
+
+async def _understand_role(
+    *,
+    job_title: str,
+    jd_data: dict,
+    openai_client: AsyncOpenAI,
+    llm_model: str,
+    usage_sink: Any = None,
+) -> str:
+    """Reads JD + title only (no resume) and states what the role actually needs.
+    Runs before resume filtering so topic selection has a real bar to judge against,
+    instead of the single generation call inferring relevance ad hoc."""
+    jd_text = json.dumps(jd_data, indent=None)
+    if len(jd_text) > 4000:
+        jd_text = jd_text[:4000] + " …(truncated)"
+    user_prompt = f"JOB TITLE: {job_title}\n\nJOB DESCRIPTION DATA:\n{jd_text}"
+
+    response = await openai_client.chat.completions.create(
+        model=llm_model,
+        temperature=0,
+        max_tokens=400,
+        messages=[
+            {"role": "system", "content": _ROLE_UNDERSTANDING_SYSTEM},
+            {"role": "user", "content": user_prompt},
+        ],
+        timeout=15,
+    )
+
+    if usage_sink is not None and response.usage is not None:
+        from billing.billing import extract_usage  # noqa: PLC0415
+        usage_sink(extract_usage(response.usage, llm_model))
+
+    understanding = (response.choices[0].message.content or "").strip()
+    logger.info("[BRIEF] role understanding: %s", understanding[:200])
+    return understanding
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
@@ -325,18 +435,30 @@ async def generate_interview_brief(
     llm_model: str,
     usage_sink: Any = None,
 ) -> InterviewBrief:
-    # Step 1: deterministic extraction via LangGraph (zero LLM)
-    llm_input_block = await run_extraction(
-        resume_json=resume_json,
-        jd_data=jd_data,
-        candidate_name=candidate_name,
-        job_title=job_title,
-        band=candidate_band,
-        custom_questions=custom_questions or [],
+    # Step 1: deterministic extraction (zero LLM) + role understanding (small LLM
+    # call, JD only) run concurrently -- neither depends on the other's output.
+    llm_input_block, role_understanding = await asyncio.gather(
+        run_extraction(
+            resume_json=resume_json,
+            jd_data=jd_data,
+            candidate_name=candidate_name,
+            job_title=job_title,
+            band=candidate_band,
+            custom_questions=custom_questions or [],
+        ),
+        _understand_role(
+            job_title=job_title,
+            jd_data=jd_data,
+            openai_client=openai_client,
+            llm_model=llm_model,
+            usage_sink=usage_sink,
+        ),
     )
 
-    # Step 2: single LLM call on clean compact block
+    # Step 2: main LLM call, grounded in the role understanding from step 1
     user_prompt = (
+        f"WHAT THIS ROLE ACTUALLY NEEDS (read this first — it is the relevance bar "
+        f"for every topic you select below):\n{role_understanding}\n\n"
         f"{llm_input_block}\n"
         f"BAND: {candidate_band.upper()}\n"
         f"Generate the InterviewBrief JSON now. Keep all text fields SHORT (see SPEED RULES)."
@@ -388,9 +510,54 @@ async def generate_interview_brief(
         raise ValueError(f"[BRIEF] LLM response still truncated after retry: {raw[-200:]!r}")
 
     brief = InterviewBrief.model_validate(parsed)
+    brief.topic_pool = _dedup_jd_vs_resume(brief.topic_pool)
 
     logger.info(
         "[BRIEF] LLM brief generated: %d topics | anchor=%r | band=%s",
         len(brief.topic_pool), brief.anchor_topic.title, brief.candidate_band,
     )
     return brief
+
+
+# ---------------------------------------------------------------------------
+# Deterministic dedup safety net -- the LLM is told to merge a JD_TOPIC into
+# a matching RESUME_TOPIC (never keep both for the same skill) but doesn't
+# always follow it under real data. Catch what it misses in code instead of
+# relying only on prose.
+# ---------------------------------------------------------------------------
+
+def _tech_tokens(t: TopicItem) -> set[str]:
+    """Normalized tokens from tech_stack only -- the structured signal, not
+    title prose (title overlap is too noisy: generic phrasing like 'Automation
+    Tools like X and Y' dilutes the one real shared skill below any sane
+    threshold)."""
+    return {tok.strip().lower() for tok in t.tech_stack if tok.strip()}
+
+
+def _dedup_jd_vs_resume(topics: list[TopicItem]) -> list[TopicItem]:
+    """Drop a JD_TOPIC whose tech_stack shares any entry with a RESUME_TOPIC's
+    tech_stack -- the resume topic already demonstrates that JD requirement,
+    so a separate JD_TOPIC just re-asks the same underlying skill."""
+    resume_topics = [t for t in topics if t.tag == "RESUME_TOPIC"]
+    kept: list[TopicItem] = []
+    for t in topics:
+        if t.tag != "JD_TOPIC":
+            kept.append(t)
+            continue
+        jd_tech = _tech_tokens(t)
+        if not jd_tech:
+            kept.append(t)
+            continue
+        match = next(
+            (rt for rt in resume_topics if jd_tech & _tech_tokens(rt)),
+            None,
+        )
+        if match is not None:
+            logger.info(
+                "[DEDUP] dropping JD_TOPIC %r -- already covered by RESUME_TOPIC %r (shared tech: %s)",
+                t.title, match.title, jd_tech & _tech_tokens(match),
+            )
+            match.is_jd_must_have = match.is_jd_must_have or t.is_jd_must_have
+            continue
+        kept.append(t)
+    return kept
