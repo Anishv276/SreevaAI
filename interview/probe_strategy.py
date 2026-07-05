@@ -3,12 +3,18 @@ probe_strategy.py
 One probe per signal. Tells the interview LLM what fired, what it means,
 and how to frame the follow-up — without scripting the exact question.
 
+Research-backed rewrite (see Docs/new.md): sufficiency checks before probing,
+fact-level dedup (DECLINED_FACTS) so a declined number/name isn't re-asked in
+different words, and generative (non-menu) angle/scenario construction with a
+global RECENT_QUESTION_PATTERNS collision check baked into the system prompt.
+
 Signal names match two types:
   RESPONSE signals (fired by G0 gates): pure_denial, denial_with_continuation, clarification_request, rephrase_request, off_topic
   CONTENT signals (fired by G1-G7 gates): example_evaded, depth_ceiling_hit, ownership_ambiguous, explanation_shallow,
                                             tool_named_not_used, tech_choice_unjustified, scenario_untested
 """
 from __future__ import annotations
+import re
 
 
 # ---------------------------------------------------------------------------
@@ -29,216 +35,333 @@ from __future__ import annotations
 
 SIGNAL_PROBES: dict[str, dict] = {
 
-    # ---- RESPONSE-LEVEL SIGNALS (G0) ----
-    # pure_denial fires: automatic MOVE_ON, no probe needed
-    # clarification_request and rephrase_request: LLM needs to know what to ask
+    # Each entry's "directive" is the verbatim "Improved Prompt" text from
+    # Docs/new.md for that signal -- production text, not a paraphrase of it.
+    # question_type/voice_note are kept only for the reaction-hint plumbing
+    # in get_reaction_hint()/get_probe_context() below.
 
     "clarification_request": {
-        "what":          "Candidate asked you to clarify or rephrase the question.",
-        "goal":          "Ask the same question again, but in simpler, clearer language.",
         "question_type": "CLARIFICATION REPHRASE",
-        "principles": [
-            "Use simpler vocabulary — avoid jargon you used before.",
-            "Break the question into smaller parts if it was complex.",
-            "Give a concrete example or context to anchor it.",
-            "Make it obvious what you're asking for — be direct.",
-        ],
-        "voice_note":    "Helpful and patient. A real interviewer might say: 'Sure, let me rephrase that. What I meant was...'",
-        "skip":          "Never ask the exact same question again. Never sound frustrated or annoyed. "
-                         "Never explain why they didn't understand the first time.",
+        "voice_note":    "Helpful and patient, not apologetic.",
+        "directive": """\
+The candidate asked you to clarify: "{original_question}" → their clarification request was
+"{clarification_request_text}".
+
+If their clarification request already isolates a specific fork (an either/or, a "do you mean
+X or Y"), answer that fork directly — don't re-explain the whole question from scratch, that
+discards the precision they just gave you.
+
+Otherwise, diagnose the likely cause before rephrasing:
+- A jargon term with no shared meaning → replace it with plain language; don't just swap in a
+  synonym of the same abstract word, re-derive what you're asking in concrete terms.
+- An ambiguous reference ("that approach," "it") → name the specific thing explicitly.
+- A compound question → drop to the single most important half; ask the other half later if
+  needed.
+- Genuine abstraction → add one concrete anchor tied to something they already said.
+
+Never repeat the original question verbatim, even reworded with the same structure. One short
+"sure" or "good question" is enough acknowledgment — don't over-apologize. Never narrate why
+the first phrasing failed ("that was probably too jargon-y of me").""",
     },
 
     "rephrase_request": {
-        "what":          "Candidate asked to restart or correct their own answer.",
-        "goal":          "Listen to their new answer instead of the first one. Treat this as their real answer.",
         "question_type": "REDO / CORRECTION",
-        "principles": [
-            "Accept the redo gracefully — don't compare it to the first answer.",
-            "Score this new answer fresh, not against what they said before.",
-            "If the new answer is better, use it. If it's the same, that's fine too.",
-            "Don't ask them to clarify the first answer — move forward with the second one.",
-        ],
-        "voice_note":    "Encouraging and open. A real interviewer might say: 'Of course, go ahead. Take your time.'",
-        "skip":          "Never say 'you said X before, but now you're saying Y'. "
-                         "Never judge them for changing their answer. "
-                         "This is about them getting it right, not catching inconsistencies.",
+        "voice_note":    "Encouraging and open.",
+        "directive": """\
+The candidate asked to redo their previous answer. Check first: did they only ask to restart,
+or did the corrected answer already arrive in the same breath?
+
+If they only asked (no new content yet): grant the floor in one short, warm beat, no
+conditions — "Of course, take your time" or "Yeah, go for it." Do not add a question this
+turn; this turn is permission, not content.
+
+If the correction already arrived: treat it as their real answer to your last question.
+React to it exactly as you would any other answer — as if the correction never happened. This
+is the one rule that matters most here: a redo, once given, is just an answer. If it still
+leaves a real gap, probe the content using ordinary signal logic, not a "redo" framing.
+
+Never reference the discarded first answer in any way, not even neutrally. Never say "no
+problem, these things happen" — implies there was a problem. If the candidate has redone the
+same answer twice already, don't grant an open floor a third time — move things forward:
+"Let's go with what you've got — [next natural question]." """,
     },
 
     "off_topic": {
-        "what":          "Candidate answered a different question than what you asked.",
-        "goal":          "Redirect them back to your original question clearly.",
         "question_type": "REDIRECT",
-        "principles": [
-            "Name what they answered instead — 'I heard you say... but I was asking about...'",
-            "Re-ask your original question, word-for-word if needed.",
-            "Make it clear you value what they said, but need to stay on track.",
-            "Don't make them feel bad for the pivot — it happens.",
-        ],
-        "voice_note":    "Warm and direct. A real interviewer might say: 'That's interesting, but let me get back to my original question: [re-ask]'",
-        "skip":          "Never sound annoyed or accusatory. Never dismiss what they said. "
-                         "Never ask 'why did you answer that when I asked something else' — just redirect.",
+        "voice_note":    "Warm and direct.",
+        "directive": """\
+The candidate answered "{off_topic_summary}" when you asked "{original_question}". Diagnose
+first: is this a pivot to an easier, prepared talking point, or a genuine miss because your
+question could reasonably be misread?
+
+Acknowledge with one specific clause naming the actual thing they said — never a generic
+"that's interesting." Then redirect with a version of the question that's sharper than the
+first, not identical: narrow the scope, add "specifically," or anchor to one word from their
+own answer if there's a natural bridge. If you diagnosed ambiguity, tighten the wording so the
+target is unmistakable this time rather than repeating it and hoping.
+
+Never ask why they answered that instead — puts them on the defensive for no diagnostic gain.
+One question, no stacking. If this is the second consecutive off-topic redirect on the same
+question, don't redirect a third time — accept the closest usable answer and move the
+interview forward; a third identical redirect starts to feel like an interrogation and rarely
+produces new information.""",
     },
 
     "denial_with_continuation": {
-        "what":          "Candidate started with denial ('I don't...') but then added substantive content.",
-        "goal":          "Dig deeper into the substantive part they mentioned, ignore the denial frame.",
         "question_type": "PROBE PARTIAL ADMISSION",
-        "principles": [
-            "Name what they DID (the continuation part) — 'You mentioned you built X, tell me about that.'",
-            "Ask specifically about the work they admitted to, not the thing they denied.",
-            "Treat their partial admission as real experience and probe it like any other answer.",
-            "Don't dwell on the denial — move straight to what they actually did.",
-        ],
-        "voice_note":    "Direct and forward-looking. A real interviewer might say: 'You mentioned you deployed things — walk me through one of those deployments.'",
-        "skip":          "Never say 'you said you didn't have experience, but then you said you did' — contradictory framing wastes time. "
-                         "Never make them defend the contradiction. Just ask about what they actually did.",
+        "voice_note":    "Warm, curious tone — often a strong junior candidate under-selling themselves.",
+        "directive": """\
+The candidate just hedged, then in the same breath described something real: "{continuation_excerpt}".
+This is a self-esteem reflex, not a content gap. Skip the denial entirely — don't quote it,
+don't acknowledge it, don't ask them to reconcile it with what they just said.
+
+Check first: does "{continuation_excerpt}" already contain a concrete detail (a number, a
+specific failure, a named decision)? If yes, output NO_FOLLOW_UP_NEEDED and carry that detail
+into scoring — don't manufacture a question just because the signal fired.
+
+If the detail is still thin, react to the continuation as if it were the whole answer, and
+pick the probe that matches what's actually missing:
+- Vague scale word ("basic," "simple," "small") → ask what made it basic, or what a fuller
+  version would have needed that this didn't.
+- Named a thing but gave no mechanism → ask for the one decision, config choice, or failure
+  only someone who built it would know.
+- Sounds like a tutorial exercise → ask what it was for or what happened when it ran; a real
+  build has a natural next fact, a copy-paste doesn't.
+
+Never say any variant of "you said you didn't have experience, but..." — banned outright, not
+just discouraged. One question. Warm, curious tone — this is often a strong junior candidate
+under-selling themselves, and an interrogative tone here suppresses disclosure for the rest of
+the interview.""",
     },
 
     # ---- CONTENT-LEVEL SIGNALS (G1-G7) ----
 
     "example_evaded": {
-        "what":          "They gave a general rule or habit when a real story was asked for.",
-        "goal":          "Get one specific moment that actually happened — a real time, not a type of time.",
         "question_type": "MEMORY RETRIEVAL",
-        "principles": [
-            "FIRST PROBE: Pin it to a specific moment — 'one time', 'a specific project', 'that one instance'.",
-            "Name something they said and ask when that actually happened.",
-            "Invite imperfection — real memories have friction. Ask what went wrong or surprised them.",
-            "Make it impossible to answer with 'usually' again — force a time and place.",
-            "ESCALATION (if fired 2+ times): Pivot from 'one specific time' to different angles:",
-            "  - Ask about a DECISION they made (not a story)",
-            "  - Ask about a TOOL or TECHNOLOGY they used",
-            "  - Ask about a CONSTRAINT they hit (budget, time, resources)",
-            "  - Ask 'what would you do DIFFERENTLY if you rebuilt it?' (reflection, not memory)",
-        ],
-        "voice_note":    "Sound curious, not accusatory. You want the story, not to catch them out. "
-                         "A real interviewer might say: 'Give me one specific time that happened — not generally, one real instance.' "
-                         "OR if they keep evading: 'Forget the story. What was ONE DECISION you personally made on that? "
-                         "Or what broke? Or what tool did you have to use?'",
-        "skip":          "Never ask 'can you give me an example' — too easy to dodge again with another pattern. "
-                         "Never repeat the same angle 3+ times — pivot to decision/tool/constraint/reflection angles instead.",
+        "voice_note":    "Curious, not accusatory — you want the story, not to catch them out.",
+        "directive": """\
+The candidate answered with a general habit ("usually / normally / I always...") instead of a
+real instance. Do not repeat the "give me one specific time" request in any form — that
+sentence shape already failed once.
+
+Instead, give them a retrieval cue: anchor to a concrete, adjacent thing they already implied
+exists — a project name, a recent timeframe, a system, a team — and ask what happened INSIDE
+that anchor. If nothing concrete was mentioned yet, manufacture the smallest possible anchor
+from the topic itself ("the last model you shipped," "the most recent one before this"), never
+an abstract "a time."
+
+If this is the first probe on this topic: anchor to time or place ("think about the last
+[thing] you actually [did] — what's the first [specific detail] you remember?").
+
+If this signal has already fired once or more on this topic, switch retrieval channel entirely
+rather than repeating a time/place anchor — Fisher & Geiselman's finding is that varying the
+retrieval route recovers memory a single repeated cue can't:
+- Ask about one DECISION they made, not a story.
+- Ask about a specific TOOL or TECHNOLOGY and what they did with it.
+- Ask about a CONSTRAINT they hit (budget, time, resource).
+- Ask what they'd do DIFFERENTLY if they rebuilt it now (reflection, not memory retrieval).
+
+This 4-channel ladder is a per-topic escalation, separate from and in addition to the global
+`RECENT_QUESTION_PATTERNS` check — even the first time this signal fires on a fresh topic, the
+chosen anchor's phrasing must not collide with a scaffold used earlier in the interview for a
+*different* signal. A time/place anchor phrased as "think about the last X you shipped" cannot
+repeat if that exact construction already appeared two topics ago under a different signal.
+
+CRITICAL — check DECLINED_FACTS before choosing an angle, not just RECENT_QUESTION_PATTERNS:
+if the candidate has already explicitly been unable to produce a specific number, name, or
+value related to this topic (logged in DECLINED_FACTS), do not construct ANY question — in ANY
+of the four channels above — that targets that same fact again. This applies even if a
+different, successful angle was used in between. Retirement of a declined fact is permanent for
+the rest of the interview, not a one-turn cooldown. Concretely: if "the exact weight increment"
+is in DECLINED_FACTS, a DECISION-channel question ("what made you decide to increase it") is
+fine, but a question that still resolves to "...and how much was that increase" is not — check
+what the question is actually trying to extract, not just which of the four channels it's
+filed under. A decision-shaped question that smuggles the declined number back in as its real
+target is the same violation as asking for the number directly.
+
+One question. Curious tone, not accusatory — you want the story, not to catch them out. Never
+say "can you give me an example," it invites the same generic pattern again.""",
     },
 
     "depth_ceiling_hit": {
-        "what":          "They tried to answer but hit the edge of their knowledge and ran out.",
-        "goal":          "Find the floor — the smallest, most concrete thing they DO know on this topic.",
         "question_type": "FLOOR FINDER",
-        "principles": [
-            "Don't push on the exact thing they ran out on — there's nothing there.",
-            "Narrow down to the smallest adjacent thing they might have touched.",
-            "Give them an easy entry: 'even the smallest step you ran yourself is fine'.",
-            "Accept the limit gracefully — don't make them feel punished for not knowing.",
-        ],
-        "voice_note":    "Warm and low-pressure. A real interviewer might say: 'No worries — what part of this did you actually get your hands on, even briefly?'",
-        "skip":          "Never re-ask the same question at a different angle — they have nothing more there. "
-                         "Never make it feel like a test they are failing.",
+        "voice_note":    "Warm, low-pressure tone throughout — a knowledge gap here is normal.",
+        "directive": """\
+The candidate attempted an answer and ran out — this is depth_ceiling_hit, not a denial.
+Never re-open the domain they ran out on ("how it works," "indexing," "the architecture") even
+with softer wording — there's nothing more there and re-asking risks confabulation, not truth.
+
+Instead, name ONE concrete sub-action inside that domain — not the domain itself — and ask a
+near-yes/no question about it, so they have something small to confirm or deny rather than
+having to generate content from an empty domain again. Collapse a mechanism question ("how
+does indexing work") down to an action question ("did you write the query code, or was that
+someone else's"). The smaller the unit, the more likely there's a real memory attached.
+
+If even the small action question comes up empty, accept the limit cleanly and move on — do
+not narrow a second time on the same topic; a real floor has been found. Warm, low-pressure
+tone throughout — a knowledge gap here is normal and should never feel like a test they're
+failing.""",
     },
 
     "ownership_ambiguous": {
-        "what":          "'We/team/they' throughout — their personal contribution is invisible.",
-        "goal":          "Isolate the ONE thing that was specifically theirs — their action, decision, or output.",
         "question_type": "PERSONAL ISOLATION",
-        "principles": [
-            "Pick one specific thing they mentioned and ask what THEIR part in that was.",
-            "Frame it so 'we' is not a valid answer — ask for their specific action or output.",
-            "Tie the question to the topic and context, not a generic 'what did you do'.",
-            "If they mentioned a deliverable, ask what they personally contributed to it.",
-            "VARY the angle each time this fires — never fall back to the same canned "
-            "'what was specifically yours?' line. Rotate between: naming a piece they mentioned and "
-            "asking what they did on it; asking which decision in the process was theirs to make; "
-            "asking what they'd have done differently if they'd been alone on it; asking what part "
-            "they'd be able to rebuild from scratch without the team.",
-        ],
-        "voice_note":    "Direct but not aggressive. Examples of DIFFERENT angles a real interviewer might use "
-                         "(pick whichever fits their actual answer, don't default to the first one every time): "
-                         "'Out of everything you described, which piece did you personally drive end to end?' / "
-                         "'If the team wasn't there, what part could you have built alone?' / "
-                         "'Which of those decisions was actually yours to make?'",
-        "skip":          "Never ask 'what was your role' — that is what got you here. "
-                         "Never ask about the team again. Never use a generic anchor like 'what did you build', "
-                         "and never repeat the exact same probe wording twice in one interview — "
-                         "ground it in something specific from their actual answer.",
+        "voice_note":    "Direct tone, not aggressive; this is a common pattern, not an accusation.",
+        "directive": """\
+The candidate described real work almost entirely in "we/team/they" — no personal action verb
+anywhere. Pick one specific thing they mentioned (a deliverable, a decision, a system) and
+isolate their part in it.
+
+The fixed constraint (the research-backed part): the question must make "we" structurally
+unusable as an answer — it has to force a singular, specific, personal reference. How you
+achieve that is not fixed. A few proven angles, to draw from rather than cycle through as a
+numbered list:
+- naming a specific piece they described and asking what they personally did on it
+- asking which decision in the process was theirs alone to make
+- asking what they'd have done differently if they'd been completely alone on it
+- asking what part they could rebuild from scratch without the team
+- coworker triangulation: asking what a teammate from that project would say was specifically
+  theirs, if asked to point at their contribution — this works because it asks the candidate to
+  imagine an external, specific witness rather than self-report again, which tends to loosen
+  self-effacing "we" framing more than a direct re-ask does
+
+Construct the actual question fresh, grounded in the specific thing they described, rather than
+picking a pre-written sentence from this list. If none of the listed angles fit what they
+actually said, invent a different one that still forces a singular personal reference — the
+list exists to seed the mechanism, not to cap it.
+
+Never ask "what was your role" verbatim — that produced this signal in the first place. Never
+ask about the team again. Before finalizing, confirm the construction doesn't match a scaffold
+already used earlier in the interview by ANY signal, not just a previous ownership_ambiguous
+fire — a "what did you personally do on X" construction can collide in surface form with a
+"what's the first thing you did with X" construction from tool_named_not_used, and that counts
+as a repeat too. Direct tone, not aggressive; this is a common pattern, not an accusation.""",
     },
 
     "explanation_shallow": {
-        "what":          "They claimed strong personal ownership or ability but the explanation is hollow — describes it like an outsider would.",
-        "goal":          "Get them inside the thing they claimed — one real decision they made, one constraint they hit, one thing that was hard.",
         "question_type": "TEACH-BACK / OPEN THE BOX",
-        "principles": [
-            "Ask them to go inside the thing they claimed — a real builder can describe the internals.",
-            "Ask about something that would only exist if they actually did it: a decision point, a tradeoff, something that didn't work at first.",
-            "A teach-back works well: ask how they'd explain this to someone new — real understanding shows in simplification.",
-            "Tie the question directly to their specific claim — not a generic 'how did it work'.",
-        ],
-        "voice_note":    "Curious and open. A real interviewer might say: 'You said you built the whole thing — what was the trickiest part to get right?' "
-                         "Or: 'If you were walking a new teammate through it, where would you start?'",
-        "skip":          "Never ask 'what did you build' or 'what was your role' — they already claimed everything. "
-                         "The gap is depth of understanding, not ownership. Don't ask them to claim it again — ask them to prove it.",
+        "voice_note":    "Curious and open tone, not skeptical — you're testing depth, not accusing them of lying.",
+        "directive": """\
+The candidate made a strong personal-ownership claim ("I built the whole thing," "I'm really
+strong at X") and then explained it like an outsider would — no internals, no friction, no
+decision points. The gap is depth of understanding, not ownership; don't ask them to claim it
+again, ask them to prove it.
+
+Prefer the no-jargon teach-back over an open "what was the trickiest part" question — "trickiest
+part" invites a rehearsed, still-jargon-laden non-answer, whereas removing jargon structurally
+blocks hiding behind terminology: real understanding survives simplification, memorized labels
+don't. Ask them to explain the specific thing they claimed to someone who's never touched it,
+with no jargon allowed.
+
+If this signal has already fired once on this topic (they've already been asked to explain
+something once), pivot to the failure-case variant instead of a second teach-back: ask when it
+breaks, or what case it gets wrong. A confident claim with no failure case behind it is itself
+diagnostic — a real builder has hit at least one.
+
+Tie the question directly to their specific claim, never a generic "how did it work." One
+question. Curious and open tone, not skeptical — you're testing depth, not accusing them of
+lying.""",
     },
 
     "tool_named_not_used": {
-        "what":          "A specific tool, method, or framework was named — then defined or abandoned. No evidence of using it.",
-        "goal":          "Get ONE concrete memory of operating it — something only someone who actually used it would know.",
         "question_type": "HANDS-ON VERIFICATION",
-        "principles": [
-            "Pick the ONE most central tool they named and go deep on only that one.",
-            "Ask what they did WITH it — a step they ran, something they built, a problem it caused.",
-            "Ask something that requires hands-on knowledge to answer — a real user has at least one specific memory.",
-            "If they named multiple tools, pick the one most relevant to the topic and anchor on that.",
-        ],
-        "voice_note":    "Specific and grounded. A real interviewer might say: 'You mentioned [tool] — what did you actually do with it in the project?' "
-                         "Or: 'Walk me through one thing you built or ran using [tool].'",
-        "skip":          "Never ask what the tool IS — that just invites another definition. "
-                         "Never ask about all named tools at once — one tool, one deep question. "
-                         "Never ask why they chose it — that is a different signal.",
+        "voice_note":    "Specific and grounded.",
+        "directive": """\
+The candidate named a specific tool or method with no evidence of using it — a noun, not a
+verb. Pick the ONE most central tool relevant to the topic; ignore the others even if several
+were named.
+
+Ask for the single smallest verb-bearing action directly: the first command they ran, the
+first line of code they wrote, the specific setting they touched, or the exact error message
+they hit — not "what did you do with it," which is broad enough to answer with a role
+description instead of an action. A real user can name a specific command, API call, config
+value, or error; someone who only saw the name in a document cannot generate one of these on
+demand.
+
+Never ask what the tool is — invites another definition. Never ask why they chose it — that's
+tech_choice_unjustified, a different signal, and jumping there skips past confirming they used
+it at all. One question, one tool.""",
     },
 
     "tech_choice_unjustified": {
-        "what":          "They clearly used the tool/method (real usage shown) but never explained WHY that one over alternatives.",
-        "goal":          "Surface the decision behind the choice — was it deliberate, a default, or someone else's call?",
         "question_type": "COMPARATIVE RATIONALE",
-        "principles": [
-            "Name a real alternative to what they used and ask why they chose theirs over that one.",
-            "Push for the deciding factor — what specifically made them pick this over the obvious other option.",
-            "If it might not have been their decision, ask who made the call and what the reason was.",
-            "Make the comparison concrete — 'why X instead of Y' is far sharper than 'why X'.",
-        ],
-        "voice_note":    "Genuinely curious. A real interviewer might say: 'You went with [tool] — why that one over [real alternative]?' "
-                         "Or: 'What made you pick [method] here instead of [other approach]?'",
-        "skip":          "Never ask what the tool does — they already showed they used it. "
-                         "Always name a specific real alternative — an open 'why did you choose it' is too easy to deflect.",
+        "voice_note":    "Genuinely curious tone — you're testing judgment, not catching them in a mistake.",
+        "directive": """\
+The candidate showed real usage of a tool or method but never explained why that one over
+alternatives. Name a concrete alternative that is plausible specifically for their stack and
+context — not a generic industry-standard name. FAISS is a real alternative to ChromaDB for a
+self-hosted Python pipeline; it is not a real alternative if their stack is entirely
+managed-cloud. Get this right or the comparison won't land.
+
+Ask "why this over [alternative]" directly — never an open "why did you choose it," which is
+easy to answer with a rehearsed line instead of the real reasoning.
+
+Bake in the laddering fallback in the same question rather than requiring a second turn: also
+ask whether it was their call or something inherited/defaulted-to. If the choice turns out not
+to have been theirs, that's useful information on its own — you don't need a follow-up turn to
+discover it, the question already asked for it.
+
+One question. Genuinely curious tone — you're testing judgment, not catching them in a
+mistake; "it worked fine" is a completely reasonable starting answer, you're looking for
+whether there's a real deciding factor underneath it.""",
     },
 
     "scenario_untested": {
-        "what":          "Gave a correct textbook description — accurate but frictionless, no lived edge case or failure.",
-        "goal":          "Stress-test whether the knowledge is real by presenting a scenario only a practitioner could handle.",
         "question_type": "SCENARIO STRESS-TEST",
-        "principles": [
-            "Present a realistic failure or edge case grounded in what they described.",
-            "Ask what they'd do or check first — not to explain the concept again, but to solve a real problem.",
-            "Pick something from their answer that could go wrong and ask what happens when it does.",
-            "A good scenario question is one that textbook knowledge alone cannot answer correctly.",
-        ],
-        "voice_note":    "Conversational and real-world. A real interviewer might say: 'Say your similarity search started returning irrelevant results — what would you check first?' "
-                         "Or: 'What happens if a lead goes cold right before close — how do you handle that?'",
-        "skip":          "Never ask them to repeat or expand the flow — they already gave the textbook version. "
-                         "The scenario must connect to what they specifically described, not a generic hypothetical.",
+        "voice_note":    "Conversational and real-world tone.",
+        "directive": """\
+The candidate gave a correct but frictionless textbook description with no lived edge case.
+Build a failure scenario out of a specific noun they themselves used (their "chunks," their
+"similarity search") rather than a generic category failure — the more specific the injected
+failure, the harder it is to answer from memorized best-practice content instead of lived
+debugging experience.
+
+The scenario must be a CONSEQUENCE question (SPIN-style: what happens when it breaks), never a
+MECHANISM question (how does it work) — that is the one fixed constraint, because it's the
+part backed by the research: consequence questions can't be answered from documentation,
+mechanism questions can. Everything else about the scenario's construction is yours to invent
+for each case, not chosen from a fixed set.
+
+To build one, freely combine or draw from dimensions like these — treat them as ingredients,
+not a numbered menu, and feel free to construct a scenario that uses none of them if something
+more specific to the candidate's actual answer occurs to you:
+- what changed over time (it worked before, doesn't now, with or without an obvious cause)
+- what changed in scale or load
+- how the problem is reported (a first-person observation vs. someone else describing a vague
+  symptom secondhand)
+- whether the failure is loud (an error, a crash) or silent (still running, quietly wrong)
+- what happens when the obvious first fix is unavailable
+
+Construct the actual sentence fresh each time, grounded in the candidate's specific noun and
+whatever dimension fits what they described best. Before finalizing, check the scaffold against
+RECENT_QUESTION_PATTERNS — if your instinct produces something close to a scaffold already used
+this interview (by this signal or any other), that is a signal to invent a different
+construction, not to reach for a substitute from a fixed list.
+
+Ask what they'd check or do FIRST, not a general "how would you handle this" — first-check
+ordering reveals real triage instinct, a full checklist doesn't. One question, conversational
+and real-world in tone.""",
     },
 
 }
 
-# Fallback probe when signal is null or unrecognised
+# Fallback probe when signal is null or unrecognised (mostly: eval call timed out,
+# errored, or returned unparseable JSON -- a real G0/G1-G7 classification almost
+# never resolves to null, since the content gates are instructed to always pick one).
 _DEFAULT_PROBE = {
-    "what":          "Candidate answered, but something specific is still missing or unresolved.",
-    "goal":          "Find the most concrete or interesting thread in what they said and pull it.",
     "question_type": "OPEN PULL",
-    "principles": [
-        "Pick the most specific or unexpected thing they mentioned and ask only about that.",
-        "Push for one real detail — a number, a decision, a name, what happened next.",
-        "Don't ask them to elaborate generally — pick one thing and go deep on it.",
-    ],
     "voice_note":    "Curious and specific. Don't ask them to 'tell you more' — find the one thing worth digging into.",
-    "skip":          "Never ask a generic 'tell me more'. Something in their answer is worth pulling — find it and name it.",
+    "directive": """\
+Candidate answered, but signal classification did not run this turn. The topic brief above
+already names a MANDATORY SUB-CONCEPT for this turn — use that as your target instead of
+scanning their answer for something generically interesting.
+
+Ask specifically about the mandatory sub-concept, grounded in whatever they actually said
+that relates to it — push for one real detail: a number, a decision, a name, what happened
+next. If they said nothing related to that sub-concept yet, ask about it directly rather
+than defaulting to whatever they emphasized most.
+
+Don't ask them to elaborate generally — target the named sub-concept and go deep on it.
+Never ask a generic "tell me more".""",
 }
 
 
@@ -332,6 +455,14 @@ _SIGNAL_REACTIONS: dict[str, dict] = {
     },
 }
 
+# Banned hollow-filler openers -- exact ban list plus the pattern class it belongs to.
+# Kept as an explicit list (not just 3 examples) since a narrow ban list is exactly
+# what let "Impressive process!" slip through in testing.
+_BANNED_FILLER_OPENERS = (
+    "great!", "awesome!", "that's interesting!", "impressive!", "impressive ",
+    "solid!", "nice!", "cool!", "wow!", "amazing!",
+)
+
 
 def get_reaction_hint(signal: str | None, prev_answer: str) -> str:
     """
@@ -339,46 +470,124 @@ def get_reaction_hint(signal: str | None, prev_answer: str) -> str:
     (via the fired signal), so the opener varies and fits what they said.
     """
     r = _SIGNAL_REACTIONS.get(signal or "")
+    _banned_note = (
+        "  Do NOT open with hollow praise words: 'Great!', 'Awesome!', 'That's interesting!', "
+        "'Impressive!', 'Solid!', 'Nice!', 'Cool!', 'Wow!', 'Amazing!' — none of these, in any tone."
+    )
     if not r:
-        return ("REACTION: open with a short, specific beat that reacts to a real word they used "
-                "(not a generic 'Mm'). 2-4 words, then your question.")
+        return (
+            "REACTION: open with a short, specific beat that reacts to a real word they used "
+            "(not a generic 'Mm').\n" + _banned_note
+        )
     return (
         f"REACTION TONE: {r['tone']}.\n"
         f"  Example openers (adapt — replace [tool] with the real thing they named, vary the wording): "
         f"{' / '.join(r['openers'])}\n"
-        f"  Make it specific to what they actually said. Do NOT default to a bland 'Mm' or 'Hmm'."
+        f"  Make it specific to what they actually said. Do NOT default to a bland 'Mm' or 'Hmm'.\n"
+        + _banned_note
     )
 
 
 # ---------------------------------------------------------------------------
 # Question-generation system prompt -- injected into the interview LLM.
 # This is what makes Ishita sound like a real human interviewer.
+#
+# Carries: global RECENT_QUESTION_PATTERNS collision check (scaffold, not just
+# opener, must differ across the whole interview) and DECLINED_FACTS (a fact
+# the candidate explicitly couldn't produce is permanently off-limits as a
+# question TARGET, regardless of angle or how much time has passed).
 # ---------------------------------------------------------------------------
 QUESTION_GENERATION_SYSTEM = """\
-You are Ishita, a sharp and warm AI interviewer. You are conducting a real interview — not filling out a form.
+You are Ishita, a sharp and warm AI interviewer. You are conducting a real interview — not
+filling out a form.
 
-Your job this turn: ask ONE follow-up question based on what the candidate just said.
+Before you write anything, read RECENT_QUESTION_PATTERNS below. It lists the opener and
+scaffold (the underlying question shape/template, independent of topic) for your last several
+questions. Your new question's opener AND scaffold must both be different from every entry in
+that list — not just reworded, structurally different. A repeated scaffold is a repeated
+question even if the topic and vocabulary changed.
+
+RECENT_QUESTION_PATTERNS:
+{recent_question_patterns}
+
+DECLINED_FACTS (facts the candidate has explicitly been unable to produce this interview):
+{declined_facts}
+Before writing a question, check whether it targets anything on that list — not by matching
+wording, but by matching the underlying thing being requested. If it's on the list, do not
+construct a question that resolves to asking for it again, regardless of wording or how much
+time has passed.
+
+If the scaffold your current PROBE DIRECTIVE suggests would collide with one already used,
+do not use that scaffold — the directive's example phrasing is illustrative, not a script; pick
+a genuinely different construction that still satisfies the same goal and question type.
+
+YOUR JOB THIS TURN: ask ONE follow-up question based on what the candidate just said.
+
+EVIDENCE-SUFFICIENCY CHECK FIRST: if the candidate's last answer already closed the gap the
+PROBE DIRECTIVE describes (a later clause already supplied the missing detail), output exactly
+NO_FOLLOW_UP_NEEDED and nothing else. Do not force a question just because the signal fired.
 
 OPEN WITH A REACTION THAT FITS WHAT THEY SAID:
-- The PROBE DIRECTIVE includes a REACTION TONE. Open with a 2-4 word beat in that tone.
-- Ground the reaction in a SPECIFIC word they used — a tool they named, a claim they made, the team they credited.
-- NEVER default to a bland 'Mm' or 'Hmm' every time. The opener should be different each turn because
-  it reacts to different content. A bold claim gets a different beat than someone who ran out of answers.
-- Never say 'Great!', 'Awesome!', 'That's interesting!' — hollow filler.
+- The PROBE DIRECTIVE includes a REACTION TONE. Open with a 2-4 word beat in that tone, but
+  the actual words must not match any opener in RECENT_QUESTION_PATTERNS.
+- Ground the reaction in a SPECIFIC word they used — a tool they named, a claim they made, the
+  team they credited.
+- Never default to a bland 'Mm' or 'Hmm', and never reuse an opener template ("Fair enough —",
+  "Okay, [X] —", "Say your—") that already appears in the recent list, even with a different
+  word plugged in — the template itself is the repeated unit, not just the specific word.
+- Never say 'Great!', 'Awesome!', 'That's interesting!', 'Impressive!', 'Solid!' — hollow filler,
+  banned in any tone.
 
-THEN ASK ONE QUESTION:
-- ONE question mark only. Never two questions in one turn.
+THEN ASK ONE QUESTION — HARD LENGTH CAP:
+- Reaction + question together: TWO sentences maximum, no exceptions. If your draft runs longer,
+  cut setup and context first — the candidate already lived what happened, they don't need it
+  re-explained back to them before the question lands.
+- Never restate role context, company context, or "why this matters for the role" before asking
+  — that's a scripted-form habit, not how a real interviewer talks. Assume the candidate already
+  has that context; just ask.
+- EXACTLY ONE question mark in your entire output. If you notice you've written a second '?',
+  delete everything from the first question mark onward and keep only the first, sharpest ask —
+  never stack "have you done X? What tradeoffs did you consider?" into one turn.
 - Reference something specific they actually said — never ask in a vacuum.
-- Short is better. 1-2 sentences. The question should land, not explain itself.
-- This is voice — write like you'd speak it, not like you'd type it.
+- This is voice — write like you'd speak it out loud in under 8 seconds, not like you'd type a
+  paragraph. If you can't say it in one breath, it's too long.
 - Never say 'Can you' or 'Could you' — form-filler phrases.
 
-MATCH THE QUESTION TYPE:
-The PROBE DIRECTIVE tells you the gap detected, the goal, and the QUESTION TYPE
-(memory retrieval / floor finder / personal isolation / teach-back / hands-on verification /
-comparative rationale / scenario stress-test). Your question must match that type —
-but the words are yours, grounded in what they said. Never copy template phrases from the directive.
+MATCH THE QUESTION TYPE, VARY THE CONSTRUCTION:
+The PROBE DIRECTIVE tells you the gap detected, the goal, and the QUESTION TYPE. Your question
+must match that type, but the sentence construction — hypothetical framing, direct ask,
+comparison, imagined-third-party framing, "walk me through," "what's the first..." — must be
+one you have not used in RECENT_QUESTION_PATTERNS. If every construction listed in the
+directive's examples is already used, invent a new one that still fits the question type; the
+question type is the constraint, the wording is never fixed.
+
+OUTPUT FORMAT — READ CAREFULLY:
+Output ONLY the reaction + question (or exactly NO_FOLLOW_UP_NEEDED). Do not show your
+reasoning, do not name the scaffold you picked, do not add any parenthetical note, meta-comment,
+or explanation before or after the question — the candidate hears this verbatim, so anything
+other than the spoken reaction+question breaks the interview. Think before you answer, but the
+final message you produce must contain nothing except what Ishita would actually say out loud.
 """
+
+
+def _strip_leaked_meta(text: str) -> str:
+    """
+    Defense-in-depth against the model leaking internal scaffold/reasoning notes into
+    the candidate-facing question (observed live: gpt-4.1-mini appended a trailing
+    "(Scaffold: ... Confirmed no repetition ...)" note despite being told not to).
+    Strips trailing parenthetical or bracketed meta-commentary blocks and any line
+    that looks like an internal label (starts with "Scaffold:", "Note:", "Reasoning:").
+    """
+    if not text:
+        return text
+    # Drop trailing (...) or [...] blocks that look like meta-commentary, not part of speech.
+    cleaned = re.sub(r"\n*\(\s*(scaffold|note|reasoning|internal)[:\s].*?\)\s*$", "", text, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r"\n*\[\s*(scaffold|note|reasoning|internal)[:\s].*?\]\s*$", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    # Drop any standalone trailing line starting with one of these labels.
+    lines = cleaned.splitlines()
+    while lines and re.match(r"^\s*\(?(scaffold|note|reasoning|internal)\s*[:\-]", lines[-1], flags=re.IGNORECASE):
+        lines.pop()
+    return "\n".join(lines).strip()
 
 
 def get_probe_context(
@@ -391,6 +600,9 @@ def get_probe_context(
     prev_answer: str,
     signals_history: list[str] | None = None,
     active_topic: str = "",
+    prev_question: str = "",
+    recent_question_patterns: str = "(none yet)",
+    declined_facts: str = "(none yet)",
 ) -> str:
     """
     Returns the probe context block injected into the directive.
@@ -401,6 +613,15 @@ def get_probe_context(
       the current one. Used to detect when the same signal has fired 2+ times
       so the probe can pivot to a different section of the topic instead of
       asking another follow-up on the same angle.
+
+    prev_question: the question the candidate just answered/reacted to. Used to
+      fill the {original_question}/{off_topic_summary} placeholders in the
+      clarification_request/off_topic/denial_with_continuation directives.
+
+    recent_question_patterns / declined_facts: optional running state the caller
+      may maintain across turns (opener+scaffold history, facts the candidate has
+      explicitly been unable to produce). Both default to "(none yet)" so existing
+      call sites that don't pass them keep working unchanged.
     """
     lines: list[str] = []
     _signals_history = signals_history or []
@@ -435,17 +656,26 @@ def get_probe_context(
     if probe is None:
         probe = _DEFAULT_PROBE
 
+    # Fill the {original_question}/{off_topic_summary}/{continuation_excerpt}/
+    # {clarification_request_text} placeholders that appear verbatim in some
+    # directives (see clarification_request, off_topic, denial_with_continuation
+    # in SIGNAL_PROBES). prev_answer doubles as clarification_request_text /
+    # continuation_excerpt / off_topic_summary since it IS the text that carries
+    # each of those meanings depending on which signal fired.
+    _directive = probe["directive"].format(
+        original_question=prev_question or "(question text unavailable)",
+        clarification_request_text=prev_answer,
+        continuation_excerpt=prev_answer,
+        off_topic_summary=prev_answer,
+    )
+
     lines.append(f"SIGNAL: {signal or 'none'}")
-    lines.append(f"WHAT: {probe['what']}")
     if signal_reason:
         lines.append(f"TRIGGER (their exact words): \"{signal_reason}\"")
-    lines.append(f"GOAL: {probe['goal']}")
     lines.append(f"QUESTION TYPE: {probe['question_type']}")
-    lines.append("PRINCIPLES (how to frame — not what to say):")
-    for p in probe["principles"]:
-        lines.append(f"  - {p}")
+    lines.append("DIRECTIVE (verbatim framing instructions for this signal):")
+    lines.append(_directive)
     lines.append(f"VOICE: {probe['voice_note']}")
-    lines.append(f"SKIP: {probe['skip']}")
     lines.append(get_reaction_hint(signal, prev_answer))
 
     _band_note = _BAND_OVERLAYS.get(signal or "", {}).get(band)
@@ -480,5 +710,12 @@ def get_probe_context(
             f"      or an edge case they hit",
             f"  This is a fresh general question, not a follow-up.",
         ]
+
+    lines.append("")
+    lines.append("RECENT_QUESTION_PATTERNS:")
+    lines.append(recent_question_patterns)
+    lines.append("")
+    lines.append("DECLINED_FACTS:")
+    lines.append(declined_facts)
 
     return "\n".join(lines)

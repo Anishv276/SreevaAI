@@ -419,6 +419,101 @@ async def _understand_role(
     return understanding
 
 
+_TOPUP_SYSTEM = """\
+You are an expert hiring manager. A topic_pool for this interview lost some items
+to deduplication and now needs topping up to reach the 12-topic target. Generate
+ADDITIONAL role-knowledge TopicItems from your own expert domain knowledge of the
+role — the same kind of item as an ROLE_TOPIC, testing conceptual/practical depth
+that any competent person in this role should have, independent of this specific
+candidate's resume or the JD wording.
+
+Rules:
+  - Do NOT duplicate any concept already covered by an existing topic (titles and
+    descriptions are listed below) — check tech/skill overlap, not just title text.
+  - Each new topic must be answerable with a concrete, grounded question — not
+    generic ("tell me about automation") but specific ("how do you decide chunk
+    size when documents vary in length").
+  - Tag every new topic "ROLE_TOPIC", topic_type "role_topic", is_custom_question=false.
+  - probe_focus: exactly 3 items, 3-5 words each, CONCRETE to this topic's own
+    full_description (never the literal words "mechanism", "tradeoff", "outcome",
+    or "judgment" themselves — those are categories to fill, not values to output):
+      1. A specific mechanism or decision point for this topic.
+      2. A specific failure/tradeoff/constraint angle for this topic.
+      3. A specific outcome/metric or judgment angle for this topic.
+    Example for a topic on caching strategy: ["cache invalidation trigger choice",
+    "stale-read risk under high write volume", "hit-rate improvement measured"].
+  - Return ONLY valid JSON: {"topics": [TopicItem, ...]}. No markdown, no explanation.
+
+TopicItem schema:
+{
+  "id": str, "topic_type": "role_topic", "tag": "ROLE_TOPIC", "title": str,
+  "full_description": str, "tech_stack": [str], "impact": str,
+  "is_jd_must_have": false, "is_custom_question": false, "why_relevant": str,
+  "probe_focus": [str], "probe_avoid": [str]
+}
+"""
+
+
+async def _topup_role_topics(
+    *,
+    job_title: str,
+    candidate_band: str,
+    role_understanding: str,
+    existing_topics: list[TopicItem],
+    needed: int,
+    openai_client: AsyncOpenAI,
+    llm_model: str,
+    usage_sink: Any = None,
+) -> list[TopicItem]:
+    """Generates extra ROLE_TOPIC items when dedup drops the pool below the
+    12-topic target, instead of re-admitting the duplicates dedup just removed."""
+    existing_summary = "\n".join(
+        f"- {t.title}: {t.full_description}" for t in existing_topics
+    )
+    user_prompt = (
+        f"ROLE: {job_title}  |  BAND: {candidate_band.upper()}\n\n"
+        f"WHAT THIS ROLE ACTUALLY NEEDS:\n{role_understanding}\n\n"
+        f"EXISTING TOPICS (do not duplicate any of these):\n{existing_summary}\n\n"
+        f"Generate exactly {needed} additional role-knowledge topic(s) now."
+    )
+
+    # ~300 tokens/topic covers description + probe_focus/avoid comfortably; retry
+    # once at 2x if still truncated, same pattern as the main brief call.
+    base_tokens = max(600, needed * 300)
+    for max_tokens in (base_tokens, base_tokens * 2):
+        try:
+            response = await openai_client.chat.completions.create(
+                model=llm_model,
+                temperature=0,
+                max_tokens=max_tokens,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": _TOPUP_SYSTEM},
+                    {"role": "user", "content": user_prompt},
+                ],
+                timeout=20,
+            )
+        except Exception:
+            logger.warning("[BRIEF] topup call failed, shipping brief with fewer topics", exc_info=True)
+            return []
+
+        if usage_sink is not None and response.usage is not None:
+            from billing.billing import extract_usage  # noqa: PLC0415
+            usage_sink(extract_usage(response.usage, llm_model))
+
+        try:
+            parsed = json.loads(response.choices[0].message.content or "{}")
+            return [TopicItem.model_validate(t) for t in parsed.get("topics", [])][:needed]
+        except Exception:
+            logger.warning(
+                "[BRIEF] topup response truncated/invalid at max_tokens=%d, retrying", max_tokens,
+            )
+            continue
+
+    logger.warning("[BRIEF] topup still failed after retry, shipping brief with fewer topics")
+    return []
+
+
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
@@ -511,6 +606,28 @@ async def generate_interview_brief(
 
     brief = InterviewBrief.model_validate(parsed)
     brief.topic_pool = _dedup_jd_vs_resume(brief.topic_pool)
+
+    # Dedup can pull the pool below the 12-topic target (dropped duplicates
+    # aren't re-admitted). Top back up with fresh, non-duplicate role topics
+    # rather than silently shipping a shorter interview.
+    non_custom_count = sum(1 for t in brief.topic_pool if not t.is_custom_question)
+    if non_custom_count < 12:
+        topup = await _topup_role_topics(
+            job_title=job_title,
+            candidate_band=candidate_band,
+            role_understanding=role_understanding,
+            existing_topics=brief.topic_pool,
+            needed=12 - non_custom_count,
+            openai_client=openai_client,
+            llm_model=llm_model,
+            usage_sink=usage_sink,
+        )
+        if topup:
+            logger.info(
+                "[BRIEF] topped up %d role topic(s) after dedup: %s",
+                len(topup), [t.title for t in topup],
+            )
+            brief.topic_pool.extend(topup)
 
     logger.info(
         "[BRIEF] LLM brief generated: %d topics | anchor=%r | band=%s",

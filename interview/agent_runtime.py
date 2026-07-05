@@ -30,8 +30,6 @@ from interview.agent_providers import (
     build_stt,
 )
 from interview.agent_persistence import (
-    generate_interview_report,
-    generate_interview_summary,
     get_interview_context,
     mark_interview_failed,
     mark_interview_started,
@@ -48,9 +46,6 @@ from interview.slack_error_logger import (
     log_tts_error,
 )
 from billing.billing import (
-    flush_billing as flush_pending_manual_billing,
-    record_manual_usage as persist_org_manual_billing_usage,
-    save_interview_billing as persist_interview_billing_snapshot,
     save_org_usage_metrics as persist_org_usage_metrics,
 )
 from openai import AsyncOpenAI
@@ -95,6 +90,69 @@ async def log_test_event(app_id: str, event_type: str, message: str, data: dict 
             urllib.request.urlopen(req, timeout=1)
     except Exception as e:
         logger.debug("[TEST_EVENT_LOG] Failed to log event: %s", e)
+
+
+def _usage_to_dict(usage: Any) -> Optional[dict]:
+    """Flatten a LiveKit AgentSessionUsage into a JSON-safe dict for the
+    interview-report job payload. report_worker.py rebuilds a getattr-friendly
+    SimpleNamespace from this before handing it to UsageSummarizer.from_session()."""
+    if not usage:
+        return None
+    model_usage = []
+    for item in getattr(usage, "model_usage", []) or []:
+        model_usage.append({
+            "type": getattr(item, "type", ""),
+            "provider": getattr(item, "provider", ""),
+            "model": getattr(item, "model", ""),
+            "inputTokens": getattr(item, "input_tokens", 0),
+            "outputTokens": getattr(item, "output_tokens", 0),
+        })
+    return {
+        "modelUsage": model_usage,
+        "input_tokens": getattr(usage, "input_tokens", 0),
+        "output_tokens": getattr(usage, "output_tokens", 0),
+    }
+
+
+# --- Interview Report Handoff (agent job -> durable Node/BullMQ worker) --------
+_REPORT_ENQUEUE_URL = (
+    os.environ.get("APP_URL", "http://localhost:3000").rstrip("/")
+    + "/api/internal/interview-report"
+)
+_INTERNAL_API_SECRET = os.environ.get("INTERNAL_API_SECRET", "")
+
+async def _enqueue_report_job(app_id: str, payload: dict) -> None:
+    """Hand the report/summary/billing/debug-PDF tail off to the interview-report
+    BullMQ queue via an internal Next.js route, instead of running it inline in
+    this (LiveKit-Cloud-recycled) agent job. Fire-and-forget: never blocks or
+    raises into the caller -- a failed handoff is logged and the session still
+    shuts down; the interview keeps its transcript/status either way."""
+    body = json.dumps(payload, default=str).encode("utf-8")
+    headers = {"Content-Type": "application/json", "x-internal-secret": _INTERNAL_API_SECRET}
+    try:
+        import aiohttp
+        async with aiohttp.ClientSession() as http_session:
+            async with http_session.post(
+                _REPORT_ENQUEUE_URL, data=body, headers=headers,
+                timeout=aiohttp.ClientTimeout(total=5),
+            ) as resp:
+                if resp.status >= 300:
+                    logger.error(
+                        "[REPORT] Enqueue failed for %s: HTTP %s", app_id, resp.status,
+                    )
+                    return
+    except (ImportError, ModuleNotFoundError):
+        try:
+            req = urllib.request.Request(_REPORT_ENQUEUE_URL, data=body, headers=headers, method="POST")
+            urllib.request.urlopen(req, timeout=5)
+        except Exception as e:
+            logger.error("[REPORT] Enqueue failed for %s: %s", app_id, e)
+            return
+    except Exception as e:
+        logger.error("[REPORT] Enqueue failed for %s: %s", app_id, e)
+        return
+    logger.info("[REPORT] Enqueued interview-report job for %s", app_id)
+
 
 class CoverageSource(str, Enum):
     EXPLICIT  = "explicit"    # agent explicitly moved on after probing
@@ -458,6 +516,7 @@ def _build_probe_directive(
         prev_answer=prev_answer,
         signals_history=signals_history or [],
         active_topic=active_topic,
+        prev_question=prev_question,
     )
 
     # Filler guidance -- classify prev answer intent so Ishita's reaction is connected
@@ -2053,6 +2112,31 @@ async def entrypoint(ctx: JobContext):
         logger.info("[META_TOOL] candidate_asking_about_process fired")
         return "Answer their process question in one sentence, then continue."
 
+    async def _on_natural_end_call(_ev) -> None:
+        # The LLM decided the interview is naturally over and said its goodbye.
+        # Route this through the EXACT same signal/flag sequence as the other
+        # three exit paths (time_expired, inactivity_timeout, finish-button) --
+        # set interview_finished_event and ask the FRONTEND to leave the room,
+        # rather than letting EndCallTool's own delete_room path force-close the
+        # LiveKit room itself. Deleting the room fires ctx.room's "disconnected"
+        # handler immediately, which starts the SDK's hardcoded 15s force-cancel
+        # countdown on the entrypoint -- nowhere near enough time for
+        # persist_transcript/generate_interview_report/billing to finish, so a
+        # candidate who closes the tab right after the goodbye was killing the
+        # report+billing pipeline mid-flight. Signaling the frontend instead
+        # keeps this backend's own room connection alive for as long as the
+        # frontend takes to react, giving the persist->report->billing sequence
+        # its normal, uninterrupted runway -- identical to how time_expired and
+        # the finish-interview button already work.
+        nonlocal interview_marked_finished
+        try:
+            await _send_termination_signal("natural_conclusion")
+        except Exception as e:
+            logger.warning(f"[END_CALL] Failed to send termination signal: {e}")
+        interview_marked_finished = True
+        interview_finished_event.set()
+        disconnect_event.set()
+
     _end_call_tool = EndCallTool(
         extra_description=(
             "End the interview when you have naturally concluded — after saying goodbye, "
@@ -2060,7 +2144,8 @@ async def entrypoint(ctx: JobContext):
             "Do NOT end mid-interview while topics are still being discussed. "
             "Only end when you have explicitly wrapped up and the conversation is complete."
         ),
-        delete_room=True,
+        delete_room=False,
+        on_tool_called=_on_natural_end_call,
         end_instructions=(
             "The interview is now complete. Say a warm, natural goodbye to the candidate — "
             "something like 'It was great speaking with you, we'll be in touch soon!' "
@@ -4294,149 +4379,53 @@ async def entrypoint(ctx: JobContext):
         plugin_tts_audio_seconds=plugin_tts_audio_seconds,
         plugin_stt_audio_seconds=plugin_stt_audio_seconds,
     )
-    # AI Scorecard -- run inline (awaited) so it completes before teardown cancels background tasks
+    # AI Scorecard + billing snapshot + debug PDF -- handed off to the durable
+    # Node/BullMQ worker (interview-report queue -> report_worker.py) instead of
+    # running inline here. LiveKit Cloud recycles this job process shortly after
+    # the room closes, which risked killing the ~300s report pipeline mid-flight;
+    # the Node worker is always-on and can retry/observe failures via BullMQ.
     if session_start_time:
-        _final_scores    = list(answer_scores)
-        _transcript_snap = list(transcript_lines)
-        _proctoring_snap = dict(proctoring_data) if proctoring_data else {}
         if _is_test_session and _skip_report:
             # ponytail: test session with report disabled -- skip all LLM report/summary calls
             logger.info("[REPORT] Skipped (test session with skipReport=True) for %s", app_id)
         else:
-            # REC-04: report and summary are independent -- run in parallel.
-            scores_context = None
-            async def _run_report_then_summary() -> None:
-                nonlocal scores_context
-                try:
-                    logger.info("[REPORT] Generating with answer_scores=%d turns", len(_final_scores))
-                    async with asyncio.timeout(300):
-                        scores_context = await generate_interview_report(
-                            app_id,
-                            _transcript_snap,
-                            _final_scores,
-                            job_title,
-                            llmInterviewReport=str(ctx_data.llmInterviewReport).strip(),
-                            proctoring_data=_proctoring_snap,
-                            org_id=org_id,
-                            jd_json=_coerce_jsonish(extracted_details) if extracted_details else None,
-                            resume_json=structured_resume if isinstance(structured_resume, dict) else None,
-                            topic_records=list(_topic_records),
-                            candidate_name=candidate_name,
-                            answer_integrity_enabled=bool(evaluation_signal_toggles.get("answer_integrity")),
-                            is_test=_is_test_session,
-                        )
-                    logger.info("[REPORT] Completed. scores_context keys=%s",
-                                list(scores_context.keys()) if scores_context else None)
-                except asyncio.TimeoutError:
-                    logger.warning(f"[REPORT] Timed out for {app_id} after 5 min")
-                except Exception as e:
-                    logger.error(f"[REPORT] Failed for {app_id}: {e}")
-                # Summary runs immediately after report regardless of report success/failure
-                try:
-                    async with asyncio.timeout(60):
-                        await generate_interview_summary(
-                            app_id,
-                            _transcript_snap,
-                            job_title,
-                            llmInterviewReport=str(ctx_data.llmInterviewReport).strip(),
-                            org_id=org_id,
-                            scores_context=scores_context,
-                            candidate_name=candidate_name,
-                            is_test=_is_test_session,
-                        )
-                except asyncio.TimeoutError:
-                    logger.warning(f"[SUMMARY] Timed out for {app_id} after 60s")
-                except Exception as e:
-                    logger.error(f"[SUMMARY] Failed for {app_id}: {e}")
-            await _run_report_then_summary()
-    # Queue accumulated eval/brief/llmgen LLM usage before writing the exact
-    # interview snapshot so recent-interview rows match the org-level totals.
-    for _eval_usage in _eval_llm_usages_accumulated:
-        await persist_org_manual_billing_usage(org_id, "interview", _eval_usage)
-    for _brief_usage in _brief_llm_usages:
-        await persist_org_manual_billing_usage(org_id, "interviewBrief", _brief_usage)
-    for _gen_usage in _llmgen_llm_usages:
-        await persist_org_manual_billing_usage(org_id, "interviewLLMGeneration", _gen_usage)
-    try:
-        await persist_interview_billing_snapshot(
-            app_id,
-            latest_session_usage or session.usage,
-            org_id=org_id,
-            candidate_name=candidate_name,
-            job_title=job_title,
-            duration_seconds=(time.time() - session_start_time) if session_start_time else None,
-            tts_provider=org_tts_provider,
-            tts_model=org_tts_model,
-            stt_provider="DEEPGRAM",
-            stt_model=str(ctx_data.sttModel),
-            plugin_tts_characters=billable_tts_characters,
-            plugin_tts_audio_seconds=plugin_tts_audio_seconds,
-            plugin_stt_audio_seconds=plugin_stt_audio_seconds,
-        )
-    except Exception as e:
-        logger.error(f"[USAGE] Failed to persist interview billing snapshot for {app_id}: {e}")
-    try:
-        await flush_pending_manual_billing(org_id)
-    except Exception as e:
-        logger.error(f"[USAGE] flush_pending_manual_billing failed for {app_id}: {e}")
-    # For test sessions: write cost metrics to testBillingMetrics column
-    if _is_test_session:
-        try:
-            pool = await __import__("interview.agent_persistence", fromlist=["DatabasePool"]).DatabasePool.get()
             _usage_snap = latest_session_usage or session.usage
-            _llm_in  = getattr(_usage_snap, "input_tokens",  0) or 0
-            _llm_out = getattr(_usage_snap, "output_tokens", 0) or 0
-            # rough cost estimate (GPT-4o pricing, update if model changes)
-            _llm_cost = round((_llm_in * 2.5 + _llm_out * 10) / 1_000_000, 6)
-            _tts_cost = round((billable_tts_characters or 0) * 0.000015, 6)
-            _stt_cost = round((plugin_stt_audio_seconds or 0) * 0.0043 / 60, 6)
-            async with pool.acquire() as _conn:
-                await _conn.execute(
-                    """UPDATE "Interview" SET "testBillingMetrics" = $1::jsonb, "updatedAt" = NOW()
-                       WHERE "applicationId" = $2""",
-                    json.dumps({
-                        "skipReport": _skip_report,
-                        "llmCost": _llm_cost,
-                        "ttsCost": _tts_cost,
-                        "sttCost": _stt_cost,
-                        "llmInputTokens": int(_llm_in),
-                        "llmOutputTokens": int(_llm_out),
-                        "ttsChars": int(billable_tts_characters or 0),
-                        "sttSeconds": round(float(plugin_stt_audio_seconds or 0), 1),
-                        "ttsProvider": org_tts_provider,
-                        "sttProvider": "deepgram",
-                        "llmProvider": "openai",
-                        "evaluationRuns": len(_eval_llm_usages_accumulated),
-                        "briefGenerations": len(_brief_llm_usages),
-                        "llmGenerations": len(_llmgen_llm_usages),
-                        "evalInputTokens": sum(u.get("inputTokens", 0) for u in _eval_llm_usages_accumulated),
-                        "evalOutputTokens": sum(u.get("outputTokens", 0) for u in _eval_llm_usages_accumulated),
-                        "briefInputTokens": sum(u.get("inputTokens", 0) for u in _brief_llm_usages),
-                        "briefOutputTokens": sum(u.get("outputTokens", 0) for u in _brief_llm_usages),
-                        "llmgenInputTokens": sum(u.get("inputTokens", 0) for u in _llmgen_llm_usages),
-                        "llmgenOutputTokens": sum(u.get("outputTokens", 0) for u in _llmgen_llm_usages),
-                    }),
-                    app_id,
-                )
-            logger.info("[TEST_BILLING] Saved metrics for %s | llm=$%.4f tts=$%.4f stt=$%.4f",
-                        app_id, _llm_cost, _tts_cost, _stt_cost)
-        except Exception as _tb_err:
-            logger.warning("[TEST_BILLING] Failed to save metrics: %s", _tb_err)
-        # Local test session -- push a full per-turn debug PDF to Slack for bug triage.
-        logger.info("[DEBUG_REPORT] Test session complete — generating and sending debug PDF to Slack...")
-        try:
-            from interview.debug_report import generate_and_send_debug_report
-            await generate_and_send_debug_report(
-                app_id=app_id,
-                candidate_name=candidate_name,
-                job_title=job_title,
-                answer_scores=list(answer_scores),
-                topic_pool=list(_interview_brief.topic_pool),
-                covered_topics=_covered_topic_keys.coverage_rows(),
-                topic_records=list(_topic_records),
-            )
-        except Exception as _pdf_err:
-            logger.error("[DEBUG_REPORT] Outer exception sending debug PDF: %s", _pdf_err, exc_info=True)
+            _report_payload = {
+                "appId": app_id,
+                "orgId": org_id,
+                "jobTitle": job_title,
+                "candidateName": candidate_name,
+                "llmInterviewReport": str(ctx_data.llmInterviewReport).strip(),
+                "isTest": _is_test_session,
+                "answerIntegrityEnabled": bool(evaluation_signal_toggles.get("answer_integrity")),
+                "transcriptLines": list(transcript_lines),
+                "answerScores": list(answer_scores),
+                "proctoringData": dict(proctoring_data) if proctoring_data else {},
+                "jdJson": _coerce_jsonish(extracted_details) if extracted_details else None,
+                "resumeJson": structured_resume if isinstance(structured_resume, dict) else None,
+                "topicRecords": list(_topic_records),
+                "usage": {
+                    "evalUsages": list(_eval_llm_usages_accumulated),
+                    "briefUsages": list(_brief_llm_usages),
+                    "llmgenUsages": list(_llmgen_llm_usages),
+                },
+                "billing": {
+                    "sessionUsage": _usage_to_dict(_usage_snap),
+                    "durationSeconds": (time.time() - session_start_time) if session_start_time else None,
+                    "ttsProvider": org_tts_provider,
+                    "ttsModel": org_tts_model,
+                    "sttProvider": "DEEPGRAM",
+                    "sttModel": str(ctx_data.sttModel),
+                    "ttsCharacters": billable_tts_characters,
+                    "ttsAudioSeconds": plugin_tts_audio_seconds,
+                    "sttAudioSeconds": plugin_stt_audio_seconds,
+                },
+                "debugReport": {
+                    "topicPool": [t.model_dump() for t in _interview_brief.topic_pool],
+                    "coveredTopics": _covered_topic_keys.coverage_rows(),
+                },
+            }
+            await _enqueue_report_job(app_id, _report_payload)
     # Cancel any leftover fire-and-forget work so job teardown is instant.
     if background_tasks:
         logger.debug(f"[SHUTDOWN] Cancelling {len(background_tasks)} background task(s)")
