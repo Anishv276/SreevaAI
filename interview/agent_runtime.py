@@ -1570,8 +1570,8 @@ async def entrypoint(ctx: JobContext):
         logger.info("[BRIEF] red_flags: %s", " | ".join(_interview_brief.red_flags))
     for _i, _t in enumerate(_interview_brief.topic_pool):
         logger.info(
-            "[BRIEF] topic[%d] %-10s score=%.2f  %r  probe=%s",
-            _i, _t.topic_type, _t.relevance_score, _t.title,
+            "[BRIEF] topic[%d] %-10s %r  probe=%s",
+            _i, _t.topic_type, _t.title,
             ",".join(_t.probe_focus[:3]) or "-",
         )
     # Compact text block for eval layer prompt
@@ -3138,12 +3138,11 @@ async def entrypoint(ctx: JobContext):
                         None,
                     )
                     logger.info(
-                        "[MOVE_ON] turn=%d | %r  ->  %r  (type=%s score=%.2f probe=%s)",
+                        "[MOVE_ON] turn=%d | %r  ->  %r  (type=%s probe=%s)",
                         turn_snapshot,
                         _topic_short_key(_old_topic or ""),
                         _topic_short_key(_active_topic or ""),
                         _next_brief_item.topic_type if _next_brief_item else "?",
-                        _next_brief_item.relevance_score if _next_brief_item else 0.0,
                         ",".join((_next_brief_item.probe_focus or [])[:3]) if _next_brief_item else "-",
                     )
                     logger.info(

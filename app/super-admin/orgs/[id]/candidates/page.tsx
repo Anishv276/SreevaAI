@@ -211,7 +211,7 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
             const res = await fetch(`/api/candidates/${candidateId}/send-interview-link`, { method: "POST" });
             const data = await res.json().catch(() => null);
             if (res.ok) {
-                toast.success(data?.message || `Interview link sent to ${displayName}`);
+                toast.success(data?.message || `Schedule link sent to ${displayName}`);
                 setConfirmedId(candidateId);
                 setTimeout(() => setConfirmedId(null), 3000);
             } else {

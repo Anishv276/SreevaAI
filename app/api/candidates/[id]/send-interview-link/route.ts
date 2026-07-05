@@ -77,6 +77,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
                 completedAt: null,
                 expiresAt: driveDeadline,
                 linkStatus: "ACTIVE",
+                isTest: false,          // always clear test flag on real invite
+                interviewBrief: null,   // clear any stale brief from a previous run
             },
             create: {
                 id: generateId("int", application.fullName || applicationId),
@@ -85,6 +87,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
                 status: "PENDING",
                 expiresAt: driveDeadline,
                 linkStatus: "ACTIVE",
+                isTest: false,
             },
         });
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';

@@ -7,7 +7,7 @@ Flow:
   1. brief_extraction.run_extraction() — LangGraph pipeline (pure Python, zero LLM)
        Parallel: extract_resume + extract_jd → merge+dedup → build_llm_input block
   2. _call_llm_for_brief() — single LLM call on the clean ~800-token text block
-       LLM does: relevance scoring, anchor, probe guidance, role topics, strategy
+       LLM does: tagging, anchor selection, probe guidance, role topics, strategy
   3. InterviewBrief.model_validate() — Pydantic validates output before use
 
 No raw JSON is ever sent to the LLM. Latency target: <20s (was 2+ min).
@@ -39,7 +39,6 @@ class TopicItem(BaseModel):
     tech_stack: list[str] = Field(default_factory=list)
     impact: str = ""
     is_jd_must_have: bool = False
-    relevance_score: float = 0.5
     why_relevant: str = ""
     probe_focus: list[str] = Field(default_factory=list)
     probe_avoid: list[str] = Field(default_factory=list)
@@ -58,18 +57,8 @@ class TopicItem(BaseModel):
         s = str(v or "").strip().upper()
         return s if s in allowed else "RESUME_TOPIC"
 
-    @field_validator("relevance_score", mode="before")
-    @classmethod
-    def _clamp(cls, v: Any) -> float:
-        try:
-            return max(0.0, min(1.0, float(v)))
-        except (TypeError, ValueError):
-            return 0.5
-
 
 class RoleContext(BaseModel):
-    role_title: str
-    role_summary: str = ""
     must_have_skills: list[str] = Field(default_factory=list)
 
 
@@ -99,7 +88,7 @@ _BRIEF_SYSTEM = """\
 You are an expert hiring manager and technical interviewer.
 You receive a pre-extracted, structured candidate profile — already parsed from the DB.
 No raw JSON. No parsing needed. Your jobs:
-  1. Turn every extracted item into a TopicItem with the correct tag, relevance score, and probe guidance
+  1. Turn every extracted item into a TopicItem with the correct tag and probe guidance
   2. Select the anchor topic (most strategically valuable for this role + band)
   3. Generate role_topic TopicItems from YOUR expert domain knowledge of the role — not from resume or JD
   4. Merge overlapping resume and JD items into one TopicItem (never duplicate)
@@ -282,7 +271,7 @@ not item count, is what matters.
 
 Schema:
 {
-  "role_context": { "role_title": str, "role_summary": str, "must_have_skills": [str] },
+  "role_context": { "must_have_skills": [str] },
   "candidate_band": "fresher"|"mid"|"experienced"|"senior",
   "candidate_summary": str,
   "anchor_topic": TopicItem,
@@ -302,7 +291,6 @@ TopicItem schema:
   "tech_stack": [str],
   "impact": str,
   "is_jd_must_have": bool,
-  "relevance_score": float,
   "why_relevant": str,
   "probe_focus": [str],
   "probe_avoid": [str]

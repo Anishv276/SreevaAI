@@ -328,7 +328,7 @@ export default function CandidatesPage() {
             setSendingInterviewLinkId(candidate.id);
             const res = await fetch(`/api/candidates/${candidate.id}/send-interview-link`, { method: "POST" });
             const data = await res.json().catch(() => null);
-            if (res.ok) { toast.success(data?.message || `Interview link sent to ${candidate.name}`); refetch(); return; }
+            if (res.ok) { toast.success(data?.message || `Schedule link sent to ${candidate.name}`); refetch(); return; }
             toast.error(data?.error || "Failed to send interview link");
         } catch { toast.error("Failed to send interview link"); }
         finally { setSendingInterviewLinkId(null); }
@@ -380,7 +380,7 @@ export default function CandidatesPage() {
             const results = await Promise.all(Array.from(selectedIds).map(id => fetch(`/api/candidates/${id}/send-interview-link`, { method: "POST" })));
             const failed = results.filter(r => !r.ok).length;
             const succeeded = results.length - failed;
-            if (succeeded > 0) toast.success(`Interview link sent to ${succeeded} candidate(s)`);
+            if (succeeded > 0) toast.success(`Schedule link sent to ${succeeded} candidate(s)`);
             if (failed > 0) toast.error(`Failed to send to ${failed} candidate(s)`);
             clearSelection(); refetch();
         } catch { toast.error("Failed to send interview links"); }
@@ -413,7 +413,7 @@ export default function CandidatesPage() {
                     const res = await fetch(`/api/candidates/${emailConfirm.candidateId}/send-interview-link`, { method: "POST" });
                     const data = await res.json().catch(() => null);
                     if (!res.ok) { toast.error(data?.error || "Failed to send interview link"); return; }
-                    toast.success(`Interview link sent to ${emailConfirm.candidateName}`);
+                    toast.success(`Schedule link sent to ${emailConfirm.candidateName}`);
                 } else if (status === "rejected") {
                     const res = await fetch(`/api/candidates/${emailConfirm.candidateId}/send-rejection-email`, { method: "POST" });
                     const data = await res.json().catch(() => null);
