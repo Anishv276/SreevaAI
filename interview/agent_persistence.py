@@ -174,7 +174,7 @@ async def get_interview_context(app_id: str) -> dict:
     _QUERY = """
     SELECT a."fullName", a."resumeText", a."resumeData", d.title, d.role AS "role",
            d."extractedDetails", d."screeningCriteria", d."orgId" AS "orgId",
-           d."interviewLanguage", d."interviewQuestions",
+           d."interviewQuestions",
            COALESCE(d."voiceId", o."voiceId") AS "voiceId",
            COALESCE(d."aiName", 'Ishitha') AS "aiName", o.name AS "orgName",
            o."proctoringSignals",
@@ -207,7 +207,7 @@ async def get_interview_context(app_id: str) -> dict:
                 "jd":                 _build_jd_from_extracted(row["extractedDetails"]),
                 "orgId":              row["orgId"],
                 "orgName":            row["orgName"],
-                "language":           row["interviewLanguage"],
+                "language":           "English",
                 "timeLimit":          FIXED_INTERVIEW_DURATION_MINUTES,
                 "voiceId":              row["voiceId"],
                 "aiName":               row["aiName"],
