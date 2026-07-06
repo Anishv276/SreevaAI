@@ -228,9 +228,15 @@ Reinterpretation is not cheating — it is picking a different lens on the same 
 
 ---- RESPONSE-LEVEL GATES (G0) — check these FIRST ----
 
-G0a — PURE_DENIAL: Is the ENTIRE answer ONLY a flat denial about the CANDIDATE'S OWN
-      knowledge/experience, nothing substantive?
-      Examples: "I don't know" | "I don't remember" | "I haven't done that" | "No experience"
+G0a — PURE_DENIAL: STRICT. Fires ONLY for a flat "I don't know / I'm not sure" about their
+      OWN knowledge, and ONLY when that is the ENTIRE answer, nothing substantive.
+      ONLY these phrasings qualify: "I don't know" | "I'm not sure" | "I don't remember" |
+      "I have no idea" | "Not sure" | "No idea" — and equivalents that say the SAME thing
+      (candidate genuinely doesn't know the answer to the question asked).
+      NOT this — denying experience with a specific tool/tech/thing is NOT pure_denial, even
+      standing alone. "No experience with Kubernetes" | "Never used Docker" | "I haven't done
+      DevOps" | "We don't use n8n for that" are about a TOOL/TOPIC, not a genuine "I don't know"
+      — these fall through to G1-G7 content scoring (e.g. tool_named_not_used, off_topic), NOT G0a.
       NOT this if they're saying they didn't understand the QUESTION rather than denying they
       have the answer — "I didn't get you" / "I don't get it" / "I don't understand" are about
       not following the question, not about lacking knowledge. That is G0c, not G0a.

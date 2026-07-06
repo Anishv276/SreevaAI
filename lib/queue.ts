@@ -94,7 +94,7 @@ export const briefGenerationQueue = new Queue('brief-generation', {
     attempts: 2,
     backoff: { type: 'exponential', delay: 5000 },
     removeOnComplete: { age: 60 },
-    removeOnFail:    { age: 3600 }, // keep failed jobs for 1h for debugging
+    removeOnFail:    { age: 60 },
   },
 });
 // 11. Post-interview report/summary/billing-snapshot/debug-PDF tail, moved off
@@ -106,8 +106,14 @@ export const interviewReportQueue = new Queue('interview-report', {
   prefix,
   defaultJobOptions: {
     attempts: 1,
-    removeOnComplete: { age: 3600 },
-    removeOnFail:    { age: 86400 }, // keep failures a day -- silent report loss must be visible
+    // Same 60s age as every other queue for both complete AND fail -- jobId is
+    // the interview's appId, so a lingering job in EITHER state blocks any
+    // future re-run for that SAME appId (BullMQ silently no-ops .add() against
+    // an existing jobId); clearing it promptly keeps repeated /test runs from
+    // needing manual Redis cleanup and stops one failed job from blocking
+    // every subsequent attempt for that interview.
+    removeOnComplete: { age: 60 },
+    removeOnFail:    { age: 60 },
   },
 });
 export default redisConnection;

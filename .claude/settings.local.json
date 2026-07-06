@@ -168,7 +168,8 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\('interview/agent_runtime.py', encoding='utf-8'\\).read\\(\\)\\); print\\('syntax OK'\\)\")",
       "Bash(echo \"worker started pid $!\")",
       "Bash(sleep 5; tail -n 20 /tmp/worker_live.log)",
-      "Bash(awk 'NR>=2650 && NR<=2680' interview/agent_runtime.py)"
+      "Bash(awk 'NR>=2650 && NR<=2680' interview/agent_runtime.py)",
+      "Bash(grep -i \"lib/queue\\\\|lib\\\\\\\\\\\\\\\\queue\")"
     ]
   }
 }

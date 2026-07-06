@@ -33,8 +33,21 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Missing appId" }, { status: 400 });
         }
 
-        // jobId: appId -- a duplicate enqueue for the same interview is a no-op
-        // while the job exists, rather than double-processing.
+        // jobId: appId -- BullMQ silently no-ops .add() if a job with this ID already
+        // exists, so a genuinely NEW interview reusing an old test appId (or a retry
+        // after the queue was cleared) would enqueue nothing and nobody would know.
+        // Only skip when the prior job is still in-flight (waiting/active/delayed) --
+        // a finished one (completed/failed) must not block a fresh, real re-run.
+        const existing = await interviewReportQueue.getJob(appId);
+        if (existing) {
+            const state = await existing.getState();
+            if (state === "completed" || state === "failed") {
+                await existing.remove();
+            } else {
+                console.warn(`[INTERNAL_INTERVIEW_REPORT_POST] appId=${appId} already ${state} in queue -- skipping duplicate enqueue`);
+                return NextResponse.json({ ok: true, skipped: true, reason: state }, { status: 202 });
+            }
+        }
         await interviewReportQueue.add("generate-report", payload, { jobId: appId });
 
         return NextResponse.json({ ok: true }, { status: 202 });

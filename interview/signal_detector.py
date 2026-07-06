@@ -95,9 +95,16 @@ SPECIAL RESPONSE: The candidate signaled something about their ability to answer
 
 YOU ARE LOOKING FOR ONE OF THESE:
 
-1. pure_denial: "I don't know", "I haven't done this", "No experience" — ONLY that, nothing else.
+1. pure_denial: STRICT — ONLY a genuine "I don't know / I'm not sure" about their OWN
+   knowledge, and ONLY when that is the entire answer, nothing else.
+   - Qualifying phrasings: "I don't know" | "I'm not sure" | "Not sure" | "I don't remember" |
+     "I have no idea" | "No idea" — and direct equivalents.
+   - NOT this: denying experience with a specific tool/tech/thing — "No experience with
+     Kubernetes", "Never worked with X", "I haven't done DevOps", "We don't use n8n for that".
+     Those are about a TOOL/TOPIC, not "I don't know" — they are NORMAL ANSWERS (signal=null,
+     score normally) or off_topic, never pure_denial.
    - STOP if they say ANYTHING substantive after the denial. That is denial_with_continuation, not pure.
-   - Examples: "I don't have DevOps experience" | "Never worked with Kubernetes"
+   - Examples: "I don't know" | "I'm not sure about that"
    - NOT this: "I don't have K8s experience but I deployed things" (that's continuation)
 
 2. denial_with_continuation: Starts with "I don't" or "Never" BUT then says what they DID try/do.
