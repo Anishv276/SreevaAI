@@ -2186,6 +2186,8 @@ async def entrypoint(ctx: JobContext):
     # two rapid LiveKit end-of-turn detections (e.g. candidate pauses mid-answer) from
     # firing eval/probe/warmup logic twice for what is really one answer
     _last_evaluated_turn_snapshot = -1  # dedupes a repeat end-of-turn for the same turn_count
+    _pending_turn_text: dict[int, str] = {}  # turn_snapshot -> merged candidate text across repeat EOTs for that turn
+    _turns_moved_on: set[int] = set()  # turn_snapshots whose eval already committed MOVE_ON (topic switch + directive) -- a merge re-run for these turns cannot safely redo that
     # Interview state
     _closing_triggered = False           # True when <= 20s remain -- blocks eval + signals
     _candidate_turn_since_last_assistant = True
@@ -2602,6 +2604,7 @@ async def entrypoint(ctx: JobContext):
         result: dict[str, Any],
         *,
         result_turn: int,
+        is_merge_rerun: bool = False,
     ) -> bool:
         """Persist eval state mutations. Agent already owns topic/directive decisions."""
         nonlocal answer_scores, _last_applied_eval_turn, \
@@ -2615,7 +2618,15 @@ async def entrypoint(ctx: JobContext):
             # EC-5: stale-turn guard MUST be inside the lock. Without this, two concurrent
             # evals for the same turn both pass the check before either updates the counter,
             # then both append to answer_scores and _topic_score_histories -- duplicate scores.
-            if result_turn <= _last_applied_eval_turn:
+            #
+            # is_merge_rerun is the ONE exception: a repeat Flux end-of-turn merged the
+            # candidate's full answer and re-ran eval on it (see _pending_turn_text in
+            # _handle_completed_user_turn_locked). That re-run's result_turn intentionally
+            # equals _last_applied_eval_turn -- it must REPLACE the first (partial-fragment)
+            # score below, not be silently dropped, or the report/debug-PDF would keep
+            # scoring the truncated answer even though the merge fix captured the full one.
+            _is_stale = result_turn <= _last_applied_eval_turn
+            if _is_stale and not (is_merge_rerun and result_turn == _last_applied_eval_turn):
                 logger.debug(
                     "[EVAL] skipping stale eval result turn=%d last_applied=%d",
                     result_turn, _last_applied_eval_turn,
@@ -2625,20 +2636,28 @@ async def entrypoint(ctx: JobContext):
             if eval_usages:
                 _eval_llm_usages_accumulated.extend(eval_usages)
             if quality_record:
-                answer_scores.append(quality_record)
                 topic_key = re.sub(
                     r"[^a-z0-9]+", " ",
                     str(quality_record.get("topic") or _active_topic or "").lower(),
                 ).strip()
-                if topic_key and not quality_record.get("is_timeout"):
-                    _topic_score_histories.setdefault(topic_key, []).append(
-                        float(quality_record.get("overall", 0) or 0)
-                    )
-                    # H2 fix: separate depth history so follow_up_collapse
-                    # compares current depth vs prior depth, not prior overall.
-                    _topic_depth_histories.setdefault(topic_key, []).append(
-                        float(quality_record.get("depth", 0) or 0)
-                    )
+                if is_merge_rerun and answer_scores and answer_scores[-1].get("turn") == result_turn:
+                    # Replace the partial-fragment entry from the first eval instead of
+                    # appending a second one for the same turn.
+                    answer_scores[-1] = quality_record
+                    if topic_key and not quality_record.get("is_timeout") and _topic_score_histories.get(topic_key):
+                        _topic_score_histories[topic_key][-1] = float(quality_record.get("overall", 0) or 0)
+                        _topic_depth_histories[topic_key][-1] = float(quality_record.get("depth", 0) or 0)
+                else:
+                    answer_scores.append(quality_record)
+                    if topic_key and not quality_record.get("is_timeout"):
+                        _topic_score_histories.setdefault(topic_key, []).append(
+                            float(quality_record.get("overall", 0) or 0)
+                        )
+                        # H2 fix: separate depth history so follow_up_collapse
+                        # compares current depth vs prior depth, not prior overall.
+                        _topic_depth_histories.setdefault(topic_key, []).append(
+                            float(quality_record.get("depth", 0) or 0)
+                        )
                 spawn_background_task(
                     persist_answer_scores(app_id, list(answer_scores)),
                     f"scores_turn_{result_turn}",
@@ -2650,6 +2669,7 @@ async def entrypoint(ctx: JobContext):
         role: str,
         turn_snapshot: int,
         is_final_eot: bool = False,  # ponytail: True only when called from _handle_completed_user_turn (real EOT)
+        is_merge_rerun: bool = False,  # True when this call is re-scoring merged text after a repeat Flux EOT
     ) -> None:
         nonlocal proctoring_events, _last_interviewer_question, \
             answer_scores, \
@@ -2659,7 +2679,8 @@ async def entrypoint(ctx: JobContext):
             _last_applied_eval_turn, _topic_score_histories, \
             _asked_questions_log, \
             _last_question_topic, _topic_records, _current_topic_answers, \
-            _current_topic_questions, _topic_start_line_idx
+            _current_topic_questions, _topic_start_line_idx, \
+            _turns_moved_on
         try:
             if not content or role != "user":
                 return
@@ -2712,7 +2733,13 @@ async def entrypoint(ctx: JobContext):
             # that reads then resets _current_topic_answers in the same lock acquisition.
             if warmup_complete and content.strip():
                 async with _session_state_lock:
-                    _current_topic_answers.append(content.strip())
+                    # A merged repeat-EOT re-run (see _pending_turn_text) re-processes this
+                    # turn with the FULL text -- drop the earlier partial-fragment entry so
+                    # it isn't counted twice alongside the complete answer.
+                    if is_final_eot and _current_topic_answers and content.strip().startswith(_current_topic_answers[-1]):
+                        _current_topic_answers[-1] = content.strip()
+                    else:
+                        _current_topic_answers.append(content.strip())
             lines_snap_eval = list(transcript_lines)
             question_snap = _last_interviewer_question
             answer_snap = content
@@ -2770,6 +2797,16 @@ async def entrypoint(ctx: JobContext):
                 and turn_snapshot > 2
                 and question_snap
             )
+            if is_merge_rerun and turn_snapshot in _turns_moved_on:
+                # The FIRST (partial-fragment) eval for this turn already committed
+                # MOVE_ON -- topic switched, directive injected, possibly already
+                # spoken to the candidate. Re-scoring the merged full text can't safely
+                # undo that live conversational step, so skip the re-eval entirely here
+                # rather than mutate state for a decision that's already been acted on.
+                _can_eval_turn = False
+                logger.info(
+                    "[EVAL_GATE] turn=%d merge re-run skipped -- MOVE_ON already committed", turn_snapshot,
+                )
             _gate_reason = (
                 "PASS" if _can_eval_turn
                 else (
@@ -3041,9 +3078,12 @@ async def entrypoint(ctx: JobContext):
                     async with _session_state_lock:
                         _topic_states[_normalize_topic_key(_scoring_topic_log)] = _new_topic_state_dict
                 # -- Persist state mutations (scores, trust, risk, log) --------
-                await _apply_eval_result(_eval_result_inline, result_turn=turn_snapshot)
+                await _apply_eval_result(
+                    _eval_result_inline, result_turn=turn_snapshot, is_merge_rerun=is_merge_rerun,
+                )
                 # -- Agent decides: PROBE or MOVE_ON ---------------------------
                 if _action == "MOVE_ON":
+                    _turns_moved_on.add(turn_snapshot)
                     # -- Agent picks the next topic ----------------------------
                     _old_topic = _active_topic
                     # Determine exit reason from saturation flags BEFORE marking,
@@ -3470,18 +3510,42 @@ async def entrypoint(ctx: JobContext):
             logger.info("[GATE] Candidate spoke before greeting  blocked")
             return
         turn_snapshot = turn_count
+        _is_merge_pass = False
         if turn_snapshot == _last_evaluated_turn_snapshot:
-            # LiveKit fired a second end-of-turn for the same candidate turn (e.g. a
-            # pause mid-answer was detected as EOT, then more speech followed before
-            # Ishita replied). turn_count only advances on assistant turns, so this
-            # would otherwise re-run eval/warmup/probe a second time for one answer.
-            logger.info(
-                "[USER_TURN] duplicate end-of-turn for turn=%d ignored (text=%r)",
-                turn_snapshot, content[:80],
-            )
-            agent._waiting_for_eval = False
-            agent._directive_ready.set()
-            return
+            # LiveKit/Flux fired a second end-of-turn for the same candidate turn (e.g.
+            # a pause mid-answer was detected as EOT, then more speech followed before
+            # Ishita replied). turn_count only advances on assistant turns.
+            #
+            # During real interview questions (turn_snapshot > 2, warmup already done),
+            # eval only fires once per turn -- previously this repeat fragment was
+            # dropped outright, so eval only ever scored the FIRST (often short,
+            # cut-off) fragment. Merge it into the buffered text and re-run eval on
+            # the complete answer instead of silently losing the rest of it.
+            #
+            # During warmup/turn-1 (fixed scripted replies, session.say() side effects,
+            # gate/directive bookkeeping), re-running that logic on every repeat EOT
+            # would double-speak/double-inject -- keep the original drop-and-return
+            # there; a short warmup answer is inconsequential compared to double TTS.
+            if warmup_complete and turn_snapshot > 2:
+                _prior = _pending_turn_text.get(turn_snapshot, "")
+                merged = f"{_prior} {content}".strip() if _prior and not content.startswith(_prior) else content
+                _pending_turn_text[turn_snapshot] = merged
+                logger.info(
+                    "[USER_TURN] repeat end-of-turn for turn=%d merged (text=%r)",
+                    turn_snapshot, merged[:80],
+                )
+                content = merged
+                _is_merge_pass = True
+            else:
+                logger.info(
+                    "[USER_TURN] duplicate end-of-turn for turn=%d ignored (text=%r)",
+                    turn_snapshot, content[:80],
+                )
+                agent._waiting_for_eval = False
+                agent._directive_ready.set()
+                return
+        else:
+            _pending_turn_text[turn_snapshot] = content
         _last_evaluated_turn_snapshot = turn_snapshot
         # Turn 1 = candidate's reply to the greeting. Deliver fixed warmup via session.say()
         # so the LLM never generates this line (it was producing unpredictable filler).
@@ -3553,7 +3617,17 @@ async def entrypoint(ctx: JobContext):
             and not warmup_complete
             and any(_re_warmup.search(r'\b' + m + r'\b', _content_lc) for m in _warmup_readiness_markers)
         )
-        completing_warmup = _candidate_signals_ready
+        # ponytail: candidate already got one re-prompt (turn>=3) and gave another
+        # substantive reply (not silence/noise) without an explicit marker word --
+        # e.g. "I'm doing great, how about you?" -- treat that as implicit readiness
+        # instead of re-prompting forever. The AI's own question ("are you set to
+        # begin?") makes any real answer an implicit yes.
+        _candidate_gave_substantive_reply = (
+            turn_snapshot >= 3
+            and not warmup_complete
+            and len(_content_lc.split()) >= 3
+        )
+        completing_warmup = _candidate_signals_ready or _candidate_gave_substantive_reply
         logger.debug(
             "[USER_TURN] completed turn=%d words=%d text=%r signals_ready=%s",
             turn_snapshot,
@@ -3561,7 +3635,9 @@ async def entrypoint(ctx: JobContext):
             content[:100],
             completing_warmup,
         )
-        await _process_user_conversation_item(content, "user", turn_snapshot, is_final_eot=True)
+        await _process_user_conversation_item(
+            content, "user", turn_snapshot, is_final_eot=True, is_merge_rerun=_is_merge_pass,
+        )
         if completing_warmup:
             warmup_complete = True
             _first_interview_question_asked = False
@@ -3660,18 +3736,9 @@ async def entrypoint(ctx: JobContext):
                     inactivity_end_sent_for_current_prompt = False
                     awaiting_candidate_since = time.monotonic()
                     logger.debug("[NUDGE] Nudge flags reset for new question at turn=%d", turn_count)
-                    # Prefer ?-terminated sentence; fall back to last sentence of 20+ chars.
-                    # Final fallback: use entire clean_content so question_snap is never empty.
-                    _q_text = clean_content.strip()
-                    q_match = re.search(r'([^.!?]+\?)\s*$', _q_text)
-                    if q_match:
-                        _last_interviewer_question = q_match.group(1).strip()
-                    else:
-                        _fallback_q = re.search(r'(?:(?<=[.!?])\s+|^)([^.!?]{20,}[.!?]?)\s*$', _q_text)
-                        if _fallback_q:
-                            _last_interviewer_question = _fallback_q.group(1).strip()
-                        else:
-                            _last_interviewer_question = _q_text[:200]
+                    # Store the FULL interviewer turn verbatim -- no sentence extraction,
+                    # no length cap -- so the debug report shows the complete question.
+                    _last_interviewer_question = clean_content.strip()
                     # H4 fix: validate the LLM actually asked about the expected topic
                     # before committing _last_question_topic. If it clearly switched to
                     # another known topic, or is asking a closing question, score under

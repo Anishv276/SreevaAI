@@ -134,8 +134,10 @@ async def _post_to_slack(message: str, error_type: str) -> None:
         return
 
     try:
+        # NOTE: Slack Incoming Webhooks are bound to the channel chosen at
+        # creation -- passing a "channel" override is deprecated and can be
+        # rejected ("no_service"). Route to the webhook's own channel instead.
         payload = {
-            "channel": SLACK_ERROR_CHANNEL,
             "text": f"{error_type.upper()} ERROR",
             "blocks": [
                 {
@@ -165,8 +167,16 @@ async def _post_to_slack(message: str, error_type: str) -> None:
                 json=payload,
                 headers={"Content-Type": "application/json"},
             ) as resp:
-                if not resp.ok:
-                    logger.error("[SLACK_ERROR_LOG] Failed: %s", await resp.text())
+                body = (await resp.text()).strip()
+                # A dead/revoked Incoming Webhook returns 200 + "no_service" (or
+                # 404 "no_service"). That's a config problem (rotate the webhook via
+                # SLACK_ERROR_WEBHOOK_URL), not a code bug -- warn once per call at
+                # WARNING, not ERROR, so it doesn't masquerade as a pipeline failure.
+                if not resp.ok or body != "ok":
+                    logger.warning(
+                        "[SLACK_ERROR_LOG] Webhook rejected (status=%s body=%r) -- "
+                        "rotate SLACK_ERROR_WEBHOOK_URL", resp.status, body,
+                    )
     except Exception as e:
         logger.error("[SLACK_ERROR_LOG] Exception: %s", e, exc_info=True)
 

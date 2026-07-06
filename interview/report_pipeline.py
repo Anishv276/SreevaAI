@@ -251,6 +251,19 @@ class SkillFilter:
 # Exponential backoff on transient errors. Streaming with usage capture.
 # â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
 
+def _strip_surrogates(text: str) -> str:
+    """Drop lone UTF-16 surrogates (e.g. \\udc9d from mangled emoji/STT output).
+
+    The OpenAI SDK encodes the request body as utf-8, which raises
+    UnicodeEncodeError on unpaired surrogates -- one bad char in the transcript
+    otherwise kills the entire report/summary pipeline. 'replace' + re-decode
+    swaps each unencodable surrogate for U+FFFD instead of failing.
+    """
+    if not text:
+        return text
+    return text.encode("utf-8", "replace").decode("utf-8", "replace")
+
+
 @dataclass(frozen=True)
 class LLMCallSpec:
     """Immutable descriptor for a single LLM call. Passed to ReportLLMClient."""
@@ -318,8 +331,8 @@ class ReportLLMClient:
                         "attempt":   str(attempt),
                     },
                     messages=[
-                        {"role": "system", "content": spec.system},
-                        {"role": "user",   "content": spec.user},
+                        {"role": "system", "content": _strip_surrogates(spec.system)},
+                        {"role": "user",   "content": _strip_surrogates(spec.user)},
                     ],
                 )
                 if spec.prediction:

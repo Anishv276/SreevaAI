@@ -10,12 +10,12 @@ Same extraction/scoring logic as pipeline.py -- Pipeline class is reused as-is.
 from __future__ import annotations
 
 import asyncio
+import json
 import tempfile
 from pathlib import Path
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.concurrency import run_in_threadpool
-from pydantic import BaseModel
 
 from extraction_resume_JD_score_report_v2.pipeline import Pipeline
 
@@ -33,13 +33,6 @@ def _write_temp(data: bytes, filename: str) -> str:
     with open(fd, "wb") as f:
         f.write(data)
     return path
-
-
-class ScoreForm(BaseModel):
-    jd: dict
-    jd_raw_text: str = ""
-    threshold: float = 70
-    screening_criteria: dict = {}
 
 
 @app.post("/extract/resume")
@@ -85,7 +78,6 @@ async def extract_resume_and_score(
     score_model: str = Form(...),
     jd_payload: str = Form(...),  # JSON string: {jd, jd_raw_text, threshold, screening_criteria}
 ):
-    import json
     data = await file.read()
     path = await run_in_threadpool(_write_temp, data, file.filename or "resume.pdf")
     try:

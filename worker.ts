@@ -556,6 +556,7 @@ async function processResumeScreeningJob(job: any) {
   try {
     // -- 10% Upload received ------------------------------------------------
     await job.updateProgress(10);
+    console.log(`[RESUME-WORKER] [10%] Upload received`);
     await prisma.application.update({
       where: { id: applicationId },
       data: { resumeStatus: "extracting", updatedAt: new Date() },
@@ -563,7 +564,7 @@ async function processResumeScreeningJob(job: any) {
 
     // -- 20% Download from R2 -----------------------------------------------
     await job.updateProgress(20);
-    console.log(`[RESUME-WORKER] Downloading from R2: ${key}`);
+    console.log(`[RESUME-WORKER] [20%] Downloading from R2: ${key}`);
     const sourceBuffer = await getObjectBuffer(bucket, key);
     console.log(`[RESUME-WORKER] Downloaded ${sourceBuffer.length} bytes`);
 
@@ -609,14 +610,13 @@ async function processResumeScreeningJob(job: any) {
 
     // -- 40% Extract + 60% Score (Python subprocess) -----------------------
     await job.updateProgress(40);
-    console.log(`[RESUME-WORKER] Updating status to "scoring"...`);
+    console.log(`[RESUME-WORKER] [40%] Extracting resume...`);
     await prisma.application.update({
       where: { id: applicationId },
       data: { resumeStatus: "scoring", updatedAt: new Date() },
     }).catch((e: any) => console.warn(`[RESUME-WORKER] Failed to update scoring status: ${e.message}`));
-    console.log(`[RESUME-WORKER] Updated status to "scoring". Waiting 500ms before Python...`);
     await new Promise(r => setTimeout(r, 500)); // Give DB time to sync + frontend to poll
-    console.log(`[RESUME-WORKER] Running Python pipeline (hasJd=${hasJd})...`);
+    console.log(`[RESUME-WORKER] [50%] Scoring against JD (hasJd=${hasJd})...`);
 
     let result: any;
     if (hasJd) {
@@ -642,7 +642,7 @@ async function processResumeScreeningJob(job: any) {
 
     // -- 70% Parse results -------------------------------------------------
     await job.updateProgress(70);
-    console.log(`[RESUME-WORKER] Python done. keys=${Object.keys(result || {}).join(",")}`);
+    console.log(`[RESUME-WORKER] [70%] Extraction/scoring done. keys=${Object.keys(result || {}).join(",")}`);
 
     const scoreData  = result?.score ?? null;
     const resumeData = result?.data  ?? {};
@@ -662,7 +662,7 @@ async function processResumeScreeningJob(job: any) {
 
     // -- 80% Write to DB ---------------------------------------------------
     await job.updateProgress(80);
-    console.log(`[RESUME-WORKER] Saving to DB — applicationId=${applicationId} aiScore=${aiScore} threshold=${threshold} resumeStatus=${resumeStatus}`);
+    console.log(`[RESUME-WORKER] [80%] Saving report — applicationId=${applicationId} aiScore=${aiScore} threshold=${threshold} resumeStatus=${resumeStatus}`);
 
     const parsedName  = resumeData?.full_name?.trim()  || "";
     const parsedEmail = resumeData?.email?.trim()      || "";
@@ -688,6 +688,7 @@ async function processResumeScreeningJob(job: any) {
 
     // -- 90% Billing -------------------------------------------------------
     await job.updateProgress(90);
+    console.log(`[RESUME-WORKER] [90%] Recording billing usage...`);
     if (orgId) {
       const usageExtract = result?.usage_extract ?? result?.usage ?? null;
       const usageScore   = result?.usage_score   ?? null;
@@ -725,7 +726,7 @@ async function processResumeScreeningJob(job: any) {
 
     // -- 100% Done ---------------------------------------------------------
     await job.updateProgress(100);
-    console.log(`[RESUME-WORKER] Job ${job.id} done for ${applicationId} — score: ${aiScore ?? "n/a"}`);
+    console.log(`[RESUME-WORKER] [100%] Job ${job.id} completed for ${applicationId} — score: ${aiScore ?? "n/a"}`);
     return { applicationId, aiScore, hasScore: aiScore !== null };
 
   } catch (err: any) {
@@ -873,7 +874,7 @@ if (isQueueEnabled("resume-processing")) {
 
   void resumeWorker.waitUntilReady()
     .then(async () => {
-      console.log(`[resume-processing] Worker ready. Queue="resume-processing" | Concurrency=50`);
+      console.log(`[resume-processing] Worker ready. Queue="resume-processing" | Concurrency=10 (+ per-org cap ${ORG_CONCURRENCY.resumeProcessing})`);
       // DUPLICATE-WORKER GUARD: if another consumer is already subscribed to this
       // queue (e.g. a stale Docker container on the prod host), it will race us for
       // jobs and our console will silently miss them. Surface it loudly.
@@ -998,7 +999,6 @@ if (isQueueEnabled("invitation-delivery-queue")) {
         const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://sreevaai.com';
         const now = new Date();
         let scheduleLink: string | undefined;
-        let interviewAccessToken: string | undefined;
         if (action === "shortlist") {
           const driveDeadline = application.drive?.deadline ? new Date(application.drive.deadline) : null;
           const interviewRecord = await prisma.interview.upsert({
@@ -1023,7 +1023,6 @@ if (isQueueEnabled("invitation-delivery-queue")) {
             },
           });
           scheduleLink = `${appUrl}/schedule/${interviewRecord.accessToken}`;
-          interviewAccessToken = interviewRecord.accessToken;
         }
         const { sendScheduleInviteEmail, sendRejectionEmail } = await import('./lib/mail');
         let mailResult: { success: boolean; error?: string };

@@ -93,6 +93,25 @@ async def _run(payload: dict) -> None:
     answer_scores = payload.get("answerScores") or []
     topic_records = payload.get("topicRecords") or []
 
+    # Slack debug PDF goes FIRST for test sessions so it lands immediately, before
+    # the ~300s report/summary/billing tail below even starts. Independent of
+    # everything else -- its own try/except contains any failure locally.
+    if is_test:
+        logger.info("[DEBUG_REPORT] Test session — sending debug PDF to Slack before report generation...")
+        debug_report = payload.get("debugReport") or {}
+        try:
+            await generate_and_send_debug_report(
+                app_id=app_id,
+                candidate_name=candidate_name,
+                job_title=job_title,
+                answer_scores=list(answer_scores),
+                topic_pool=_namespace_topic_pool(debug_report.get("topicPool")),
+                covered_topics=debug_report.get("coveredTopics"),
+                topic_records=list(topic_records),
+            )
+        except Exception as pdf_err:
+            logger.error("[DEBUG_REPORT] Outer exception sending debug PDF: %s", pdf_err, exc_info=True)
+
     scores_context = None
     logger.info("[REPORT] Generating with answer_scores=%d turns", len(answer_scores))
     try:
@@ -177,20 +196,20 @@ async def _run(payload: dict) -> None:
             billable_tts_characters = billing.get("ttsCharacters", 0) or 0
             plugin_stt_audio_seconds = billing.get("sttAudioSeconds", 0.0) or 0.0
             usage_ns = _namespace_usage(billing.get("sessionUsage"))
-            llm_in = getattr(usage_ns, "input_tokens", 0) or 0
-            llm_out = getattr(usage_ns, "output_tokens", 0) or 0
+            # LLM tokens come from THREE sources, not just the realtime conversation:
+            # the live session usage (sessionUsage) + eval + brief + llmgen usages.
+            # Using only sessionUsage made testBillingMetrics.llmCost show 0 whenever
+            # the live turns used a $0-billed path -- fold in all of them.
+            _session_in = getattr(usage_ns, "input_tokens", 0) or 0
+            _session_out = getattr(usage_ns, "output_tokens", 0) or 0
+            _extra_usages = [*eval_usages, *brief_usages, *llmgen_usages]
+            llm_in = _session_in + sum(u.get("inputTokens", 0) or 0 for u in _extra_usages)
+            llm_out = _session_out + sum(u.get("outputTokens", 0) or 0 for u in _extra_usages)
             # rough cost estimate (GPT-4o pricing, update if model changes)
             llm_cost = round((llm_in * 2.5 + llm_out * 10) / 1_000_000, 6)
             tts_cost = round(billable_tts_characters * 0.000015, 6)
             stt_cost = round(plugin_stt_audio_seconds * 0.0043 / 60, 6)
             async with pool.acquire() as conn:
-                # ponytail: reuse testBillingMetrics presence as the "already processed"
-                # guard for a stalled-job requeue -- avoids a second Slack PDF post.
-                already_done = await conn.fetchval(
-                    """SELECT "testBillingMetrics" IS NOT NULL FROM "Interview"
-                       WHERE "applicationId" = $1""",
-                    app_id,
-                )
                 await conn.execute(
                     """UPDATE "Interview" SET "testBillingMetrics" = $1::jsonb, "updatedAt" = NOW()
                        WHERE "applicationId" = $2""",
@@ -221,29 +240,7 @@ async def _run(payload: dict) -> None:
             logger.info("[TEST_BILLING] Saved metrics for %s | llm=$%.4f tts=$%.4f stt=$%.4f",
                         app_id, llm_cost, tts_cost, stt_cost)
         except Exception as tb_err:
-            already_done = False
             logger.warning("[TEST_BILLING] Failed to save metrics: %s", tb_err)
-
-        if already_done:
-            logger.info(
-                "[DEBUG_REPORT] Skipping — testBillingMetrics already set for %s, "
-                "likely a stalled-job retry", app_id,
-            )
-        else:
-            logger.info("[DEBUG_REPORT] Test session complete — generating and sending debug PDF to Slack...")
-            debug_report = payload.get("debugReport") or {}
-            try:
-                await generate_and_send_debug_report(
-                    app_id=app_id,
-                    candidate_name=candidate_name,
-                    job_title=job_title,
-                    answer_scores=list(answer_scores),
-                    topic_pool=_namespace_topic_pool(debug_report.get("topicPool")),
-                    covered_topics=debug_report.get("coveredTopics"),
-                    topic_records=list(topic_records),
-                )
-            except Exception as pdf_err:
-                logger.error("[DEBUG_REPORT] Outer exception sending debug PDF: %s", pdf_err, exc_info=True)
 
 
 def main() -> None:

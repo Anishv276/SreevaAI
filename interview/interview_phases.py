@@ -66,8 +66,8 @@ def build_interview_directive(
         _brief_strategy_note = ""
     _first_q_rule = {
         "fresher": (
-            f"FIRST QUESTION RULE: stay surface-level. Ask WHAT they built and what their specific role was.\n"
-            f"Do NOT open with reflection, tradeoffs, or theory -- establish the basics first."
+            f"FIRST QUESTION RULE: stay surface-level -- establish the basics first, not reflection/tradeoffs/theory.\n"
+            f"Follow the concrete-detail rule below; do not fall back to generic 'what did you build' framing."
         ),
         "mid": (
             f"FIRST QUESTION RULE: ask what they personally owned and what decisions were theirs.\n"
