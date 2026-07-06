@@ -764,8 +764,7 @@ Interview (DB row)
 | `interview/interview_brief.py` | Pre | Interview brief generation (LLM) |
 | `interview/band_classifier.py` | Pre | Candidate band determination |
 | `interview/agent_providers.py` | All | TTS/STT/LLM provider factory |
-| `interview/signal_detector.py` | Per-turn | Response-level signal detection (G0) |
-| `interview/agent_scoring.py` | Per-turn | Quality scoring + content signal classification |
+| `interview/agent_scoring.py` | Per-turn | Quality scoring + response/content signal classification (G0-G7) |
 | `interview/eval_pipeline.py` | Per-turn | Saturation tracking, routing decision |
 | `interview/probe_strategy.py` | Per-turn | Probe definitions, band overlays, reaction tones |
 | `interview/prompt_layers.py` | Pre | Voice identity prompt |

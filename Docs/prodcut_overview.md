@@ -229,7 +229,7 @@ The agent runs inside a LiveKit room. Key modules:
 | `brief_extraction.py` | Interview brief generation (LangGraph parallel resume/JD parse) |
 | `interview_phases.py` | Phase state machine |
 | `probe_strategy.py` / `probe_strategy2.py` | Probe family generation |
-| `signal_detector.py` | Proctoring signal analysis |
+| `agent_scoring.py` | Answer scoring + response/content signal classification |
 | `band_classifier.py` | Candidate band classification (fresher/mid/experienced/senior) |
 | `tts_phonetic_processor.py` | Phonetic pronunciation fixes, acronym transforms |
 | `agent_providers.py` | Provider initialization (STT/LLM/TTS) |
@@ -642,7 +642,7 @@ Default: all disabled. Toggleable via `Organization.proctoringSignals`:
 
 - **Frontend:** MediaPipe tasks-vision for face detection, VAD (Silero ONNX) for voice activity
 - **Backend:** Snapshot worker uploads images to R2, stores URLs in `Interview.snapshots[]`
-- **Processing:** `signal_detector.py` analyzes signals
+- **Processing:** integrity signals analyzed in `signalAnalysis.integrity_analysis` (see report pipeline)
 - **Storage:** `integritySignals` JSON array on Interview model
 - **Reporting:** Integrity score computed in report Node 1 from weighted signal table
 

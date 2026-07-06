@@ -243,6 +243,12 @@ G0a — PURE_DENIAL: STRICT. Fires ONLY for a flat "I don't know / I'm not sure"
       NOT this if they're checking the connection or whether you can hear them — "Can you hear
       me?" / "Are you there?" is not an attempt to deny knowledge, it's not addressing the
       question at all. That is also G0c, not G0a.
+      EXAMPLE (pure_denial): Q: "How did you decide the lead-scoring criteria?"
+        A: "I don't know, not sure how that was decided." → SIGNAL = pure_denial.
+      EXAMPLE (NOT pure_denial): Q: "How did you decide the lead-scoring criteria?"
+        A: "I haven't used n8n before" or "The client gave the idea, we didn't set anything" →
+        this denies OWNERSHIP/TOOL-FAMILIARITY, not KNOWLEDGE of the answer — falls through
+        to G1-G7 (e.g. ownership_ambiguous, tool_named_not_used), NOT pure_denial.
       → YES: SIGNAL = pure_denial. STOP (G0 gates ARE first-match).
 
 G0b — DENIAL_WITH_CONTINUATION: Starts with denial BUT adds substantive content?

@@ -169,7 +169,8 @@
       "Bash(echo \"worker started pid $!\")",
       "Bash(sleep 5; tail -n 20 /tmp/worker_live.log)",
       "Bash(awk 'NR>=2650 && NR<=2680' interview/agent_runtime.py)",
-      "Bash(grep -i \"lib/queue\\\\|lib\\\\\\\\\\\\\\\\queue\")"
+      "Bash(grep -i \"lib/queue\\\\|lib\\\\\\\\\\\\\\\\queue\")",
+      "PowerShell($path = \"Docs\\\\prodcut_overview.md\"; $lines = Get-Content $path -Encoding UTF8; $lines[49] = \\($lines[49] -replace 'signal_detector\\\\.py', 'agent_scoring.py'\\); Set-Content $path -Value $lines -Encoding UTF8; $lines[49])"
     ]
   }
 }

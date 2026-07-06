@@ -14,8 +14,7 @@ Every candidate answer flows through a 4-stage pipeline:
 ```
 
 **Files involved:**
-- `signal_detector.py` — Stage 1: response-level signal detection
-- `agent_scoring.py` — Stage 2: two parallel LLM calls (quality + signal)
+- `agent_scoring.py` — Stage 1+2: two parallel LLM calls (quality + response/content signal)
 - `eval_pipeline.py` — Stage 3: routing decision, saturation tracking
 - `probe_strategy.py` — Stage 4 probe strategy (how to follow up per signal)
 - `agent_runtime.py` — Orchestrates everything, builds directives
@@ -24,7 +23,7 @@ Every candidate answer flows through a 4-stage pipeline:
 
 ## Stage 1: Response-Signal Detection (G0)
 
-**File:** `signal_detector.py` · Runs BEFORE scoring.
+**File:** `agent_scoring.py` (`_call_signal_classification`) · Runs in parallel with quality scoring.
 
 A single LLM call classifies the answer into one of 5 response-level signals.
 If any fires, scoring is short-circuited.
@@ -334,8 +333,7 @@ The `QUESTION_GENERATION_SYSTEM` in `probe_strategy.py` instructs Ishita:
 
 | File | Role |
 |------|------|
-| `signal_detector.py` | Stage 1: response-level G0 signal detection |
-| `agent_scoring.py` | Stage 2: parallel quality scoring + content signal classification |
+| `agent_scoring.py` | Stage 1+2: parallel quality scoring + response/content signal classification |
 | `eval_pipeline.py` | Stage 3: TopicState saturation tracking, routing decision |
 | `probe_strategy.py` | Stage 4a: probe definitions per signal, band overlays, reaction tones |
 | `agent_runtime.py` | Orchestration: builds probe/move-on directives, tracks topic pool |
