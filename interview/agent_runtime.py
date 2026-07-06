@@ -479,6 +479,10 @@ def _build_probe_directive(
         parts = [f"TOPIC: {topic_item.title}"]
         if topic_item.full_description:
             parts.append(f"WHAT THIS IS: {topic_item.full_description}")
+        if topic_item.tech_stack:
+            parts.append(f"TECH STACK: {', '.join(topic_item.tech_stack)}")
+        if _focus_list:
+            parts.append(f"PROBE FOCUS (all sub-concepts for this topic): {', '.join(_focus_list)}")
         if _mandatory_subconcept:
             parts.append(
                 f"MANDATORY SUB-CONCEPT FOR THIS TURN: {_mandatory_subconcept}\n"
@@ -491,8 +495,6 @@ def _build_probe_directive(
                 f"OTHER SUB-CONCEPTS (do NOT probe these this turn — they are covered in later turns): "
                 f"{', '.join(_remaining_subconcepts)}"
             )
-        if not _focus_list and topic_item.probe_focus:
-            parts.append(f"INTERESTING ANGLES: {', '.join(topic_item.probe_focus)}")
         if topic_item.probe_avoid:
             parts.append(f"SKIP: {', '.join(topic_item.probe_avoid)}")
         _topic_ctx = "\n".join(parts)
@@ -602,6 +604,7 @@ def _build_probe_directive(
         "[PROBE_DIRECTIVE] built (no LLM) | topic=%r signal=%s | %d chars",
         active_topic[:60], signal or "none", len(directive),
     )
+    _logging.getLogger("interview-agent").info("[PROBE_DIRECTIVE_FULL]\n%s", directive)
     return directive
 
 
@@ -3409,7 +3412,7 @@ async def entrypoint(ctx: JobContext):
                     agent._move_on_opener_pending = True
                     _qr["directive_text"] = _directive  # ponytail: debug report needs the literal injected text
                     logger.info("[AGENT] turn=%d | MOVE_ON directive injected (LLM) | new_topic=%r", turn_snapshot, _active_topic)
-                    logger.debug("[MOVE_ON_DIRECTIVE] turn=%d:\n%s", turn_snapshot, _directive)
+                    logger.info("[MOVE_ON_DIRECTIVE] turn=%d:\n%s", turn_snapshot, _directive)
                 else:
                     # -- PROBE -- LLM-driven directive using TopicItem brief context --
                     _prev_q = (payload.get("question") or "").strip()
