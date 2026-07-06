@@ -10,6 +10,12 @@
  * 2. Spawn tsx directly (not via npx) so the process tree is: node(tsx) → node(worker).
  * 3. On Ctrl+C, use taskkill /T to kill the entire process tree.
  * 4. Store the spawned PID in .worker.pid so the next run can clean up.
+ *
+ * Also launches the Python extract-service (FastAPI on :8100) as a sibling child
+ * so a single `npm run worker` boots BOTH the BullMQ worker and the extraction
+ * backend the JD/resume workers fetch() against. Both are torn down together on
+ * exit. Set SKIP_EXTRACT_SERVICE=1 to run only the worker (e.g. when the service
+ * is already running elsewhere / in its own container).
  */
 import { execSync, spawn } from "child_process";
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from "fs";
@@ -25,6 +31,12 @@ const ENV_FILE = join(ROOT, ".env");
 
 const QUEUES = process.env.WORKER_QUEUES
   || "resume-processing,invitation-delivery-queue,interview-start,interview-finalization,interview-snapshots,interview-recording,recording-retention-cleanup,jd-upload,jd-extraction,interview-report";
+
+// Python interpreter for the extract-service (mirrors lib/python-exec.ts).
+const PYTHON_BIN = process.env.PYTHON_BIN?.trim()
+  || (process.platform === "win32" ? "python" : "python3");
+const EXTRACT_SERVICE_PORT = process.env.EXTRACT_SERVICE_PORT || "8100";
+const SKIP_EXTRACT_SERVICE = /^(1|true|yes)$/i.test(process.env.SKIP_EXTRACT_SERVICE || "");
 
 function killTree(pid) {
   try {
@@ -74,7 +86,32 @@ if (existsSync(PID_FILE)) {
   unlinkSync(PID_FILE);
 }
 
-// ── Step 3: Spawn tsx directly from node_modules/.bin ─────────────────────
+// ── Step 3: Spawn the Python extract-service (FastAPI on :8100) ────────────
+// The JD/resume workers fetch() this service; without it every job fails with
+// "fetch failed". Booting it here means one command starts everything.
+let extractChild = null;
+if (!SKIP_EXTRACT_SERVICE) {
+  extractChild = spawn(
+    PYTHON_BIN,
+    ["-m", "uvicorn", "extraction_resume_JD_score_report_v2.service:app", "--host", "0.0.0.0", "--port", EXTRACT_SERVICE_PORT],
+    {
+      cwd: ROOT,
+      env: { ...process.env },
+      stdio: "inherit",
+      shell: process.platform === "win32",
+      detached: false,
+    }
+  );
+  if (extractChild.pid) {
+    console.log(`[start-worker] Extract-service spawned PID=${extractChild.pid} (port ${EXTRACT_SERVICE_PORT})`);
+  } else {
+    console.error("[start-worker] Failed to spawn extract-service");
+  }
+} else {
+  console.log("[start-worker] SKIP_EXTRACT_SERVICE set — not starting extract-service");
+}
+
+// ── Step 4: Spawn tsx directly from node_modules/.bin ─────────────────────
 // Direct tsx binary avoids the npx → cmd chain that prevents Ctrl+C from propagating.
 // On Windows, .cmd files require shell:true to execute.
 // We compensate by using taskkill /T on shutdown so the whole cmd+node tree dies.
@@ -88,19 +125,21 @@ const child = spawn(TSX_BIN, ["--env-file", ENV_FILE, "worker.ts"], {
 
 if (!child.pid) {
   console.error("[start-worker] Failed to spawn worker process");
+  if (extractChild?.pid) killTree(extractChild.pid);
   process.exit(1);
 }
 
 writeFileSync(PID_FILE, String(child.pid), "utf8");
 console.log(`[start-worker] Worker spawned PID=${child.pid}`);
 
-// ── Step 4: Forward signals → kill entire process tree ────────────────────
+// ── Step 5: Forward signals → kill entire process tree ────────────────────
 let exiting = false;
 function shutdown(signal) {
   if (exiting) return;
   exiting = true;
-  console.log(`\n[start-worker] ${signal} received — killing worker tree PID=${child.pid}`);
+  console.log(`\n[start-worker] ${signal} received — killing worker tree PID=${child.pid}${extractChild?.pid ? ` + extract-service PID=${extractChild.pid}` : ""}`);
   killTree(child.pid);
+  if (extractChild?.pid) killTree(extractChild.pid);
   try { if (existsSync(PID_FILE)) unlinkSync(PID_FILE); } catch { }
   setTimeout(() => process.exit(0), 300);
 }
@@ -108,7 +147,20 @@ function shutdown(signal) {
 process.on("SIGINT",  () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 
+// If either child dies, take the whole launcher down so they never run half-up.
 child.on("exit", (code, signal) => {
   try { if (existsSync(PID_FILE)) unlinkSync(PID_FILE); } catch { }
-  if (!exiting) process.exit(code ?? 0);
+  if (!exiting) {
+    if (extractChild?.pid) killTree(extractChild.pid);
+    process.exit(code ?? 0);
+  }
 });
+
+if (extractChild) {
+  extractChild.on("exit", (code) => {
+    if (!exiting) {
+      console.error(`[start-worker] Extract-service exited (code=${code}) — shutting down worker too.`);
+      shutdown("extract-service-exit");
+    }
+  });
+}
