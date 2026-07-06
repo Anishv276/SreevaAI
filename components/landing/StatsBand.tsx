@@ -10,13 +10,13 @@ const stats = [
 
 export default function StatsBand() {
   return (
-    <section className="bg-white py-16 border-b border-gray-100/60 font-geist">
-      <div className="max-w-[1280px] mx-auto px-6">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-12 divide-x divide-gray-100/0 md:divide-gray-100">
+    <section className="bg-[#FAFAFA] pt-16 pb-16 font-geist">
+      <div className="max-w-[1280px] mx-auto px-6 relative z-10">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-12 divide-x divide-gray-200/50">
           {stats.map((s, i) => (
             <motion.div 
               key={i} 
-              initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1, duration: 0.6 }}
+              initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ type: "spring", stiffness: 100, damping: 20, delay: i * 0.1 }}
               className={`flex flex-col ${i !== 0 ? 'md:pl-12' : ''}`}
             >
               <div className="text-[32px] md:text-[40px] font-extrabold text-[#111111] tracking-tighter mb-2 leading-none">
