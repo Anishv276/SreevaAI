@@ -19,9 +19,9 @@ export const metadata: Metadata = {
   authors: [{ name: "Sreeva AI Team" }],
   metadataBase: new URL("https://www.sreevaai.com"),
   icons: {
-    icon: "/sreevaailogo2.png",
-    shortcut: "/sreevaailogo2.png",
-    apple: "/sreevaailogo2.png",
+    icon: "/favicon-source.png",
+    shortcut: "/favicon-source.png",
+    apple: "/favicon-source.png",
   },
   // No root canonical -- each page declares its own via page-level metadata
   openGraph: {
