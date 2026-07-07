@@ -17,7 +17,7 @@ const faqs = [
   },
   {
     q: "What's in the interview report?",
-    a: "A score (0–100), per-skill technical breakdown, a Hire / Hold / Reject recommendation with reasoning, and verbatim quotes from the transcript with timestamps. Everything your panel needs — without sitting in a debrief."
+    a: "A score (0–100), per-skill technical breakdown, a resume credibility score, an integrity score, and verbatim quotes from the transcript with timestamps. Everything your panel needs — without sitting in a debrief."
   },
   {
     q: "How long is each interview?",
@@ -33,7 +33,15 @@ const faqs = [
   },
   {
     q: "Does Sreeva make the hiring decision?",
-    a: "No. You do. Sreeva gives you a structured recommendation backed by evidence from the transcript. The report is designed to make your decision faster and more defensible — not to replace it."
+    a: "No. You do. Sreeva gives you a structured, evidence-backed report from the transcript. It's designed to make your decision faster and more defensible — not to replace it."
+  },
+  {
+    q: "Is this only for software engineers, or other roles too?",
+    a: "Technical roles only, by design — backend, frontend, full-stack, data/ML engineers, DevOps/SRE, and QA. We'd rather be excellent at first-round technical screening than mediocre at every role."
+  },
+  {
+    q: "How is this different from Karat or other interview-as-a-service providers?",
+    a: "Karat and similar services staff human engineers to run your interviews — strong signal, but it doesn't scale down and costs $300+ per interview. Ishita runs the same depth of probing autonomously, 24/7, at a fraction of the cost."
   },
 ];
 

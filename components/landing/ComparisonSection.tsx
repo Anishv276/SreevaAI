@@ -25,7 +25,7 @@ const comparisons = [
   {
     feature: "What you receive",
     traditional: "A score. Maybe notes if they remembered to type them.",
-    sreeva: "Per-skill scores, verbatim evidence with timestamps, hire verdict"
+    sreeva: "Per-skill scores, verbatim evidence with timestamps, resume credibility"
   },
   {
     feature: "Time to decision",

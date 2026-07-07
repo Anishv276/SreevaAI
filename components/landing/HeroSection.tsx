@@ -51,7 +51,7 @@ export default function HeroSection() {
           </h1>
 
           <p className="text-[18px] sm:text-[19px] text-gray-500 leading-[1.65] max-w-[420px] font-medium mb-12">
-            She joins every first-round technical call, asks the right follow-ups, and sends you a hire verdict in 20 minutes. Your senior engineers never take another first-round screen.
+            She joins every first-round technical call, asks the right follow-ups, and sends you a decision-ready report in 20 minutes. Your senior engineers never take another first-round screen.
           </p>
 
           {/* Premium Button Group */}
