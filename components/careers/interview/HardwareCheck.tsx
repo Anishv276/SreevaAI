@@ -430,7 +430,7 @@ export function HardwareCheck({
             platform: navigator.platform,
             userAgent: navigator.userAgent,
             hardwareConcurrency: navigator.hardwareConcurrency ?? null,
-            deviceMemory: (navigator as Record<string, unknown>).deviceMemory ?? null,
+            deviceMemory: (navigator as unknown as Record<string, unknown>).deviceMemory ?? null,
             canvasHash,
             sessionId: crypto.randomUUID(),
             collectedAt: Date.now(),

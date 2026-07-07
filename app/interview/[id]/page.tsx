@@ -235,7 +235,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             platform: navigator.platform,
             userAgent: navigator.userAgent,
             hardwareConcurrency: navigator.hardwareConcurrency ?? null,
-            deviceMemory: (navigator as Record<string, unknown>).deviceMemory ?? null,
+            deviceMemory: (navigator as unknown as Record<string, unknown>).deviceMemory ?? null,
             canvasHash,
             sessionId: (() => { try { return sessionStorage.getItem("fp_session_id") || ""; } catch { return ""; } })(),
             collectedAt: Date.now(),

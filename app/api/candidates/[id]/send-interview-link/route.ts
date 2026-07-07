@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { sendScheduleInviteEmail } from "@/lib/mail";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
@@ -78,7 +79,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
                 expiresAt: driveDeadline,
                 linkStatus: "ACTIVE",
                 isTest: false,          // always clear test flag on real invite
-                interviewBrief: null,   // clear any stale brief from a previous run
+                interviewBrief: Prisma.JsonNull,   // clear any stale brief from a previous run
             },
             create: {
                 id: generateId("int", application.fullName || applicationId),

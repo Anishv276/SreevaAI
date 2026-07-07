@@ -153,7 +153,6 @@ export default function DrivesPage() {
                                 : null;
                             const isExpired = drive.deadline ? new Date(drive.deadline) < new Date() : false;
                             const voice = ALL_VOICES.find(v => v.id === drive.voiceId);
-                            const timeLimit = drive.timeLimit || 30;
                             const isInterviewOnly = (drive as any).interviewMode === "interview-only";
 
                             return (
