@@ -19,7 +19,7 @@ export default function HeroSection() {
   }, []);
 
   return (
-    <section className="relative pt-40 pb-20 lg:pt-48 lg:pb-32 overflow-hidden bg-[#FAFAFA] font-geist min-h-screen flex items-center">
+    <section className="relative pt-24 pb-20 lg:pt-32 lg:pb-32 overflow-hidden bg-[var(--background)] font-geist min-h-[90vh] flex items-center">
       
       {/* Premium Background: Mesh Gradient Aurora & Noise */}
       <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
@@ -41,30 +41,31 @@ export default function HeroSection() {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-violet-600"></span>
             </span>
-            <span className="text-[11px] font-bold text-gray-500 uppercase tracking-[0.2em]">Adaptive AI Interviews</span>
+            <span className="text-[11px] font-bold text-gray-500 uppercase tracking-[0.2em]">AI Tech Interviewer for Engineering Teams</span>
           </div>
 
-          {/* Headline with Inner Shadow on "AI" */}
-          <h1 className="text-[4rem] sm:text-[4.5rem] lg:text-[5rem] font-extrabold text-[#111111] leading-[0.95] tracking-[-0.04em] mb-8">
-            Your <span className="relative inline-block text-transparent bg-clip-text bg-gradient-to-b from-gray-900 to-gray-600 after:absolute after:inset-0 after:bg-[linear-gradient(180deg,rgba(255,255,255,0.4)_0%,transparent_100%)] after:bg-clip-text after:text-transparent">AI</span> interviewer<br/>is ready.
+          {/* Headline */}
+          <h1 className="text-[4rem] sm:text-[4.5rem] lg:text-[5rem] font-extrabold text-[var(--foreground)] leading-[0.95] tracking-[-0.03em] mb-8">
+            Meet Ishita.<br/>
+            <span className="text-transparent bg-clip-text bg-gradient-to-br from-violet-600 to-indigo-500">Your AI interviewer.</span>
           </h1>
 
-          <p className="text-[18px] sm:text-[20px] text-gray-500 leading-[1.6] max-w-[440px] font-medium mb-12">
-            Sreeva runs your first-round interviews end to end — adaptive questions, real follow-ups, and a hire decision waiting for you in 20 minutes.
+          <p className="text-[18px] sm:text-[19px] text-gray-500 leading-[1.65] max-w-[420px] font-medium mb-12">
+            She joins every first-round technical call, asks the right follow-ups, and sends you a hire verdict in 20 minutes. Your senior engineers never take another first-round screen.
           </p>
 
           {/* Premium Button Group */}
           <div className="flex flex-col sm:flex-row items-center gap-5 w-full sm:w-auto mb-12">
             <a 
               href="https://cal.com/vamsivk/30min" 
-              className="w-full sm:w-auto px-8 py-3.5 bg-[#111111] text-white rounded-full font-bold text-[14px] flex items-center justify-center gap-2 group transition-all duration-300 relative overflow-hidden shadow-[0_8px_24px_rgba(0,0,0,0.15),inset_0_1px_1px_rgba(255,255,255,0.2)]"
+              className="w-full sm:w-auto px-8 py-4 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-full font-bold text-[14px] flex items-center justify-center gap-2 group transition-all duration-500 relative overflow-hidden shadow-soft hover:shadow-diffused hover:scale-[1.02]"
             >
-              <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-              <span className="relative z-10">Book a demo</span>
+              <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+              <span className="relative z-10">See Ishita in action</span>
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" className="relative z-10 group-hover:translate-x-1 transition-transform"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
             </a>
 
-            <button className="w-full sm:w-auto px-6 py-3.5 bg-white text-gray-900 rounded-full font-bold text-[14px] flex items-center justify-center gap-2.5 group transition-all duration-300 border border-gray-200/80 shadow-sm hover:bg-gray-50 hover:shadow-md hover:border-gray-300">
+            <button className="w-full sm:w-auto px-6 py-4 bg-white text-gray-900 rounded-full font-bold text-[14px] flex items-center justify-center gap-2.5 group transition-all duration-500 border border-hairline shadow-sm hover:bg-violet-50 hover:border-violet-200 hover:text-violet-700 hover:shadow-diffused hover:-translate-y-1">
               <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center group-hover:bg-violet-100 transition-colors">
                 <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" className="text-gray-600 group-hover:text-violet-600 ml-0.5"><path d="M5 3l14 9-14 9V3z"/></svg>
               </div>
@@ -82,7 +83,7 @@ export default function HeroSection() {
               <div className="w-8 h-8 rounded-full border-2 border-[#FAFAFA] bg-gray-100 flex items-center justify-center text-[10px] font-bold text-gray-500 shadow-sm">+4k</div>
             </div>
             <div className="text-[12px] font-semibold text-gray-500">
-              Trusted by engineering leaders
+              Trusted by engineering-led teams
             </div>
           </div>
 

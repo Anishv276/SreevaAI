@@ -7,14 +7,12 @@ export default function Footer() {
         
         {/* Footer Header */}
         <div className="flex flex-col items-center sm:items-start sm:flex-row gap-4 sm:gap-6 mb-16 pb-12 border-b border-gray-100">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-violet-600 to-indigo-600 rounded-[12px] flex items-center justify-center shadow-md">
-              <span className="text-white font-bold text-lg tracking-tighter">S</span>
-            </div>
-            <span className="text-[28px] font-bold text-gray-900 tracking-tight">Sreeva<span className="text-violet-600">AI</span></span>
+          <div className="flex items-center gap-2">
+            <img src="/sreevaailogo2.png" alt="Sreeva AI Logo" className="w-12 h-12 object-contain scale-[1.4]" />
+            <span className="text-[32px] font-bold text-gray-900 tracking-tight">Sreeva<span className="text-violet-600">AI</span></span>
           </div>
           <div className="hidden sm:block h-8 w-[1px] bg-gray-200 mt-1"></div>
-          <span className="text-gray-400 font-medium text-[20px] mt-1">— hire with confidence.</span>
+          <span className="text-gray-400 font-medium text-[20px] mt-1">— hire engineers with confidence.</span>
         </div>
 
         {/* Footer Grid */}
@@ -23,7 +21,7 @@ export default function Footer() {
           {/* Col 1 */}
           <div className="lg:col-span-5">
             <p className="text-gray-500 font-medium text-[16px] leading-[1.7] max-w-sm mb-8">
-              Adaptive AI that conducts first-round interviews, probes every claim, and hands you a hiring decision — in 20 minutes.
+              Adaptive AI that conducts first-round technical screens, probes every architecture claim, and gives you a hire decision in 20 minutes — without touching a senior engineer's calendar.
             </p>
             <div className="flex gap-4">
               <a href="https://www.linkedin.com/company/sreeva-ai/about/" target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center text-gray-400 hover:bg-[#0A66C2] hover:text-white transition-colors">
@@ -39,10 +37,10 @@ export default function Footer() {
           <div className="lg:col-span-2">
             <h5 className="text-[13px] font-bold text-gray-900 uppercase tracking-widest mb-6">Product</h5>
             <ul className="space-y-4">
-              <li><a href="#platform" className="text-[15px] font-medium text-gray-500 hover:text-violet-600 transition-colors">Platform</a></li>
-              <li><a href="#how" className="text-[15px] font-medium text-gray-500 hover:text-violet-600 transition-colors">How it works</a></li>
-              <li><a href="#pricing" className="text-[15px] font-medium text-gray-500 hover:text-violet-600 transition-colors">Pricing</a></li>
-              <li><a href="#faq" className="text-[15px] font-medium text-gray-500 hover:text-violet-600 transition-colors">FAQ</a></li>
+              <li><a href="#platform" onClick={(e) => { e.preventDefault(); document.getElementById('platform')?.scrollIntoView({ behavior: 'smooth' }); }} className="text-[15px] font-medium text-gray-500 hover:text-violet-600 transition-colors">Platform</a></li>
+              <li><a href="#how" onClick={(e) => { e.preventDefault(); document.getElementById('how')?.scrollIntoView({ behavior: 'smooth' }); }} className="text-[15px] font-medium text-gray-500 hover:text-violet-600 transition-colors">How it works</a></li>
+              <li><a href="#pricing" onClick={(e) => { e.preventDefault(); document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' }); }} className="text-[15px] font-medium text-gray-500 hover:text-violet-600 transition-colors">Pricing</a></li>
+              <li><a href="#faq" onClick={(e) => { e.preventDefault(); document.getElementById('faq')?.scrollIntoView({ behavior: 'smooth' }); }} className="text-[15px] font-medium text-gray-500 hover:text-violet-600 transition-colors">FAQ</a></li>
             </ul>
           </div>
 

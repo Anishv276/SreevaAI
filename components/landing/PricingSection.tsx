@@ -71,22 +71,20 @@ export default function PricingSection() {
             initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
             className="flex items-center gap-3 mb-6"
           >
-            <div className="h-[1px] w-8 bg-orange-400"></div>
-            <span className="text-orange-500 font-bold uppercase tracking-widest text-[13px]">Pricing</span>
-            <div className="h-[1px] w-8 bg-orange-400"></div>
+            <span className="inline-flex items-center px-4 py-1.5 bg-white border border-gray-200 shadow-sm text-gray-900 rounded-full text-[11px] font-extrabold uppercase tracking-widest">Pricing</span>
           </motion.div>
           <motion.h2 
             initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.1 }}
             className="text-[3.5rem] lg:text-[4.5rem] font-bold text-[#111111] leading-[1.05] tracking-[-0.02em] mb-8"
           >
-            Plans for every<br/>
-            hiring stage.
+            Pay per screen.<br/>
+            Not per headcount.
           </motion.h2>
           <motion.p 
             initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.2 }}
             className="text-xl md:text-[22px] text-gray-500 leading-[1.6] max-w-2xl font-medium"
           >
-            Start with one role. Scale adaptive interviews across teams once signal quality is proven.
+            One Sreeva screen costs less than 30 minutes of a senior engineer's time. The math is obvious.
           </motion.p>
         </div>
 
@@ -96,10 +94,10 @@ export default function PricingSection() {
             <motion.div
               key={i}
               initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }}
-              className={`relative rounded-[32px] p-8 flex flex-col h-full bg-white transition-all duration-300 ${
+              className={`relative rounded-[32px] p-8 flex flex-col h-full bg-white transition-all duration-500 group ${
                 plan.isPopular 
-                  ? 'border border-violet-500 shadow-[0_20px_40px_rgba(124,58,237,0.1)] ring-1 ring-violet-500 xl:-translate-y-4' 
-                  : 'border border-gray-200 shadow-sm'
+                  ? 'border border-violet-500/50 shadow-soft hover:shadow-diffused ring-1 ring-violet-500/20 xl:-translate-y-4 hover:xl:-translate-y-6 hover:-translate-y-2' 
+                  : 'border border-hairline hover:shadow-diffused hover:-translate-y-2'
               }`}
             >
               {plan.isPopular && (
@@ -111,8 +109,8 @@ export default function PricingSection() {
               )}
               
               <div className="mb-6">
-                <h3 className="text-[22px] font-bold text-gray-900 mb-2">{plan.name}</h3>
-                <p className="text-[13px] text-gray-500 font-medium leading-[1.6]">{plan.tag}</p>
+                <h3 className="text-[22px] font-bold text-gray-900 mb-2 tracking-tight">{plan.name}</h3>
+                <p className="text-[14px] text-gray-500 font-medium leading-[1.6]">{plan.tag}</p>
               </div>
 
               <div className="mb-8 pb-8 border-b border-gray-100">
@@ -131,10 +129,10 @@ export default function PricingSection() {
                 ))}
               </ul>
 
-              <button className={`w-full py-4 rounded-xl font-bold text-[14px] transition-all ${
+              <button className={`w-full py-4 rounded-full font-bold text-[14px] transition-all duration-300 ${
                 plan.isPopular 
-                  ? 'bg-violet-600 text-white hover:bg-violet-700 shadow-sm' 
-                  : 'bg-white border border-gray-200 text-gray-900 hover:bg-gray-50'
+                  ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-soft group-hover:shadow-diffused group-hover:scale-[1.02]' 
+                  : 'bg-white border border-hairline text-gray-900 group-hover:border-violet-200 group-hover:bg-violet-50 group-hover:text-violet-700'
               }`}>
                 {plan.cta}
               </button>

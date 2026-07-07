@@ -15,23 +15,25 @@ export default function CTASection() {
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-lg h-[300px] bg-violet-600 rounded-full blur-[120px] opacity-20 pointer-events-none"></div>
 
           <div className="relative z-10 flex flex-col items-center">
-            <span className="inline-block px-3 py-1 bg-orange-500/10 text-orange-400 border border-orange-500/20 rounded-full text-[12px] font-bold uppercase tracking-wider mb-8">
-              Ready when you are
+            <span className="inline-block px-3 py-1 bg-white/10 text-white border border-white/20 rounded-full text-[12px] font-bold uppercase tracking-wider mb-8">
+              No scheduling. No debriefs.
             </span>
             <h2 className="text-4xl md:text-[56px] font-bold text-white leading-[1.05] tracking-tight mb-8">
-              See exactly what your<br/>
-              candidates <span className="italic font-normal text-violet-400">actually know.</span>
+              Watch Ishita run<br/>
+              <span className="italic font-normal text-violet-400">a real interview.</span>
             </h2>
             <p className="text-[18px] md:text-[20px] text-gray-400 leading-[1.6] max-w-2xl font-medium mb-12">
-              Book a 30-minute walkthrough. We'll run Ishita on a real role from your pipeline — you'll see the interview, the probes, and the report. Live.
+              Pick a role from your pipeline. We run Ishita through it live — you see the questions, the follow-ups, and the full report. No slides.
             </p>
             <div className="flex flex-col items-center gap-6">
-              <button className="group relative h-14 px-10 rounded-full bg-white text-gray-900 font-bold hover:scale-105 transition-all shadow-[0_8px_30px_rgba(255,255,255,0.12)] flex items-center gap-3">
-                <span>Book a demo</span>
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" className="group-hover:translate-x-1 transition-transform"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-              </button>
+              <a
+                href="https://cal.com/vamsivk/30min"
+                className="group relative h-14 px-10 rounded-full bg-white text-gray-900 font-bold hover:scale-105 transition-all shadow-[0_8px_30px_rgba(255,255,255,0.12)] flex items-center gap-3"
+              >
+                <span>Book 30 minutes →</span>
+              </a>
               <div className="text-[14px] text-gray-500 font-medium">
-                No commitment · <span className="font-bold text-gray-300">Setup in under 10 min</span>
+                First screen live the same day
               </div>
             </div>
           </div>

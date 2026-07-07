@@ -42,6 +42,22 @@
   @media (width >= 1400px) { max-width: 1400px; }
 }
 
+
+@layer utilities {
+  .shadow-diffused {
+    box-shadow: 0 32px 64px -24px rgba(17, 17, 17, 0.12);
+  }
+  .shadow-soft {
+    box-shadow: 0 12px 32px -12px rgba(17, 17, 17, 0.08);
+  }
+  .border-hairline {
+    border-color: rgba(17, 17, 17, 0.08);
+  }
+  .text-tight {
+    letter-spacing: -0.03em;
+  }
+}
+
 @layer base {
   *, *::before, *::after {
     cursor: default;
@@ -49,7 +65,7 @@
 
   :root {
     --background: #FAFAFC;
-    --foreground: #111827;
+    --foreground: #111111;
     --border:     #E9E7FF;
     --radius:     12px;
 
@@ -82,6 +98,9 @@
     color-scheme: light;
     scrollbar-gutter: stable;
     scroll-behavior: auto;
+    zoom: 1.0;
+    overflow-x: hidden;
+    background-color: #FAFAFC;
   }
 
   body {

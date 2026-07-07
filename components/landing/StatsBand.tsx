@@ -2,10 +2,10 @@ import React from 'react';
 import { motion } from 'framer-motion';
 
 const stats = [
-  { val: "< 60s", txt: "Report ready before the candidate closes the tab" },
-  { val: "20 min", txt: "Fixed interview length, every candidate, no exceptions" },
-  { val: "0", txt: "Calendars blocked, calls scheduled, debriefs held — by your team" },
-  { val: "17", txt: "Signals tracked silently. One trust score at the end." }
+  { val: "20 min", txt: "Every first-round screen. Same depth, every single time." },
+  { val: "0 hrs", txt: "Of your senior engineers' time. Per candidate." },
+  { val: "12", txt: "Behavioral signals scored silently on every call." },
+  { val: "< 60s", txt: "From call end to full hire/no-hire report in your inbox." },
 ];
 
 export default function StatsBand() {

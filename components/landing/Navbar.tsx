@@ -9,6 +9,14 @@ export default function Navbar() {
     setIsScrolled(latest > 50);
   });
 
+  const handleScroll = (e: React.MouseEvent<HTMLAnchorElement>, targetId: string) => {
+    e.preventDefault();
+    const element = document.getElementById(targetId);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   return (
     <div className="fixed top-0 inset-x-0 z-[100] flex justify-center mt-6 px-4 pointer-events-none">
       <motion.header
@@ -22,17 +30,17 @@ export default function Navbar() {
         }`}
       >
         {/* Brand */}
-        <div className="flex items-center gap-2.5 cursor-pointer">
-          <img src="/sreevaailogo2.png" alt="Sreeva AI" width="28" height="28" className="object-contain" />
-          <span className="text-gray-900 font-bold text-[18px] tracking-tight">Sreeva<span className="text-violet-600">AI</span></span>
+        <div className="flex items-center gap-2 cursor-pointer" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
+          <img src="/sreevaailogo2.png" alt="Sreeva AI" className="w-10 h-10 object-contain scale-[1.4]" />
+          <span className="text-gray-900 font-bold text-[22px] tracking-tight">Sreeva<span className="text-violet-600">AI</span></span>
         </div>
         
         {/* Links */}
         <nav className={`hidden md:flex items-center gap-8 text-[14px] font-semibold text-gray-500 ${isScrolled ? 'mr-4' : ''}`}>
-          <a href="#problem" className="hover:text-gray-900 transition-colors">Problem</a>
-          <a href="#platform" className="hover:text-gray-900 transition-colors">Platform</a>
-          <a href="#how" className="hover:text-gray-900 transition-colors">How it works</a>
-          <a href="#pricing" className="hover:text-gray-900 transition-colors">Pricing</a>
+          <a href="#problem" onClick={(e) => handleScroll(e, 'problem')} className="hover:text-gray-900 transition-colors">Problem</a>
+          <a href="#platform" onClick={(e) => handleScroll(e, 'platform')} className="hover:text-gray-900 transition-colors">Platform</a>
+          <a href="#how" onClick={(e) => handleScroll(e, 'how')} className="hover:text-gray-900 transition-colors">How it works</a>
+          <a href="#pricing" onClick={(e) => handleScroll(e, 'pricing')} className="hover:text-gray-900 transition-colors">Pricing</a>
         </nav>
 
         {/* CTA */}

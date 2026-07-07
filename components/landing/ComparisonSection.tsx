@@ -3,34 +3,34 @@ import { motion } from 'framer-motion';
 
 const comparisons = [
   {
-    feature: "Questions asked",
-    traditional: "Same script every candidate, every time",
-    sreeva: "Generated live from the JD and what they just said"
+    feature: "How depth is measured",
+    traditional: "Passed/failed test cases or static code submission",
+    sreeva: "Live conversational probing — 3 levels deep on every claim"
   },
   {
-    feature: "Vague claims",
-    traditional: "Interviewer moves on or misses them",
-    sreeva: "Ishita probes every hedge — ownership, metric, tool"
-  },
-  {
-    feature: "Fraud detection",
-    traditional: "No way to know who actually showed up",
-    sreeva: "12+ behavioral signals scored into one integrity number"
+    feature: "Engineering time",
+    traditional: "60–90 min of a Senior Engineer per candidate",
+    sreeva: "Zero. Ishita runs every screen end to end."
   },
   {
     feature: "Consistency",
-    traditional: "Varies by interviewer mood, time, and experience",
-    sreeva: "Identical depth and rigor for every single candidate"
+    traditional: "Varies by who's interviewing and how tired they are",
+    sreeva: "Same structured depth for every candidate, every time"
+  },
+  {
+    feature: "Fraud & integrity",
+    traditional: "No real-time detection. Trust and hope.",
+    sreeva: "12 behavioral signals scored live. Adaptive follow-ups expose gaps."
   },
   {
     feature: "What you receive",
-    traditional: "Notes that depend on who took them",
-    sreeva: "Score, per-skill breakdown, verbatim evidence, verdict"
+    traditional: "A score. Maybe notes if they remembered to type them.",
+    sreeva: "Per-skill scores, verbatim evidence with timestamps, hire verdict"
   },
   {
     feature: "Time to decision",
-    traditional: "Days of scheduling, calls, and debrief",
-    sreeva: "Report ready the moment the call ends"
+    traditional: "Days of back-and-forth after the screen",
+    sreeva: "Full report ready the moment the call ends"
   }
 ];
 
@@ -44,22 +44,20 @@ export default function ComparisonSection() {
             initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
             className="flex items-center gap-3 mb-6"
           >
-            <div className="h-[1px] w-8 bg-orange-400"></div>
-            <span className="text-orange-500 font-bold uppercase tracking-widest text-[13px]">Why Sreeva</span>
-            <div className="h-[1px] w-8 bg-orange-400"></div>
+            <span className="inline-flex items-center px-4 py-1.5 bg-white border border-gray-200 shadow-sm text-gray-900 rounded-full text-[11px] font-extrabold uppercase tracking-widest">Why Sreeva</span>
           </motion.div>
           <motion.h2 
             initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.1 }}
             className="text-[3.5rem] lg:text-[4.5rem] font-bold text-[#111111] leading-[1.05] tracking-[-0.02em] mb-8"
           >
-            What you get that no<br/>
-            other tool gives you.
+            What changes when<br/>
+            <span className="text-gray-400 font-normal italic">Ishita runs the screen.</span>
           </motion.h2>
           <motion.p 
             initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.2 }}
             className="text-xl md:text-[22px] text-gray-500 leading-[1.6] max-w-2xl font-medium"
           >
-            Most tools record the interview. Sreeva conducts it — and hands you the verdict.
+            Everything your current process isn't.
           </motion.p>
         </div>
 
@@ -70,14 +68,21 @@ export default function ComparisonSection() {
           {/* Header Row */}
           <div className="flex bg-gray-50/50 border-b border-gray-200 p-6 md:p-8 hidden md:flex">
             <div className="w-1/4 text-[13px] font-bold text-gray-400 uppercase tracking-widest">What matters</div>
-            <div className="w-1/3 text-[13px] font-bold text-gray-400 uppercase tracking-widest pl-8 border-l border-transparent">Traditional screening</div>
-            <div className="w-5/12 text-[13px] font-bold text-violet-600 uppercase tracking-widest pl-8 border-l border-gray-200 bg-violet-50/30">Sreeva AI</div>
+            <div className="w-1/3 text-[13px] font-bold text-gray-400 uppercase tracking-widest pl-8 border-l border-transparent">Without Ishita</div>
+            <div className="w-5/12 text-[13px] font-bold text-violet-600 uppercase tracking-widest pl-8 border-l border-gray-200 bg-violet-50/30">With Ishita</div>
           </div>
 
           {/* Table Rows */}
           <div className="divide-y divide-gray-100">
             {comparisons.map((item, i) => (
-              <div key={i} className="flex flex-col md:flex-row p-6 md:p-8 hover:bg-gray-50/50 transition-colors group">
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, x: -8 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true, amount: 0.5 }}
+                transition={{ delay: i * 0.06, duration: 0.4, ease: 'easeOut' }}
+                className="flex flex-col md:flex-row p-6 md:p-8 hover:bg-violet-50/20 transition-colors group"
+              >
                 <div className="w-full md:w-1/4 flex items-center md:items-start text-[16px] font-bold text-gray-900 mb-4 md:mb-0 pr-4">
                   {item.feature}
                 </div>
@@ -100,7 +105,7 @@ export default function ComparisonSection() {
                     <span>{item.sreeva}</span>
                   </div>
                 </div>
-              </div>
+              </motion.div>
             ))}
           </div>
         </motion.div>

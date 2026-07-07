@@ -14,7 +14,7 @@ import Footer from '../components/landing/Footer';
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-white selection:bg-violet-500/20 text-gray-900 overflow-x-hidden font-geist">
+    <div className="min-h-screen bg-white selection:bg-violet-500/20 text-gray-900 overflow-x-clip font-geist">
       <Navbar />
       <main>
         <HeroSection />
