@@ -16,7 +16,7 @@ import { resumeQueue } from '../lib/queue';
 
 const RESUME_BUCKET = process.env.R2_RESUMES_BUCKET || 'resumes';
 
-// ── Config ──────────────────────────────────────────────────────────────────
+// -- Config ------------------------------------------------------------------
 // Use the drive that already exists from previous tests
 const DRIVE_ID   = 'drv-gtm-engineer-fresher-7263';
 const FILE_1     = 'C:/Users/vamsi/OneDrive/Desktop/Vamsi resume - GTM.pdf';
@@ -35,11 +35,11 @@ async function uploadOne(label: string, filePath: string, drive: any) {
   console.log(`${ts()} ▶ [UPLOAD ${label}] ${fileName}`);
   console.log('═'.repeat(60));
 
-  // ── 1. Read file ────────────────────────────────────────────────────────
+  // -- 1. Read file --------------------------------------------------------
   const buffer = readFileSync(filePath);
   console.log(`${ts()}   File read: ${(buffer.length / 1024).toFixed(1)} KB`);
 
-  // ── 2. R2 upload (same as route) ───────────────────────────────────────
+  // -- 2. R2 upload (same as route) ---------------------------------------
   const safeName  = sanitizeFileName(fileName);
   const orgSlug   = drive.organization?.slug || drive.orgId;
   const driveSlug = drive.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
@@ -47,7 +47,7 @@ async function uploadOne(label: string, filePath: string, drive: any) {
   const uploadedUrl = await putObject(RESUME_BUCKET, key, buffer, 'application/pdf');
   console.log(`${ts()}   ✓ R2 upload → ${key}`);
 
-  // ── 3. DB row  (same as route, resumeStatus="waiting" before enqueue) ─
+  // -- 3. DB row  (same as route, resumeStatus="waiting" before enqueue) -
   const applicationId = `${generateId('app', guessName(fileName))}-${randomUUID().slice(0, 8)}`;
   await prisma.application.create({
     data: {
@@ -68,7 +68,7 @@ async function uploadOne(label: string, filePath: string, drive: any) {
   });
   console.log(`${ts()}   ✓ DB row created  applicationId="${applicationId}"  resumeStatus="waiting"`);
 
-  // ── 4. Enqueue (same as route — Fix #2 ties status to success) ─────────
+  // -- 4. Enqueue (same as route -- Fix #2 ties status to success) ---------
   let job: any;
   try {
     job = await resumeQueue.add(
@@ -86,7 +86,7 @@ async function uploadOne(label: string, filePath: string, drive: any) {
     throw new Error(`Enqueue failed — row marked "failed": ${e.message}`);
   }
 
-  // ── 5. Poll DB until terminal state ────────────────────────────────────
+  // -- 5. Poll DB until terminal state ------------------------------------
   console.log(`${ts()}   ⏳ Waiting for worker to process job.id="${job.id}" …`);
   const deadline = Date.now() + TIMEOUT_MS;
   const TERMINAL = new Set(['pending', 'failed', 'shortlisted', 'rejected']);
@@ -150,13 +150,13 @@ async function main() {
   if (!drive) throw new Error(`Drive ${DRIVE_ID} not found`);
   console.log(`${ts()} Drive: "${drive.title}" (${drive.id})`);
 
-  // ── Upload 1 ────────────────────────────────────────────────────────────
+  // -- Upload 1 ------------------------------------------------------------
   const result1 = await uploadOne('1/2', FILE_1, drive);
 
-  // ── Upload 2 ────────────────────────────────────────────────────────────
+  // -- Upload 2 ------------------------------------------------------------
   const result2 = await uploadOne('2/2', FILE_2, drive);
 
-  // ── Final summary ───────────────────────────────────────────────────────
+  // -- Final summary -------------------------------------------------------
   console.log(`\n${'═'.repeat(60)}`);
   console.log('  FINAL RESULTS');
   console.log('═'.repeat(60));

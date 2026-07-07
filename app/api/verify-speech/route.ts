@@ -230,14 +230,14 @@ export async function POST(req: NextRequest) {
                 spokenIdx++;
             }
         }
-        // Only reject on ratio if the target words weren't found — a long transcript
+        // Only reject on ratio if the target words weren't found -- a long transcript
         // caused by echo/noise is fine if the candidate actually said the right words.
         const wordRatio = spokenWords.length / Math.max(1, targetWords.length);
         if (wordRatio > 3.5 && matchedCount < Math.ceil(targetWords.length * 0.8)) {
             console.warn("[verify-speech] Transcript too long vs target (possible noise)", { spokenWords: spokenWords.length, targetWords: targetWords.length });
             return NextResponse.json({ transcript, matched: false, matchedCount, total: targetWords.length });
         }
-        // 80% threshold — handles accent/contraction/minor mishearing
+        // 80% threshold -- handles accent/contraction/minor mishearing
         const matched = matchedCount >= Math.ceil(targetWords.length * 0.8);
         console.log("[verify-speech] matched:", matchedCount, "/", targetWords.length, "=>", matched);
         return NextResponse.json({ transcript, matched, matchedCount, total: targetWords.length });

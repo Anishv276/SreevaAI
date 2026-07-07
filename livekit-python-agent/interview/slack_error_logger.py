@@ -27,7 +27,38 @@ from typing import Any, Optional
 
 logger = logging.getLogger("interview-agent")
 
-SLACK_ERROR_WEBHOOK = os.environ.get("SLACK_ERROR_WEBHOOK_URL", "")
+# ---------------------------------------------------------------------------
+# Filter: suppress known benign LiveKit SDK errors that are not actionable.
+# livekit-agents 1.5.10 pins livekit==1.1.8 which has a race condition where
+# _first_subscription.set_result(None) is called twice on candidate reconnect,
+# producing asyncio.exceptions.InvalidStateError. The session continues normally.
+# We cannot upgrade livekit without breaking livekit-agents, so we suppress it.
+# ---------------------------------------------------------------------------
+_LIVEKIT_BENIGN_PATTERNS = [
+    # SDK re-fires local_track_subscribed on reconnect; future already resolved.
+    "invalid state",
+]
+
+
+class _LiveKitBenignFilter(logging.Filter):
+    """Suppress known non-actionable LiveKit SDK errors from reaching Slack."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        if any(pat in msg for pat in _LIVEKIT_BENIGN_PATTERNS):
+            # Only suppress if the originating logger is the LiveKit SDK.
+            if "livekit" in (record.name or "").lower() or "livekit" in (record.pathname or "").lower():
+                return False  # Drop the log record
+        return True
+
+
+# Apply the filter to the root logger so it covers the livekit SDK loggers too.
+logging.getLogger().addFilter(_LiveKitBenignFilter())
+
+# Fallback URL ensures the logger works for all teammates even without a local .env entry.
+# Env var still takes priority (useful for prod overrides).
+_FALLBACK_WEBHOOK = "https://hooks.slack.com/services/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"
+SLACK_ERROR_WEBHOOK = os.environ.get("SLACK_ERROR_WEBHOOK_URL") or _FALLBACK_WEBHOOK
 SLACK_ERROR_CHANNEL = os.environ.get("SLACK_ERROR_CHANNEL", "#debug-alerts")
 
 TYPE_EMOJIS = {
@@ -103,8 +134,10 @@ async def _post_to_slack(message: str, error_type: str) -> None:
         return
 
     try:
+        # NOTE: Slack Incoming Webhooks are bound to the channel chosen at
+        # creation -- passing a "channel" override is deprecated and can be
+        # rejected ("no_service"). Route to the webhook's own channel instead.
         payload = {
-            "channel": SLACK_ERROR_CHANNEL,
             "text": f"{error_type.upper()} ERROR",
             "blocks": [
                 {
@@ -134,8 +167,16 @@ async def _post_to_slack(message: str, error_type: str) -> None:
                 json=payload,
                 headers={"Content-Type": "application/json"},
             ) as resp:
-                if not resp.ok:
-                    logger.error("[SLACK_ERROR_LOG] Failed: %s", await resp.text())
+                body = (await resp.text()).strip()
+                # A dead/revoked Incoming Webhook returns 200 + "no_service" (or
+                # 404 "no_service"). That's a config problem (rotate the webhook via
+                # SLACK_ERROR_WEBHOOK_URL), not a code bug -- warn once per call at
+                # WARNING, not ERROR, so it doesn't masquerade as a pipeline failure.
+                if not resp.ok or body != "ok":
+                    logger.warning(
+                        "[SLACK_ERROR_LOG] Webhook rejected (status=%s body=%r) -- "
+                        "rotate SLACK_ERROR_WEBHOOK_URL", resp.status, body,
+                    )
     except Exception as e:
         logger.error("[SLACK_ERROR_LOG] Exception: %s", e, exc_info=True)
 

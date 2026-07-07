@@ -236,7 +236,7 @@ export default function NewOrgPage() {
   };
   const validate = () => {
     if (!form.orgName.trim()) {
-      toast.error("Client Name is required");
+      toast.error("Company Name is required");
       return false;
     }
     if (!form.slug.trim()) {
@@ -331,7 +331,7 @@ export default function NewOrgPage() {
         </button>
       </div>
       <div>
-        <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Add Client</h1>
+        <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Add Company</h1>
         <p className="text-sm text-gray-400 mt-0.5">Configure the organization, admin access, AI defaults, and safety controls.</p>
       </div>
       <form onSubmit={handleSubmit} className="space-y-5">
@@ -352,10 +352,10 @@ export default function NewOrgPage() {
           </div>
         </div>
         <section className="rounded-2xl bg-white p-6" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
-          <SectionHeader title="Organization Profile" description="Core client metadata and URL slug." />
+          <SectionHeader title="Organization Profile" description="Core company metadata and URL slug." />
           <div className="mt-6 grid gap-6 md:grid-cols-2">
             <TextInput
-              label="Client Name"
+              label="Company Name"
               icon={Building2}
               value={form.orgName}
               onChange={(value) => {
@@ -375,7 +375,7 @@ export default function NewOrgPage() {
                 setSlugTouched(true);
                 updateForm({ slug: value.toLowerCase() });
               }}
-              placeholder="client-slug"
+              placeholder="company-slug"
               required
             />
           </div>
@@ -388,7 +388,7 @@ export default function NewOrgPage() {
               icon={Mail}
               value={form.adminEmail}
               onChange={(value) => updateForm({ adminEmail: value })}
-              placeholder="admin@client.com"
+              placeholder="admin@company.com"
               required
               autoComplete="email"
             />
@@ -494,7 +494,7 @@ export default function NewOrgPage() {
           <SectionHeader title="Plan and Safety" description="Choose a plan and enable proctoring signals." />
           <div className="mt-6 grid gap-6 lg:grid-cols-4">
             <div className="space-y-3 lg:col-span-1">
-              <p className="text-[12px] font-bold uppercase tracking-widest text-gray-500">Client plan</p>
+              <p className="text-[12px] font-bold uppercase tracking-widest text-gray-500">Company plan</p>
               {ORG_PLAN_OPTIONS.map((plan) => (
                 <button
                   key={plan.id}
@@ -548,7 +548,7 @@ export default function NewOrgPage() {
             className="h-11 rounded-xl bg-[#7C3AED] px-6 text-sm font-semibold text-white shadow-sm hover:bg-violet-600"
           >
             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Shield className="mr-2 h-4 w-4" />}
-            {loading ? "Creating..." : "Create client"}
+            {loading ? "Creating..." : "Create company"}
           </Button>
         </div>
       </form>

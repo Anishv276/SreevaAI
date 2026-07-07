@@ -2,26 +2,32 @@ import redisConnection, { getBullPrefix } from "./redis";
 import { Queue } from 'bullmq';
 /**
  * QUEUE DEFINITIONS
- * All queues share this cleanup policy:
- *  - Completed jobs: auto-deleted 60s after finishing   (keeps Redis lean)
- *  - Failed jobs:    auto-deleted 60s after failure     (never block new jobs)
+ * Cleanup policy (both completed AND failed jobs -- a lingering job in either
+ * state can block a same-jobId re-run, so both must clear):
+ *  - resume-processing, jd-upload: 5 min  (larger files / slower external calls)
+ *  - everything else:              2 min
  *
- * Nothing ever accumulates — no manual cleanup needed.
+ * Nothing ever accumulates -- no manual cleanup needed.
  *
  * Every queue is namespaced by `prefix` (BULLMQ_PREFIX) so dev/prod deployments
  * sharing one Redis instance never consume each other's jobs. The worker uses
  * the SAME prefix (see worker.ts), so they stay matched.
  */
 const prefix = getBullPrefix();
+const FIVE_MIN = 5 * 60;
+const TWO_MIN = 2 * 60;
 const defaultJobOptions = {
-  removeOnComplete: { age: 60 },   // completed jobs gone after 60s
-  removeOnFail:    { age: 60 },    // failed jobs gone after 60s — frees slot for next job
+  removeOnComplete: { age: TWO_MIN },
+  removeOnFail:    { age: TWO_MIN },
 };
 // 1. Resume PDF text extraction and AI screening
 export const resumeQueue = new Queue('resume-processing', {
   connection: redisConnection,
   prefix,
-  defaultJobOptions,
+  defaultJobOptions: {
+    removeOnComplete: { age: FIVE_MIN },
+    removeOnFail:    { age: FIVE_MIN },
+  },
 });
 
 // 3. Interview invitation delivery (delayed sends)
@@ -43,15 +49,18 @@ export const interviewSnapshotQueue = new Queue('interview-snapshots', {
   defaultJobOptions: {
     attempts: 3,
     backoff: { type: 'exponential', delay: 1000 },
-    removeOnComplete: { age: 60 },
-    removeOnFail:    { age: 60 },
+    removeOnComplete: { age: TWO_MIN },
+    removeOnFail:    { age: TWO_MIN },
   },
 });
 // 6. AI-generated JD PDF uploads to Cloudflare R2
 export const jdUploadQueue = new Queue('jd-upload', {
   connection: redisConnection,
   prefix,
-  defaultJobOptions,
+  defaultJobOptions: {
+    removeOnComplete: { age: FIVE_MIN },
+    removeOnFail:    { age: FIVE_MIN },
+  },
 });
 // 7. Server-side interview recording finalization (LiveKit egress completion)
 export const interviewRecordingQueue = new Queue('interview-recording', {
@@ -60,8 +69,8 @@ export const interviewRecordingQueue = new Queue('interview-recording', {
   defaultJobOptions: {
     attempts: 3,
     backoff: { type: 'exponential', delay: 2000 },
-    removeOnComplete: { age: 60 },
-    removeOnFail:    { age: 60 },
+    removeOnComplete: { age: TWO_MIN },
+    removeOnFail:    { age: TWO_MIN },
   },
 });
 // 8. Recording retention cleanup after the retention window expires
@@ -71,8 +80,8 @@ export const recordingRetentionQueue = new Queue('recording-retention-cleanup', 
   defaultJobOptions: {
     attempts: 5,
     backoff: { type: 'exponential', delay: 5000 },
-    removeOnComplete: { age: 60 },
-    removeOnFail:    { age: 60 },
+    removeOnComplete: { age: TWO_MIN },
+    removeOnFail:    { age: TWO_MIN },
   },
 });
 // 9. Interview-start transition (PENDING → IN_PROGRESS)
@@ -82,8 +91,37 @@ export const interviewStartQueue = new Queue('interview-start', {
   defaultJobOptions: {
     attempts: 3,
     backoff: { type: 'exponential', delay: 1000 },
-    removeOnComplete: { age: 60 },
-    removeOnFail:    { age: 60 },
+    removeOnComplete: { age: TWO_MIN },
+    removeOnFail:    { age: TWO_MIN },
+  },
+});
+// 10. Pre-generate interview brief at slot confirmation (real candidates only)
+export const briefGenerationQueue = new Queue('brief-generation', {
+  connection: redisConnection,
+  prefix,
+  defaultJobOptions: {
+    attempts: 2,
+    backoff: { type: 'exponential', delay: 5000 },
+    removeOnComplete: { age: TWO_MIN },
+    removeOnFail:    { age: TWO_MIN },
+  },
+});
+// 11. Post-interview report/summary/billing-snapshot/debug-PDF tail, moved off
+// the LiveKit agent job (which LiveKit Cloud recycles shortly after the room
+// closes) onto this durable worker. attempts: 1 -- billing-usage persistence
+// and the Slack PDF upload are not idempotent, so no automatic retry.
+export const interviewReportQueue = new Queue('interview-report', {
+  connection: redisConnection,
+  prefix,
+  defaultJobOptions: {
+    attempts: 1,
+    // jobId is the interview's appId, so a lingering job in EITHER state blocks
+    // any future re-run for that SAME appId (BullMQ silently no-ops .add()
+    // against an existing jobId); clearing it promptly keeps repeated /test
+    // runs from needing manual Redis cleanup and stops one failed job from
+    // blocking every subsequent attempt for that interview.
+    removeOnComplete: { age: TWO_MIN },
+    removeOnFail:    { age: TWO_MIN },
   },
 });
 export default redisConnection;

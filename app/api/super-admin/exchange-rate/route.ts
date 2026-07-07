@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
  */
 export async function GET() {
     try {
-        // Primary: Frankfurter — free, no key, CORS-safe, daily updates
+        // Primary: Frankfurter -- free, no key, CORS-safe, daily updates
         const res = await fetch("https://api.frankfurter.app/latest?from=USD&to=INR", {
             next: { revalidate: 3600 }, // Next.js 15 cache for 1 hour
         });
@@ -25,7 +25,7 @@ export async function GET() {
         console.warn("[EXCHANGE-RATE] Frankfurter failed, trying backup:", e);
     }
     try {
-        // Fallback: open.er-api.com — free, no key
+        // Fallback: open.er-api.com -- free, no key
         const res = await fetch("https://open.er-api.com/v6/latest/USD");
         if (res.ok) {
             const data = await res.json();
@@ -40,7 +40,7 @@ export async function GET() {
     } catch (e) {
         console.warn("[EXCHANGE-RATE] Backup also failed:", e);
     }
-    // Hard fallback — last known rate
+    // Hard fallback -- last known rate
     return NextResponse.json(
         { rate: 84.5, source: "fallback", updatedAt: "cached" },
         { headers: { "Cache-Control": "no-store" } }

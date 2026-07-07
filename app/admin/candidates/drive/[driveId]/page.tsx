@@ -19,7 +19,6 @@ interface DriveDetails {
     role?: string | null;
     applicants?: number | null;
     interviewMode?: string | null;
-    interviewLanguage?: string | null;
     screeningThreshold?: number | null;
     description?: string | null;
     experience?: string | null;
@@ -64,7 +63,6 @@ export default function DriveCandidatesPage() {
                     applicants: data.applicants ?? data._count?.applications ?? 0,
                     interviewMode: data.interviewMode || "ats",
                     screeningThreshold: data.screeningThreshold ?? null,
-                    interviewLanguage: data.interviewLanguage || null,
                     description: data.description || null,
                     experience: data.experience || null,
                     responsibilities: data.responsibilities || null,

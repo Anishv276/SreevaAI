@@ -28,6 +28,7 @@ export async function GET(req: Request) {
                 id: true,
                 status: true,
                 inviteSentAt: true,
+                scheduledAt: true,
                 startedAt: true,
                 completedAt: true,
                 interviewDuration: true,
@@ -54,7 +55,7 @@ export async function GET(req: Request) {
 
         const events = interviews.map((iv) => {
             // Determine start and end times
-            const start = iv.startedAt || iv.inviteSentAt || new Date();
+            const start = iv.startedAt || iv.scheduledAt || iv.inviteSentAt || new Date();
             const durationMinutes = iv.interviewDuration || 30; // default to 30 mins
             let end = iv.completedAt;
             if (!end) {

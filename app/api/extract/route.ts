@@ -73,7 +73,7 @@ export async function POST(request: Request) {
         }
         const type = typeRaw as "JD" | "RESUME";
         const isJd = typeRaw === "JD";
-        // Fetch org's LLM model from DB — set via Super Admin → AI Models
+        // Fetch org's LLM model from DB -- set via Super Admin → AI Models
         const orgRow = await prisma.organization.findUnique({
             where: { id: orgId },
             select: { llmJdExtraction: true, llmResumeExtraction: true },

@@ -85,15 +85,17 @@ type BillingFeatureMetrics = {
     ttsByModel?: Record<string, unknown>;
     sttByModel?: Record<string, unknown>;
 };
-// Returns the org's configured model for a billing section key — from DB, not hardcoded.
+// Returns the org's configured model for a billing section key -- from DB, not hardcoded.
 function getConfiguredModel(org: OrgDetail | null, sectionKey: string): string | null {
     if (!org) return null;
     const map: Record<string, keyof OrgDetail> = {
-        interview:        "llmInterviewLive",
-        resumeExtraction: "llmResumeExtraction",
-        jdExtraction:     "llmJdExtraction",
-        resumeReport:     "llmResumeReport",
-        interviewReport:  "llmInterviewReport",
+        interview:              "llmInterviewLive",
+        interviewBrief:         "llmInterviewBrief",
+        interviewLLMGeneration: "llmInterviewLive",
+        resumeExtraction:       "llmResumeExtraction",
+        jdExtraction:           "llmJdExtraction",
+        resumeReport:           "llmResumeReport",
+        interviewReport:        "llmInterviewReport",
     };
     const field = map[sectionKey];
     return field ? (org[field] as string | undefined) ?? null : null;
@@ -179,9 +181,13 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
     };
     const fmt = (usd: number) => {
         if (currency === "INR") {
-            return `₹${(usd * usdToInr).toFixed(0)}`;
+            const inr = usd * usdToInr;
+            if (inr < 1) return `₹${inr.toFixed(3)}`;
+            return `₹${inr.toFixed(2)}`;
         }
-        return `$${usd.toFixed(2)}`;
+        if (usd === 0) return "$0.0000";
+        if (usd < 0.01) return `$${usd.toFixed(4)}`;
+        return `$${usd.toFixed(4)}`;
     };
     // Pagination & Search state
     const [page, setPage] = useState(1);
@@ -533,9 +539,9 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                                 { label: "JD Extraction", key: "jdExtraction" },
                                                 { label: "Interview Report", key: "interviewReport" },
                                                 { label: "Resume Report", key: "resumeReport" },
-                                                { label: "Interview Evaluation", key: "interview" },
-                                                { label: "Interview LLM Generation", key: "interview" },
-                                                { label: "Interview Brief", key: "interview" },
+                                                { label: "Interview (Live + Eval LLM)", key: "interview" },
+                                                { label: "Interview Brief", key: "interviewBrief" },
+                                                { label: "Interview LLM Generation", key: "interviewLLMGeneration" },
                                             ].map((row) => {
                                                 const usage = (org?.usageMetrics ?? {}) as Record<string, unknown>;
                                                 const billingAll = (usage.billing ?? {}) as Record<string, BillingFeatureMetrics>;
@@ -564,14 +570,17 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                 <h4 className="text-[12px] font-black uppercase tracking-[0.15em] text-gray-500 mb-4">Interview Overall Cost</h4>
                                 <div className="rounded-2xl border border-gray-100 bg-gradient-to-br from-violet-50/30 to-blue-50/30 p-6 shadow-sm">
                                     <div className="mt-6 border-t border-gray-200/50 pt-6 text-center">
-                                        <div className="text-[10px] font-black uppercase tracking-[0.15em] text-gray-500">Brief + Evaluation + LLM Generation</div>
+                                        <div className="text-[10px] font-black uppercase tracking-[0.15em] text-gray-500">Live Agent + Eval + Brief + Generation</div>
                                         <div className="mt-2 text-4xl font-black text-violet-600">
                                             {fmt(
                                                 (() => {
                                                     const usage = (org?.usageMetrics ?? {}) as Record<string, unknown>;
                                                     const billingAll = (usage.billing ?? {}) as Record<string, BillingFeatureMetrics>;
-                                                    const interview = (billingAll["interview"] ?? {}) as BillingFeatureMetrics;
-                                                    return Number(interview?.costUsd || 0);
+                                                    return (
+                                                        Number((billingAll["interview"] as BillingFeatureMetrics)?.costUsd || 0)
+                                                        + Number((billingAll["interviewBrief"] as BillingFeatureMetrics)?.costUsd || 0)
+                                                        + Number((billingAll["interviewLLMGeneration"] as BillingFeatureMetrics)?.costUsd || 0)
+                                                    );
                                                 })()
                                             )}
                                         </div>
@@ -591,8 +600,13 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                         const usage = (org?.usageMetrics ?? {}) as Record<string, unknown>;
                                         const billingAll = (usage.billing ?? {}) as Record<string, BillingFeatureMetrics>;
                                         const interviewBilling = (billingAll["interview"] ?? {}) as BillingFeatureMetrics;
-                                        const ttsChars = Number(interviewBilling?.ttsCharacters || 0);
-                                        const ttsCost = Number(interviewBilling?.ttsCostUsd || 0);
+                                        // Find provider-specific TTS data from ttsByModel
+                                        const ttsByModel = (interviewBilling?.ttsByModel ?? {}) as Record<string, any>;
+                                        const providerEntries = Object.values(ttsByModel).filter(
+                                            (m: any) => String(m?.provider || "").toUpperCase() === tts.provider
+                                        );
+                                        const ttsChars = providerEntries.reduce((s: number, m: any) => s + Number(m?.characters || 0), 0);
+                                        const ttsCost = providerEntries.reduce((s: number, m: any) => s + Number(m?.costUsd || 0), 0);
                                         return (
                                             <div key={tts.provider} className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
                                                 <div className="text-[10px] font-black uppercase tracking-[0.15em] text-gray-500">{tts.label}</div>
@@ -644,6 +658,8 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                 <span className="text-gray-900">
                                     {fmt([
                                         "interview",
+                                        "interviewBrief",
+                                        "interviewLLMGeneration",
                                         "resumeExtraction",
                                         "jdExtraction",
                                         "resumeReport",

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendInterviewScheduledEmail } from "@/lib/mail";
+import { briefGenerationQueue } from "@/lib/queue";
 
 const SLOT_DURATION_MS = 30 * 60 * 1000; // 30-min slots
 const TIMEZONE = "Asia/Kolkata";
@@ -13,7 +14,7 @@ function generateSlots(dateIST: string): Date[] {
         for (const minute of [0, 30]) {
             // Build ISO string as IST then convert
             const localStr = `${dateIST}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00`;
-            // Parse as IST by using Intl — simpler: offset IST = UTC+5:30
+            // Parse as IST by using Intl -- simpler: offset IST = UTC+5:30
             const utcMs = new Date(localStr + "+05:30").getTime();
             slots.push(new Date(utcMs));
         }
@@ -81,8 +82,8 @@ export async function GET(
             return NextResponse.json(result);
         }
 
-        // Only show slots that are at least 30 minutes from now
-        const allSlots = generateSlots(dateIST).filter(s => s.getTime() > Date.now() + 30 * 60 * 1000);
+        // Only show slots that are at least 5 minutes from now
+        const allSlots = generateSlots(dateIST).filter(s => s.getTime() > Date.now() + 5 * 60 * 1000);
 
         // Count booked interviews per slot window for this org
         const orgId = org?.id;
@@ -108,7 +109,7 @@ export async function GET(
 }
 
 // POST /api/schedule/[token]
-// Body: { slotISO: string }  — books the slot and sends interview link email
+// Body: { slotISO: string }  -- books the slot and sends interview link email
 export async function POST(
     req: Request,
     { params }: { params: Promise<{ token: string }> }
@@ -158,6 +159,16 @@ export async function POST(
     await prisma.interview.update({
         where: { id: interview.id },
         data: { scheduledAt: slotDate, timezone: TIMEZONE },
+    });
+
+    // Enqueue background brief generation (slot flow only — NOT for test interviews)
+    // The worker fetches resume + JD fresh from DB, generates the LLM brief, and
+    // saves it to Interview.interviewBrief so agent_runtime loads it instantly at launch.
+    void briefGenerationQueue.add("generate-brief", {
+        applicationId: interview.applicationId,
+    }).catch((err) => {
+        console.error("[BRIEF] Failed to enqueue brief-generation job:", err);
+        // Non-fatal: agent_runtime will fall back to live generation
     });
 
     // Build interview link

@@ -30,12 +30,12 @@ from interview.agent_providers import (
     build_stt,
 )
 from interview.agent_persistence import (
-    generate_interview_report,
-    generate_interview_summary,
     get_interview_context,
     mark_interview_failed,
     mark_interview_started,
     persist_answer_scores,
+    persist_latency_signals,
+    persist_session_fingerprint,
     persist_transcript,
     update_interview_status,
 )
@@ -46,21 +46,16 @@ from interview.slack_error_logger import (
     log_tts_error,
 )
 from billing.billing import (
-    flush_billing as flush_pending_manual_billing,
-    record_manual_usage as persist_org_manual_billing_usage,
-    save_interview_billing as persist_interview_billing_snapshot,
     save_org_usage_metrics as persist_org_usage_metrics,
 )
 from openai import AsyncOpenAI
 from pydantic import BaseModel, field_validator
 import urllib.request
 import urllib.error
-
-import re as _re
 from dataclasses import dataclass, field
 from enum import Enum
 
-# ─── Test Event Logger (for /test page debugging) ──────────────────────────────
+# --- Test Event Logger (for /test page debugging) ------------------------------
 async def log_test_event(app_id: str, event_type: str, message: str, data: dict = None) -> None:
     """Send event to /api/test/events for live debugging on /test page."""
     # Always log for test sessions (check if app_id looks like a test app)
@@ -96,6 +91,69 @@ async def log_test_event(app_id: str, event_type: str, message: str, data: dict 
     except Exception as e:
         logger.debug("[TEST_EVENT_LOG] Failed to log event: %s", e)
 
+
+def _usage_to_dict(usage: Any) -> Optional[dict]:
+    """Flatten a LiveKit AgentSessionUsage into a JSON-safe dict for the
+    interview-report job payload. report_worker.py rebuilds a getattr-friendly
+    SimpleNamespace from this before handing it to UsageSummarizer.from_session()."""
+    if not usage:
+        return None
+    model_usage = []
+    for item in getattr(usage, "model_usage", []) or []:
+        model_usage.append({
+            "type": getattr(item, "type", ""),
+            "provider": getattr(item, "provider", ""),
+            "model": getattr(item, "model", ""),
+            "inputTokens": getattr(item, "input_tokens", 0),
+            "outputTokens": getattr(item, "output_tokens", 0),
+        })
+    return {
+        "modelUsage": model_usage,
+        "input_tokens": getattr(usage, "input_tokens", 0),
+        "output_tokens": getattr(usage, "output_tokens", 0),
+    }
+
+
+# --- Interview Report Handoff (agent job -> durable Node/BullMQ worker) --------
+_REPORT_ENQUEUE_URL = (
+    os.environ.get("APP_URL", "http://localhost:3000").rstrip("/")
+    + "/api/internal/interview-report"
+)
+_INTERNAL_API_SECRET = os.environ.get("INTERNAL_API_SECRET", "")
+
+async def _enqueue_report_job(app_id: str, payload: dict) -> None:
+    """Hand the report/summary/billing/debug-PDF tail off to the interview-report
+    BullMQ queue via an internal Next.js route, instead of running it inline in
+    this (LiveKit-Cloud-recycled) agent job. Fire-and-forget: never blocks or
+    raises into the caller -- a failed handoff is logged and the session still
+    shuts down; the interview keeps its transcript/status either way."""
+    body = json.dumps(payload, default=str).encode("utf-8")
+    headers = {"Content-Type": "application/json", "x-internal-secret": _INTERNAL_API_SECRET}
+    try:
+        import aiohttp
+        async with aiohttp.ClientSession() as http_session:
+            async with http_session.post(
+                _REPORT_ENQUEUE_URL, data=body, headers=headers,
+                timeout=aiohttp.ClientTimeout(total=5),
+            ) as resp:
+                if resp.status >= 300:
+                    logger.error(
+                        "[REPORT] Enqueue failed for %s: HTTP %s", app_id, resp.status,
+                    )
+                    return
+    except (ImportError, ModuleNotFoundError):
+        try:
+            req = urllib.request.Request(_REPORT_ENQUEUE_URL, data=body, headers=headers, method="POST")
+            urllib.request.urlopen(req, timeout=5)
+        except Exception as e:
+            logger.error("[REPORT] Enqueue failed for %s: %s", app_id, e)
+            return
+    except Exception as e:
+        logger.error("[REPORT] Enqueue failed for %s: %s", app_id, e)
+        return
+    logger.info("[REPORT] Enqueued interview-report job for %s", app_id)
+
+
 class CoverageSource(str, Enum):
     EXPLICIT  = "explicit"    # agent explicitly moved on after probing
     AUTO_SKILL = "auto_skill" # skill inferred from a project's [tech] brackets
@@ -114,7 +172,7 @@ class CoveredTopics:
     """Single source of truth for all covered topics.
 
     Stores rich CoverageRecord per key so directives can tell the LLM
-    *how* and *where* a topic was covered — enabling acknowledgements like
+    *how* and *where* a topic was covered -- enabling acknowledgements like
     "yes, we covered Python during the DataFlow project discussion."
 
     Normalizes every key on every operation so string mismatch can never
@@ -126,7 +184,7 @@ class CoveredTopics:
     @staticmethod
     def _norm(key: str) -> str:
         short = str(key or "").split(" - ")[0].strip()
-        return _re.sub(r"[^a-z0-9]+", " ", short.lower()).strip()
+        return re.sub(r"[^a-z0-9]+", " ", short.lower()).strip()
 
     # ------------------------------------------------------------------
     # Write API
@@ -191,75 +249,18 @@ class CoveredTopics:
             for rec in self._store.values()
         ]
 
-    def get_memory_block(self, *, limit: int = 10) -> str:
-        """
-        Returns a formatted block for LLM directive injection.
+    def get_memory_block(self) -> str:
+        """Coverage memory always empty — removed from all directives."""
+        return ""
 
-        Two sections:
-          1. TOPICS ALREADY COVERED — what was discussed and the gist of the answer
-          2. FORBIDDEN QUESTIONS  — every question already asked on any covered topic.
-             These are blocked GLOBALLY: never re-asked under any topic or framing.
-             This is what stops "How did you use LangGraph?" from firing again when
-             LangGraph was already discussed inside the Internship topic.
-
-        Example output:
-          [COVERAGE MEMORY — HARD RULES, NO EXCEPTIONS]
-          TOPICS ALREADY COVERED (do not re-open any of these):
-          - DataFlow Project — candidate said: built Kafka pipeline, Python primary tech
-          - python (covered inside DataFlow Project): skip standalone question
-
-          FORBIDDEN QUESTIONS (already asked — NEVER ask again under any topic or framing):
-            • "What did you build in DataFlow?" (asked during DataFlow Project)
-            • "How did Kafka fit into the pipeline?" (asked during DataFlow Project)
-        """
-        if not self._store:
-            return ""
-        topic_lines: list[str] = []
-        forbidden_lines: list[str] = []
-        for rec in list(self._store.values())[-limit:]:
-            if rec.source == CoverageSource.AUTO_SKILL and rec.via_topic:
-                topic_lines.append(
-                    f"- {rec.display_title} (covered inside {rec.via_topic}): skip standalone question"
-                )
-            elif rec.source == CoverageSource.CUSTOM_Q:
-                gist_part = f" — {rec.gist}" if rec.gist else ""
-                topic_lines.append(f"- custom Q \"{rec.display_title}\"{gist_part}")
-            else:
-                gist_part = f" — candidate said: {rec.gist}" if rec.gist else ""
-                topic_lines.append(f"- {rec.display_title}{gist_part}")
-            # Every question asked on this topic becomes a GLOBAL forbidden question.
-            for q in (rec.questions_asked or []):
-                forbidden_lines.append(f'    • "{q}" (asked during {rec.display_title})')
-        body = "\n".join(topic_lines)
-        block = (
-            "[COVERAGE MEMORY — HARD RULES, NO EXCEPTIONS]\n"
-            "TOPICS ALREADY COVERED (do not re-open any of these):\n"
-            f"{body}\n"
-        )
-        if forbidden_lines:
-            block += (
-                "\nFORBIDDEN QUESTIONS (already asked — NEVER ask these again under any topic or any framing):\n"
-                + "\n".join(forbidden_lines)
-                + "\n"
-                "If the candidate raises a covered topic themselves, give ONE short acknowledgement "
-                "('Right, we covered that already — I have a good picture of it.') then immediately "
-                "ask about an UNCOVERED topic. Do NOT probe it further.\n"
-            )
-        else:
-            block += (
-                "If candidate revisits a covered topic, acknowledge briefly "
-                "('Yes, we covered X during Y — I have a clear picture, let\'s move on') "
-                "and redirect to the active topic. Do NOT probe a covered topic again.\n"
-            )
-        return block
-
-# Module-level singleton — reuses the HTTP/2 connection pool and TLS session
+# Module-level singleton -- reuses the HTTP/2 connection pool and TLS session
 # across all eval, directive, and brief calls for every interview session.
 # Creating AsyncOpenAI() per-session causes a cold TLS handshake on the first
 # call of each session, adding 50–200ms. One shared client eliminates that.
 _SHARED_OPENAI_CLIENT: AsyncOpenAI = AsyncOpenAI()
 from interview.agent_runtime_helpers import (
     _build_recent_context_block,
+    append_transcript_line,
     make_tts_sanitize_transform,
     _tts_acronym_transform,
     _elevenlabs_normalize_transform,
@@ -294,7 +295,7 @@ from interview.prompt_layers import (
     build_evaluation_layer_prompt,
     build_system_prompt,
 )
-CLOSING_TRIGGER_SECS = 20   # fire goodbye at T-20s so interview ends exactly at time limit
+CLOSING_TRIGGER_SECS = 10   # fire goodbye at T-10s so interview ends exactly at time limit
 # Custom-question normalisation constants  module-level so they are allocated once.
 _CUSTOM_Q_PREFIXES: tuple[str, ...] = (
     "ask him about",
@@ -308,19 +309,13 @@ _CUSTOM_Q_TOKEN_SYNONYMS: dict[str, set[str]] = {
     "education": {"education", "educational", "study", "studied", "degree", "college", "university", "school", "background", "academics", "academic"},
     "experience": {"experience", "worked", "work", "role", "roles", "internship", "intern"},
 }
-# Language codes for STT and TTS  keyed by DB language field value.
-_LANGUAGE_CODES: dict[str, dict[str, str]] = {
-    "English": {"stt": "en-US", "tts": "en"},
-    "Hindi":   {"stt": "hi",    "tts": "hi"},
-}
-# ponytail: _TTS_DEFAULT_MODELS deleted — all model values come from org DB row now
+# ponytail: English-only. Re-add a language table if multi-language support returns.
+_STT_LANGUAGE_CODE = "en-US"
+_TTS_LANGUAGE_CODE = "en"
+# ponytail: _TTS_DEFAULT_MODELS deleted -- all model values come from org DB row now
 # Compiled once  matches greeting echo fragments that leak back into STT after AI speaks.
 _GREETING_ECHO_RE = re.compile(
     r"^\s*(?:hi|hello|hey|okay|ok|yeah|yes|yep|mmhmm|mhm|good morning|good afternoon)\s*$",
-    re.IGNORECASE,
-)
-_ACK_ONLY_ASSISTANT_RE = re.compile(
-    r"^\s*(?:okay|ok|got it|sure|right|yeah|yes|thanks|thank you|makes sense|that makes sense)[,.\s]*$",
     re.IGNORECASE,
 )
 _MEANINGFUL_SHORT_ANSWERS = {
@@ -375,12 +370,6 @@ def _clean_stt_text(raw_text: str) -> str:
             continue
         cleaned_tokens.append(token)
     return _STT_WHITESPACE_RE.sub(" ", " ".join(cleaned_tokens)).strip()
-def _is_ack_only_assistant_fragment(text: str) -> bool:
-    """True for interrupted assistant acknowledgements that are not a question."""
-    clean = _STT_WHITESPACE_RE.sub(" ", (text or "").strip())
-    if not clean or "?" in clean:
-        return False
-    return bool(_ACK_ONLY_ASSISTANT_RE.fullmatch(clean)) or len(clean.split()) <= 2
 def _normalized_short_answer(text: str) -> str:
     return re.sub(r"[^a-z0-9/]+", "", (text or "").strip().lower())
 def _is_tiny_fragment(text: str) -> bool:
@@ -456,6 +445,8 @@ def _build_probe_directive(
     coverage_memory: str,
     asked_questions_log: list[str],
     topic_transcript: list[str],
+    signals_history: list[str] | None = None,
+    probe_rotation_index: int = 0,
 ) -> str:
     """
     Builds the probe directive synchronously — no LLM call.
@@ -463,16 +454,47 @@ def _build_probe_directive(
     The interview LLM (Ishita) reads this and generates her own question.
 
     Eliminates the middle directive LLM call, collapsing 3 calls/turn → 2.
+
+    probe_rotation_index: rotates the mandatory sub-concept across probe turns so
+    consecutive follow-ups on the same topic hit DIFFERENT sub-concepts from the
+    topic's probe_focus list — never asking about the same sub-concept twice on
+    one topic when other sub-concepts are still un-probed.
     """
     from interview.probe_strategy import get_probe_context
 
-    # Topic brief block
+    # Determine the mandatory sub-concept for THIS turn by rotating through the
+    # probe_focus list. This forces "chunking" then "embeddings" then "retrieval"
+    # instead of every turn defaulting to the first item.
+    _focus_list: list[str] = list(topic_item.probe_focus) if (topic_item and topic_item.probe_focus) else []
+    _mandatory_subconcept: str = ""
+    _remaining_subconcepts: list[str] = []
+    if _focus_list:
+        _idx = max(0, int(probe_rotation_index)) % len(_focus_list)
+        _mandatory_subconcept = _focus_list[_idx]
+        _remaining_subconcepts = [f for i, f in enumerate(_focus_list) if i != _idx]
+
+    # Topic brief block -- highlight the MANDATORY sub-concept for this turn so
+    # the LLM doesn't keep asking about the first angle every time.
     if topic_item is not None:
         parts = [f"TOPIC: {topic_item.title}"]
         if topic_item.full_description:
             parts.append(f"WHAT THIS IS: {topic_item.full_description}")
-        if topic_item.probe_focus:
-            parts.append(f"INTERESTING ANGLES: {', '.join(topic_item.probe_focus)}")
+        if topic_item.tech_stack:
+            parts.append(f"TECH STACK: {', '.join(topic_item.tech_stack)}")
+        if _focus_list:
+            parts.append(f"PROBE FOCUS (all sub-concepts for this topic): {', '.join(_focus_list)}")
+        if _mandatory_subconcept:
+            parts.append(
+                f"MANDATORY SUB-CONCEPT FOR THIS TURN: {_mandatory_subconcept}\n"
+                f"  Your question this turn MUST be about '{_mandatory_subconcept}' — NOT about "
+                f"any other sub-concept of this topic. This rotates each probe turn so you cover "
+                f"the whole topic instead of asking about the same thing repeatedly."
+            )
+        if _remaining_subconcepts:
+            parts.append(
+                f"OTHER SUB-CONCEPTS (do NOT probe these this turn — they are covered in later turns): "
+                f"{', '.join(_remaining_subconcepts)}"
+            )
         if topic_item.probe_avoid:
             parts.append(f"SKIP: {', '.join(topic_item.probe_avoid)}")
         _topic_ctx = "\n".join(parts)
@@ -486,7 +508,7 @@ def _build_probe_directive(
 
     _asked = "\n".join(f"  - {q}" for q in asked_questions_log[-6:])
 
-    # Full probe context from probe_strategy — what fired, what to do, what to skip
+    # Full probe context from probe_strategy -- what fired, what to do, what to skip
     _probe_ctx = get_probe_context(
         signal=signal,
         signal_reason=signal_reason,
@@ -494,23 +516,47 @@ def _build_probe_directive(
         topic_follow_ups=topic_follow_ups,
         topic_denied=topic_denied,
         prev_answer=prev_answer,
+        signals_history=signals_history or [],
+        active_topic=active_topic,
+        prev_question=prev_question,
     )
 
-    # Filler guidance — classify prev answer intent so Ishita's reaction is connected
+    # Filler guidance -- classify prev answer intent so Ishita's reaction is connected
     _prev_lower = (prev_answer or "").lower().strip()
-    if not _prev_lower or any(p in _prev_lower for p in ("i don't know", "i forgot", "i don't remember", "not sure", "can't recall")):
-        _filler_hint = "FILLER: 'No worries.' or 'Fair enough.' — they couldn't recall."
+    _is_connection_check = any(p in _prev_lower for p in ("can you hear", "are you there", "hello?", "you there?"))
+    _is_clarification_ask = _is_connection_check or any(
+        p in _prev_lower for p in ("are you asking", "you're asking", "do you mean", "what do you mean", "which", "can you clarify")
+    )
+
+    if _is_connection_check:
+        _filler_hint = "CONNECTION CHECK: They asked if you can hear them, not answered the question. Briefly confirm you can hear them, then re-ask the SAME question (don't move to a new topic or skip it as if it were answered)."
+    elif _is_clarification_ask:
+        _filler_hint = "CLARIFICATION DETECTED: They didn't understand your question. Rephrase it MORE SIMPLY and anchor the topic name explicitly."
+    elif not _prev_lower or any(p in _prev_lower for p in ("i don't know", "i forgot", "i don't remember", "not sure", "can't recall")):
+        _filler_hint = "FILLER: they couldn't recall — vary it, e.g. 'No worries.' / 'Fair enough.' / 'That's alright.' Don't reuse recent turns' wording."
     elif len(_prev_lower.split()) <= 8:
-        _filler_hint = "FILLER: 'Hmm, okay.' or 'Right.' — short answer, acknowledge briefly."
+        _filler_hint = "FILLER: short answer, acknowledge briefly — vary it, e.g. 'Hmm, okay.' / 'Right.' / 'Got it.' Don't reuse recent turns' wording."
     elif any(p in _prev_lower for p in ("i think", "probably", "maybe", "i believe", "kind of", "sort of")):
-        _filler_hint = "FILLER: 'Hmm, okay.' or 'Mm.' — they hedged, don't praise it."
+        _filler_hint = "FILLER: they hedged, don't praise it — vary it, e.g. 'Hmm, okay.' / 'Mm.' / 'Alright.' Don't reuse recent turns' wording."
     else:
-        _filler_hint = "FILLER: 'Ah, makes sense.' or 'Right.' or 'Okay.' — substantive answer."
+        _filler_hint = "FILLER: substantive answer — vary it, e.g. 'Ah, makes sense.' / 'Got it.' / 'That tracks.' Don't reuse recent turns' wording."
+
+    # Short display label for the HARD STOP line -- prefer structured topic title,
+    # fall back to the first segment of the full active_topic context string.
+    _topic_short = (
+        topic_item.title if topic_item
+        else (active_topic.split(" — ")[0].split(" - ")[0].split("|")[0].strip()[:60])
+    )
 
     parts_out = [
         f"[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]",
         f"",
-        f"You are still on {active_topic}. Dig deeper.",
+        f"ACTIVE TOPIC LOCK: {active_topic}",
+        f"You are ON this topic ONLY. Every question you ask must be about this topic and nothing else.",
+        f"If you ask about any other topic, you are breaking the interview protocol.",
+        f"",
+        f"TOPIC BRIEF:",
+        _topic_ctx,
         f"",
         f"WHAT THE CANDIDATE JUST SAID:",
         _thread,
@@ -523,7 +569,7 @@ def _build_probe_directive(
     ]
     if _asked:
         parts_out += [
-            "DO NOT ask these again (already covered):",
+            "DO NOT ask these again (already covered on this topic):",
             _asked,
             "",
         ]
@@ -535,7 +581,22 @@ def _build_probe_directive(
         "One question mark. Never two questions in one turn.",
         "The question can have 1-3 sentences of natural setup before the actual question — that's fine.",
         "Grounded in what they just told you. Never 'Can you' or 'Could you'. Never 'Great!' or 'Awesome!'.",
+        "",
     ]
+    if _mandatory_subconcept:
+        parts_out += [
+            f"CRITICAL SUB-CONCEPT LOCK: This turn's question MUST be about '{_mandatory_subconcept}' — "
+            f"not about any other sub-concept of '{topic_item.title if topic_item else active_topic}'. ",
+            f"If you previously probed '{_mandatory_subconcept}' already, dig deeper INTO IT (an internal "
+            f"mechanism, an edge case, a decision) — never pivot to a different sub-concept mid-turn.",
+            f"Do NOT ask a generic overview question about the topic. Do NOT ask about a different sub-concept.",
+            "",
+        ]
+    if _is_clarification_ask:
+        parts_out += [
+            f"THEY ASKED FOR CLARIFICATION: Ask SIMPLER, mention '{_topic_short}' upfront.",
+        ]
+    parts_out += [""]
 
     directive = "\n".join(parts_out)
     import logging as _logging
@@ -543,6 +604,7 @@ def _build_probe_directive(
         "[PROBE_DIRECTIVE] built (no LLM) | topic=%r signal=%s | %d chars",
         active_topic[:60], signal or "none", len(directive),
     )
+    _logging.getLogger("interview-agent").info("[PROBE_DIRECTIVE_FULL]\n%s", directive)
     return directive
 
 
@@ -556,7 +618,7 @@ async def _generate_move_on_directive(
     memory_block: str,
     cross_ref_rule: str,
     client: Any,
-    llm_model: str = "gpt-4.1-mini",
+    llm_model: str,
     usage_sink: Optional[Any] = None,
     topic_item: Optional[Any] = None,
     prev_answer: str = "",  # candidate's last answer — used to derive the right opening filler
@@ -586,14 +648,10 @@ async def _generate_move_on_directive(
             parts.append(f"CONTEXT: {topic_item.full_description}")
         if topic_item.tech_stack:
             parts.append(f"TECH STACK: {', '.join(topic_item.tech_stack)}")
-        if topic_item.why_relevant:
-            parts.append(f"WHY RELEVANT: {topic_item.why_relevant}")
         if topic_item.probe_focus:
-            parts.append(f"PROBE FOCUS: {', '.join(topic_item.probe_focus)}")
+            parts.append(f"PROBE FOCUS (build the opening question around ONE of these): {', '.join(topic_item.probe_focus)}")
         if topic_item.probe_avoid:
             parts.append(f"PROBE AVOID: {', '.join(topic_item.probe_avoid)}")
-        if topic_item.impact:
-            parts.append(f"IMPACT: {topic_item.impact}")
         _brief_context = "\n".join(parts)
     # Attribution guard: a STANDALONE / personal project must NEVER be tied to an
     # employer. The candidate's resume lists the project as standalone (the topic
@@ -612,16 +670,16 @@ async def _generate_move_on_directive(
             "Even if the analyst brief mentions a company nearby, do NOT assume this project\n"
             "was built there. Ask about the project on its own terms.\n"
         )
-    # Tag-based framing — the tag tells us exactly what the candidate knows and how to open.
+    # Tag-based framing -- the tag tells us exactly what the candidate knows and how to open.
     # This is the single most important framing rule: wrong tag = wrong question type.
     #
-    # RESUME_TOPIC : candidate did this — we know it. Ask about what they built, owned, or decided.
+    # RESUME_TOPIC : candidate did this -- we know it. Ask about what they built, owned, or decided.
     #                NEVER ask if they did it. NEVER ask why they worked somewhere. They worked there.
     # JD_TOPIC     : role requires this but candidate has NOT claimed it on their resume.
-    #                Ask neutrally — curious about exposure. Do NOT assume they know it.
+    #                Ask neutrally -- curious about exposure. Do NOT assume they know it.
     # ROLE_TOPIC   : comes from expert domain knowledge, NOT resume or JD.
     #                Candidate has no known experience here. Ask a concept/approach question.
-    #                NEVER ask "what was your experience with X" — they may have none.
+    #                NEVER ask "what was your experience with X" -- they may have none.
     _topic_type_hint = (topic_item.topic_type if topic_item else "") or ""
     _probe_focus_str = "; ".join(topic_item.probe_focus[:3]) if (topic_item and topic_item.probe_focus) else ""
 
@@ -636,27 +694,27 @@ async def _generate_move_on_directive(
             "skill":   "a skill they listed on their resume",
         }.get(_topic_type_hint, "something from their resume")
         _band_depth = {
-            "fresher":    "Establish what they personally built and what their specific role was. Surface-level is fine.",
-            "mid":        "Push past team language — ask what was specifically their own call or ownership.",
+            "fresher":    "Surface-level is fine — a concrete detail, not a scaling or architecture answer.",
+            "mid":        "Push for what was specifically their own call, not team language.",
             "experienced":"Skip setup. Go straight to a tradeoff, design decision, or what broke.",
             "senior":     "Probe strategic judgment — what it changed, what the stakes were, what they'd do differently.",
-        }.get(band, "Ask what they personally owned and what decisions were theirs.")
+        }.get(band, "Ask at a depth appropriate to their level.")
         _angle_guide = (
             f"SOURCE: RESUME_TOPIC — {_type_context}.\n"
             f"{_standalone_note}"
-            f"The candidate HAS done this. We know it from their resume. We are not checking if they did it.\n"
-            f"Your job: set clear context for the candidate so they know exactly which project/role/skill "
-            f"is being discussed, then ask ONE question that goes into depth.\n\n"
-            f"CONTEXT-SETTING PRINCIPLE:\n"
-            f"The candidate is on a voice call. They need to know what you're asking about before they can answer. "
-            f"Reference the topic naturally in the question itself — not with a formulaic opener, "
-            f"but by building the topic name into a real question. "
-            f"For a project: ask about something specific to that project. "
-            f"For a work role: ask about something specific to that company or role. "
-            f"For a skill: ask about a real scenario where they used it.\n\n"
+            f"The candidate HAS done this. We know it from their resume. We are not checking if they did it — "
+            f"never ask generic ownership questions like 'what did you build' or 'what did you personally own'.\n\n"
+            f"HOW TO BUILD THE QUESTION — combine all four of these, don't pick just one:\n"
+            f"  TITLE: {topic_item.title if topic_item else new_topic_title} — name it naturally so they know what you mean.\n"
+            f"  DESCRIPTION: {(topic_item.full_description if topic_item else '') or '(none)'} — pull ONE concrete "
+            f"detail from this (a mechanism, a number, a specific step) to ground the question.\n"
+            f"  TECH STACK: {', '.join(topic_item.tech_stack) if (topic_item and topic_item.tech_stack) else '(none)'} "
+            f"— use a specific tool/technology by name if it sharpens the question.\n"
+            f"  PROBE FOCUS (MANDATORY angle — the question must dig into ONE of these, not generic ownership): "
+            f"{_probe_focus_str or 'a specific decision or mechanism from the description'}\n\n"
             f"DEPTH TARGET ({band.upper()}): {_band_depth}\n"
             f"FORBIDDEN: 'do you have experience', 'why did you work there', 'what drew you to X', "
-            f"'tell me about your background' — these are generic and give the candidate no context."
+            f"'tell me about your background', 'what did you build/own/do' with no specific angle attached."
         )
     elif source in ("JD_TOPIC", "jd_skill"):
         _band_jd = {
@@ -668,12 +726,15 @@ async def _generate_move_on_directive(
         _angle_guide = (
             f"SOURCE: JD_TOPIC — this is required by the job description.\n"
             f"The candidate has NOT claimed this on their resume. We do not know if they've used it.\n"
-            f"Your job: make it clear to the candidate WHY you're asking — tell them the role needs this — "
-            f"then ask ONE question that checks their exposure without assuming they have any.\n\n"
-            f"CONTEXT-SETTING PRINCIPLE:\n"
-            f"The candidate needs to understand the question's origin: this is a role requirement, not a resume claim. "
-            f"Make that clear naturally in the question — e.g. frame it as 'this role involves a lot of X' "
-            f"before asking what their exposure is. Don't just ask 'have you used X?' with no context.\n\n"
+            f"Make it clear to the candidate WHY you're asking — the role needs this — "
+            f"then ask ONE question that checks exposure without assuming they have any.\n\n"
+            f"HOW TO BUILD THE QUESTION — combine all four of these, don't pick just one:\n"
+            f"  TITLE: {topic_item.title if topic_item else new_topic_title} — name it naturally.\n"
+            f"  DESCRIPTION: {(topic_item.full_description if topic_item else '') or '(none)'} — use it to explain "
+            f"why this matters for the role, in one short phrase.\n"
+            f"  TECH STACK: {', '.join(topic_item.tech_stack) if (topic_item and topic_item.tech_stack) else '(none)'} "
+            f"— name the specific tool/technology rather than speaking generically.\n"
+            f"  PROBE FOCUS (MANDATORY angle): {_probe_focus_str or 'their exposure or approach to this'}\n\n"
             f"DEPTH TARGET ({band.upper()}): {_band_jd}\n"
             f"FORBIDDEN: 'you listed', 'on your resume', 'walk me through your experience with' (assumes experience), "
             f"grilling them if they say they haven't used it."
@@ -690,15 +751,15 @@ async def _generate_move_on_directive(
             f"SOURCE: ROLE_TOPIC — this comes from expert domain knowledge of the role.\n"
             f"It is NOT on the candidate's resume and NOT in the job description. "
             f"We have no idea if they've worked with this.\n"
-            f"Your job: introduce the topic clearly so the candidate understands what's being asked — "
-            f"then ask ONE question that checks their thinking or approach, not their experience history.\n\n"
-            f"CONTEXT-SETTING PRINCIPLE:\n"
-            f"The candidate has no anchor for this question. Give them one — explain in one short phrase "
-            f"why this matters for the role before asking. Something like 'for a role like this, X matters a lot' "
-            f"or 'one thing that comes up a lot in this work is X'. Then ask your question.\n\n"
+            f"Ask ONE question that checks their thinking or approach, not their experience history.\n\n"
+            f"HOW TO BUILD THE QUESTION — combine all four of these, don't pick just one:\n"
+            f"  TITLE: {topic_item.title if topic_item else new_topic_title} — name it naturally.\n"
+            f"  DESCRIPTION: {_role_desc or '(none)'} — use it to explain in one short phrase why this matters "
+            f"for the role before asking.\n"
+            f"  TECH STACK: {', '.join(topic_item.tech_stack) if (topic_item and topic_item.tech_stack) else '(none)'}\n"
+            f"  PROBE FOCUS (MANDATORY angle): "
+            f"{_probe_focus_str or 'their understanding, reasoning, how they would approach it'}\n\n"
             f"DEPTH TARGET ({band.upper()}): {_band_role}\n"
-            f"CONTEXT FROM BRIEF: {_role_desc}\n"
-            f"PROBE ANGLES: {_probe_focus_str or 'their understanding, reasoning, how they would approach it'}\n"
             f"FORBIDDEN: 'what was your experience with X' (assumes experience), 'why did you work with X', "
             f"'what do you know about X?' (generic), framing it as if it's on their resume."
         )
@@ -728,6 +789,11 @@ async def _generate_move_on_directive(
         "  JD requirement: 'This role deals with Kubernetes a lot — what's your experience with it so far?'\n"
         "  ROLE topic: 'One thing that matters a lot in this kind of role is observability — how do you think about it?'\n"
         "Notice: the topic name is in the question. The candidate immediately knows the context.\n\n"
+
+        "━━━ PROBE FOCUS RULE (MANDATORY, every MOVE_ON) ━━━\n"
+        "The angle guidance below always includes a PROBE FOCUS list. Your OPENING ANGLE "
+        "must be built around ONE of those items — never a generic ownership question "
+        "('what did you build', 'what did you personally do') when a more specific angle is given.\n\n"
 
         "━━━ SOURCE TAG RULES ━━━\n"
         "  RESUME_TOPIC → Candidate did this. We know it. Never ask if they did it.\n"
@@ -806,35 +872,36 @@ async def _generate_move_on_directive(
             raise ValueError("empty response")
         # Sanity check: directive must not contain a scripted question for Ishita to copy
         if "SUGGESTED OPENING QUESTION" in generated.upper():
-            # Strip it — Ishita generates her own from topic context
+            # Strip it -- Ishita generates her own from topic context
             generated = re.sub(
                 r"SUGGESTED OPENING QUESTION.*$", "", generated, flags=re.I | re.DOTALL
             ).strip()
         # Build filler instruction from the actual prev answer so the LLM
-        # picks a reaction that matches what the candidate really said —
+        # picks a reaction that matches what the candidate really said -- 
         # not a generic list it ignores.
         _prev_trimmed = (prev_answer or "").strip()[:300]
         if _prev_trimmed:
             # Classify the candidate's answer intent so the filler is contextually correct
             _prev_lc = _prev_trimmed.lower()
             if not _prev_lc or any(p in _prev_lc for p in ("i don't know", "i forgot", "i don't remember", "not sure", "can't recall")):
-                _intent_hint = "They couldn't recall or said they don't know → use 'No worries.' or 'Fair enough.'"
+                _intent_hint = "They couldn't recall or said they don't know → e.g. 'No worries.' / 'Fair enough.' / 'That's alright.' / 'Understood.'"
             elif len(_prev_lc.split()) <= 8:
-                _intent_hint = "Very short answer, possibly surface-level → use 'Hmm, okay.' or 'Right.'"
+                _intent_hint = "Very short answer, possibly surface-level → e.g. 'Hmm, okay.' / 'Right.' / 'Got it.' / 'I see.'"
             elif any(p in _prev_lc for p in ("i think", "probably", "maybe", "i believe", "kind of", "sort of")):
-                _intent_hint = "They hedged or were vague → use 'Hmm, okay.' or 'Mm.' to acknowledge without validating"
+                _intent_hint = "They hedged or were vague → e.g. 'Hmm, okay.' / 'Mm.' / 'Alright.' / 'I see.' to acknowledge without validating"
             else:
-                _intent_hint = "Substantive answer → use 'Ah, makes sense.' or 'Right.' or 'Okay.'"
+                _intent_hint = "Substantive answer → e.g. 'Ah, makes sense.' / 'Got it.' / 'That tracks.' / 'Interesting.'"
             _filler_instruction = (
                 f"\n\nOPENING REACTION — must respond to what the candidate actually said:\n"
                 f"THEIR LAST ANSWER: \"{_prev_trimmed}\"\n"
                 f"ANSWER INTENT: {_intent_hint}\n"
-                "Pick ONE micro-reaction (3-8 words) that matches the intent above.\n"
+                "The examples above are illustrative, not a fixed list — invent your own short, natural "
+                "micro-reaction (3-8 words) that fits the intent. Do not default to picking only from the examples.\n"
                 "The reaction and the new question must feel like one connected turn — "
                 "not a reaction to silence followed by an unrelated question.\n"
                 "NEVER say 'Great!', 'Awesome!', 'Fantastic!', 'Amazing!', or any hollow praise.\n"
                 "NEVER say 'Thanks for sharing' or any 'thanks for [verb]ing' phrase.\n"
-                "NEVER use the same reaction as the previous turn.\n"
+                "NEVER reuse the same reaction word/phrase you've used in recent turns of this interview.\n"
                 f"NEVER reference the old topic '{old_topic_title}' — it is closed.\n"
                 "DO NOT wrap up, say goodbye, or add any closing phrase.\n"
             )
@@ -1061,12 +1128,12 @@ class InterviewAgent(Agent):
             n = 0
             is_elevenlabs = type(tts_engine).__module__.startswith("livekit.plugins.elevenlabs")
             async for chunk in text:
-                buf += chunk
                 if is_elevenlabs:
-                    # Buffer by sentence for ElevenLabs — pushing raw tokens causes it to
-                    # synthesize mid-word (e.g. "Multi" before "Channel") producing garbled
-                    # audio. Fall through to the same sentence-buffer logic used for Sarvam.
-                    pass
+                    self._record_tts_text(chunk)
+                    tts_stream.push_text(chunk)
+                    n += 1
+                    continue
+                buf += chunk
                 while True:
                     m = _TTS_SENT_END_RE.search(buf)
                     if m:
@@ -1142,21 +1209,20 @@ def prewarm(proc: JobProcess):
         logger.info("Default TTS prewarmed.")
     except Exception as e:
         logger.warning(f"Failed to prewarm default TTS: {e}")
-    # DB pool initializes lazily on first job — asyncpg requires an async context
+    # DB pool initializes lazily on first job -- asyncpg requires an async context
     # which is not available in the sync prewarm() function.
     logger.info("DB pool will initialize lazily on first job.")
 class _EvalSignalToggles(BaseModel):
-    """Toggle flags for plan-gated signals only.
-    Always-on signals (ownership_ambiguity, ownership_clarified, example_evasion,
-    example_given, weak_technical_hedge, follow_up_collapse, strong_under_pressure,
-    depth_decay) are NOT listed here — they have no toggle and always run.
-    Plan-gated signals default to False when absent from the DB row.
+    """Toggle flags for plan-gated proctoring/integrity signals.
+    Defaults to False when absent from the DB row.
     """
     # Plan-gated behavioral signals
     latency_mismatch: bool = False
-    complexity_latency_mismatch: bool = False
+    answer_integrity: bool = False
     # Plan-gated environmental signals (Python awareness mirrors frontend gating)
     tab_switch: bool = False
+    fullscreen_exit: bool = False
+    window_focus_loss: bool = False
     camera_disabled: bool = False
     microphone_disabled: bool = False
     connection_lost: bool = False
@@ -1174,10 +1240,7 @@ class _EvalSignalToggles(BaseModel):
             return bool(v)
         return False
 def _extract_evaluation_signal_toggles(raw_signals: Any) -> dict[str, bool]:
-    """Parse DB proctoringSignals JSON into a toggle dict for plan-gated signals only.
-    Returns only the 9 plan-gated signal flags. Always-on signals are not in
-    this dict — they are never toggled and run unconditionally in the evaluator.
-    """
+    """Parse DB proctoringSignals JSON into a toggle dict for plan-gated signals."""
     parsed: dict[str, Any] = {}
     if isinstance(raw_signals, dict):
         parsed = raw_signals
@@ -1214,6 +1277,7 @@ class InterviewContext(BaseModel):
     interviewQuestions: Any = None
     proctoringSignals: Any = None
     interviewStatus: Optional[str] = None
+    interviewBrief: Any = None  # Pre-generated JSON (slot flow) or None (test/fallback flow)
     @field_validator("fullName", "jobTitle", "language", mode="before")
     @classmethod
     def _require_nonempty(cls, v: Any) -> str:
@@ -1260,10 +1324,6 @@ async def entrypoint(ctx: JobContext):
                 logger.warning(f"[TASK] Background task '{label}' failed: {err}")
         task.add_done_callback(_on_done)
         return task
-    def append_transcript_line(speaker: str, text: str) -> None:
-        from interview.agent_runtime_helpers import append_transcript_line as _atl
-        elapsed = int(max(0, time.time() - session_start_time)) if session_start_time else 0
-        _atl(transcript_lines, f"{speaker}[{elapsed}]", text)
     # Room name is available before connecting - derive app_id early so we can
     # fire the DB fetch in parallel with the room connect handshake.
     app_id = ctx.room.name.replace("interview_", "")
@@ -1322,7 +1382,7 @@ async def entrypoint(ctx: JobContext):
         return
     if isinstance(connect_result, Exception):
         raise connect_result
-    # Room is now connected — define the failure helper here so it can use ctx.room.
+    # Room is now connected -- define the failure helper here so it can use ctx.room.
     # Any failure AFTER this point must call _fail_interview() so:
     #   1. DB is marked FAILED (Drive candidates page shows FAILED, not stuck IN_PROGRESS)
     #   2. Frontend receives an error event and shows the support message to the candidate
@@ -1446,7 +1506,6 @@ async def entrypoint(ctx: JobContext):
     ]
     if not _custom_questions:
         logger.info("[FLOW] Custom questions  none configured")
-    interview_lang = ctx_data.language
     time_limit_mins = FIXED_INTERVIEW_DURATION_MINUTES
     org_id = ctx_data.orgId
     session_log_context.update(
@@ -1478,40 +1537,68 @@ async def entrypoint(ctx: JobContext):
     interview_llm_model: str         = str(ctx_data.llmInterviewLive).strip()
     interview_llm_temperature: float = INTERVIEW_TEMPERATURE
     analysis_model: str              = str(ctx_data.llmInterviewEval).strip()
-    lang_codes = _LANGUAGE_CODES.get(interview_lang)
-    if not lang_codes:
-        raise RuntimeError(f"Unsupported interview language in DB: {interview_lang}")
     _eval_llm_usages_accumulated: list[dict] = []
     _brief_llm_usages: list[dict] = []
     _llmgen_llm_usages: list[dict] = []
-    logger.info(
-        "[BRIEF] Generating interview brief | candidate=%s role=%s",
-        candidate_first_name or candidate_name, job_title,
-    )
+    # ── BRIEF: slot confirmation flow loads from DB; test flow always generates live ──
     _brief_openai_client: AsyncOpenAI = _SHARED_OPENAI_CLIENT
 
-    # ── Band seed: resume-only classification (seniority_level + total_years) ──
-    # Logic lives in interview/band_classifier.py — fully tested, no title heuristics.
+    # Band seed: resume-only classification (seniority_level + total_years).
+    # Always computed regardless of brief source — band drives prompt logic downstream.
     _band_seed, _total_years, _seniority = classify_band(structured_resume)
     logger.info(
         "[BAND] seed=%s | total_years=%.1f | seniority=%s",
         _band_seed, _total_years, _seniority or "unknown",
     )
-    _interview_brief: InterviewBrief = await generate_interview_brief(
-        candidate_name=candidate_first_name or candidate_name,
-        job_title=job_title,
-        candidate_band=_band_seed,
-        resume_json=structured_resume if isinstance(structured_resume, dict) else {},
-        jd_data=extracted_details or {},
-        custom_questions=_interview_questions or [],
-        openai_client=_brief_openai_client,
-        llm_model=str(ctx_data.llmInterviewBrief).strip(),
-        usage_sink=_brief_llm_usages.append,
+
+    _stored_brief_raw = ctx_data.interviewBrief if not _is_test_session else None
+    _stored_brief_dict: dict | None = (
+        _coerce_jsonish(_stored_brief_raw)
+        if _stored_brief_raw
+        else None
     )
-    # Use the LLM's band assessment — more accurate than mechanical inference
+    if _stored_brief_dict:
+        # SLOT FLOW: brief was pre-generated by the background worker at slot booking.
+        # Instant load — no LLM call, no latency.
+        logger.info(
+            "[BRIEF] Loading pre-generated brief from DB | candidate=%s role=%s",
+            candidate_first_name or candidate_name, job_title,
+        )
+        _interview_brief: InterviewBrief = InterviewBrief.model_validate(_stored_brief_dict)
+        logger.info(
+            "[BRIEF] ✓ Loaded from DB | band=%s | anchor=%r | topics=%d",
+            _interview_brief.candidate_band,
+            _interview_brief.anchor_topic.title,
+            len(_interview_brief.topic_pool),
+        )
+    else:
+        # TEST FLOW (isTest=True) or fallback if worker hasn't finished yet:
+        # Always generate the brief live via LLM — same as before.
+        if _is_test_session:
+            logger.info(
+                "[BRIEF] TEST SESSION — generating brief live (never from DB) | candidate=%s role=%s",
+                candidate_first_name or candidate_name, job_title,
+            )
+        else:
+            logger.info(
+                "[BRIEF] No pre-generated brief in DB — falling back to live generation | candidate=%s role=%s",
+                candidate_first_name or candidate_name, job_title,
+            )
+        _interview_brief = await generate_interview_brief(
+            candidate_name=candidate_first_name or candidate_name,
+            job_title=job_title,
+            candidate_band=_band_seed,
+            resume_json=structured_resume if isinstance(structured_resume, dict) else {},
+            jd_data=extracted_details or {},
+            custom_questions=_interview_questions or [],
+            openai_client=_brief_openai_client,
+            llm_model=str(ctx_data.llmInterviewBrief).strip(),
+            usage_sink=_brief_llm_usages.append,
+        )
+    # Use the LLM's band assessment -- more accurate than mechanical inference
     candidate_band = _interview_brief.candidate_band
     logger.info("[FLOW] Band=%s | candidate=%s | role=%s", candidate_band, candidate_name, job_title)
-    # Convenience views directly from InterviewBrief — no wrapper objects needed
+    # Convenience views directly from InterviewBrief -- no wrapper objects needed
     _brief_skills    = [t.title for t in _interview_brief.topic_pool if t.topic_type == "skill"]
     _brief_projects  = [t.title for t in _interview_brief.topic_pool if t.topic_type == "project"]
     _brief_work      = [t.title for t in _interview_brief.topic_pool if t.topic_type == "work"]
@@ -1545,8 +1632,8 @@ async def entrypoint(ctx: JobContext):
         logger.info("[BRIEF] red_flags: %s", " | ".join(_interview_brief.red_flags))
     for _i, _t in enumerate(_interview_brief.topic_pool):
         logger.info(
-            "[BRIEF] topic[%d] %-10s score=%.2f  %r  probe=%s",
-            _i, _t.topic_type, _t.relevance_score, _t.title,
+            "[BRIEF] topic[%d] %-10s %r  probe=%s",
+            _i, _t.topic_type, _t.title,
             ",".join(_t.probe_focus[:3]) or "-",
         )
     # Compact text block for eval layer prompt
@@ -1613,7 +1700,12 @@ async def entrypoint(ctx: JobContext):
     )
     chat_ctx = llm.ChatContext()
     chat_ctx.add_message(role="system", content=system_prompt)
-    chat_ctx.add_message(role="system", content=interview_directive_cached)
+    # interview_directive_cached (anchor topic, resume/JD content) is intentionally
+    # NOT added here. Adding it before warmup completes gives the LLM interview
+    # question material to draw on during greeting/warmup, which lets it jump
+    # straight to a resume-specific question instead of waiting for the candidate's
+    # warmup answer. It is injected once warmup_complete is set (see
+    # _handle_completed_user_turn_locked's "completing_warmup" branch below).
     logger.info("[FLOW] System prompt ready  greeting  interview")
     logger.debug("[SYSTEM_PROMPT] Full system prompt:\n%s", system_prompt)
     logger.debug("[INTERVIEW_DIRECTIVE] Content:\n%s", interview_directive_cached)
@@ -1662,11 +1754,11 @@ async def entrypoint(ctx: JobContext):
                     _add(token)
         return terms[:97]  # provider prepends 3 base terms and caps at 100.
     # VAD removed: Flux STT native EOT drives all turn boundaries (turn_detection="stt").
-    # Silero ONNX model is no longer needed — saves ~200ms prewarm startup time.
+    # Silero ONNX model is no longer needed -- saves ~200ms prewarm startup time.
     flux_session_keyterms = _build_flux_session_keyterms()
     logger.info("[STT_FLUX] static session keyterms prepared: %d extra terms", len(flux_session_keyterms))
     try:
-        stt_plugin = build_stt(language_code=lang_codes["stt"], keyterms=flux_session_keyterms, model_override=ctx_data.sttModel)
+        stt_plugin = build_stt(language_code=_STT_LANGUAGE_CODE, keyterms=flux_session_keyterms, model_override=ctx_data.sttModel)
     except Exception as _stt_build_err:
         try:
             await log_stt_error(
@@ -1680,15 +1772,18 @@ async def entrypoint(ctx: JobContext):
         except Exception:
             pass
         raise
-    _tts_builder = {
+    _TTS_BUILDERS = {
         "SARVAM":     build_sarvam_tts,
         "ELEVENLABS": build_elevenlabs_tts,
         "CARTESIA":   build_cartesia_tts,
-    }.get(org_tts_provider, build_cartesia_tts)
+    }
+    if org_tts_provider not in _TTS_BUILDERS:
+        raise ValueError(f"Unknown org ttsProvider {org_tts_provider!r} (expected one of {sorted(_TTS_BUILDERS)})")
+    _tts_builder = _TTS_BUILDERS[org_tts_provider]
     logger.info(f"[TTS] Using %s  voice=%s model=%s", org_tts_provider, voice_id, org_tts_model)
     # For Sarvam v3: build a per-session pronunciation dict that combines the
     # shared base dict (infra/framework terms) with auto-generated pronunciations
-    # for this candidate's specific resume/JD keywords. Zero human maintenance —
+    # for this candidate's specific resume/JD keywords. Zero human maintenance -- 
     # any tech term on any future resume is handled automatically.
     _sarvam_dict_id: str | None = None
     _sarvam_llm_rewrite_transform = None
@@ -1730,7 +1825,7 @@ async def entrypoint(ctx: JobContext):
         )
     try:
         tts_plugin = _tts_builder(
-            language=lang_codes["tts"],
+            language=_TTS_LANGUAGE_CODE,
             model=org_tts_model,
             voice_id=voice_id,
             **({"dict_id": _sarvam_dict_id} if _sarvam_dict_id else {}),
@@ -1803,7 +1898,27 @@ async def entrypoint(ctx: JobContext):
         model=interview_llm_model,
         temperature=interview_llm_temperature,
     )
-    # Flux provides native end-of-turn detection via EOT events — no separate semantic
+    # Every turn on this plugin is triggered by a directive (probe or MOVE_ON) --
+    # there is no generic/undirected conversation turn -- so its full per-turn
+    # usage belongs to interviewLLMGeneration, not the opaque session-total bucket.
+    def _on_llm_metrics_collected(metrics) -> None:
+        prompt_tokens = int(_metric_number(metrics, "prompt_tokens"))
+        completion_tokens = int(_metric_number(metrics, "completion_tokens"))
+        cached_tokens = int(_metric_number(metrics, "prompt_cached_tokens"))
+        if prompt_tokens or completion_tokens:
+            _llmgen_llm_usages.append({
+                "model": interview_llm_model,
+                "inputTokens": prompt_tokens,
+                "outputTokens": completion_tokens,
+                "cachedInputTokens": cached_tokens,
+            })
+    try:
+        on_method = getattr(llm_plugin, "on", None)
+        if callable(on_method):
+            on_method("metrics_collected", _on_llm_metrics_collected)
+    except Exception as e:
+        logger.warning("[USAGE] Failed to attach LLM metrics hook: %s", e)
+    # Flux provides native end-of-turn detection via EOT events -- no separate semantic
     # turn detector needed. turn_detection="stt" tells LiveKit to use Flux's EOT events.
     logger.info("[TURN_DETECTOR] Flux native EOT active (engine=%s)", getattr(stt_plugin, "_hr_stt_engine", "flux"))
     ai_name = ctx_data.aiName or "Ishita"
@@ -1815,7 +1930,7 @@ async def entrypoint(ctx: JobContext):
         "tts": tts_plugin,
         "turn_handling": TurnHandlingOptions(
             preemptive_generation={"enabled": False},
-            # Flux STT drives turn boundaries — no separate endpointing detector needed.
+            # Flux STT drives turn boundaries -- no separate endpointing detector needed.
             turn_detection="stt",
             interruption=InterruptionOptions(
                 enabled=True,
@@ -1827,11 +1942,11 @@ async def entrypoint(ctx: JobContext):
                 backchannel_boundary=(1.0, 3.5),
             ),
         ),
-        "use_tts_aligned_transcript": org_tts_provider == "ELEVENLABS",
+        "use_tts_aligned_transcript": False,
         # Client-side acronym transform:
         # - Cartesia: needs it (no server-side normalization)
-        # - ElevenLabs: apply_text_normalization='auto' handles it server-side — skip
-        # - Sarvam: dict_id + enable_preprocessing always-on — skip (caused letter-reading bug)
+        # - ElevenLabs: apply_text_normalization='auto' handles it server-side -- skip
+        # - Sarvam: dict_id + enable_preprocessing always-on -- skip (caused letter-reading bug)
         "tts_text_transforms": [
             "filter_emoji",
             *([_tts_acronym_transform] if org_tts_provider == "CARTESIA" else []),
@@ -1853,10 +1968,10 @@ async def entrypoint(ctx: JobContext):
     from livekit.agents import function_tool
     from livekit.agents.beta.tools import EndCallTool
 
-    # ── Candidate meta-intent tools ──────────────────────────────────────────
+    # -- Candidate meta-intent tools ------------------------------------------
     # Replace regex pattern-matching with LLM-driven tool calls.
     # The LLM decides when to call these based on semantic understanding of what
-    # the candidate said — not string matching on their exact words.
+    # the candidate said -- not string matching on their exact words.
 
     @function_tool
     async def candidate_asked_to_repeat() -> str:
@@ -2000,6 +2115,31 @@ async def entrypoint(ctx: JobContext):
         logger.info("[META_TOOL] candidate_asking_about_process fired")
         return "Answer their process question in one sentence, then continue."
 
+    async def _on_natural_end_call(_ev) -> None:
+        # The LLM decided the interview is naturally over and said its goodbye.
+        # Route this through the EXACT same signal/flag sequence as the other
+        # three exit paths (time_expired, inactivity_timeout, finish-button) --
+        # set interview_finished_event and ask the FRONTEND to leave the room,
+        # rather than letting EndCallTool's own delete_room path force-close the
+        # LiveKit room itself. Deleting the room fires ctx.room's "disconnected"
+        # handler immediately, which starts the SDK's hardcoded 15s force-cancel
+        # countdown on the entrypoint -- nowhere near enough time for
+        # persist_transcript/generate_interview_report/billing to finish, so a
+        # candidate who closes the tab right after the goodbye was killing the
+        # report+billing pipeline mid-flight. Signaling the frontend instead
+        # keeps this backend's own room connection alive for as long as the
+        # frontend takes to react, giving the persist->report->billing sequence
+        # its normal, uninterrupted runway -- identical to how time_expired and
+        # the finish-interview button already work.
+        nonlocal interview_marked_finished
+        try:
+            await _send_termination_signal("natural_conclusion")
+        except Exception as e:
+            logger.warning(f"[END_CALL] Failed to send termination signal: {e}")
+        interview_marked_finished = True
+        interview_finished_event.set()
+        disconnect_event.set()
+
     _end_call_tool = EndCallTool(
         extra_description=(
             "End the interview when you have naturally concluded — after saying goodbye, "
@@ -2007,7 +2147,8 @@ async def entrypoint(ctx: JobContext):
             "Do NOT end mid-interview while topics are still being discussed. "
             "Only end when you have explicitly wrapped up and the conversation is complete."
         ),
-        delete_room=True,
+        delete_room=False,
+        on_tool_called=_on_natural_end_call,
         end_instructions=(
             "The interview is now complete. Say a warm, natural goodbye to the candidate — "
             "something like 'It was great speaking with you, we'll be in touch soon!' "
@@ -2044,6 +2185,12 @@ async def entrypoint(ctx: JobContext):
     interview_marked_finished = False
     turn_count = 0
     warmup_complete = False  # True after candidate confirms the short readiness check
+    _user_turn_lock = asyncio.Lock()  # serializes _handle_completed_user_turn -- prevents
+    # two rapid LiveKit end-of-turn detections (e.g. candidate pauses mid-answer) from
+    # firing eval/probe/warmup logic twice for what is really one answer
+    _last_evaluated_turn_snapshot = -1  # dedupes a repeat end-of-turn for the same turn_count
+    _pending_turn_text: dict[int, str] = {}  # turn_snapshot -> merged candidate text across repeat EOTs for that turn
+    _turns_moved_on: set[int] = set()  # turn_snapshots whose eval already committed MOVE_ON (topic switch + directive) -- a merge re-run for these turns cannot safely redo that
     # Interview state
     _closing_triggered = False           # True when <= 20s remain -- blocks eval + signals
     _candidate_turn_since_last_assistant = True
@@ -2064,14 +2211,24 @@ async def entrypoint(ctx: JobContext):
     _last_depth_decay_turn: int = -999           # turn when depth_decay last fired; -999 = never
     _last_applied_eval_turn: int = 0             # monotonic guard against stale eval results
     _question_asked_at: float = 0.0
+    # Wall-clock (epoch ms) twin of _question_asked_at -- perf_counter() is
+    # monotonic-from-process-start and can't be compared against browser-side
+    # proctoring event timestamps (Date.now()). This one can, so the report
+    # pipeline can say "tab_switch happened during the Python question."
+    _question_asked_at_wall_ms: int = 0
+    # Set to True the instant a question's text is committed; consumed (and cleared)
+    # by on_agent_state_changed when TTS playback actually finishes, which is the
+    # real "AI stopped talking" instant that starts the reaction-time clock.
+    _question_pending_timestamp: bool = False
     _answer_received_at: float = 0.0
+    _candidate_started_speaking_at: float = 0.0  # true reaction-time endpoint (VAD speech-start, not EOT)
     _custom_q_reminder_fired: bool = False
     _covered_topic_keys = CoveredTopics()  # single source of truth — normalized lowercase keys
     _asked_questions_log: collections.deque = collections.deque(maxlen=6)  # EC-3: deque(maxlen) makes append atomic — no pop() race
 
     _first_interview_question_asked: bool = False  # True after first post-warmup AI question fires
-    _awaiting_first_interview_question: bool = False  # warmup confirmed; next assistant turn must open interview
-    # Per-topic ground-truth records built at MOVE_ON time — replaces end-of-session
+    _interview_has_started: bool = False  # True when warmup ends and interview directive is injected
+    # Per-topic ground-truth records built at MOVE_ON time -- replaces end-of-session
     # LLM transcript re-reading for skill extraction. Each entry is appended when the
     # agent closes a topic so eval scores, probe count, exit reason, and candidate
     # answers are captured while the context is live, not inferred afterward.
@@ -2080,8 +2237,11 @@ async def entrypoint(ctx: JobContext):
     _current_topic_answers: list[str] = []
     # Running buffer of QUESTIONS Ishita asked on the CURRENT active topic (reset on MOVE_ON).
     # Snapshotted into CoverageRecord.questions_asked when the topic is closed, so they become
-    # GLOBAL forbidden questions — preventing the same concept being re-asked under a later topic.
+    # GLOBAL forbidden questions -- preventing the same concept being re-asked under a later topic.
     _current_topic_questions: list[str] = []
+    # Index into transcript_lines where the CURRENT topic began. Reset on MOVE_ON so that
+    # probe directives only see the current topic's Q&A thread, not old-topic conversations.
+    _topic_start_line_idx: int = 0
     # Lock protecting all shared session state that is written by background tasks.
     _session_state_lock = asyncio.Lock()
     # -- Agent-side topic tracker ----------------------------------------------
@@ -2127,7 +2287,7 @@ async def entrypoint(ctx: JobContext):
 
         return pool
 
-    # Unified topic pool — shrinks as topics are covered.
+    # Unified topic pool -- shrinks as topics are covered.
     # _topic_pool is the single source of truth for what remains.
     _topic_pool: list[str] = _build_topic_pool()
 
@@ -2158,7 +2318,7 @@ async def entrypoint(ctx: JobContext):
         Covered = completed, denied, skipped, or probed-to-saturation — all the same.
         """
         excluded_key = _topic_short_key(exclude or "")
-        # Full titles of topics already covered (exclude AUTO_SKILL — those are
+        # Full titles of topics already covered (exclude AUTO_SKILL -- those are
         # inferred sub-skills, not standalone topics, and would over-match).
         _covered_full_titles = [
             rec.display_title
@@ -2191,15 +2351,13 @@ async def entrypoint(ctx: JobContext):
         """Single entry point for all topic completion — covered, denied, skipped, all go here.
 
         questions_asked: the questions Ishita asked on THIS topic. They are stored on the
-        CoverageRecord and surfaced in get_memory_block() as GLOBAL forbidden questions, so
-        the same concept is never re-asked under a later topic.
+        stored in CoveredTopics._store for report rendering only.
         """
         if not topic:
             return
         k = _topic_short_key(topic)
         if not k:
             return
-        topic_title = topic.split(" - ")[0].strip()
         _covered_topic_keys.record(
             topic,
             source=CoverageSource.EXPLICIT,
@@ -2210,18 +2368,6 @@ async def entrypoint(ctx: JobContext):
         # and the pool never re-surfaces a finished topic even if _covered_topic_keys lookup fails.
         _topic_pool[:] = [t for t in _topic_pool if _topic_short_key(t) != k]
         logger.info("[COVERED] topic done: %r  (pool_remaining=%d covered=%d)", k, len(_topic_pool), len(_covered_topic_keys))
-        # Auto-cover skills the brief says are already covered by this topic
-        topic_key_lc = k.lower()
-        for skill_id, covering_topic_ids in _interview_brief.skill_coverage_map.items():
-            if any(_topic_short_key_for_ordering(tid).lower() == topic_key_lc for tid in covering_topic_ids):
-                skill_key = _topic_short_key_for_ordering(skill_id).lower()
-                if skill_key and skill_key not in _covered_topic_keys:
-                    _covered_topic_keys.record(
-                        skill_id,
-                        source=CoverageSource.AUTO_SKILL,
-                        via_topic=topic_title,
-                    )
-                    logger.info("[SKILL_DEDUP] auto-covered %r via %r", skill_key, topic_title)
 
     # Stopwords that carry no identity -- ignored when measuring topic overlap.
     _OVERLAP_STOPWORDS = frozenset({
@@ -2235,7 +2381,7 @@ async def entrypoint(ctx: JobContext):
         "using", "based", "developer", "engineer", "intern", "internship", "role",
         "team", "work", "company", "ltd", "pvt", "inc", "technologies", "solutions",
         "services", "private", "limited", "built", "build", "building",
-        # Domain-generic GTM/marketing words — too common to identify a unique topic
+        # Domain-generic GTM/marketing words -- too common to identify a unique topic
         "automation", "automated", "automate", "outreach", "campaign", "campaigns",
         "marketing", "growth", "gtm", "lead", "leads", "outbound", "inbound",
         "workflow", "workflows", "data", "management", "strategy", "systems",
@@ -2273,7 +2419,7 @@ async def entrypoint(ctx: JobContext):
         union = sa | sb
         if union and len(inter) / len(union) >= 0.5:
             return True
-        # Test 2: title containment — catches "Sensex Project" inside
+        # Test 2: title containment -- catches "Sensex Project" inside
         # "Python Developer - Sensex Project". Raised to >= 3 tokens to avoid
         # false positives from short 2-word skill titles like "n8n automation".
         ta = _topic_signature(_topic_short_title(a))
@@ -2300,7 +2446,7 @@ async def entrypoint(ctx: JobContext):
             if (a_role and b_project) or (b_role and a_project):
                 return True
         return False
-    # Inline eval: reuse shared module-level client — no cold TLS handshake per session.
+    # Inline eval: reuse shared module-level client -- no cold TLS handshake per session.
     _eval_openai_client: AsyncOpenAI = _SHARED_OPENAI_CLIENT
     # Accumulated manual interview LLM usage records. Applied to the billing
     # snapshot and org usage at session end so eval/brief/directive calls are tracked.
@@ -2461,6 +2607,7 @@ async def entrypoint(ctx: JobContext):
         result: dict[str, Any],
         *,
         result_turn: int,
+        is_merge_rerun: bool = False,
     ) -> bool:
         """Persist eval state mutations. Agent already owns topic/directive decisions."""
         nonlocal answer_scores, _last_applied_eval_turn, \
@@ -2473,8 +2620,16 @@ async def entrypoint(ctx: JobContext):
         async with _session_state_lock:
             # EC-5: stale-turn guard MUST be inside the lock. Without this, two concurrent
             # evals for the same turn both pass the check before either updates the counter,
-            # then both append to answer_scores and _topic_score_histories — duplicate scores.
-            if result_turn <= _last_applied_eval_turn:
+            # then both append to answer_scores and _topic_score_histories -- duplicate scores.
+            #
+            # is_merge_rerun is the ONE exception: a repeat Flux end-of-turn merged the
+            # candidate's full answer and re-ran eval on it (see _pending_turn_text in
+            # _handle_completed_user_turn_locked). That re-run's result_turn intentionally
+            # equals _last_applied_eval_turn -- it must REPLACE the first (partial-fragment)
+            # score below, not be silently dropped, or the report/debug-PDF would keep
+            # scoring the truncated answer even though the merge fix captured the full one.
+            _is_stale = result_turn <= _last_applied_eval_turn
+            if _is_stale and not (is_merge_rerun and result_turn == _last_applied_eval_turn):
                 logger.debug(
                     "[EVAL] skipping stale eval result turn=%d last_applied=%d",
                     result_turn, _last_applied_eval_turn,
@@ -2484,20 +2639,28 @@ async def entrypoint(ctx: JobContext):
             if eval_usages:
                 _eval_llm_usages_accumulated.extend(eval_usages)
             if quality_record:
-                answer_scores.append(quality_record)
                 topic_key = re.sub(
                     r"[^a-z0-9]+", " ",
                     str(quality_record.get("topic") or _active_topic or "").lower(),
                 ).strip()
-                if topic_key and not quality_record.get("is_timeout"):
-                    _topic_score_histories.setdefault(topic_key, []).append(
-                        float(quality_record.get("overall", 0) or 0)
-                    )
-                    # H2 fix: separate depth history so follow_up_collapse
-                    # compares current depth vs prior depth, not prior overall.
-                    _topic_depth_histories.setdefault(topic_key, []).append(
-                        float(quality_record.get("depth", 0) or 0)
-                    )
+                if is_merge_rerun and answer_scores and answer_scores[-1].get("turn") == result_turn:
+                    # Replace the partial-fragment entry from the first eval instead of
+                    # appending a second one for the same turn.
+                    answer_scores[-1] = quality_record
+                    if topic_key and not quality_record.get("is_timeout") and _topic_score_histories.get(topic_key):
+                        _topic_score_histories[topic_key][-1] = float(quality_record.get("overall", 0) or 0)
+                        _topic_depth_histories[topic_key][-1] = float(quality_record.get("depth", 0) or 0)
+                else:
+                    answer_scores.append(quality_record)
+                    if topic_key and not quality_record.get("is_timeout"):
+                        _topic_score_histories.setdefault(topic_key, []).append(
+                            float(quality_record.get("overall", 0) or 0)
+                        )
+                        # H2 fix: separate depth history so follow_up_collapse
+                        # compares current depth vs prior depth, not prior overall.
+                        _topic_depth_histories.setdefault(topic_key, []).append(
+                            float(quality_record.get("depth", 0) or 0)
+                        )
                 spawn_background_task(
                     persist_answer_scores(app_id, list(answer_scores)),
                     f"scores_turn_{result_turn}",
@@ -2508,6 +2671,8 @@ async def entrypoint(ctx: JobContext):
         content: str,
         role: str,
         turn_snapshot: int,
+        is_final_eot: bool = False,  # ponytail: True only when called from _handle_completed_user_turn (real EOT)
+        is_merge_rerun: bool = False,  # True when this call is re-scoring merged text after a repeat Flux EOT
     ) -> None:
         nonlocal proctoring_events, _last_interviewer_question, \
             answer_scores, \
@@ -2515,10 +2680,10 @@ async def entrypoint(ctx: JobContext):
             warmup_complete, _last_depth_decay_turn, \
             _active_topic, _covered_topic_keys, _topic_states, \
             _last_applied_eval_turn, _topic_score_histories, \
-            _awaiting_first_interview_question, \
             _asked_questions_log, \
             _last_question_topic, _topic_records, _current_topic_answers, \
-            _current_topic_questions
+            _current_topic_questions, _topic_start_line_idx, \
+            _turns_moved_on
         try:
             if not content or role != "user":
                 return
@@ -2530,12 +2695,12 @@ async def entrypoint(ctx: JobContext):
             content = _clean_stt_text(content)
             if not content:
                 return
-            # Turn 2 = warmup response. It's always intentional candidate speech — skip noise filters.
+            # Turn 2 = warmup response. It's always intentional candidate speech -- skip noise filters.
             is_warmup_response = not warmup_complete and turn_snapshot >= 2
             if is_warmup_response:
                 logger.debug(f"[WARMUP] Warmup response (turn={turn_snapshot}): '{content[:60]}' - skipping noise filters")
             else:
-                # Flux handles endpointing and turn completion natively — only filter
+                # Flux handles endpointing and turn completion natively -- only filter
                 # genuine STT hallucinations (high word count, near-zero unique tokens).
                 words = content.strip().split()
                 # Always pass through clarification questions regardless of length.
@@ -2559,19 +2724,25 @@ async def entrypoint(ctx: JobContext):
                             return
             # Commit candidate text immediately so transcript persistence and eval context
             # use the same canonical source of truth as Interview.interviewTranscript.
-            append_transcript_line("Candidate", content)
+            _append_with_elapsed("Candidate", content)
             # Test event: response received
             spawn_background_task(
                 log_test_event(app_id, "response_received", f"Candidate: {content[:60]}..." if len(content) > 60 else f"Candidate: {content}"),
                 "test_event_response_received"
             )
-            # Accumulate candidate answers for the current topic — used at MOVE_ON
+            # Accumulate candidate answers for the current topic -- used at MOVE_ON
             # to build grounded skill records instead of re-reading the transcript later.
             # EC-4: append under the lock so it cannot interleave with the MOVE_ON block
             # that reads then resets _current_topic_answers in the same lock acquisition.
             if warmup_complete and content.strip():
                 async with _session_state_lock:
-                    _current_topic_answers.append(content.strip())
+                    # A merged repeat-EOT re-run (see _pending_turn_text) re-processes this
+                    # turn with the FULL text -- drop the earlier partial-fragment entry so
+                    # it isn't counted twice alongside the complete answer.
+                    if is_final_eot and _current_topic_answers and content.strip().startswith(_current_topic_answers[-1]):
+                        _current_topic_answers[-1] = content.strip()
+                    else:
+                        _current_topic_answers.append(content.strip())
             lines_snap_eval = list(transcript_lines)
             question_snap = _last_interviewer_question
             answer_snap = content
@@ -2581,9 +2752,12 @@ async def entrypoint(ctx: JobContext):
             )
             # Inject structured recent Q&A context for callbacks and follow-up context.
             if _last_interviewer_question and turn_snapshot > 1:
+                # Limit the lookback to the current topic to prevent leaking previous topics
+                _n_exchanges = min(3, len(_current_topic_answers))
                 recent_context = _build_recent_context_block(
-                    transcript_lines, _last_interviewer_question, n_exchanges=3
+                    transcript_lines, _last_interviewer_question, n_exchanges=_n_exchanges
                 )
+
                 if recent_context:
                     remove_system_messages(chat_ctx, "[RECENT_CONTEXT]")
                     chat_ctx.add_message(
@@ -2611,21 +2785,36 @@ async def entrypoint(ctx: JobContext):
                         "is_warmup": True,
                     })
                 logger.info("[WARMUP] Warmup turn detected - will be included in transcript (turn=%d)", turn_snapshot)
-            # warmup_complete is set by _handle_completed_user_turn when candidate
-            # signals readiness. _process_user_conversation_item only records the turn.
-            # Start eval only after warmup has fully finished.
-            # Warmup = turns 1-2, interview starts at turn 3, so first eval fires at turn 3.
+            # ponytail: Deepgram Flux sends partial transcripts as separate chunks.
+            # We ONLY eval at true end-of-turn (is_final_eot=True from _handle_completed_user_turn).
+            # Skip eval on intermediate chunks to avoid double-scoring and hallucination.
+            if not is_final_eot:
+                logger.info("[EVAL_GUARD] turn=%d skipped eval -- not EOT (is_final_eot=%s, content=%r)", turn_snapshot, is_final_eot, (content or "")[:40])
+                return
+
+            # Eval runs after interview has started (warmup complete + directive injected).
+            # This allows the first interview question to be evaluated immediately after delivery.
+            # _interview_has_started is set when warmup ends and the interview directive is injected.
             _can_eval_turn = bool(
-                warmup_complete
+                _interview_has_started
                 and turn_snapshot > 2
                 and question_snap
-                and _first_interview_question_asked
             )
+            if is_merge_rerun and turn_snapshot in _turns_moved_on:
+                # The FIRST (partial-fragment) eval for this turn already committed
+                # MOVE_ON -- topic switched, directive injected, possibly already
+                # spoken to the candidate. Re-scoring the merged full text can't safely
+                # undo that live conversational step, so skip the re-eval entirely here
+                # rather than mutate state for a decision that's already been acted on.
+                _can_eval_turn = False
+                logger.info(
+                    "[EVAL_GATE] turn=%d merge re-run skipped -- MOVE_ON already committed", turn_snapshot,
+                )
             _gate_reason = (
                 "PASS" if _can_eval_turn
                 else (
-                    f"BLOCK(warmup={warmup_complete},turn={turn_snapshot}>2={turn_snapshot>2},"
-                    f"question={'Y' if question_snap else 'EMPTY'},opener={_first_interview_question_asked})"
+                    f"BLOCK(interview_started={_interview_has_started},turn={turn_snapshot}>2={turn_snapshot>2},"
+                    f"question={'Y' if question_snap else 'EMPTY'})"
                 )
             )
             logger.info("[EVAL_GATE] turn=%d -> %s", turn_snapshot, _gate_reason)
@@ -2635,11 +2824,22 @@ async def entrypoint(ctx: JobContext):
                     if _last_depth_decay_turn >= 0
                     else 999
                 )
+                # Reaction time = question delivered -> candidate started speaking (VAD speech-start),
+                # NOT question delivered -> candidate finished speaking. The latter (old behavior)
+                # included the entire duration of their spoken answer, inflating latency for anyone
+                # who gave a long answer instantly. Falls back to end-of-turn timestamp if the
+                # speech-start event never fired (e.g. STT-only path with no VAD state).
+                _latency_end = (
+                    _candidate_started_speaking_at
+                    if _candidate_started_speaking_at > _question_asked_at
+                    else _answer_received_at
+                )
                 response_latency_snap: Optional[float] = (
-                    round(_answer_received_at - _question_asked_at, 3)
-                    if _question_asked_at > 0 and _answer_received_at > _question_asked_at
+                    round(_latency_end - _question_asked_at, 3)
+                    if _question_asked_at > 0 and _latency_end > _question_asked_at
                     else None
                 )
+                question_asked_at_wall_ms_snap = _question_asked_at_wall_ms
                 # ---------------------------------------------------------------
                 # Build eval payload for the inline pipeline (run_eval_and_build_directive).
                 # Scoring, signal detection, saturation, and directive generation all run
@@ -2652,6 +2852,7 @@ async def entrypoint(ctx: JobContext):
                     turn=turn_snapshot,
                     turns_since_decay=turns_since_decay_snap,
                     response_latency=response_latency_snap,
+                    question_asked_at_wall_ms=question_asked_at_wall_ms_snap,
                 ) -> dict:
                     resolved_question = (question or "").strip()
                     if len(resolved_question) < 16:
@@ -2669,7 +2870,7 @@ async def entrypoint(ctx: JobContext):
                             if len(_txt) >= 24 and not _greeting_skip.search(_txt):
                                 resolved_question = _txt
                                 break
-                    # Resolve active TopicItem from brief — gives eval accurate probe_focus,
+                    # Resolve active TopicItem from brief -- gives eval accurate probe_focus,
                     # tag, and importance instead of deriving from raw string heuristics.
                     _scoring_topic_full = _active_topic or ""
                     _scoring_topic = _scoring_topic_full.split(" - ")[0].strip() if _scoring_topic_full else None
@@ -2698,6 +2899,7 @@ async def entrypoint(ctx: JobContext):
                         "topic_depth_history": _topic_depth_history_snap,
                         "turns_since_decay": turns_since_decay,
                         "response_latency_sec": response_latency,
+                        "question_asked_at_wall_ms": question_asked_at_wall_ms,
                         "signal_toggles": dict(evaluation_signal_toggles),
                         "org_id": org_id,
                         "llm_model": analysis_model,
@@ -2771,13 +2973,7 @@ async def entrypoint(ctx: JobContext):
                 # a real, topic-advancing result with a serialized topic_state_dict.
                 # The agent therefore has NO fallback path -- it trusts eval's return.
                 _eval_result_inline: dict = await run_eval_and_build_directive(payload, _eval_openai_client)
-                # Test event: eval done
-                spawn_background_task(
-                    log_test_event(app_id, "eval_done", f"Eval complete | action={_eval_result_inline.get('action', 'PROBE')}"),
-                    "test_event_eval_done"
-                )
                 # -- Unpack eval result ----------------------------------------
-                _action_from_eval   = str(_eval_result_inline.get("action", "PROBE")).upper()
                 _eval_signal        = _eval_result_inline.get("signal")         # str | None
                 _eval_signal_reason = _eval_result_inline.get("signal_reason")  # str | None
                 _saturation   = _eval_result_inline.get("saturation") or {}
@@ -2788,29 +2984,76 @@ async def entrypoint(ctx: JobContext):
                 _rotation_idx = int((_new_topic_state_dict_pre or {}).get("probe_rotation_index", 0) or 0)
                 _qr           = _eval_result_inline.get("quality_record") or {}
                 _signals      = [_eval_signal] if _eval_signal else []
+
+                # Signal detection logging for debug/test visibility
+                if _eval_signal:
+                    logger.info(
+                        "[SIGNAL] turn=%d | fired=%r | reason=%r",
+                        turn_snapshot, _eval_signal, _eval_signal_reason or ""
+                    )
+                    spawn_background_task(
+                        log_test_event(
+                            app_id, 
+                            "signal_fired", 
+                            f"Signal: {_eval_signal}", 
+                            {"reason": _eval_signal_reason or "No reason provided"}
+                        ),
+                        "test_event_signal"
+                    )
+                else:
+                    logger.debug("[SIGNAL] turn=%d | none fired", turn_snapshot)
                 _sat_after    = _saturation.get("score", 0.0)
                 _sat_thresh   = _saturation.get("threshold", 0.0)
                 _is_saturated = _saturation.get("is_saturated", False)
                 _weak_exit    = _saturation.get("weak_exit", False)
                 _dry_topic    = _saturation.get("dry_topic", False)
-                # Agent applies its own action logic on top of eval's recommendation.
-                # dry_topic = consecutive low-yield answers hit cap -> always move on.
-                _action = "PROBE"
-                if _weak_exit or _is_saturated or _dry_topic:
-                    _action = "MOVE_ON"
-                elif _action_from_eval == "MOVE_ON":
-                    _action = "MOVE_ON"
-                # else: PROBE (default)
+                # eval_pipeline.run_eval_and_build_directive already computes the correct,
+                # priority-ordered decision: forced response signals (pure_denial ->
+                # MOVE_ON, clarification_request/rephrase_request -> REPHRASE, off_topic ->
+                # REDIRECT, with 2x-clarification escalation to MOVE_ON) override
+                # saturation math entirely; only once no forced signal fired does it fall
+                # through to dry_topic/weak_exit/saturated/PROBE. Recomputing a bare
+                # saturation-only MOVE_ON/PROBE split here (as before) discarded that
+                # forced-signal priority, so e.g. a first-time clarification_request could
+                # coincidentally read as MOVE_ON from saturation alone, or a pure_denial
+                # could get stuck in PROBE if saturation checkpoints hadn't been hit yet.
+                # REPHRASE/REDIRECT/ACCEPT_REPHRASE all mean "stay on this topic, ask
+                # again differently" -- only agent_runtime's own PROBE/MOVE_ON branches
+                # exist downstream, and probe_strategy.get_probe_context already has
+                # dedicated guidance for each of these signals, so they collapse to PROBE.
+                _eval_action = _eval_result_inline.get("action") or "PROBE"
+                _action = "MOVE_ON" if _eval_action == "MOVE_ON" else "PROBE"
+                spawn_background_task(
+                    log_test_event(app_id, "eval_done", f"Eval complete | action={_eval_action}"),
+                    "test_event_eval_done"
+                )
                 logger.info(
                     "[AGENT] turn=%d | decision_logic: sat=%.1f/%.1f saturated=%s weak=%s dry=%s "
-                    "eval_action=%s -> agent_action=%s",
+                    "-> agent_action=%s",
                     turn_snapshot, _sat_after, _sat_thresh, _is_saturated, _weak_exit, _dry_topic,
-                    _action_from_eval, _action
+                    _action
                 )
                 # Test events: log decision
                 if _action == "MOVE_ON":
+                    _reason = "Unknown"
+                    if _eval_signal == "pure_denial":
+                        _reason = "pure_denial signal"
+                    elif _is_saturated:
+                        _reason = "topic saturated"
+                    elif _weak_exit:
+                        _reason = "weak exit (low depth/denial)"
+                    elif _dry_topic:
+                        _reason = "dry topic (no substantive answers)"
+                    elif _eval_action == "MOVE_ON":
+                        _reason = "evaluator forced move_on"
+
                     spawn_background_task(
-                        log_test_event(app_id, "move_on", f"Moving to next topic | sat={_sat_after:.1f}/{_sat_thresh:.1f}"),
+                        log_test_event(
+                            app_id, 
+                            "move_on", 
+                            f"Moving to next topic | sat={_sat_after:.1f}/{_sat_thresh:.1f}",
+                            {"reason": _reason}
+                        ),
                         "test_event_move_on"
                     )
                 else:
@@ -2838,11 +3081,21 @@ async def entrypoint(ctx: JobContext):
                     async with _session_state_lock:
                         _topic_states[_normalize_topic_key(_scoring_topic_log)] = _new_topic_state_dict
                 # -- Persist state mutations (scores, trust, risk, log) --------
-                await _apply_eval_result(_eval_result_inline, result_turn=turn_snapshot)
+                await _apply_eval_result(
+                    _eval_result_inline, result_turn=turn_snapshot, is_merge_rerun=is_merge_rerun,
+                )
                 # -- Agent decides: PROBE or MOVE_ON ---------------------------
                 if _action == "MOVE_ON":
+                    _turns_moved_on.add(turn_snapshot)
                     # -- Agent picks the next topic ----------------------------
                     _old_topic = _active_topic
+                    # Determine exit reason from saturation flags BEFORE marking,
+                    # so we capture the true reason (not masked by post-mark checks)
+                    _exit_reason = (
+                        "weak_exit"  if _weak_exit
+                        else "saturated"  if _is_saturated
+                        else "dry_topic"
+                    )
                     # Snapshot the questions asked on the topic we are leaving BEFORE the
                     # per-topic buffer is reset below, so they are recorded as GLOBAL
                     # forbidden questions and never re-asked under a later topic.
@@ -2852,15 +3105,15 @@ async def entrypoint(ctx: JobContext):
                         answer_gist=(payload.get("answer") or ""),
                         questions_asked=_closing_topic_questions,
                     )
-                    # ── Ground-truth topic record ──────────────────────────────
+                    # -- Ground-truth topic record ------------------------------
                     # EC-1/EC-2/EC-4/EC-5: ALL shared state reads and writes for
                     # this topic record must happen under one lock acquisition so
                     # that a concurrent MOVE_ON (different session on same process)
                     # or a concurrent candidate answer append cannot interleave:
-                    #   _topic_states        — read (EC-1)
-                    #   _topic_score_histories / _topic_depth_histories — read (EC-5)
-                    #   _current_topic_answers — read then reset (EC-4)
-                    #   _topic_records       — append (EC-2)
+                    #   _topic_states        -- read (EC-1)
+                    #   _topic_score_histories / _topic_depth_histories -- read (EC-5)
+                    #   _current_topic_answers -- read then reset (EC-4)
+                    #   _topic_records       -- append (EC-2)
                     # The entire block is one atomic snapshot-and-commit.
                     try:
                         async with _session_state_lock:
@@ -2874,14 +3127,6 @@ async def entrypoint(ctx: JobContext):
                                     _tok = _tok.strip()
                                     if _tok:
                                         _tech_skills.append(_tok)
-                            # Determine exit reason from saturation flags
-                            _exit_reason = (
-                                "explicit_denial" if _old_key in _covered_topic_keys
-                                else "weak_exit"  if _weak_exit
-                                else "saturated"  if _is_saturated
-                                else "dry_topic"  if _dry_topic
-                                else "eval_moveon"
-                            )
                             # Compute avg scores across all turns on this topic
                             _topic_normed_key = re.sub(r"[^a-z0-9]+", " ", _old_key.lower()).strip()
                             _overall_hist = _topic_score_histories.get(_topic_normed_key, [])
@@ -2920,12 +3165,20 @@ async def entrypoint(ctx: JobContext):
                             }
                             _topic_records.append(_topic_record)
                             # EC-4: reset happens inside the same lock acquisition as the
-                            # snapshot above — any answer appended after this point belongs
+                            # snapshot above -- any answer appended after this point belongs
                             # to the next topic and will not be incorrectly included here.
                             _current_topic_answers = []
-                            # Reset per-topic question buffer too — already snapshotted into
+                            # Reset per-topic question buffer too -- already snapshotted into
                             # the CoverageRecord via _closing_topic_questions above.
                             _current_topic_questions = []
+                            # MOVE_ON: clear the short-term asked-questions deque so that
+                            # old-topic questions NEVER appear in the new topic's probe
+                            # directive. Global forbidden questions are already preserved
+                            # in CoveredTopics.get_memory_block() (coverage_memory), so
+                            # nothing is lost -- they still show up as FORBIDDEN in every
+                            # subsequent directive. This is the primary fix for the bug
+                            # where Ishita kept asking old-topic questions after MOVE_ON.
+                            _asked_questions_log.clear()
                             logger.info(
                                 "[TOPIC_RECORD] turn=%d | recorded topic=%r exit=%s probes=%d avg_overall=%.1f answers=%d q_forbidden=%d",
                                 turn_snapshot, _old_key, _exit_reason, _probe_count, _avg_overall, len(_topic_records),
@@ -2934,7 +3187,7 @@ async def entrypoint(ctx: JobContext):
                     except Exception as _tr_err:
                         logger.warning("[TOPIC_RECORD] Failed to record topic: %s", _tr_err)
                     _next_topic = _next_uncovered_topic(exclude=_old_topic)
-                    # Pre-fire MOVE_ON directive generation in parallel — by the time
+                    # Pre-fire MOVE_ON directive generation in parallel -- by the time
                     # we reach the await below it will already be done (or nearly so),
                     # eliminating the 5s serial wait after the eval completes.
                     _move_on_directive_task: Optional[asyncio.Task] = None
@@ -2949,12 +3202,6 @@ async def entrypoint(ctx: JobContext):
                             _pre_next_item.tag if _pre_next_item else "RESUME_TOPIC"
                         )
                         _pre_old_title = _topic_short_title(_old_topic or "")
-                        # Coverage memory + cross-ref rule for the PRE-FIRED directive.
-                        # Previously these were "" — so the pre-fired directive (used in
-                        # ~90% of MOVE_ONs) had zero knowledge of what was already covered,
-                        # letting it re-ask concepts from earlier topics. Now it carries the
-                        # full forbidden-question list and the tag-appropriate cross-ref rule.
-                        _pre_memory_block = _covered_topic_keys.get_memory_block()
                         _pre_cross_ref = _build_cross_ref_rule(_pre_next_src)
                         _move_on_directive_task = asyncio.ensure_future(
                             _generate_move_on_directive(
@@ -2963,10 +3210,10 @@ async def entrypoint(ctx: JobContext):
                                 new_topic_title=_topic_short_title(_next_topic),
                                 source=_pre_next_src,
                                 band=candidate_band,
-                                memory_block=_pre_memory_block,
+                                memory_block="",
                                 cross_ref_rule=_pre_cross_ref,
                                 client=_eval_openai_client,
-                                llm_model=analysis_model,
+                                llm_model=interview_llm_model,
                                 usage_sink=_llmgen_llm_usages.append,
                                 topic_item=_pre_next_item,
                                 prev_answer=(payload.get("answer") or ""),
@@ -3010,18 +3257,20 @@ async def entrypoint(ctx: JobContext):
                         return
                     async with _session_state_lock:
                         _active_topic = _next_topic
+                        # Reset the transcript window so probe directives for the new
+                        # topic only see this topic's Q&A, not old-topic conversation.
+                        _topic_start_line_idx = len(transcript_lines)
                     _next_brief_item = next(
                         (t for t in _interview_brief.topic_pool
                          if _topic_short_key_for_ordering(t.title).lower() == _topic_short_key(_active_topic or "").lower()),
                         None,
                     )
                     logger.info(
-                        "[MOVE_ON] turn=%d | %r  ->  %r  (type=%s score=%.2f probe=%s)",
+                        "[MOVE_ON] turn=%d | %r  ->  %r  (type=%s probe=%s)",
                         turn_snapshot,
                         _topic_short_key(_old_topic or ""),
                         _topic_short_key(_active_topic or ""),
                         _next_brief_item.topic_type if _next_brief_item else "?",
-                        _next_brief_item.relevance_score if _next_brief_item else 0.0,
                         ",".join((_next_brief_item.probe_focus or [])[:3]) if _next_brief_item else "-",
                     )
                     logger.info(
@@ -3034,12 +3283,11 @@ async def entrypoint(ctx: JobContext):
                     # Build MOVE_ON directive -- LLM generates it, not agent verbatim script
                     _old_topic_title = _topic_short_title(_old_topic or "")
                     _new_topic_title = _topic_short_title(_active_topic or "")
-                    _memory_block = _covered_topic_keys.get_memory_block()
                     # Cross-reference rule -- keyed on the topic TAG (RESUME_TOPIC /
                     # JD_TOPIC / ROLE_TOPIC). This is the ONLY place that handles how to
                     # treat a topic the candidate may already have touched. The source
                     # framing itself ("we require X" vs "you built X") lives in the
-                    # directive's _angle_guide and Ishita's system prompt — not here.
+                    # directive's _angle_guide and Ishita's system prompt -- not here.
                     _topic_type = _next_brief_item.topic_type if _next_brief_item else ""
                     _cross_ref_rule = _build_cross_ref_rule(_src)
                     # Use the pre-fired directive task if it matches the active topic,
@@ -3056,18 +3304,18 @@ async def entrypoint(ctx: JobContext):
                         _move_on_directive_task is not None
                         and _pre_next_key == _new_topic_key_lc
                     ):
-                        # Task was pre-fired in parallel with eval — await and validate
+                        # Task was pre-fired in parallel with eval -- await and validate
                         _prefired_result = await _move_on_directive_task
                         if _prefired_result:
                             _directive = _prefired_result
                             logger.info("[MOVE_ON_LLM] Used pre-fired directive (parallel) for %r", _new_topic_key_lc)
                         else:
-                            # Pre-fired task returned empty — use rule-based fallback directly.
+                            # Pre-fired task returned empty -- use rule-based fallback directly.
                             # Do NOT attempt a second LLM call; the fallback below handles it.
                             logger.warning("[MOVE_ON_LLM] Pre-fired directive empty for %r — using rule-based fallback", _new_topic_key_lc)
                             _directive = ""
                     else:
-                        # Topic changed or no pre-fired task — generate now
+                        # Topic changed or no pre-fired task -- generate now
                         if _move_on_directive_task is not None:
                             _move_on_directive_task.cancel()
                         _directive = await _generate_move_on_directive(
@@ -3076,7 +3324,7 @@ async def entrypoint(ctx: JobContext):
                             new_topic_title=_new_topic_title,
                             source=_src,
                             band=candidate_band,
-                            memory_block=_memory_block,
+                            memory_block="",
                             cross_ref_rule=_cross_ref_rule,
                             client=_eval_openai_client,
                             llm_model=analysis_model,
@@ -3088,7 +3336,7 @@ async def entrypoint(ctx: JobContext):
                         )
                     # If LLM directive generation failed, use a minimal instruction
                     # that lets the LLM generate a natural question from the TOPIC_LOCK context.
-                    # No rule-based template — LLM drives the opener.
+                    # No rule-based template -- LLM drives the opener.
                     if not _directive:
                         _full_ctx = _active_topic or _new_topic_title
                         if _new_topic_item and _new_topic_item.full_description:
@@ -3108,7 +3356,6 @@ async def entrypoint(ctx: JobContext):
                             "Use the FULL CONTEXT above to make it concrete and grounded. "
                             "One short acknowledgement first, then the question. "
                             "NEVER say 'Thanks for sharing'. ONE question only."
-                            f"{_memory_block}"
                             f"{_cross_ref_rule}"
                         )
                     # CRITICAL: Update _last_question_topic NOW (before LLM fires) so eval sees the NEW topic
@@ -3165,7 +3412,7 @@ async def entrypoint(ctx: JobContext):
                     agent._move_on_opener_pending = True
                     _qr["directive_text"] = _directive  # ponytail: debug report needs the literal injected text
                     logger.info("[AGENT] turn=%d | MOVE_ON directive injected (LLM) | new_topic=%r", turn_snapshot, _active_topic)
-                    logger.debug("[MOVE_ON_DIRECTIVE] turn=%d:\n%s", turn_snapshot, _directive)
+                    logger.info("[MOVE_ON_DIRECTIVE] turn=%d:\n%s", turn_snapshot, _directive)
                 else:
                     # -- PROBE -- LLM-driven directive using TopicItem brief context --
                     _prev_q = (payload.get("question") or "").strip()
@@ -3179,9 +3426,16 @@ async def entrypoint(ctx: JobContext):
                         None,
                     )
                     # Build the conversation thread for this topic from the live
-                    # transcript. Take the last 8 lines so the probe LLM sees the
-                    # full back-and-forth, not just the most recent exchange.
-                    _topic_thread_lines = lines_snap_eval[-8:] if lines_snap_eval else []
+                    # transcript. Scope to only lines since the current topic began
+                    # (_topic_start_line_idx) so old-topic Q&A never bleeds into the
+                    # probe context after a MOVE_ON. Take at most 8 lines.
+                    _topic_thread_lines = (
+                        lines_snap_eval[_topic_start_line_idx:][-8:]
+                        if lines_snap_eval else []
+                    )
+                    _signals_history_this_topic = list(
+                        (_new_topic_state_dict or {}).get("signals_fired", []) or []
+                    )
                     _directive = _build_probe_directive(
                         signal=_eval_signal,
                         signal_reason=_eval_signal_reason,
@@ -3192,9 +3446,11 @@ async def entrypoint(ctx: JobContext):
                         prev_answer=_prev_a,
                         topic_follow_ups=_topic_follow_ups,
                         topic_denied=_topic_short_key(_active_topic or "").lower() in _covered_topic_keys,
-                        coverage_memory=_covered_topic_keys.get_memory_block(),
+                        coverage_memory="",
                         asked_questions_log=list(_asked_questions_log),
                         topic_transcript=_topic_thread_lines,
+                        signals_history=_signals_history_this_topic,
+                        probe_rotation_index=_rotation_idx,
                     )
                     remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
                     chat_ctx.add_message(role="system", content=_directive)
@@ -3203,11 +3459,16 @@ async def entrypoint(ctx: JobContext):
                         _ts_for_rotation = _topic_states.get(_normalize_topic_key(_scoring_topic_log))
                         if isinstance(_ts_for_rotation, dict):
                             _ts_for_rotation["probe_rotation_index"] = _rotation_idx + 1
+                    _sub_concepts_all = list((_probe_brief_item.probe_focus or [])) if _probe_brief_item else []
+                    _sub_concept_this_turn = (
+                        _sub_concepts_all[_rotation_idx % len(_sub_concepts_all)]
+                        if _sub_concepts_all else "-"
+                    )
                     logger.info(
-                        "[PROBE] turn=%d | signal=%s | topic=%r | sat=%.1f/%.1f | brief_probe=%s brief_avoid=%s",
+                        "[PROBE] turn=%d | signal=%s | topic=%r | sat=%.1f/%.1f | sub_concept=%r (idx=%d of %d) | brief_avoid=%s",
                         turn_snapshot, _eval_signal or "none", _scoring_topic_log,
                         _sat_after, _sat_thresh,
-                        ",".join((_probe_brief_item.probe_focus or [])[:3]) if _probe_brief_item else "-",
+                        _sub_concept_this_turn, _rotation_idx, len(_sub_concepts_all),
                         ",".join((_probe_brief_item.probe_avoid or [])[:2]) if _probe_brief_item else "-",
                     )
                     logger.debug("[PROBE_DIRECTIVE] turn=%d:\n%s", turn_snapshot, _directive)
@@ -3223,8 +3484,23 @@ async def entrypoint(ctx: JobContext):
         "what you've worked on and how you think about things. Are you all set to begin?"
     )
     async def _handle_completed_user_turn(_turn_ctx, new_message) -> None:
+        # Interview already ended (time limit or inactivity timeout) -- the closing
+        # line was already spoken and termination signaled. Speech that arrives late
+        # (e.g. the candidate replies right as/after the goodbye plays) must not be
+        # evaluated or trigger a new question; the session is shutting down.
+        if interview_marked_finished or disconnect_event.is_set():
+            logger.info("[USER_TURN] ignored -- interview already marked finished")
+            return
+        # Flux's native end-of-turn detection (eot_threshold/eot_timeout_ms, see
+        # agent_runtime_utils.AgentConfig) owns turn boundaries. A candidate's mid-thought
+        # pause is Flux's problem to wait out at the STT layer, not something to patch
+        # around here with an application-level debounce/merge buffer -- that just adds
+        # latency to every turn and still fails on pauses longer than the buffer window.
+        async with _user_turn_lock:
+            await _handle_completed_user_turn_locked(_turn_ctx, new_message)
+    async def _handle_completed_user_turn_locked(_turn_ctx, new_message) -> None:
         nonlocal _answer_received_at, _candidate_turn_since_last_assistant, \
-            warmup_complete, _awaiting_first_interview_question
+            warmup_complete, _interview_has_started, _last_evaluated_turn_snapshot
         content = (getattr(new_message, "text_content", "") or "").strip()
         if not content:
             logger.debug("[USER_TURN] completed turn had no text; releasing gate without reply directive")
@@ -3237,21 +3513,81 @@ async def entrypoint(ctx: JobContext):
             logger.info("[GATE] Candidate spoke before greeting  blocked")
             return
         turn_snapshot = turn_count
+        _is_merge_pass = False
+        if turn_snapshot == _last_evaluated_turn_snapshot:
+            # LiveKit/Flux fired a second end-of-turn for the same candidate turn (e.g.
+            # a pause mid-answer was detected as EOT, then more speech followed before
+            # Ishita replied). turn_count only advances on assistant turns.
+            #
+            # During real interview questions (turn_snapshot > 2, warmup already done),
+            # eval only fires once per turn -- previously this repeat fragment was
+            # dropped outright, so eval only ever scored the FIRST (often short,
+            # cut-off) fragment. Merge it into the buffered text and re-run eval on
+            # the complete answer instead of silently losing the rest of it.
+            #
+            # During warmup/turn-1 (fixed scripted replies, session.say() side effects,
+            # gate/directive bookkeeping), re-running that logic on every repeat EOT
+            # would double-speak/double-inject -- keep the original drop-and-return
+            # there; a short warmup answer is inconsequential compared to double TTS.
+            if warmup_complete and turn_snapshot > 2:
+                _prior = _pending_turn_text.get(turn_snapshot, "")
+                merged = f"{_prior} {content}".strip() if _prior and not content.startswith(_prior) else content
+                _pending_turn_text[turn_snapshot] = merged
+                logger.info(
+                    "[USER_TURN] repeat end-of-turn for turn=%d merged (text=%r)",
+                    turn_snapshot, merged[:80],
+                )
+                content = merged
+                _is_merge_pass = True
+            else:
+                logger.info(
+                    "[USER_TURN] duplicate end-of-turn for turn=%d ignored (text=%r)",
+                    turn_snapshot, content[:80],
+                )
+                agent._waiting_for_eval = False
+                agent._directive_ready.set()
+                return
+        else:
+            _pending_turn_text[turn_snapshot] = content
+        _last_evaluated_turn_snapshot = turn_snapshot
         # Turn 1 = candidate's reply to the greeting. Deliver fixed warmup via session.say()
         # so the LLM never generates this line (it was producing unpredictable filler).
         if turn_snapshot == 1 and not warmup_complete:
             agent._waiting_for_eval = True
             agent._directive_ready.clear()
-            await _process_user_conversation_item(content, "user", turn_snapshot)
-            append_transcript_line("Candidate", content)
+            await _process_user_conversation_item(content, "user", turn_snapshot, is_final_eot=True)
+            _append_with_elapsed("Candidate", content)
+            # If the candidate reciprocated the "how are you doing?" greeting (asked
+            # Ishita back), a bare scripted warmup line ignoring that reads as rude.
+            # Prepend a short fixed reciprocal reply -- still scripted (no LLM filler
+            # variance), just acknowledges the question was heard.
+            _content_lc_greet = content.lower()
+            _asked_back = bool(re.search(r"\b(and you|how about you|you\?|how are you|and yourself)\b", _content_lc_greet))
+            _warmup_text_to_say = (
+                ("I'm doing well, thanks for asking! " + _FIXED_WARMUP_TEXT)
+                if _asked_back else _FIXED_WARMUP_TEXT
+            )
             try:
-                await session.say(_FIXED_WARMUP_TEXT, allow_interruptions=False)
-                append_transcript_line("Interviewer", _FIXED_WARMUP_TEXT)
+                await session.say(_warmup_text_to_say, allow_interruptions=False)
+                _append_with_elapsed("Interviewer", _warmup_text_to_say)
                 logger.info("[WARMUP] Fixed warmup delivered via session.say()")
             except Exception as _w_err:
                 logger.warning("[WARMUP] session.say() warmup failed: %s", _w_err)
+                # session.say() never delivered the assistant message, so
+                # on_conversation_item_added's turn_count==2 branch will never fire to
+                # close the gate for us -- release it here so the LLM isn't stuck
+                # waiting the full 11s timeout for nothing.
+                agent._waiting_for_eval = False
+                agent._directive_ready.set()
             finally:
-                # Update phase status and release gate — candidate will answer warmup next
+                # Do NOT touch agent._waiting_for_eval / _directive_ready here.
+                # await session.say() above synchronously drives on_conversation_item_added
+                # for the assistant message before returning, which (since turn_count
+                # reaches 2, not warmup_complete) is the authoritative gate-closer for
+                # "wait for the candidate's warmup answer" (see the turn_count==2 branch
+                # below). Unconditionally releasing the gate here raced with and undid
+                # that close, letting the LLM generate a real interview question before
+                # the candidate ever answered the warmup prompt.
                 remove_system_messages(chat_ctx, "[PHASE_STATUS]")
                 chat_ctx.add_message(
                     role="system",
@@ -3261,25 +3597,40 @@ async def entrypoint(ctx: JobContext):
                         "Wait silently for candidate's answer. DO NOT say anything until [NEXT_TURN_DIRECTIVE] arrives."
                     ),
                 )
-                agent._waiting_for_eval = False
-                agent._directive_ready.set()
             return
         # Dynamic warmup (Option B): LLM decides readiness, not a fixed turn count.
         # Warmup ends when the candidate signals they are ready to begin.
         # We detect this by checking their response for readiness markers.
-        # This fires from turn 2 onward — greeting (turn 1) is never a readiness signal.
+        # This fires from turn 2 onward -- greeting (turn 1) is never a readiness signal.
+        # Close the gate immediately so llm_node cannot race ahead and generate the
+        # next turn before we've decided completing_warmup and injected the directive.
+        if not warmup_complete:
+            agent._waiting_for_eval = True
+            agent._directive_ready.clear()
         _warmup_readiness_markers = (
             "yes", "yeah", "yep", "ready", "let's go", "lets go", "go ahead",
             "sure", "ok", "okay", "absolutely", "of course", "let's begin",
             "lets begin", "start", "begin", "fire away", "go on", "alright",
         )
         _content_lc = content.strip().lower()
+        # Match markers as whole words/phrases, not substrings
+        import re as _re_warmup
         _candidate_signals_ready = (
             turn_snapshot >= 2
             and not warmup_complete
-            and any(m in _content_lc for m in _warmup_readiness_markers)
+            and any(_re_warmup.search(r'\b' + m + r'\b', _content_lc) for m in _warmup_readiness_markers)
         )
-        completing_warmup = _candidate_signals_ready
+        # ponytail: candidate already got one re-prompt (turn>=3) and gave another
+        # substantive reply (not silence/noise) without an explicit marker word --
+        # e.g. "I'm doing great, how about you?" -- treat that as implicit readiness
+        # instead of re-prompting forever. The AI's own question ("are you set to
+        # begin?") makes any real answer an implicit yes.
+        _candidate_gave_substantive_reply = (
+            turn_snapshot >= 3
+            and not warmup_complete
+            and len(_content_lc.split()) >= 3
+        )
+        completing_warmup = _candidate_signals_ready or _candidate_gave_substantive_reply
         logger.debug(
             "[USER_TURN] completed turn=%d words=%d text=%r signals_ready=%s",
             turn_snapshot,
@@ -3287,49 +3638,39 @@ async def entrypoint(ctx: JobContext):
             content[:100],
             completing_warmup,
         )
-        await _process_user_conversation_item(content, "user", turn_snapshot)
+        await _process_user_conversation_item(
+            content, "user", turn_snapshot, is_final_eot=True, is_merge_rerun=_is_merge_pass,
+        )
         if completing_warmup:
             warmup_complete = True
-            _awaiting_first_interview_question = True
+            _first_interview_question_asked = False
+            _interview_has_started = True
             logger.info("[WARMUP] warmup_complete=True at turn=%d (candidate signalled readiness)", turn_snapshot)
             remove_system_messages(chat_ctx, "[WARMUP PHASE]")
             remove_system_messages(chat_ctx, "[PHASE_STATUS]")
-            # Inject BOTH directives now:
-            # 1. WARMUP_DONE: one short acknowledgement ONLY ("Great, let's get started.")
-            # 2. NEXT_TURN_DIRECTIVE: the first interview question — fires in the same LLM
-            #    turn so Ishita says acknowledgement + first question together naturally,
-            #    without needing a candidate response in between.
-            _anchor_ctx = _active_topic or _anchor_full
-            _anchor_title = _anchor_ctx.split(" - ")[0].strip()
+            # Fix #1: Inject the first interview question directive immediately -- no intermediate acknowledgement.
+            # The LLM will open with the anchor topic on the next turn.
+            chat_ctx.add_message(role="system", content=interview_directive_cached)
+            logger.info("[WARMUP] First interview directive injected at turn=%d | ready to ask anchor topic", turn_snapshot)
+            agent._waiting_for_eval = False
+            agent._directive_ready.set()
+        elif not warmup_complete:
+            # Candidate answered the warmup question but didn't signal readiness yet
+            # (e.g. "I'm doing great" instead of "yes"/"ready"). Ishita should ask a
+            # natural follow-up / re-confirm readiness rather than staying silent -- 
+            # release the gate we closed above so the LLM can respond to what they said.
+            remove_system_messages(chat_ctx, "[PHASE_STATUS]")
             chat_ctx.add_message(
                 role="system",
                 content=(
                     "[PHASE_STATUS -- DO NOT SAY ALOUD]\n"
-                    "GREETING: DONE. WARMUP: DONE.\n"
-                    "DO NOT greet again, re-introduce yourself, or repeat the readiness check.\n"
+                    "GREETING: DONE. WARMUP QUESTION: ALREADY ASKED.\n"
+                    "The candidate replied but did not clearly confirm they're ready to begin.\n"
+                    "React briefly and naturally to what they said, then ask if they're ready to start.\n"
+                    "Do NOT re-introduce yourself or repeat the full warmup question verbatim."
                 ),
             )
-            chat_ctx.add_message(
-                role="system",
-                content=(
-                    "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                    f"Start the interview. Topic: {_anchor_title}.\n"
-                    f"Context: {_anchor_ctx}\n\n"
-                    "Say ONE short thing (3-6 words max) then ask your first question — topic name built into it.\n"
-                    "Examples of good openers:\n"
-                    f"  'So, {_anchor_title} — what did you personally build there?'\n"
-                    f"  'Let's talk about {_anchor_title}. What was specifically yours?'\n"
-                    f"  'Alright — the {_anchor_title}. Where did you start?'\n"
-                    "Do NOT say 'let's dive in', 'just to set the stage', 'so moving forward', or any preamble.\n"
-                    "Do NOT say 'Great!' or 'Perfect!' or any hollow reaction to their warmup answer.\n"
-                    "Do NOT explain the interview process or list what you'll cover.\n"
-                    "ONE question mark. Can be 1-3 sentences with natural setup. Grounded in the topic context above."
-                ),
-            )
-            logger.info(
-                "[WARMUP] WARMUP COMPLETE at turn=%d | injecting first question directive | anchor=%r",
-                turn_snapshot, _anchor_title,
-            )
+            logger.info("[WARMUP] Candidate answered but did not signal readiness at turn=%d — re-prompting", turn_snapshot)
             agent._waiting_for_eval = False
             agent._directive_ready.set()
     agent._completed_user_turn_handler = _handle_completed_user_turn
@@ -3343,10 +3684,10 @@ async def entrypoint(ctx: JobContext):
     # 
     @session.on("conversation_item_added")
     def on_conversation_item_added(event) -> None:
-        nonlocal turn_count, _last_interviewer_question, _question_asked_at, \
+        nonlocal turn_count, _last_interviewer_question, _question_pending_timestamp, \
             _candidate_turn_since_last_assistant, warmup_complete, \
             _answer_received_at, _first_interview_question_asked, \
-            _last_question_topic, _awaiting_first_interview_question
+            _last_question_topic
         try:
             item = event.item
             role = getattr(item, "role", None)
@@ -3370,34 +3711,37 @@ async def entrypoint(ctx: JobContext):
                     return
                 # Track last question for eval engine -- only for real interview turns.
                 # Nudge messages (session.say() scripted inactivity prompts) must never
-                # count as interview questions — they don't contain a question for the
+                # count as interview questions -- they don't contain a question for the
                 # candidate, they are just "Take your time" filler. Detect them by the
                 # inactivity_nudge_speaking flag set by _deliver_nudge().
                 if inactivity_nudge_speaking:
                     logger.debug("[TURN_GUARD] Skipping nudge message — not an interview turn")
                     return
-                # Greeting (turn 1 AI) and warmup (turn 2 AI) must never overwrite this
-                # because their text ("How are you doing?", "All good on your end?") would
-                # pollute eval context if the candidate gives a slow answer on turn 3+.
-                _is_interview_turn = warmup_complete or turn_count > 2
-                if _is_interview_turn and _is_ack_only_assistant_fragment(clean_content):
-                    logger.warning("[TURN_GUARD] Ignoring acknowledgement-only assistant fragment: %r", clean_content)
-                    return
+                # Greeting and warmup-confirmation assistant messages must never overwrite
+                # this because their text ("How are you doing?", "Are you all set to begin?")
+                # would pollute eval context. warmup_complete alone is the right gate: it's
+                # already True by the time this handler runs for the first interview
+                # question (set synchronously in _handle_completed_user_turn_locked before
+                # the LLM generates that question), so it correctly excludes greeting/warmup
+                # messages without an extra turn_count check. The previous `turn_count > 2`
+                # check used the pre-increment value (turn_count is bumped further below)
+                # and was off by one, so the very first interview question was never tracked
+                # as _last_interviewer_question -- silently skipping turn 3's scoring.
+                _is_interview_turn = warmup_complete
                 # Save Ishita's line to transcript
-                append_transcript_line("Interviewer", clean_content)
+                _append_with_elapsed("Interviewer", clean_content)
                 if _is_interview_turn:
-                    # Prefer ?-terminated sentence; fall back to last sentence of 20+ chars.
-                    # Final fallback: use entire clean_content so question_snap is never empty.
-                    _q_text = clean_content.strip()
-                    q_match = re.search(r'([^.!?]+\?)\s*$', _q_text)
-                    if q_match:
-                        _last_interviewer_question = q_match.group(1).strip()
-                    else:
-                        _fallback_q = re.search(r'(?:(?<=[.!?])\s+|^)([^.!?]{20,}[.!?]?)\s*$', _q_text)
-                        if _fallback_q:
-                            _last_interviewer_question = _fallback_q.group(1).strip()
-                        else:
-                            _last_interviewer_question = _q_text[:200]
+                    # Fix #2: Reset nudge flags when a new question is asked.
+                    # This ensures nudges can fire independently for each question, not just the first.
+                    nonlocal inactivity_nudge_sent_for_current_prompt, inactivity_warning_sent_for_current_prompt, inactivity_end_sent_for_current_prompt, awaiting_candidate_since
+                    inactivity_nudge_sent_for_current_prompt = False
+                    inactivity_warning_sent_for_current_prompt = False
+                    inactivity_end_sent_for_current_prompt = False
+                    awaiting_candidate_since = time.monotonic()
+                    logger.debug("[NUDGE] Nudge flags reset for new question at turn=%d", turn_count)
+                    # Store the FULL interviewer turn verbatim -- no sentence extraction,
+                    # no length cap -- so the debug report shows the complete question.
+                    _last_interviewer_question = clean_content.strip()
                     # H4 fix: validate the LLM actually asked about the expected topic
                     # before committing _last_question_topic. If it clearly switched to
                     # another known topic, or is asking a closing question, score under
@@ -3505,11 +3849,11 @@ async def entrypoint(ctx: JobContext):
                         )
                     # Track asked questions for duplicate prevention (keep last 6).
                     # EC-3: _asked_questions_log is now a deque(maxlen=6) so append
-                    # is a single atomic operation — no separate pop() needed, no
+                    # is a single atomic operation -- no separate pop() needed, no
                     # IndexError possible, no lock required in this sync callback.
                     if _last_interviewer_question and _first_interview_question_asked:
                         _asked_questions_log.append(_last_interviewer_question[:120])
-                        # Per-topic question buffer — snapshotted into CoverageRecord on MOVE_ON
+                        # Per-topic question buffer -- snapshotted into CoverageRecord on MOVE_ON
                         # so each question becomes a GLOBAL forbidden question (Fix: cross-topic
                         # duplicate-question prevention). Skip secondary/soft "general" phases.
                         if _last_question_topic not in ("general", "general conversation", None, ""):
@@ -3520,7 +3864,6 @@ async def entrypoint(ctx: JobContext):
                     # overrides that instruction once the opener has been delivered.
                     if not _first_interview_question_asked:
                         _first_interview_question_asked = True
-                        _awaiting_first_interview_question = False
                         remove_system_messages(chat_ctx, "[PHASE_STATUS]")
                         chat_ctx.add_message(
                             role="system",
@@ -3563,18 +3906,21 @@ async def entrypoint(ctx: JobContext):
                                 source=CoverageSource.CUSTOM_Q,
                             )
                             logger.info("[FLOW] Custom Q %d/%d covered: '%s'", _cqi + 1, len(_custom_questions), _cq.raw[:80])
-                # Increment turn count and track timing
-                _question_asked_at = time.perf_counter()
+                # Increment turn count. Reaction-time clock starts when the AI actually
+                # finishes speaking (agent_state_changed -> "listening"), not here --
+                # this point is only when the question TEXT is committed, before TTS
+                # has played it out. See on_agent_state_changed below.
+                _question_pending_timestamp = True
                 _candidate_turn_since_last_assistant = False
                 turn_count += 1
                 if not warmup_complete and turn_count == 2:
-                    # Ishita just said "Are you ready to begin?" — gate the LLM so it
+                    # Ishita just said "Are you ready to begin?" -- gate the LLM so it
                     # waits for the candidate's answer. The warmup completion handler
                     # will inject the warmup-done directive and release the gate.
                     agent._waiting_for_eval = True
                     agent._directive_ready.clear()
                     # Update PHASE_STATUS so if LLM fires again before candidate replies
-                    # it knows the warmup question is ALREADY spoken — don't repeat it.
+                    # it knows the warmup question is ALREADY spoken -- don't repeat it.
                     remove_system_messages(chat_ctx, "[PHASE_STATUS]")
                     chat_ctx.add_message(
                         role="system",
@@ -3628,7 +3974,8 @@ async def entrypoint(ctx: JobContext):
     greeting_delivered_at: float | None = None
     def reset_inactivity_clock(start_waiting: bool, preserve_nudge_flags: bool = False) -> None:
         nonlocal awaiting_candidate_response, awaiting_candidate_since, \
-            inactivity_nudge_sent_for_current_prompt
+            inactivity_nudge_sent_for_current_prompt, inactivity_warning_sent_for_current_prompt, \
+            inactivity_end_sent_for_current_prompt
         awaiting_candidate_response = start_waiting
         if start_waiting:
             if preserve_nudge_flags and awaiting_candidate_since is not None:
@@ -3639,36 +3986,59 @@ async def entrypoint(ctx: JobContext):
             awaiting_candidate_since = None
         if not preserve_nudge_flags:
             inactivity_nudge_sent_for_current_prompt = False
+            inactivity_warning_sent_for_current_prompt = False
+            inactivity_end_sent_for_current_prompt = False
         if start_waiting:
             logger.debug("[NUDGE] Inactivity clock started (awaiting candidate response)")
         else:
             logger.debug("[NUDGE] Inactivity clock cleared")
     @session.on("user_state_changed")
     def on_user_state_changed(event):
-        nonlocal is_candidate_speaking
+        nonlocal is_candidate_speaking, _candidate_started_speaking_at
         if event.new_state == "speaking":
             is_candidate_speaking = True
+            # First speech-start after a question is the true reaction-time endpoint --
+            # response_latency_sec must measure "time to start answering", not "time to
+            # finish answering" (which is what end-of-turn timestamps give you).
+            if _question_asked_at > 0 and _candidate_started_speaking_at < _question_asked_at:
+                _candidate_started_speaking_at = time.perf_counter()
         elif event.new_state == "listening":
             is_candidate_speaking = False
             # Restart the inactivity clock from 0 every time the candidate stops speaking.
             # This ensures they get a full 10 seconds of silence before a nudge fires.
             if awaiting_candidate_response:
                 reset_inactivity_clock(start_waiting=True, preserve_nudge_flags=False)
+    _last_speaking_turn_was_nudge = False
     @session.on("agent_state_changed")
     def on_agent_state_changed(event):
-        nonlocal is_agent_speaking, first_agent_turn_committed_at
+        nonlocal is_agent_speaking, first_agent_turn_committed_at, _last_speaking_turn_was_nudge, \
+            _question_asked_at, _question_asked_at_wall_ms, _question_pending_timestamp
         if event.new_state == "speaking":
             is_agent_speaking = True
             if inactivity_nudge_speaking:
+                _last_speaking_turn_was_nudge = True
                 logger.debug("[NUDGE] Scripted inactivity prompt speaking; preserving countdown")
             else:
+                _last_speaking_turn_was_nudge = False
                 reset_inactivity_clock(start_waiting=False)
                 logger.debug("[NUDGE] AI started speaking; old inactivity countdown cleared")
         elif event.new_state == "listening":
             is_agent_speaking = False
             if first_agent_turn_committed_at is None:
                 first_agent_turn_committed_at = time.monotonic()
-            logger.debug("[NUDGE] AI finished speaking; waiting for assistant prompt commit")
+            # Reaction-time clock starts HERE -- the instant TTS playback of the
+            # question actually finishes, not when the question text was committed.
+            # Skip scripted nudges; only real questions start the clock.
+            if _question_pending_timestamp and not _last_speaking_turn_was_nudge:
+                _question_asked_at = time.perf_counter()
+                _question_asked_at_wall_ms = int(time.time() * 1000)
+                _question_pending_timestamp = False
+            # Start inactivity countdown immediately when AI finishes speaking.
+            # If the turn that just ended was a nudge, preserve the sent-flags so
+            # the schedule escalates (7s -> 15s -> 25s) instead of the same nudge
+            # re-firing every ~7s forever.
+            reset_inactivity_clock(start_waiting=True, preserve_nudge_flags=_last_speaking_turn_was_nudge)
+            logger.debug("[NUDGE] AI finished speaking; inactivity countdown started")
     # Wait for participant to join so we have their identity for tracking.
     # Keep waiting during hardware check and handle room-disconnect gracefully.
     async def wait_for_human_participant(max_wait_seconds: int = 600):
@@ -3731,6 +4101,10 @@ async def entrypoint(ctx: JobContext):
         # (transcript timestamps + remaining-time calculations).
         _interview_timer_start = time.monotonic()
         session_start_time = time.time()
+        # Local wrapper to add elapsed time to transcript lines
+        def _append_with_elapsed(speaker: str, text: str) -> None:
+            elapsed = int(max(0, time.time() - session_start_time)) if session_start_time else 0
+            append_transcript_line(transcript_lines, f"{speaker}[{elapsed}]", text)
         try:
             logger.info("[FLOW] Greeting started  20-min interview timer begins NOW")
             # Only deliver scripted welcome if the LLM hasn't already spoken
@@ -3753,7 +4127,7 @@ async def entrypoint(ctx: JobContext):
                         greeting_delivered_at = time.time()
                         # session.say() bypasses the LLM pipeline and does NOT fire
                         # conversation_item_added, so we must append the greeting manually.
-                        append_transcript_line("Interviewer", welcome_text)
+                        _append_with_elapsed("Interviewer", welcome_text)
                         logger.info("[TRANSCRIPT] Greeting appended to transcript (session.say bypass)")
                         logger.info("[FLOW]  GREETING DONE  WARMUP ACTIVE (waiting for warmup Q&A before interview)")
                         # Inject phase marker so LLM knows greeting is done and must not repeat it
@@ -3833,10 +4207,16 @@ async def entrypoint(ctx: JobContext):
         f"I'll go ahead and end the session here. "
         f"It was great speaking with you, {_name}. All the best!"
     )
+    inactivity_warning_sent_for_current_prompt = False
+    inactivity_end_sent_for_current_prompt = False
     async def _deliver_nudge(text: str) -> None:
         # Scripted speech should not behave like a new interview question. Preserve
         # the original silence timer across the nudge audio so 10/20/30/50/60s
         # thresholds are measured from the candidate's first chance to answer.
+        # Also preserve the "already sent" flags across the nudge's own
+        # agent_state_changed speaking->listening transition (below), otherwise
+        # each nudge wipes its own sent-flag and re-fires forever every ~7s
+        # instead of escalating to the 15s warning / 25s end.
         nonlocal awaiting_candidate_response, awaiting_candidate_since, inactivity_nudge_speaking
         inactivity_nudge_speaking = True
         try:
@@ -3930,36 +4310,60 @@ async def entrypoint(ctx: JobContext):
             if awaiting_candidate_response and awaiting_candidate_since is not None
             else 0.0
         )
+        # agent._waiting_for_eval is closed in two different situations that must be
+        # told apart:
+        #   1. A question was just delivered and the candidate hasn't answered yet
+        #      (pre-closed defensively so llm_node can't race ahead -- see
+        #      "[LLM_GATE] Pre-cleared after interview question delivery"). Here
+        #      _candidate_turn_since_last_assistant is False (no reply since the AI
+        #      last spoke) -- nudges MUST still fire on real candidate silence, or the
+        #      "inactivity never fires" bug comes back.
+        #   2. The candidate JUST answered and eval/probe-directive generation is
+        #      genuinely in flight (_candidate_turn_since_last_assistant is True, set
+        #      the moment their turn was processed). Here is_agent_speaking is still
+        #      False (TTS hasn't started -- the LLM is still generating the reply
+        #      text), so without this check a nudge can fire in that processing gap
+        #      even though the candidate did answer and a reply is on its way.
+        # Only situation 2 should block nudges.
+        _eval_in_flight_after_reply = agent._waiting_for_eval and _candidate_turn_since_last_assistant
         _silence_active = (
             not is_agent_speaking
             and not is_candidate_speaking
             and awaiting_candidate_response
             and inactivity_elapsed >= INACTIVITY_NUDGE_SECS
-            and not agent._waiting_for_eval
+            and not _eval_in_flight_after_reply
         )
+        # Log timing every 5 seconds so we can verify nudge schedule
+        if int(inactivity_elapsed) % 5 == 0 and inactivity_elapsed >= 5:
+            logger.debug(f"[NUDGE_TIMING] elapsed={inactivity_elapsed:.1f}s silent={_silence_active} agent_speaking={is_agent_speaking} candidate_speaking={is_candidate_speaking}")
         # 7s silence -> soft nudge (fires once per prompt)
-        if _silence_active and inactivity_elapsed < INACTIVITY_WARNING_SECS and not inactivity_nudge_sent_for_current_prompt:
+        if _silence_active and inactivity_elapsed >= INACTIVITY_NUDGE_SECS and inactivity_elapsed < INACTIVITY_WARNING_SECS and not inactivity_nudge_sent_for_current_prompt:
             try:
+                logger.info("[NUDGE_FIRE] 7s nudge at %.1fs elapsed", inactivity_elapsed)
                 spawn_background_task(_deliver_nudge(_SOFT_NUDGE_TEXT), "inactivity_nudge")
                 inactivity_nudge_sent_for_current_prompt = True
-                logger.info("[NUDGE] Soft nudge sent at %.0fs silence", inactivity_elapsed)
+                logger.info("[NUDGE] Soft nudge sent at %.1fs silence", inactivity_elapsed)
             except Exception as e:
                 logger.warning(f"[NUDGE] Failed to deliver soft nudge: {e}")
-        # 15s silence -> warning
-        if _silence_active and inactivity_elapsed >= INACTIVITY_WARNING_SECS and inactivity_elapsed < INACTIVITY_END_SECS:
+        # 15s silence -> warning (fires once per prompt)
+        if _silence_active and inactivity_elapsed >= INACTIVITY_WARNING_SECS and inactivity_elapsed < INACTIVITY_END_SECS and not inactivity_warning_sent_for_current_prompt:
             try:
+                logger.info("[NUDGE_FIRE] 15s warning at %.1fs elapsed", inactivity_elapsed)
                 spawn_background_task(_deliver_nudge(_INACTIVITY_WARNING_TEXT), "inactivity_warning")
-                logger.info("[NUDGE] Warning sent at %.0fs silence", inactivity_elapsed)
+                inactivity_warning_sent_for_current_prompt = True
+                logger.info("[NUDGE] Warning sent at %.1fs silence", inactivity_elapsed)
             except Exception as e:
                 logger.warning(f"[NUDGE] Failed to deliver warning: {e}")
-        # 25s silence -> end call
-        if _silence_active and inactivity_elapsed >= INACTIVITY_END_SECS:
-            logger.info("[NUDGE] Ending interview due to inactivity (%.0fs)", inactivity_elapsed)
+        # 25s silence -> end call (fires once per prompt)
+        if _silence_active and inactivity_elapsed >= INACTIVITY_END_SECS and not inactivity_end_sent_for_current_prompt:
+            logger.info("[NUDGE_FIRE] 25s END at %.1fs elapsed", inactivity_elapsed)
+            logger.info("[NUDGE] Ending interview due to inactivity (%.1fs)", inactivity_elapsed)
             try:
                 await session.say(_INACTIVITY_END_TEXT, allow_interruptions=False)
                 await asyncio.sleep(3.0)
             except Exception as e:
                 logger.warning("[NUDGE] Failed to deliver inactivity ending line: %s", e)
+            inactivity_end_sent_for_current_prompt = True
             await _send_termination_signal("inactivity_timeout")
             interview_marked_finished = True
             interview_finished_event.set()
@@ -3984,8 +4388,12 @@ async def entrypoint(ctx: JobContext):
     logger.info(
         f"Interview ended (finished={finished_task.done()}, time_expired={time_expired}). Waiting 2s for final transcripts..."
     )
+    spawn_background_task(
+        log_test_event(app_id, "session_ended", "Session ended"),
+        "test_event_session_ended"
+    )
     await asyncio.sleep(2)
-    # Ã¢ Final definitive save - Phase 5 includes proctoring report + answer scores
+    # â Final definitive save - Phase 5 includes proctoring report + answer scores
     proctoring_data = _build_proctoring_data(
         "time_expired" if time_expired else "interview_finished"
     )
@@ -3997,12 +4405,20 @@ async def entrypoint(ctx: JobContext):
         proctoring_data=proctoring_data,
         final_status="COMPLETED",
     )
+    await persist_latency_signals(app_id, answer_scores)
+    await persist_session_fingerprint(app_id)
     await persist_answer_scores(app_id, answer_scores)
     # CRITICAL: Mark as COMPLETED immediately after first save to prevent re-dispatch
     # This must happen before any async work (summary, report, billing) that could fail
     if finished_task.done():
         try:
             _agent_dur = (time.time() - session_start_time) if session_start_time else None
+            # Sessions that ran out the fixed time budget always bill/show exactly
+            # time_limit_mins, regardless of goodbye TTS timing shaving a few
+            # seconds off the raw elapsed wall-clock. Early ends (candidate
+            # finished, inactivity timeout) keep their real, shorter duration.
+            if time_expired:
+                _agent_dur = float(time_limit_mins * 60)
             await update_interview_status(app_id, duration_seconds=_agent_dur)
             logger.info("[EARLY_STATUS_UPDATE] Marked COMPLETED to prevent duplicate job dispatch")
         except Exception as e:
@@ -4033,139 +4449,53 @@ async def entrypoint(ctx: JobContext):
         plugin_tts_audio_seconds=plugin_tts_audio_seconds,
         plugin_stt_audio_seconds=plugin_stt_audio_seconds,
     )
-    # AI Scorecard -- run inline (awaited) so it completes before teardown cancels background tasks
+    # AI Scorecard + billing snapshot + debug PDF -- handed off to the durable
+    # Node/BullMQ worker (interview-report queue -> report_worker.py) instead of
+    # running inline here. LiveKit Cloud recycles this job process shortly after
+    # the room closes, which risked killing the ~300s report pipeline mid-flight;
+    # the Node worker is always-on and can retry/observe failures via BullMQ.
     if session_start_time:
-        _final_scores    = list(answer_scores)
-        _transcript_snap = list(transcript_lines)
-        _proctoring_snap = dict(proctoring_data) if proctoring_data else {}
         if _is_test_session and _skip_report:
-            # ponytail: test session with report disabled — skip all LLM report/summary calls
+            # ponytail: test session with report disabled -- skip all LLM report/summary calls
             logger.info("[REPORT] Skipped (test session with skipReport=True) for %s", app_id)
         else:
-            # REC-04: report and summary are independent — run in parallel.
-            scores_context = None
-            async def _run_report_then_summary() -> None:
-                nonlocal scores_context
-                try:
-                    logger.info("[REPORT] Generating with answer_scores=%d turns", len(_final_scores))
-                    async with asyncio.timeout(300):
-                        scores_context = await generate_interview_report(
-                            app_id,
-                            _transcript_snap,
-                            _final_scores,
-                            job_title,
-                            proctoring_data=_proctoring_snap,
-                            org_id=org_id,
-                            _LLM_DEFAULT=str(ctx_data.llmInterviewReport).strip(),
-                            jd_json=_coerce_jsonish(extracted_details) if extracted_details else None,
-                            topic_records=list(_topic_records),
-                            candidate_name=candidate_name,
-                        )
-                    logger.info("[REPORT] Completed. scores_context keys=%s",
-                                list(scores_context.keys()) if scores_context else None)
-                except asyncio.TimeoutError:
-                    logger.warning(f"[REPORT] Timed out for {app_id} after 5 min")
-                except Exception as e:
-                    logger.error(f"[REPORT] Failed for {app_id}: {e}")
-                # Summary runs immediately after report regardless of report success/failure
-                try:
-                    async with asyncio.timeout(60):
-                        await generate_interview_summary(
-                            app_id,
-                            _transcript_snap,
-                            job_title,
-                            org_id=org_id,
-                            _LLM_DEFAULT=analysis_model,
-                            scores_context=scores_context,
-                            candidate_name=candidate_name,
-                        )
-                except asyncio.TimeoutError:
-                    logger.warning(f"[SUMMARY] Timed out for {app_id} after 60s")
-                except Exception as e:
-                    logger.error(f"[SUMMARY] Failed for {app_id}: {e}")
-            await _run_report_then_summary()
-    # Queue accumulated eval/brief/llmgen LLM usage before writing the exact
-    # interview snapshot so recent-interview rows match the org-level totals.
-    for _eval_usage in _eval_llm_usages_accumulated:
-        await persist_org_manual_billing_usage(org_id, "interview", _eval_usage)
-    for _brief_usage in _brief_llm_usages:
-        await persist_org_manual_billing_usage(org_id, "interviewBrief", _brief_usage)
-    for _gen_usage in _llmgen_llm_usages:
-        await persist_org_manual_billing_usage(org_id, "interviewLLMGeneration", _gen_usage)
-    try:
-        await persist_interview_billing_snapshot(
-            app_id,
-            latest_session_usage or session.usage,
-            org_id=org_id,
-            candidate_name=candidate_name,
-            job_title=job_title,
-            duration_seconds=(time.time() - session_start_time) if session_start_time else None,
-            tts_provider=org_tts_provider,
-            tts_model=org_tts_model,
-            stt_provider="DEEPGRAM",
-            stt_model=str(ctx_data.sttModel),
-            plugin_tts_characters=billable_tts_characters,
-            plugin_tts_audio_seconds=plugin_tts_audio_seconds,
-            plugin_stt_audio_seconds=plugin_stt_audio_seconds,
-        )
-    except Exception as e:
-        logger.error(f"[USAGE] Failed to persist interview billing snapshot for {app_id}: {e}")
-        raise
-    await flush_pending_manual_billing(org_id)
-    # For test sessions: write cost metrics to testBillingMetrics column
-    if _is_test_session:
-        try:
-            pool = await __import__("interview.agent_persistence", fromlist=["DatabasePool"]).DatabasePool.get()
             _usage_snap = latest_session_usage or session.usage
-            _llm_in  = getattr(_usage_snap, "input_tokens",  0) or 0
-            _llm_out = getattr(_usage_snap, "output_tokens", 0) or 0
-            # rough cost estimate (GPT-4o pricing, update if model changes)
-            _llm_cost = round((_llm_in * 2.5 + _llm_out * 10) / 1_000_000, 6)
-            _tts_cost = round((billable_tts_characters or 0) * 0.000015, 6)
-            _stt_cost = round((plugin_stt_audio_seconds or 0) * 0.0043 / 60, 6)
-            async with pool.acquire() as _conn:
-                await _conn.execute(
-                    """UPDATE "Interview" SET "testBillingMetrics" = $1::jsonb, "updatedAt" = NOW()
-                       WHERE "applicationId" = $2""",
-                    json.dumps({
-                        "skipReport": _skip_report,
-                        "llmCost": _llm_cost,
-                        "ttsCost": _tts_cost,
-                        "sttCost": _stt_cost,
-                        "llmInputTokens": int(_llm_in),
-                        "llmOutputTokens": int(_llm_out),
-                        "ttsChars": int(billable_tts_characters or 0),
-                        "sttSeconds": round(float(plugin_stt_audio_seconds or 0), 1),
-                        "ttsProvider": org_tts_provider,
-                        "sttProvider": "deepgram",
-                        "llmProvider": "openai",
-                        "evaluationRuns": len(_eval_llm_usages_accumulated),
-                        "briefGenerations": len(_brief_llm_usages),
-                        "llmGenerations": len(_llmgen_llm_usages),
-                        "evalInputTokens": sum(u.get("inputTokens", 0) for u in _eval_llm_usages_accumulated),
-                        "evalOutputTokens": sum(u.get("outputTokens", 0) for u in _eval_llm_usages_accumulated),
-                        "briefInputTokens": sum(u.get("inputTokens", 0) for u in _brief_llm_usages),
-                        "briefOutputTokens": sum(u.get("outputTokens", 0) for u in _brief_llm_usages),
-                        "llmgenInputTokens": sum(u.get("inputTokens", 0) for u in _llmgen_llm_usages),
-                        "llmgenOutputTokens": sum(u.get("outputTokens", 0) for u in _llmgen_llm_usages),
-                    }),
-                    app_id,
-                )
-            logger.info("[TEST_BILLING] Saved metrics for %s | llm=$%.4f tts=$%.4f stt=$%.4f",
-                        app_id, _llm_cost, _tts_cost, _stt_cost)
-        except Exception as _tb_err:
-            logger.warning("[TEST_BILLING] Failed to save metrics: %s", _tb_err)
-        # Local test session -- push a full per-turn debug PDF to Slack for bug triage.
-        from interview.debug_report import generate_and_send_debug_report
-        await generate_and_send_debug_report(
-            app_id=app_id,
-            candidate_name=candidate_name,
-            job_title=job_title,
-            answer_scores=list(answer_scores),
-            topic_pool=list(_interview_brief.topic_pool),
-            covered_topics=_covered_topic_keys.coverage_rows(),
-            topic_records=list(_topic_records),
-        )
+            _report_payload = {
+                "appId": app_id,
+                "orgId": org_id,
+                "jobTitle": job_title,
+                "candidateName": candidate_name,
+                "llmInterviewReport": str(ctx_data.llmInterviewReport).strip(),
+                "isTest": _is_test_session,
+                "answerIntegrityEnabled": bool(evaluation_signal_toggles.get("answer_integrity")),
+                "transcriptLines": list(transcript_lines),
+                "answerScores": list(answer_scores),
+                "proctoringData": dict(proctoring_data) if proctoring_data else {},
+                "jdJson": _coerce_jsonish(extracted_details) if extracted_details else None,
+                "resumeJson": structured_resume if isinstance(structured_resume, dict) else None,
+                "topicRecords": list(_topic_records),
+                "usage": {
+                    "evalUsages": list(_eval_llm_usages_accumulated),
+                    "briefUsages": list(_brief_llm_usages),
+                    "llmgenUsages": list(_llmgen_llm_usages),
+                },
+                "billing": {
+                    "sessionUsage": _usage_to_dict(_usage_snap),
+                    "durationSeconds": (time.time() - session_start_time) if session_start_time else None,
+                    "ttsProvider": org_tts_provider,
+                    "ttsModel": org_tts_model,
+                    "sttProvider": "DEEPGRAM",
+                    "sttModel": str(ctx_data.sttModel),
+                    "ttsCharacters": billable_tts_characters,
+                    "ttsAudioSeconds": plugin_tts_audio_seconds,
+                    "sttAudioSeconds": plugin_stt_audio_seconds,
+                },
+                "debugReport": {
+                    "topicPool": [t.model_dump() for t in _interview_brief.topic_pool],
+                    "coveredTopics": _covered_topic_keys.coverage_rows(),
+                },
+            }
+            await _enqueue_report_job(app_id, _report_payload)
     # Cancel any leftover fire-and-forget work so job teardown is instant.
     if background_tasks:
         logger.debug(f"[SHUTDOWN] Cancelling {len(background_tasks)} background task(s)")

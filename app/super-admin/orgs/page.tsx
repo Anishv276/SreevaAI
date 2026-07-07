@@ -78,7 +78,7 @@ interface Org {
         drives: number;
     };
 }
-type BillingFeatureKey = "interview" | "resumeExtraction" | "jdExtraction" | "resumeReport" | "interviewReport";
+type BillingFeatureKey = "interview" | "resumeExtraction" | "jdExtraction" | "resumeReport" | "interviewReport" | "interviewBrief" | "interviewLLMGeneration";
 type BillingFeatureMetrics = {
     runs?: number;
     inputTokens?: number;
@@ -128,6 +128,7 @@ export default function OrgsPage() {
     const [syncingOrgs, setSyncingOrgs] = useState<Set<string>>(new Set());
     const [metricsOrg, setMetricsOrg] = useState<Org | null>(null);
     const [billingAggregates, setBillingAggregates] = useState<Record<string, any> | null>(null);
+    const [testBillingData, setTestBillingData] = useState<Record<string, any> | null>(null);
     const [statusModalOrg, setStatusModalOrg] = useState<{ id: string; name: string; currentStatus: string; pendingStatus: string } | null>(null);
     const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
     // Currency toggle state
@@ -174,6 +175,7 @@ export default function OrgsPage() {
     const openMetricsOrg = async (org: Org) => {
         setMetricsOrg(org);
         setBillingAggregates(null);
+        setTestBillingData(null);
         fetchExchangeRate();
         // Fetch per-provider aggregates from backend
         try {
@@ -184,6 +186,16 @@ export default function OrgsPage() {
             }
         } catch (err) {
             console.error("Failed to fetch billing aggregates:", err);
+        }
+        // Test session spend (LLM/TTS/STT/report) — kept separate from the real
+        // billing aggregates above, since it's internal testing cost, not customer usage.
+        try {
+            const res = await fetch(`/api/test/billing?orgId=${encodeURIComponent(org.id)}`);
+            if (res.ok) {
+                setTestBillingData(await res.json());
+            }
+        } catch (err) {
+            console.error("Failed to fetch test billing:", err);
         }
     };
     useEffect(() => {
@@ -231,6 +243,8 @@ export default function OrgsPage() {
             const inr = usd * usdToInr;
             return `₹${inr.toFixed(0)}`;
         }
+        if (usd === 0) return "$0.00";
+        if (usd < 0.005) return `$${usd.toFixed(4)}`;
         return `$${usd.toFixed(2)}`;
     };
     const fmtHistory = (usd: number | null | undefined) => usd == null ? "-" : fmt(Number(usd || 0));
@@ -240,14 +254,9 @@ export default function OrgsPage() {
         { key: "jdExtraction", label: "LLM - JD" },
         { key: "resumeReport", label: "LLM - Resume Report" },
         { key: "interviewReport", label: "LLM - Interview Report" },
+        { key: "interviewBrief", label: "LLM - Interview Brief" },
+        { key: "interviewLLMGeneration", label: "LLM - Interview Question Generation" },
     ];
-    const FEATURE_MODEL_DISPLAY_MAP: Record<BillingFeatureKey, string> = {
-        resumeExtraction: "gpt-5.4-mini",
-        jdExtraction: "gpt-5.4-mini",
-        interview: "gpt-4.1-mini",
-        resumeReport: "gpt-5.4-mini",
-        interviewReport: "gpt-5.4-mini",
-    };
     const getBillingFeature = (org: Org, key: BillingFeatureKey): BillingFeatureMetrics => {
         const usage = (org.usageMetrics ?? {}) as Record<string, any>;
         const billing = usage.billing ? (usage.billing as Record<string, any>) : usage;
@@ -272,9 +281,6 @@ export default function OrgsPage() {
     const isUnknownLabel = (value: string) => {
         const normalized = cleanName(String(value || "")).toLowerCase();
         return !normalized || normalized === "unknown" || normalized === "no recorded model";
-    };
-    const displayLlmModel = (feature: BillingFeatureMetrics, key: BillingFeatureKey) => {
-        return [FEATURE_MODEL_DISPLAY_MAP[key]];
     };
     const unique = (values: string[]) => Array.from(new Set(values.filter(Boolean)));
     const getRecordedModels = (models?: Record<string, any>) => {
@@ -469,7 +475,7 @@ export default function OrgsPage() {
                                     <th className="px-4 py-3 text-center font-semibold text-xs text-gray-400 uppercase tracking-wider">Admins</th>
                                     <th className="px-4 py-3 text-center font-semibold text-xs text-gray-400 uppercase tracking-wider">Jobs</th>
                                     <th className="px-4 py-3 text-center font-semibold text-xs text-gray-400 uppercase tracking-wider">Candidates</th>
-                                    <th className="px-4 py-3 text-center font-semibold text-xs text-gray-400 uppercase tracking-wider">Credits Used</th>
+                                    <th className="px-4 py-3 text-center font-semibold text-xs text-gray-400 uppercase tracking-wider">Mins Used</th>
                                     <th className="px-4 py-3 text-center font-semibold text-xs text-gray-400 uppercase tracking-wider">Remaining</th>
                                     <th className="px-4 py-3 text-center font-semibold text-xs text-gray-400 uppercase tracking-wider">Done</th>
                                     <th className="px-4 py-3 text-center font-semibold text-xs text-gray-400 uppercase tracking-wider">Status</th>
@@ -703,8 +709,8 @@ export default function OrgsPage() {
                                 </h2>
                                 <div className="flex items-center gap-5 mt-2">
                                     <div className="flex items-center gap-1.5">
-                                        <span className="text-xs font-medium text-gray-400">Credits Used:</span>
-                                        <span className="text-sm font-semibold text-gray-900 tabular-nums">{fmt(Number(metricsOrg.creditsUsed || 0))}</span>
+                                        <span className="text-xs font-medium text-gray-400">Minutes Used:</span>
+                                        <span className="text-sm font-semibold text-gray-900 tabular-nums">{Number(metricsOrg.creditsUsed || 0).toFixed(2)} min</span>
                                     </div>
                                     <div className="w-px h-3" style={{ background: "#E9E7FF" }} />
                                     <div className="flex items-center gap-1.5">
@@ -748,12 +754,19 @@ export default function OrgsPage() {
                         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar space-y-6" style={{ background: "#FAFAFC" }}>
                             {(() => {
                                 const ivFeature = billingAggregates?.interview || {};
-                                // Interview donut: ONLY the interview feature's own LLM+TTS+STT cost
-                                const ivLlmCost = Number(ivFeature.costUsd || 0);
+                                const ivBriefFeature = billingAggregates?.interviewBrief || {};
+                                const ivGenFeature = billingAggregates?.interviewLLMGeneration || {};
+                                // Interview donut: the interview session's full LLM spend --
+                                // eval/signal scoring (interview) + brief generation (interviewBrief)
+                                // + per-turn question generation (interviewLLMGeneration) -- plus
+                                // this session's own TTS/STT.
+                                const ivLlmCost = Number(ivFeature.costUsd || 0)
+                                    + Number(ivBriefFeature.costUsd || 0)
+                                    + Number(ivGenFeature.costUsd || 0);
                                 const ivTtsCost = Number(ivFeature.ttsCostUsd || 0);
                                 const ivSttCost = Number(ivFeature.sttCostUsd || 0);
                                 const ivTotalCost = ivLlmCost + ivTtsCost + ivSttCost;
-                                const feature = ivFeature; // alias for interview feature
+                                const feature = ivFeature; // alias for interview feature (TTS/STT/session stats)
                                 const totalCost = ivTotalCost;
                                 const logicCost = ivLlmCost;
                                 const synthCost = ivTtsCost;
@@ -764,7 +777,9 @@ export default function OrgsPage() {
                                 const logicDash = getDash(logicCost);
                                 const synthDash = getDash(synthCost);
                                 const sttDash = getDash(sttCost);
-                                const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
+                                const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0)
+                                    + Number(ivBriefFeature.inputTokens || 0) + Number(ivBriefFeature.outputTokens || 0)
+                                    + Number(ivGenFeature.inputTokens || 0) + Number(ivGenFeature.outputTokens || 0);
                                 return (
                                     <div className="flex flex-col gap-6">
                                         {/* SECTION 1: LLM Models Table */}
@@ -783,19 +798,20 @@ export default function OrgsPage() {
                                                     </thead>
                                                     <tbody className="divide-y divide-gray-100">
                                                         {[
-                                                            { label: "Resume Extraction", key: "resumeExtraction" },
-                                                            { label: "JD Extraction", key: "jdExtraction" },
-                                                            { label: "Interview Report", key: "interviewReport" },
-                                                            { label: "Resume Report", key: "resumeReport" },
-                                                            { label: "Interview Evaluation", key: "interviewEvaluation" },
-                                                            { label: "Interview LLM Generation", key: "interviewLLMGeneration" },
-                                                            { label: "Interview Brief", key: "interviewBrief" },
+                                                            { label: "Resume Extraction", key: "resumeExtraction", costKey: "resumeExtraction" },
+                                                            { label: "JD Extraction", key: "jdExtraction", costKey: "jdExtraction" },
+                                                            { label: "Interview Report", key: "interviewReport", costKey: "interviewReport" },
+                                                            { label: "Resume Report", key: "resumeReport", costKey: "resumeReport" },
+                                                            // Eval costs go to billing.interview in Python, not interviewEvaluation
+                                                            { label: "Interview Evaluation", key: "interviewEvaluation", costKey: "interview" },
+                                                            { label: "Interview LLM Generation", key: "interviewLLMGeneration", costKey: "interviewLLMGeneration" },
+                                                            { label: "Interview Brief", key: "interviewBrief", costKey: "interviewBrief" },
                                                         ].map((row) => {
                                                             const feature = billingAggregates?.[row.key as string] || {};
                                                             const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
-                                                            const model = feature.model || "-";
+                                                            const model = feature.model ? cleanName(feature.model) : "-";
                                                             const runs = Number(feature.runs || 0);
-                                                            const cost = Number(feature.costUsd || 0);
+                                                            const cost = Number(billingAggregates?.[row.costKey as string]?.costUsd || 0);
                                                             return (
                                                                 <tr key={row.label} className="hover:bg-gray-50/50">
                                                                     <td className="px-6 py-4 text-sm font-bold text-gray-900">{row.label}</td>
@@ -818,7 +834,11 @@ export default function OrgsPage() {
                                                 <div className="text-center">
                                                     <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Brief + Evaluation + LLM Generation</div>
                                                     <div className="mt-3 text-4xl font-bold text-violet-600">
-                                                        {fmt(Number(billingAggregates?.interview?.costUsd || 0))}
+                                                        {fmt(
+                                                            Number(billingAggregates?.interview?.costUsd || 0) +
+                                                            Number(billingAggregates?.interviewBrief?.costUsd || 0) +
+                                                            Number(billingAggregates?.interviewLLMGeneration?.costUsd || 0)
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
@@ -961,11 +981,9 @@ export default function OrgsPage() {
                                                             <div className="text-[28px] font-bold text-gray-900 tabular-nums">{totalTokens.toLocaleString()}</div>
                                                         </div>
                                                         <div className="space-y-1.5">
-                                                            <div className="text-xs font-medium text-gray-400 uppercase tracking-wider">Audio Mins</div>
+                                                            <div className="text-xs font-medium text-gray-400 uppercase tracking-wider">STT Mins</div>
                                                             <div className="text-[28px] font-bold text-gray-900 tabular-nums">
-                                                                {Number(feature.sessionDuration || 0) > 0
-                                                                    ? (Number(feature.sessionDuration || 0) / 60).toFixed(1)
-                                                                    : (Number(feature.sttAudioSeconds || 0) / 60).toFixed(1)}<span className="text-[13px] font-medium ml-1 opacity-40">min</span>
+                                                                {(Number(feature.sttAudioSeconds || 0) / 60).toFixed(1)}<span className="text-[13px] font-medium ml-1 opacity-40">min</span>
                                                             </div>
                                                         </div>
                                                         <div className="space-y-1.5 col-span-2">
@@ -981,7 +999,7 @@ export default function OrgsPage() {
                                                         <div className="flex flex-wrap gap-2">
                                                             {feature.model && (
                                                                 <span className="px-3 py-1 bg-[#10B981]/10 text-[#10B981] text-[10px] font-semibold rounded-md border border-[#10B981]/20 uppercase tracking-wide">
-                                                                    {feature.model}
+                                                                    {cleanName(feature.model)}
                                                                 </span>
                                                             )}
                                                             <span className="px-3 py-1 bg-gray-50 text-gray-500 text-[10px] font-semibold rounded-md border border-gray-200 uppercase tracking-wide">openai</span>
@@ -1028,7 +1046,7 @@ export default function OrgsPage() {
                                 <div className="text-[12px] font-bold uppercase tracking-widest text-gray-500">Total org cost</div>
                                 <div className="text-[28px] font-bold text-gray-900 tracking-tight">
                                     {(() => {
-                                        const allLlmCost = (billingAggregates?.resumeExtraction?.costUsd || 0) + (billingAggregates?.jdExtraction?.costUsd || 0) + (billingAggregates?.interviewReport?.costUsd || 0) + (billingAggregates?.resumeReport?.costUsd || 0) + (billingAggregates?.interview?.costUsd || 0);
+                                        const allLlmCost = (billingAggregates?.resumeExtraction?.costUsd || 0) + (billingAggregates?.jdExtraction?.costUsd || 0) + (billingAggregates?.interviewReport?.costUsd || 0) + (billingAggregates?.resumeReport?.costUsd || 0) + (billingAggregates?.interview?.costUsd || 0) + (billingAggregates?.interviewBrief?.costUsd || 0) + (billingAggregates?.interviewLLMGeneration?.costUsd || 0);
                                         const allTtsCost = billingAggregates?.interview?.ttsCostUsd || 0;
                                         const allSttCost = billingAggregates?.interview?.sttCostUsd || 0;
                                         const grandTotal = allLlmCost + allTtsCost + allSttCost;
@@ -1091,7 +1109,13 @@ export default function OrgsPage() {
                                                                 {row.hasBillingSnapshot ? fmtHistory(row.sttCostUsd) : "-"}
                                                             </td>
                                                             <td className="px-6 py-4 text-right text-sm font-black text-gray-900">
-                                                                {row.hasBillingSnapshot ? fmtHistory(row.totalCostUsd) : "-"}
+                                                                {row.hasBillingSnapshot
+                                                                    ? fmtHistory(
+                                                                        Math.round(Number(row.llmCostUsd || 0) * 100) / 100
+                                                                        + Math.round(Number(row.ttsCostUsd || 0) * 100) / 100
+                                                                        + Math.round(Number(row.sttCostUsd || 0) * 100) / 100
+                                                                    )
+                                                                    : "-"}
                                                             </td>
                                                             <td className="px-6 py-4 text-right text-[11px] font-semibold text-gray-500">
                                                                 {new Date(row.date).toLocaleDateString(undefined, {
@@ -1107,6 +1131,78 @@ export default function OrgsPage() {
                                         </div>
                                     )}
                                 </div>
+                                {testBillingData && (
+                                    <div className="mt-6 bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+                                        <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-gray-100 bg-gray-50/60">
+                                            <div className="flex items-center gap-2">
+                                                <div>
+                                                    <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Internal / not billed to org</div>
+                                                    <h4 className="text-lg font-black text-gray-900">Test Usage</h4>
+                                                </div>
+                                            </div>
+                                            <div className="rounded-full border border-gray-100 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                                {testBillingData.count || 0} test session{testBillingData.count === 1 ? "" : "s"}
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 px-6 py-5">
+                                            <div className="bg-gray-50/50 rounded-xl p-4 border border-gray-100">
+                                                <p className="text-[11px] font-semibold text-gray-500 mb-1">LLM</p>
+                                                <p className="text-lg font-black text-gray-900">{fmt(testBillingData.totals?.llmCost || 0)}</p>
+                                            </div>
+                                            <div className="bg-gray-50/50 rounded-xl p-4 border border-gray-100">
+                                                <p className="text-[11px] font-semibold text-gray-500 mb-1">TTS</p>
+                                                <p className="text-lg font-black text-gray-900">{fmt(testBillingData.totals?.ttsCost || 0)}</p>
+                                            </div>
+                                            <div className="bg-gray-50/50 rounded-xl p-4 border border-gray-100">
+                                                <p className="text-[11px] font-semibold text-gray-500 mb-1">STT</p>
+                                                <p className="text-lg font-black text-gray-900">{fmt(testBillingData.totals?.sttCost || 0)}</p>
+                                            </div>
+                                            <div className="bg-gray-50/50 rounded-xl p-4 border border-gray-100">
+                                                <p className="text-[11px] font-semibold text-gray-500 mb-1">Report</p>
+                                                <p className="text-lg font-black text-gray-900">{fmt(testBillingData.totals?.reportCost || 0)}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50">
+                                            <div className="text-[12px] font-bold uppercase tracking-widest text-gray-500">Total spent testing</div>
+                                            <div className="text-xl font-black text-gray-900">{fmt(testBillingData.totals?.totalCost || 0)}</div>
+                                        </div>
+                                        {testBillingData.rows?.length > 0 && (
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full">
+                                                    <thead className="bg-gray-50/80">
+                                                        <tr className="text-left text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                                            <th className="px-6 py-3">Session</th>
+                                                            <th className="px-6 py-3 text-center">Duration</th>
+                                                            <th className="px-6 py-3 text-right">LLM</th>
+                                                            <th className="px-6 py-3 text-right">TTS</th>
+                                                            <th className="px-6 py-3 text-right">STT</th>
+                                                            <th className="px-6 py-3 text-right">Report</th>
+                                                            <th className="px-6 py-3 text-right">Total</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-gray-100 bg-white">
+                                                        {testBillingData.rows.slice(0, 20).map((row: any) => (
+                                                            <tr key={row.id} className="hover:bg-gray-50/70">
+                                                                <td className="px-6 py-4">
+                                                                    <div className="font-bold text-gray-900">{row.candidate}</div>
+                                                                    <div className="text-[11px] font-medium text-gray-500">{row.drive}</div>
+                                                                </td>
+                                                                <td className="px-6 py-4 text-center text-sm font-bold text-gray-900">{row.duration}</td>
+                                                                <td className="px-6 py-4 text-right text-sm font-bold text-gray-900">{fmt(row.llmCost)}</td>
+                                                                <td className="px-6 py-4 text-right text-sm font-bold text-gray-900">{fmt(row.ttsCost)}</td>
+                                                                <td className="px-6 py-4 text-right text-sm font-bold text-gray-900">{fmt(row.sttCost)}</td>
+                                                                <td className="px-6 py-4 text-right text-sm font-bold text-gray-900">
+                                                                    {row.reportEnabled ? fmt(row.reportCost) : <span className="text-gray-300">skipped</span>}
+                                                                </td>
+                                                                <td className="px-6 py-4 text-right text-sm font-black text-gray-900">{fmt(row.totalCost)}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                         </div>
                     </div>
                 </div>

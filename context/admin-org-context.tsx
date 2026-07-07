@@ -1,6 +1,6 @@
 "use client";
 import React, { createContext, useContext, useEffect, useState, useRef } from "react";
-// ─── Types ───────────────────────────────────────────────────────────────────
+// --- Types -------------------------------------------------------------------
 export type OrgData = {
     status: string;
     orgId?: string | null;
@@ -20,9 +20,9 @@ export type OrgData = {
 type AdminOrgContextValue = OrgData & {
     refresh: () => void;
 };
-// ─── Context ─────────────────────────────────────────────────────────────────
+// --- Context -----------------------------------------------------------------
 const AdminOrgContext = createContext<AdminOrgContextValue | null>(null);
-// ─── Provider ────────────────────────────────────────────────────────────────
+// --- Provider ----------------------------------------------------------------
 // Single source of truth for org + credits data across all admin pages.
 // Accepts server-fetched `initialData` so the browser makes ZERO fetch calls
 // on the initial page load. Only fetches on demand (refresh) or when orgId
@@ -41,7 +41,7 @@ export function AdminOrgProvider({
     const [orgData, setOrgData] = useState<OrgData>({
         status: String(initialStatus || "ACTIVE").toUpperCase(),
         orgId: orgId || null,
-        // ⚡ Seed with server-fetched data — no client fetch needed on first paint
+        // ⚡ Seed with server-fetched data -- no client fetch needed on first paint
         ...initialData,
     });
     // Only fetch when this flag is set (e.g. super-admin orgId override or explicit refresh)
@@ -54,7 +54,7 @@ export function AdminOrgProvider({
             const creditsUrl = orgId
                 ? `/api/admin/credits?orgId=${encodeURIComponent(orgId)}`
                 : "/api/admin/credits";
-            // ⚡ Fetch org AND credits in PARALLEL — single round-trip
+            // ⚡ Fetch org AND credits in PARALLEL -- single round-trip
             const [orgRes, creditsRes] = await Promise.all([
                 fetch(orgUrl, { signal }),
                 fetch(creditsUrl, { signal }),
@@ -80,7 +80,7 @@ export function AdminOrgProvider({
                 }),
             }));
         } catch {
-            // Ignore AbortError and network errors — server values are the fallback
+            // Ignore AbortError and network errors -- server values are the fallback
         }
     };
     useEffect(() => {
@@ -102,7 +102,7 @@ export function AdminOrgProvider({
         </AdminOrgContext.Provider>
     );
 }
-// ─── Hook ─────────────────────────────────────────────────────────────────────
+// --- Hook ---------------------------------------------------------------------
 export function useAdminOrg() {
     return useContext(AdminOrgContext);
 }

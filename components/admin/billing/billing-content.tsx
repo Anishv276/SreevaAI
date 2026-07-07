@@ -6,14 +6,20 @@ import { getLandingPackageByName, getLandingPackageForOrgPlan } from "@/lib/land
 import { getSupportComposeUrl } from "@/lib/interview-quota";
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 
+function fmtUsd(usd: number): string {
+    if (usd === 0) return "$0.0000";
+    if (usd < 0.01) return `$${usd.toFixed(4)}`;
+    return `$${usd.toFixed(4)}`;
+}
+
 export function BillingContent(props?: any) {
     const creditsEndpoint = props?.creditsEndpoint || "/api/billing?";
     const historyEndpoint = props?.historyEndpoint || "/api/billing/history?";
+    const showCreditInternals: boolean = !!props?.showCreditInternals;
     const [billingData, setBillingData] = useState<any>(null);
     const [historyData, setHistoryData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
-    const [trendTimeline, setTrendTimeline] = useState<DateRange>({ type: "month" });
-    const [historyTimeline, setHistoryTimeline] = useState<DateRange>({ type: "all" });
+    const [globalTimeline, setGlobalTimeline] = useState<DateRange>({ type: "month" });
     const [trendLoading, setTrendLoading] = useState(false);
     const [historySearch, setHistorySearch] = useState("");
 
@@ -26,17 +32,17 @@ export function BillingContent(props?: any) {
         let isMounted = true;
         setLoading(true);
         const query = new URLSearchParams();
-        query.set("trendRange", trendTimeline.type);
-        if (trendTimeline.type === 'custom') {
-            query.set("customFrom", trendTimeline.from);
-            query.set("customTo", trendTimeline.to);
+        query.set("trendRange", globalTimeline.type);
+        if (globalTimeline.type === 'custom') {
+            query.set("customFrom", globalTimeline.from!);
+            query.set("customTo", globalTimeline.to!);
         }
 
         const historyQuery = new URLSearchParams();
-        historyQuery.set("dateRange", historyTimeline.type);
-        if (historyTimeline.type === 'custom') {
-            historyQuery.set("dateFrom", historyTimeline.from);
-            historyQuery.set("dateTo", historyTimeline.to);
+        historyQuery.set("dateRange", globalTimeline.type);
+        if (globalTimeline.type === 'custom') {
+            historyQuery.set("dateFrom", globalTimeline.from!);
+            historyQuery.set("dateTo", globalTimeline.to!);
         }
         if (historySearch) {
             historyQuery.set("search", historySearch);
@@ -69,7 +75,7 @@ export function BillingContent(props?: any) {
             }
         });
         return () => { isMounted = false; };
-    }, [trendTimeline, historyTimeline, historySearch, creditsEndpoint, historyEndpoint]);
+    }, [globalTimeline, historySearch, creditsEndpoint, historyEndpoint]);
 
     const handleExportCSV = () => {
         if (!historyData?.history || historyData.history.length === 0) return;
@@ -141,11 +147,9 @@ export function BillingContent(props?: any) {
                 <div className="border-b-2 border-violet-600 pb-2">
                     <span className="text-[14px] font-bold text-violet-700 px-2">Overview</span>
                 </div>
-                <button className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-xl bg-white text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 cursor-default">
-                    <Calendar className="h-4 w-4 text-gray-500" />
-                    {thisMonthLabel}
-                    <svg className="w-3.5 h-3.5 ml-1 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                </button>
+                <div className="flex items-center gap-2">
+                    <DateFilter value={globalTimeline} onChange={setGlobalTimeline} />
+                </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -234,9 +238,6 @@ export function BillingContent(props?: any) {
                     <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
                         <div className="flex items-center justify-between mb-8">
                             <h2 className="text-[15px] font-bold text-gray-900">Interview Usage Trend</h2>
-                            <div className="flex items-center gap-2">
-                                <DateFilter value={trendTimeline} onChange={setTrendTimeline} />
-                            </div>
                         </div>
                         <div className={`h-56 relative w-full flex flex-col justify-end pt-4 transition-opacity duration-300 ${trendLoading ? 'opacity-50' : 'opacity-100'}`}>
                             <svg className="w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 100 100">
@@ -286,12 +287,12 @@ export function BillingContent(props?: any) {
                             </svg>
                             <div className="flex justify-between w-full text-[10px] text-gray-400 font-semibold mt-4 px-2">
                                 {usage.trend && usage.trend.filter((_: any, i: number) => {
-                                    if (trendTimeline.type === 'today' || (trendTimeline.type === 'custom' && trendTimeline.from === trendTimeline.to)) return i % Math.ceil(usage.trend.length / 6) === 0;
-                                    if (trendTimeline.type === 'week') return true;
+                                    if (globalTimeline.type === 'today' || (globalTimeline.type === 'custom' && globalTimeline.from === globalTimeline.to)) return i % Math.ceil(usage.trend.length / 6) === 0;
+                                    if (globalTimeline.type === 'week') return true;
                                     return i % Math.ceil(usage.trend.length / 6) === 0;
                                 }).map((t: any) => (
                                     <span key={t.date}>
-                                        {(trendTimeline.type === 'today' || (trendTimeline.type === 'custom' && trendTimeline.from === trendTimeline.to))
+                                        {(globalTimeline.type === 'today' || (globalTimeline.type === 'custom' && globalTimeline.from === globalTimeline.to))
                                             ? (t.date.split(' ')[1] + ' ' + (t.date.split(' ')[2] || ''))
                                             : new Date(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                                     </span>
@@ -319,7 +320,6 @@ export function BillingContent(props?: any) {
                                     className="w-full h-9 pl-9 pr-4 rounded-xl border border-gray-200 text-[13px] placeholder-gray-400 focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
                                 />
                             </div>
-                            <DateFilter value={historyTimeline} onChange={setHistoryTimeline} />
                         </div>
 
                         <div className="overflow-x-auto">
@@ -438,45 +438,50 @@ export function BillingContent(props?: any) {
                         </div>
                     </div>
 
-                    {/* Usage Summary */}
-                    <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-                        <div className="flex items-center gap-2 mb-6">
-                            <Sparkles className="h-4 w-4 text-violet-600" />
-                            <h2 className="text-[14px] font-bold text-gray-900">Usage Summary</h2>
-                        </div>
-                        <div className="space-y-4">
-                            <div className="p-4 rounded-xl border border-gray-100 bg-gray-50/50 flex gap-3">
-                                <div className="mt-0.5"><BarChart3 className="h-4 w-4 text-violet-600" /></div>
-                                <div>
-                                    <p className="text-[13px] font-bold text-gray-900 leading-tight">You've used {(usage.interviewsCompleted / plan.interviewsTotal * 100).toFixed(0)}% of your monthly interviews.</p>
-                                    <p className="text-[12px] text-gray-500 mt-0.5">Plenty of room to grow!</p>
+                    {/* Usage Summary and CTA — admin only */}
+                    {!showCreditInternals && (
+                        <>
+                            <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+                                <div className="flex items-center gap-2 mb-6">
+                                    <Sparkles className="h-4 w-4 text-violet-600" />
+                                    <h2 className="text-[14px] font-bold text-gray-900">Usage Summary</h2>
+                                </div>
+                                <div className="space-y-4">
+                                    <div className="p-4 rounded-xl border border-gray-100 bg-gray-50/50 flex gap-3">
+                                        <div className="mt-0.5"><BarChart3 className="h-4 w-4 text-violet-600" /></div>
+                                        <div>
+                                            <p className="text-[13px] font-bold text-gray-900 leading-tight">You've used {(usage.interviewsCompleted / plan.interviewsTotal * 100).toFixed(0)}% of your monthly interviews.</p>
+                                            <p className="text-[12px] text-gray-500 mt-0.5">Plenty of room to grow!</p>
+                                        </div>
+                                    </div>
+                                    <div className="p-4 rounded-xl border border-emerald-100 bg-emerald-50/30 flex gap-3">
+                                        <div className="mt-0.5"><CheckCircle2 className="h-4 w-4 text-emerald-600" /></div>
+                                        <div>
+                                            <p className="text-[13px] font-bold text-gray-900 leading-tight">All systems operational</p>
+                                            <p className="text-[12px] text-gray-500 mt-0.5">No usage or billing issues.</p>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                            <div className="p-4 rounded-xl border border-emerald-100 bg-emerald-50/30 flex gap-3">
-                                <div className="mt-0.5"><CheckCircle2 className="h-4 w-4 text-emerald-600" /></div>
-                                <div>
-                                    <p className="text-[13px] font-bold text-gray-900 leading-tight">All systems operational</p>
-                                    <p className="text-[12px] text-gray-500 mt-0.5">No usage or billing issues.</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
 
-                    {/* Support CTA */}
-                    <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-                        <h3 className="text-[15px] font-bold text-gray-900 mb-2">Need more interviews?</h3>
-                        <p className="text-[13px] text-gray-500 mb-5">Upgrade your plan or contact support to increase your quota.</p>
-                        <a
-                            href={getSupportComposeUrl({ subject: "Increase org quota request", body: "Hi support team,\n\nWe need more interviews. Please help us recharge.\n" })}
-                            target="_blank" rel="noreferrer"
-                            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 transition-colors text-white text-[13px] font-bold"
-                        >
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-                            Contact Support
-                        </a>
-                    </div>
+                            {/* Support CTA */}
+                            <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+                                <h3 className="text-[15px] font-bold text-gray-900 mb-2">Need more interviews?</h3>
+                                <p className="text-[13px] text-gray-500 mb-5">Upgrade your plan or contact support to increase your quota.</p>
+                                <a
+                                    href={getSupportComposeUrl({ subject: "Increase org quota request", body: "Hi support team,\n\nWe need more interviews. Please help us recharge.\n" })}
+                                    target="_blank" rel="noreferrer"
+                                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 transition-colors text-white text-[13px] font-bold"
+                                >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                                    Contact Support
+                                </a>
+                            </div>
+                        </>
+                    )}
                 </div>
             </div>
+
         </div>
     );
 }

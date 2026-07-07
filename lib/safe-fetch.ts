@@ -1,6 +1,6 @@
 import { lookup } from "dns/promises";
 import { isIP } from "net";
-// ─── SSRF-safe outbound fetch ───────────────────────────────────────────────
+// --- SSRF-safe outbound fetch -----------------------------------------------
 // Used for fetching user-supplied URLs (e.g. job-description scraping). Blocks
 // requests to private / loopback / link-local / cloud-metadata addresses so an
 // attacker can't pivot the server into internal services (Redis, Postgres, the

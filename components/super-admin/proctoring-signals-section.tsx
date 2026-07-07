@@ -2,31 +2,8 @@
 import { Activity } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import { ALWAYS_ON_PROCTORING_SIGNALS } from "@/lib/proctoring-signals";
-type SignalKey =
-  | "tab_switch"
-  | "camera_disabled"
-  | "microphone_disabled"
-  | "connection_lost"
-  | "face_absence"
-  | "multiple_faces"
-  | "identity_mismatch"
-  | "ownership_ambiguity"
-  | "example_evasion"
-  | "latency_mismatch"
-  | "resume_claim_mismatch"
-  | "ownership_clarified"
-  | "example_given"
-  | "strong_under_pressure"
-  | "follow_up_collapse"
-  | "depth_decay"
-  | "complexity_latency_mismatch";
-// Sanity guard: every key in ALWAYS_ON_PROCTORING_SIGNALS must be a SignalKey.
-// If a future refactor adds a new always-on signal without updating SignalKey,
-// this `satisfies` check will fail compilation -- catching the drift at build
-// time instead of silently rendering an unlocked checkbox.
-const _ALWAYS_ON_KEYS_TYPECHECK = ALWAYS_ON_PROCTORING_SIGNALS satisfies readonly SignalKey[];
-void _ALWAYS_ON_KEYS_TYPECHECK;
+import type { ManagedProctoringSignal } from "@/lib/proctoring-signals";
+type SignalKey = ManagedProctoringSignal;
 type ProctoringSignals = Record<SignalKey, boolean>;
 type SignalRow = {
   key: SignalKey;
@@ -39,7 +16,19 @@ const SIGNAL_ROWS: SignalRow[] = [
     key: "tab_switch",
     label: "Tab Switch",
     group: "Browser and Session",
-    description: "Leaving the assessment tab or switching away from the interview.",
+    description: "Switching to another browser tab while the interview tab stays open.",
+  },
+  {
+    key: "fullscreen_exit",
+    label: "Fullscreen Exit",
+    group: "Browser and Session",
+    description: "Leaving fullscreen mode during the interview (Esc, F11, or browser UI).",
+  },
+  {
+    key: "window_focus_loss",
+    label: "Window Focus Loss",
+    group: "Browser and Session",
+    description: "The browser window loses OS-level focus, e.g. alt-tabbing to another app.",
   },
   {
     key: "connection_lost",
@@ -84,10 +73,16 @@ const SIGNAL_ROWS: SignalRow[] = [
     description: "The answer latency does not match the complexity of the question.",
   },
   {
-    key: "complexity_latency_mismatch",
-    label: "Complexity Latency Mismatch",
-    group: "Reasoning and Timing",
-    description: "The timing of the response looks off for the complexity of the topic.",
+    key: "answer_integrity",
+    label: "Answer Integrity",
+    group: "Content Analysis",
+    description: "Answers read like AI-generated text, or contradict claims made in earlier turns of the same interview.",
+  },
+  {
+    key: "session_fingerprint",
+    label: "Session Fingerprint",
+    group: "Session Fingerprint",
+    description: "Browser or device fingerprint changes mid-session, detecting VPN usage, device swaps, VM environments, or IP/timezone jumps.",
   },
 ];
 export function ProctoringSignalsSection({
@@ -107,7 +102,7 @@ export function ProctoringSignalsSection({
         </div>
         <div>
           <h2 className="text-lg font-semibold text-gray-900 tracking-tight">Behavioral and Proctoring Infrastructure</h2>
-          <p className="text-sm font-medium text-gray-500">All signals in one place. Green toggles mean enabled, and required signals stay locked on.</p>
+          <p className="text-sm font-medium text-gray-500">All signals in one place. Green toggles mean enabled.</p>
         </div>
       </div>
       {disabled && (

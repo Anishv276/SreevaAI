@@ -6,7 +6,7 @@ export async function POST() {
         const cookieStore = await cookies();
         const token = cookieStore.get("session")?.value;
         if (token && redis) {
-            // Blacklist for 2h — that's the max token lifetime now
+            // Blacklist for 2h -- that's the max token lifetime now
             await redis.set(`blacklist:${token}`, "1", "EX", 60 * 60 * 2);
         }
     } catch (e) {

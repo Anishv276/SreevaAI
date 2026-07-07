@@ -1,498 +1,238 @@
-# Interview Report Generation — Full Flow with Example
+# Interview Report Generation — Full Flow
 
-**Candidate:** Priya Sharma  
-**Role:** Backend Engineer  
-**Interview duration:** ~15 min, 10 scored turns, 4 topics covered
+Reflects `interview/report_pipeline.py` as of the LLM-call/input rework (resume feeds eval,
+skills is topic_records-only with per-turn scores, integrity gets a whole-session narrator,
+summary/verdict see everything + full transcript).
 
 ---
 
 ## What triggers report generation
 
-After the interview ends (candidate clicks End or time expires), `agent_runtime.py` calls two functions as background tasks:
+After the interview ends, `agent_runtime.py` runs two calls as a background task, sequentially
+(summary needs the report's output):
 
 ```python
 scores_context = await generate_interview_report(
     app_id, transcript_lines, answer_scores, job_title,
-    proctoring_data, org_id, llm_model, jd_json, topic_records,
+    llmInterviewReport=llm_model,
+    proctoring_data=proctoring_data,
+    org_id=org_id,
+    jd_json=jd_json,
+    resume_json=structured_resume,
+    topic_records=topic_records,
+    candidate_name=candidate_name,
+    answer_integrity_enabled=org_toggle,
 )
-await generate_interview_summary(app_id, transcript_lines, job_title, org_id, scores_context=scores_context)
+await generate_interview_summary(
+    app_id, transcript_lines, job_title,
+    llmInterviewReport=llm_model, org_id=org_id,
+    scores_context=scores_context,
+)
 ```
 
-`generate_interview_report` runs a 3-node LangGraph pipeline then returns a `scores_context` dict.  
-`generate_interview_summary` takes that dict and makes 2 more LLM calls for the summary bullets and verdict.
+`generate_interview_report` runs a 3-node LangGraph pipeline (`signals` → `llm_calls` → `assemble`)
+and returns a `scores_context` dict. `generate_interview_summary` takes that dict plus the raw
+transcript and makes 2 more LLM calls (summary bullets + verdict).
 
 ---
 
-## Inputs going into the pipeline
+## Table 1 — All LLM calls: count, why, where
 
-**`answer_scores`** — one entry per scored candidate turn, built live during the interview:
-```json
-[
-  {
-    "turn": 3, "topic": "Node.js API design",
-    "question": "What specific decisions did YOU make on the database schema?",
-    "answer": "The team decided to use PostgreSQL. We had normalized tables...",
-    "clarity": 5.1, "depth": 4.2, "specificity": 3.8, "grounding": 4.0, "overall": 4.3,
-    "signal": "ownership_ambiguity",
-    "signal_reason": "candidate used 'we' throughout — personal contribution unclear"
-  },
-  {
-    "turn": 6, "topic": "Redis caching",
-    "question": "Walk me through how you implemented the caching layer.",
-    "answer": "I implemented cache-aside with a 15-minute TTL for session tokens...",
-    "clarity": 7.8, "depth": 7.5, "specificity": 8.1, "grounding": 7.2, "overall": 7.7,
-    "signal": null, "signal_reason": null
-  },
-  {
-    "turn": 5, "topic": "Node.js API design",
-    "question": "Give me a specific example of a bug you personally debugged.",
-    "answer": "There was a race condition in the middleware layer, the team handled it...",
-    "clarity": 4.5, "depth": 3.9, "specificity": 3.2, "grounding": 3.8, "overall": 3.9,
-    "signal": "example_evasion",
-    "signal_reason": "asked for specific example, gave process description instead"
-  }
-  // ... 7 more turns
-]
-```
+| # | `call_type` | Batch | Triggers when | Purpose |
+|---|---|---|---|---|
+| 1 | `report_eval` | Parallel batch 1 (`_node_llm_calls`) | Always | Scores 5 dimensions — JD Knowledge, Problem Solving, `experience_credibility` (shown in UI as **"Resume Credibility"**), Communication, Ownership — plus strengths/concerns |
+| 2 | `report_skills` | Parallel batch 1 | Always | Groups topics into 3-5 domain-category skills, 1-10 score + evidence each |
+| 3 | `behavioral_analysis` | Parallel batch 1 (`BehavioralAnalyzer`) | Always | 4-5 paragraph HOW-they-communicated analysis (composure, style, engagement, handling "I don't know", consistency) |
+| 4 | `report_answer_integrity` | Parallel batch 1 (`AnswerIntegrityAnalyzer`) | Only if org's `answer_integrity` toggle is enabled | Detects AI-read/generated phrasing and cross-turn contradictions in the transcript |
+| 5 | `report_integrity_narrative` | Parallel batch 1 (`IntegrityNarrator`) | Only if ≥1 proctoring event fired (browser-side tab_switch, face_absence, etc.) | Groups all fired events by signal type, writes exactly 3 sharp points per type: what fired, why, what it means for hiring |
+| 6 | `report_summary` | Parallel batch 2, in `generate_interview_summary` (depends on batch-1 output) | Always | 3-bullet executive summary for the hiring team |
+| 7 | `report_verdict` | Parallel batch 2 | Always | Final Hire / Hold / Reject decision + 0-100 score + justification paragraph |
 
-**`topic_records`** — one entry per topic, built by the agent at MOVE_ON time:
-```json
-[
-  {
-    "topic": "Node.js API design", "topic_type": "project", "exit_reason": "saturated",
-    "probe_count": 3, "denied": false,
-    "scores": {"avg_overall": 6.1, "avg_depth": 5.8, "last_specificity": 5.2, "last_grounding": 4.9},
-    "tech_skills": ["Node.js", "Express", "REST", "JWT"],
-    "candidate_answers": ["We built a REST API...", "I handled the middleware...", "The team used JWT..."]
-  },
-  {
-    "topic": "PostgreSQL schema design", "topic_type": "skill", "exit_reason": "weak_exit",
-    "probe_count": 4, "denied": false,
-    "scores": {"avg_overall": 4.3, "avg_depth": 3.9, "last_specificity": 3.1, "last_grounding": 3.4},
-    "tech_skills": ["PostgreSQL", "SQL"],
-    "candidate_answers": ["We normalized the tables...", "I'm not sure about the index type we used..."]
-  },
-  {
-    "topic": "Redis caching", "topic_type": "skill", "exit_reason": "saturated",
-    "probe_count": 1, "denied": false,
-    "scores": {"avg_overall": 7.8, "avg_depth": 7.5, "last_specificity": 8.1, "last_grounding": 7.2},
-    "tech_skills": ["Redis", "cache-aside", "TTL"],
-    "candidate_answers": ["I implemented cache-aside with a 15-minute TTL for session tokens..."]
-  },
-  {
-    "topic": "System design - payment flow", "topic_type": "project", "exit_reason": "depth_decay",
-    "probe_count": 5, "denied": false,
-    "scores": {"avg_overall": 4.1, "avg_depth": 3.2, "last_specificity": 2.8, "last_grounding": 3.0},
-    "tech_skills": ["microservices", "CAP theorem"],
-    "candidate_answers": ["CAP theorem... you pick two... I'd probably go with availability..."]
-  }
-]
-```
+**Total: up to 7 LLM calls per report** — 5 in the first parallel wave (`asyncio.gather` inside
+`_node_llm_calls`), 2 in a second wave that consumes the first wave's results. Calls 4 and 5 are
+conditionally skipped (disabled org toggle / clean session respectively), so the cheapest real
+session runs 5 calls.
 
-**`proctoring_data`** — browser integrity events written during the interview:
-```json
-{
-  "events": [],
-  "total_turns": 10
-}
-```
-*(Browser tab_switch events are in `integritySignals` DB column, not here — fetched separately in Node 1)*
+All calls go through `ReportLLMClient` (singleton `AsyncOpenAI`, streaming, 3 retries on
+429/500/502/503/504 with 1s/3s/7s backoff) and log billing via `_persist_billing`.
+
+### What "Resume Credibility" actually is
+
+There is no separate `resume_credibility` field or LLM call. It is the `experience_credibility`
+dimension from `report_eval` (`interview/report_pipeline.py:76`), weighted 20% of the overall
+score. The eval system prompt names it **"DIMENSION 3 — ec (Resume Credibility, weight 20%)"**
+and instructs the LLM to check whether the candidate's live answers hold up against what they
+claimed on their resume or in their intro — NOT raw technical knowledge, but whether the
+experience/projects/skills on the resume are genuinely theirs.
+
+- **Backend write**: `_node_assemble` writes it into `scoreBreakdown.dimensions` as
+  `{"name": "Experience Credibility", "score": ec, "evidence": ...}`.
+- **Frontend read**: `EvaluationScoresCard` in `interview-report-sreevaai.tsx` looks it up via
+  `DIM_KEYWORDS["experience_credibility"] = "experience"`, matching any dimension whose `name`
+  contains `"experience"` — which is why `"Experience Credibility"` from the backend resolves
+  correctly even though `DIMENSION_CONFIG` labels it **"Resume Credibility"** for display
+  (`components/admin/candidate-profile/interview-report-sreevaai.tsx:796`).
+- **What changed**: until this rework, the LLM was asked to judge resume credibility with no
+  resume in the prompt — only self-reported claims made live in the transcript. `eval_user` now
+  includes a resume claims block built by `_build_resume_claims_block`, which runs the resume
+  (`state["resume_json"]`, sourced from `structured_resume` in `agent_runtime.py`) through the
+  same `RawResumeJSON` / `ResumeExtractor` the interview-brief pipeline already uses — pulling
+  clean `WORK: ... [tech: ...]`, `PROJECT: ... — impact claimed: ...`, and `SKILLS CLAIMED: ...`
+  lines instead of a truncated JSON blob. This keeps every concrete, checkable claim (tech named,
+  duration, impact numbers) inside the prompt even when the raw resume JSON is large, so the score
+  reflects real claims-vs-live-answer matching, not just internal-transcript consistency.
 
 ---
 
-## Node 1 — Deterministic signals (no LLM)
+## Table 2 — Each report section: exact input it receives
 
-**What it does:**
-- Fetches `integritySignals` from DB — browser wrote 2 `tab_switch` events during the interview
-- Runs `_compute_integrity_score` with the signal weight table
-- Builds `signal_context` string for Node 2's LLM user message
-- Builds `jd_context` from `jd_json`
+| Report section | LLM call | Input given |
+|---|---|---|
+| Dimension scores + strengths/concerns | `report_eval` | Role title, JD context (`state["jd_context"]`), **candidate resume claims block** (`_build_resume_claims_block`, reuses the deterministic `ResumeExtractor` from `brief_extraction.py` — zero extra LLM cost — to pull WORK/PROJECT/SKILLS lines with tech/duration/impact, instead of a raw-JSON dump that could truncate mid-project; falls back to "score from self-reported claims only" if resume missing/unparseable), integrity score/band, behavioral-signal-count string, full transcript (**5000 tokens**, skips first 4 warmup/greeting lines) |
+| Skill ratings | `report_skills` | Role title + one block per `topic_records` entry: `[TOPIC N] <topic name>` followed by every matching turn from `interview_scores` as `Q / A / [clarity depth specificity grounding overall]`. No topic-level aggregate fields (no `exit_reason`, `probe_count`, `avg_overall`, `tech_skills`, `denied`) — just the topic name and its real per-turn Q&A + scores, so the LLM groups and scores from actual evidence, not pre-computed averages. **No QA-fallback path** — if `topic_records` is empty, the prompt says "No interview topics found." |
+| Behavioral analysis (paragraphs) | `behavioral_analysis` | Session metadata (duration, turn counts), per-turn behavioral signals (`ownership_ambiguous`, `answer_hollow`, `example_evaded`, `functional_claim_unverified`, `claim_not_demonstrated`) grouped by topic/turn with reasons, full Q&A log with per-answer depth/clarity/specificity/grounding |
+| Answer integrity (phrasing/consistency) | `report_answer_integrity` | Full transcript only (**5000 tokens**) — no scores, no signals, just the raw conversation |
+| Integrity signals analysis (3 points/signal type) | `report_integrity_narrative` | Every fired proctoring event, grouped by signal type, each occurrence showing severity, elapsed timestamp, `during_question`/`during_topic` (attached by `_attach_question_context`), latency (if applicable), raw reason/quotes |
+| Executive summary (3 bullets) | `report_summary` | Shared `shared_user` block (see below) |
+| Final verdict + hire score | `report_verdict` | Identical `shared_user` block as summary — same system, different task (decisive score + Hire/Hold/Reject instead of bullets) |
 
-**`integritySignals` column in DB (written by browser in real time):**
-```json
-[
-  {"eventType": "tab_switch", "elapsedSeconds": 340, "severity": "medium"},
-  {"eventType": "tab_switch", "elapsedSeconds": 720, "severity": "medium"}
-]
-```
+**`shared_user` block** (built once in `generate_interview_summary`, reused for both calls 6 and 7):
+- Role title
+- Integrity band/score
+- Behavioral-signal summary string
+- Computed weighted overall score (deterministic anchor)
+- All 5 dimension scores + evidence
+- Full skill breakdown (skill/score/evidence)
+- Strengths observed
+- Concerns flagged
+- **Behavioral analysis points** (the 4-5 paragraphs from call 3)
+- **Integrity signals analysis** (the 3-point-per-type breakdown from call 5)
+- **Answer integrity result** (flagged/score/reason, or "Not enabled for this org")
+- **Full interview transcript** (5000 tokens)
 
-**`_compute_integrity_score` math:**
-```
-Start:       100
-tab_switch × 2  →  -10 each (weight from _INTEGRITY_NEG, capped at 3 occurrences) = -20
-──────────────────────────────────────────────────────
-Final score: 80    Band: HIGH (≥ 80)
-signals_used: ["tab_switch"]
-```
-
-**Node 1 output (passed to Node 2 via LangGraph state):**
-```python
-integrity_result = {"score": 80, "band": "HIGH", "signals_used": ["tab_switch"]}
-signal_context   = "tab_switchx2"
-jd_context       = 'JOB DESCRIPTION:\n{"title":"Backend Engineer","required_skills":["Node.js","PostgreSQL","Redis"]}'
-proctoring_data  = {"events": [tab_switch_ev1, tab_switch_ev2], "total_turns": 10}
-```
+So the verdict and summary calls see literally everything every earlier stage produced, plus the
+raw conversation — not just the aggregated scores.
 
 ---
 
-## Node 2 — Two parallel LLM calls (gpt-4.1-mini)
+## Node 1 — `_node_signals` (deterministic, no LLM)
 
-Node 2 also builds `transcript_text` here (skips first 4 lines of greeting/warmup, truncated to 3500 tokens).
+- Fetches `integritySignals` from DB (browser-written events: `tab_switch`, `face_absence`,
+  `camera_disabled`, `multiple_faces`, `microphone_disabled`, `fullscreen_exit`,
+  `window_focus_loss`, `connection_lost`, `identity_mismatch`, `session_fingerprint`).
+- Attaches `during_question`/`during_topic` to every event via `_attach_question_context`
+  (matches event timestamp against per-turn wall-clock windows from `answer_scores`).
+- Runs `IntegrityEngine.score()` — O(n) Counter-based weighted scoring:
 
-### LLM Call A — 5-dimension scores + strengths/concerns (`_EVAL_SYSTEM`)
-
-**User message sent to LLM:**
 ```
-Role: Backend Engineer
-JD Context: {"title":"Backend Engineer","required_skills":["Node.js","PostgreSQL","Redis"]}
-Integrity Score: 80/100 (HIGH)
-Behavioral flags: tab_switchx2
-
-Full Interview Transcript:
-Interviewer[89]: What specific decisions did YOU make on the database schema?
-Candidate[102]: The team decided to use PostgreSQL. We had normalized tables...
-Interviewer[134]: Walk me through how you implemented the caching layer.
-Candidate[156]: I implemented cache-aside with a 15-minute TTL for session tokens...
-[... remaining 8 turns truncated to 3500 tokens ...]
+Start: 100
+Each fired signal type: weight × min(occurrences, 3)
+  tab_switch -10, fullscreen_exit -15, window_focus_loss -10, face_absence -15,
+  multiple_faces -25, camera_disabled -15, microphone_disabled -8,
+  identity_mismatch -20, connection_lost -12, answer_integrity -20,
+  session_fingerprint -20
+Band: HIGH ≥80, MODERATE ≥55, LOW below
 ```
 
-**LLM returns (compact JSON, strict schema):**
-```json
-{
-  "str": [
-    "Walked through the Redis cache-aside pattern for session tokens without being prompted — named TTL values and eviction policy.",
-    "Corrected herself mid-answer on the PostgreSQL indexing question when she realized her first answer was incomplete."
-  ],
-  "con": [
-    "Consistently used 'we' on every Node.js question — couldn't isolate her own contribution when pressed directly.",
-    "Went blank on system design tradeoffs — named CAP theorem but couldn't apply it to the scenario given."
-  ],
-  "cm": {"s": 72, "ev": "Clear and direct in most answers, though drifted into team-narrative on ownership questions."},
-  "tk": {"s": 61, "ev": "Real hands-on knowledge on Redis and Node.js middleware, shallow on PostgreSQL query optimization."},
-  "rc": {"s": 54, "ev": "Resume claims full ownership of the payments API but live answers reveal shared contribution."},
-  "ps": {"s": 58, "ev": "Structured approach on the caching question, couldn't articulate tradeoffs on system design."},
-  "ct": {"s": 69, "ev": "Answers mostly focused and landed a clear point, occasional drift on follow-ups."}
-}
-```
-
-**Parsed into `LLMEvalResponse`:**
-```
-communication.score         = 72
-technical_knowledge.score   = 61
-resume_credibility.score    = 54
-problem_solving.score       = 58
-clarity_of_thought.score    = 69
-strengths = ["Walked through Redis cache-aside...", "Corrected herself mid-answer..."]
-concerns  = ["Consistently used 'we'...", "Went blank on system design tradeoffs..."]
-```
-
-### LLM Call B — Skill ratings by domain category (`_SKILLS_FROM_RECORDS_SYSTEM`)
-
-Runs in parallel with Call A. Uses `topic_records` (preferred) or falls back to raw Q&A.
-
-**User message sent to LLM:**
-```
-Role: Backend Engineer
-
-[TOPIC 1]
-topic: Node.js API design
-topic_type: project
-exit_reason: saturated
-probe_count: 3
-avg_overall: 6.1
-avg_depth: 5.8
-last_specificity: 5.2
-last_grounding: 4.9
-tech_skills: Node.js, Express, REST, JWT
-denied: False
-candidate_answers: We built a REST API... | I handled the middleware... | The team used JWT...
-
-[TOPIC 2]
-topic: PostgreSQL schema design
-exit_reason: weak_exit
-probe_count: 4
-avg_overall: 4.3
-...
-candidate_answers: We normalized the tables... | I'm not sure about the index type we used...
-
-[TOPIC 3]
-topic: Redis caching
-exit_reason: saturated
-probe_count: 1
-avg_overall: 7.8
-...
-candidate_answers: I implemented cache-aside with a 15-minute TTL for session tokens...
-
-[TOPIC 4]
-topic: System design - payment flow
-exit_reason: depth_decay
-probe_count: 5
-avg_overall: 4.1
-...
-candidate_answers: CAP theorem... you pick two... I'd probably go with availability...
-```
-
-**LLM groups topics into domain categories and returns:**
-```json
-{
-  "skills": [
-    {
-      "skill": "Backend",
-      "score": 6,
-      "evidence": "Built Node.js REST API with JWT middleware, explained request lifecycle but couldn't isolate personal contribution from team work."
-    },
-    {
-      "skill": "APIs & Integrations",
-      "score": 7,
-      "evidence": "Implemented cache-aside pattern for session tokens with 15-minute TTL and named the eviction policy unprompted."
-    },
-    {
-      "skill": "Databases",
-      "score": 4,
-      "evidence": "Knew PostgreSQL was in the stack but couldn't recall the index type — 'I'm not sure about the index type we used'."
-    },
-    {
-      "skill": "System Design",
-      "score": 4,
-      "evidence": "Named CAP theorem but applied it vaguely — 'I'd probably go with availability' without explaining why consistency matters more for payments."
-    }
-  ]
-}
-```
-
-**Scoring logic the LLM applies:**
-- Backend: `avg_overall=6.1` (saturated, probe_count=3) → 6
-- APIs & Integrations: `avg_overall=7.8` (saturated, probe_count=1, bonus +0.5) → rounds to 7 after capping
-- Databases: `avg_overall=4.3` (weak_exit, -1.5, cap 5) → 4
-- System Design: `avg_overall=4.1` (depth_decay, -1.0, cap 6) → 4
+- Builds `signal_context` (e.g. `"tab_switchx2"`) and `jd_context` (JD JSON + experience-level hint)
+  for downstream prompts.
 
 ---
 
-## Node 3 — Assemble, signal analysis LLM call, persist
+## Node 2 — `_node_llm_calls` (5 calls in parallel via `asyncio.gather`)
 
-### Extracts behavioral signals from `answer_scores`:
+Builds `eval_user`, `skills_user`, then fires all 5 calls from Table 1 (#1-#5) concurrently.
+Billing is persisted for all 5 usages concurrently after the gather resolves. Eval and skills
+responses are parsed into `LLMEvalResponse` / `LLMSkillsResponse` (fall back to empty models on
+parse failure, logged as a warning).
 
-```python
-behavioral_signals = [
-  {
-    "signal_name":   "ownership_ambiguity",
-    "signal_reason": "candidate used 'we' throughout — personal contribution unclear",
-    "turn": 3, "topic": "Node.js API design",
-    "question": "What specific decisions did YOU make?",
-    "answer": "The team decided to use PostgreSQL..."
-  },
-  {
-    "signal_name":   "example_evasion",
-    "signal_reason": "asked for specific example, gave process description instead",
-    "turn": 5, "topic": "Node.js API design",
-    "question": "Give me a specific example of a bug you personally debugged.",
-    "answer": "There was a race condition, the team handled it..."
-  },
-  {
-    "signal_name":   "example_evasion",
-    "signal_reason": "stayed theoretical when asked about failure mode",
-    "turn": 9, "topic": "System design - payment flow",
-    "question": "What would break first under load?",
-    "answer": "Probably the database... I think..."
-  }
-]
-```
+---
 
-### LLM Call C — Signal analysis (`behavioral_analysis.py`)
+## Node 3 — `_node_assemble` (persist)
 
-**Prompt sent to LLM:**
-```
-SESSION
-Duration: 15 min | Candidate turns: 10 | Interviewer turns: 11 | Scored answers: 10
+- Computes weighted overall: `jk×0.30 + ps×0.25 + ec×0.20 + cm×0.15 + od×0.10`.
+- If `answer_integrity` fired above threshold (score ≥ 60), folds it into the browser-events list
+  as a synthetic event, re-scores `IntegrityEngine`, and persists it back onto the
+  `integritySignals` DB column so it shows up alongside real proctoring events.
+- Writes 4 DB columns in one query: `scoreBreakdown`, `skillRatings`, `signalAnalysis`,
+  `interviewSummary` (first write — strengths/concerns only).
+- Returns `scores_context` — the dict `generate_interview_summary` consumes next.
 
-BEHAVIORAL SIGNALS
-  ownership_ambiguity x1 during "Node.js API design" — candidate used 'we' throughout — personal contribution unclear
-  example_evasion x2 during "Node.js API design", "System design - payment flow" — asked for specific example, gave process description instead; stayed theoretical when asked about failure mode
-
-QUESTION & ANSWER LOG
-
-  TOPIC: Node.js API design
-    Q: What specific decisions did YOU make on the database schema?
-    A: The team decided to use PostgreSQL. We had normalized tables...
-    [depth=4.2 specificity=3.8 grounding=4.0]
-    SIGNAL: ownership_ambiguity — candidate used 'we' throughout — personal contribution unclear
-
-  TOPIC: Redis caching
-    Q: Walk me through how you implemented the caching layer.
-    A: I implemented cache-aside with a 15-minute TTL for session tokens...
-    [depth=7.5 specificity=8.1 grounding=7.2]
-
-  TOPIC: System design - payment flow
-    Q: What would break first under load?
-    A: Probably the database... I think...
-    [depth=3.2 specificity=2.8 grounding=3.0]
-    SIGNAL: example_evasion — stayed theoretical when asked about failure mode
-
-  [... remaining turns ...]
-```
-
-**LLM returns:**
-```json
-[
-  "On the Node.js API design question, Priya couldn't separate her contribution from the team's — every answer used 'we' and when directly asked 'what did YOU decide?', she redirected to 'we normalized the tables', never naming a specific choice she personally made.",
-  "The Redis caching question was the clearest peak — she named the cache-aside pattern, gave the exact TTL value (15 minutes), and explained the eviction strategy without being prompted, suggesting this was the one area she personally owned.",
-  "Two tab switches occurred at turns 6 and 9 — turn 9 was the system design question where her answer quality also dropped sharply. Worth checking the recording at that timestamp before deciding.",
-  "System design exposed a gap: she named CAP theorem correctly but couldn't apply it — when asked 'what would break first under load?' she said 'probably the database, I think' with no reasoning about where a payments system would actually fail."
-]
-```
-
-### Computes overall score:
-```
-communication         72 × 0.15 = 10.80
-technical_knowledge   61 × 0.30 = 18.30
-resume_credibility    54 × 0.20 = 10.80
-problem_solving       58 × 0.25 = 14.50
-clarity_of_thought    69 × 0.10 =  6.90
-─────────────────────────────────────────
-overall = 61
-```
-
-### Writes to 4 DB columns:
-
-**`scoreBreakdown` column:**
+### `scoreBreakdown` column
 ```json
 {
   "dimensions": [
-    {"name": "Communication",                "score": 72, "evidence": "Clear and direct in most answers, drifted into team-narrative on ownership questions."},
-    {"name": "Technical & Subject Knowledge", "score": 61, "evidence": "Real hands-on knowledge on Redis and Node.js middleware, shallow on PostgreSQL query optimization."},
-    {"name": "Resume Credibility",            "score": 54, "evidence": "Resume claims full ownership of payments API but live answers reveal shared contribution."},
-    {"name": "Problem Solving",               "score": 58, "evidence": "Structured on caching, couldn't articulate system design tradeoffs."},
-    {"name": "Clarity of Thought",            "score": 69, "evidence": "Answers mostly focused, occasional drift on follow-ups."}
+    {"name": "JD Knowledge", "score": 61, "evidence": "..."},
+    {"name": "Problem Solving", "score": 58, "evidence": "..."},
+    {"name": "Experience Credibility", "score": 54, "evidence": "..."},
+    {"name": "Communication", "score": 72, "evidence": "..."},
+    {"name": "Ownership", "score": 65, "evidence": "..."}
   ],
   "overall": 61,
-  "integrity": {
-    "score": 80,
-    "band": "HIGH",
-    "signals_used": ["tab_switch"],
-    "methodology": "signal_weighted_deterministic"
-  },
-  "skills_evaluated": ["Backend", "APIs & Integrations", "Databases", "System Design"]
+  "integrity": {"score": 80, "band": "HIGH", "signals_used": ["tab_switch"], "methodology": "signal_weighted_deterministic"},
+  "skills_evaluated": ["Backend", "Databases", "System Design"]
 }
 ```
 
-**`skillRatings` column** (separate from scoreBreakdown, read directly by UI):
+### `skillRatings` column (read directly by UI, separate from scoreBreakdown)
 ```json
 [
-  {"skill": "APIs & Integrations", "score": 7, "evidence": "Implemented cache-aside pattern for session tokens with 15-minute TTL, named the eviction policy unprompted."},
-  {"skill": "Backend",             "score": 6, "evidence": "Built Node.js REST API with JWT middleware, explained request lifecycle but couldn't isolate personal contribution."},
-  {"skill": "Databases",           "score": 4, "evidence": "Knew PostgreSQL was in the stack but couldn't recall the index type — 'I'm not sure about the index type we used'."},
-  {"skill": "System Design",       "score": 4, "evidence": "Named CAP theorem but applied it vaguely — 'I'd probably go with availability' without explaining why."}
+  {"skill": "APIs & Integrations", "score": 7, "evidence": "..."},
+  {"skill": "Backend", "score": 6, "evidence": "..."},
+  {"skill": "Databases", "score": 4, "evidence": "..."}
 ]
 ```
 
-**`signalAnalysis` column:**
+### `signalAnalysis` column — integrity and behavioral kept as two separate JSON blocks
 ```json
 {
-  "points": [
-    "On the Node.js API design question, Priya couldn't separate her contribution from the team's...",
-    "The Redis caching question was the clearest peak — she named the cache-aside pattern, gave the exact TTL value...",
-    "Two tab switches occurred at turns 6 and 9 — turn 9 was the system design question where her answer quality dropped...",
-    "System design exposed a gap: she named CAP theorem correctly but couldn't apply it..."
-  ],
-  "behavioral_signals": [
-    {"signal_name": "ownership_ambiguity", "turn": 3, "topic": "Node.js API design", ...},
-    {"signal_name": "example_evasion",     "turn": 5, "topic": "Node.js API design", ...},
-    {"signal_name": "example_evasion",     "turn": 9, "topic": "System design", ...}
-  ],
-  "proctoring_events": [
-    {"eventType": "tab_switch", "elapsedSeconds": 340},
-    {"eventType": "tab_switch", "elapsedSeconds": 720}
-  ]
+  "points": ["4-5 behavioral paragraphs..."],
+  "behavioral_signals": [{"signal_name": "ownership_ambiguity", "turn": 3, "topic": "...", "..." : "..."}],
+  "proctoring_events": [{"eventType": "tab_switch", "timestamp": 340000, "during_question": "..."}],
+  "integrity_signals_analysis": {
+    "tab_switch": ["point 1 (what/when)", "point 2 (why)", "point 3 (hiring impact)"],
+    "face_absence": ["...", "...", "..."]
+  },
+  "behavioral_signals_analysis": ["same 4-5 paragraphs as points, explicit alias for the UI"],
+  "answer_integrity": {
+    "enabled": true, "score": 72, "flagged": true, "reason": "...",
+    "phrasing_score": 65, "phrasing_reason": "...",
+    "consistency_score": 78, "consistency_reason": "...",
+    "quotes": ["..."]
+  }
 }
 ```
 
-**`interviewSummary` column (first write — strengths/concerns):**
+### `interviewSummary` column (first write)
 ```json
-{
-  "strengths": [
-    "Walked through the Redis cache-aside pattern for session tokens without being prompted — named TTL values and eviction policy.",
-    "Corrected herself mid-answer on the PostgreSQL indexing question when she realized her first answer was incomplete."
-  ],
-  "concerns": [
-    "Consistently used 'we' on every Node.js question — couldn't isolate her own contribution when pressed directly.",
-    "Went blank on system design tradeoffs — named CAP theorem but couldn't apply it to the scenario given."
-  ]
-}
+{"strengths": ["..."], "concerns": ["..."]}
 ```
 
 ---
 
-## `generate_interview_summary` — 2 more parallel LLM calls
+## `generate_interview_summary` — 2 more parallel calls
 
-Takes the `scores_context` returned by `generate_interview_report`. Does NOT re-read the transcript — uses structured data only.
+Consumes `scores_context` (all the fields above) plus the raw transcript, builds the enriched
+`shared_user` block (see Table 2), and fires `report_summary` + `report_verdict` in parallel.
 
-**User message (same for both calls):**
-```
-Role: Backend Engineer
-Integrity: HIGH (80/100)
-Behavioral signals: tab_switchx2
+- **`report_summary`** returns exactly 3 dashed bullets: strongest technical signal, biggest
+  fit/trajectory takeaway, sharpest hiring implication.
+- **`report_verdict`** returns strict JSON: `{"decision": "Hire"|"Hold"|"Reject", "score": 0-100, "justification": "..."}`.
+  The score anchors to the deterministic weighted overall, adjustable ±~10 points by evidence.
 
-DIMENSION SCORES + EVIDENCE:
-  Communication: 72/100 — Clear and direct, drifted on ownership questions.
-  Technical & Subject Knowledge: 61/100 — Real on Redis and Node.js, shallow on PostgreSQL.
-  Resume Credibility: 54/100 — Resume claims full ownership but live answers reveal shared contribution.
-  Problem Solving: 58/100 — Structured on caching, couldn't articulate system design tradeoffs.
-  Clarity of Thought: 69/100 — Mostly focused, occasional drift.
+Both write into `interviewSummary` via a `jsonb` merge (`COALESCE(...) || $1::jsonb`), so the
+second write adds `summary` and `decision_note` alongside the strengths/concerns from Node 3
+without clobbering them.
 
-SKILL BREAKDOWN:
-  APIs & Integrations (7/10): Implemented cache-aside with 15-min TTL unprompted.
-  Backend (6/10): Built Node.js REST API but couldn't isolate personal contribution.
-  Databases (4/10): Knew PostgreSQL was used but couldn't recall index type.
-  System Design (4/10): Named CAP theorem but applied it vaguely.
-
-STRENGTHS OBSERVED:
-  - Walked through Redis cache-aside pattern without being prompted...
-  - Corrected herself mid-answer on PostgreSQL indexing...
-
-CONCERNS FLAGGED:
-  - Consistently used 'we' on every Node.js question...
-  - Went blank on system design tradeoffs...
-```
-
-**Summary LLM returns** (`_SUMMARY_SYSTEM` — 4 bullets):
-```
-- Strongest moment was the Redis caching explanation — she named the exact TTL, eviction policy, and cache invalidation strategy without prompting, suggesting she personally built this part.
-- Ownership is a real concern: every Node.js answer defaulted to 'we' and direct questions about her specific decisions produced team-level answers, not individual ones.
-- Databases and system design were both weak — she knew PostgreSQL was in the stack but couldn't speak to schema decisions, and on the payment system design question couldn't apply CAP theorem beyond naming it.
-- Two tab switches during the interview, both during the system design section — answer quality at turn 9 dropped at the same time. Worth reviewing the recording before deciding.
-```
-
-**Verdict LLM returns** (`_VERDICT_SYSTEM` — 1 paragraph):
-```
-MAYBE: Priya owns the caching layer and can talk about it credibly, but the ownership ambiguity on the core API work is a real flag — if this role requires independent backend ownership, she may not be ready. System design is a clear gap. Recommend a 30-minute technical screen focused on database design and a system she built solo before making a hire decision.
-```
-
-**Second write to `interviewSummary`** (JSON merge — adds to existing strengths/concerns):
+### Final `interviewSummary` column
 ```json
 {
   "strengths": ["..."],
   "concerns": ["..."],
-  "summary": "- Strongest moment was the Redis caching explanation...\n- Ownership is a real concern...\n- Databases and system design were both weak...\n- Two tab switches during the interview...",
-  "decision_note": "MAYBE: Priya owns the caching layer..."
+  "summary": "- bullet one\n- bullet two\n- bullet three",
+  "decision_note": {"decision": "Hold", "score": 61, "justification": "..."}
 }
 ```
-
----
-
-## What lands in the UI
-
-| UI element | DB column read | Value |
-|---|---|---|
-| 5 dimension score bars | `scoreBreakdown.dimensions` | 72 / 61 / 54 / 58 / 69 |
-| Overall fit % | `scoreBreakdown.overall` | 61% |
-| Integrity score badge | `scoreBreakdown.integrity` | 80/100, HIGH |
-| Proctoring flags (with timestamps) | `integritySignals` | tab_switch ×2 at 5:40 and 12:00 |
-| Skill bars (click to expand evidence) | `skillRatings` | APIs 7, Backend 6, Databases 4, System Design 4 |
-| AI summary bullets | `interviewSummary.summary` | 4 bullets above |
-| Verdict / recommendation | `interviewSummary.decision_note` | "MAYBE: Priya owns the caching layer..." |
-| Strengths list | `interviewSummary.strengths` | Redis cache-aside, self-correction |
-| Concerns list | `interviewSummary.concerns` | Ownership ambiguity, system design gap |
-| Signal analysis tab (4 points) | `signalAnalysis.points` | The 4 narrative analysis points |
 
 ---
 
@@ -500,21 +240,34 @@ MAYBE: Priya owns the caching layer and can talk about it credibly, but the owne
 
 | Signal type | Source | Stored in | Used for |
 |---|---|---|---|
-| `tab_switch`, `face_absence`, `multiple_faces`, `camera_disabled` | Browser frontend during interview | `integritySignals` column | Integrity score (deterministic math), proctoring flags UI |
-| `ownership_ambiguity`, `example_evasion`, `follow_up_collapse`, `depth_decay` | Eval pipeline per turn | `signalAnalysis.behavioral_signals` | Signal analysis LLM prompt input, signal analysis UI tab |
+| `tab_switch`, `face_absence`, `multiple_faces`, `camera_disabled`, `fullscreen_exit`, `window_focus_loss`, `connection_lost`, `identity_mismatch`, `session_fingerprint`, `answer_integrity` | Browser frontend during interview (+ synthetic `answer_integrity` event added post-hoc) | `integritySignals` DB column | `IntegrityEngine` deterministic score, `report_integrity_narrative` 3-point breakdown, proctoring UI |
+| `ownership_ambiguous`, `answer_hollow`, `example_evaded`, `functional_claim_unverified`, `claim_not_demonstrated` | Eval pipeline, per-turn during the interview | `signalAnalysis.behavioral_signals` | `behavioral_analysis` LLM prompt input, Behavioral Analysis UI panel |
 
-Browser events go to integrity score. Behavioral signals go to the LLM analysis. They never mix.
+Browser/proctoring events never feed the behavioral paragraphs; behavioral signals never feed the
+integrity score. They're grouped for the UI as two separate blocks inside `signalAnalysis`
+(`integrity_signals_analysis` vs `behavioral_signals_analysis`/`points`), never merged.
 
 ---
 
-## LLM call summary
+## What lands in the UI
 
-| Call | Model | Input | Output | When |
-|---|---|---|---|---|
-| A — Eval scores | gpt-4.1-mini | transcript + JD + integrity context | 5 dimension scores + strengths/concerns | Node 2, parallel |
-| B — Skill ratings | gpt-4.1-mini | topic_records (or Q&A fallback) | Domain category scores + evidence | Node 2, parallel |
-| C — Signal analysis | gpt-4.1-mini | behavioral signals + Q&A log | 4 narrative analysis points | Node 3 |
-| D — Summary bullets | gpt-4.1-mini | scores_context (no transcript) | 4 recruiter bullets | After Node 3, parallel |
-| E — Verdict | gpt-4.1-mini | scores_context (no transcript) | 1 paragraph hire/no-hire verdict | After Node 3, parallel |
+| UI element | DB column read | Notes |
+|---|---|---|
+| 5 dimension score bars | `scoreBreakdown.dimensions` | JD Knowledge / Problem Solving / Experience Credibility / Communication / Ownership |
+| Overall fit % | `scoreBreakdown.overall` | Weighted 30/25/20/15/10 |
+| Integrity score badge | `scoreBreakdown.integrity` | Score/band + `signals_used` |
+| Integrity Signals panel (hover detail) | `integritySignals` + `signalAnalysis.integrity_signals_analysis` | 3 LLM points per fired signal type shown in the hover card, replacing generic static copy when available |
+| Skill bars (click to expand evidence) | `skillRatings` | 1-10 per domain category |
+| Behavioral Analysis panel | `signalAnalysis.points` | 4-5 paragraphs, unchanged format |
+| AI summary bullets | `interviewSummary.summary` | 3 bullets |
+| Verdict / recommendation | `interviewSummary.decision_note` | `{decision, score, justification}` |
+| Strengths / Concerns lists | `interviewSummary.strengths` / `.concerns` | From `report_eval` |
 
-Total: **5 LLM calls** per interview report. Calls A+B run in parallel. Calls D+E run in parallel.
+---
+
+## Notes / known gaps
+
+- `regenerate.py` (standalone debug script, not part of the production path) was not updated for
+  the new `resume_json` param or the removed QA-fallback skills path — it also calls
+  `generate_interview_report` with a stale `_LLM_DEFAULT` kwarg that doesn't match the real
+  `llmInterviewReport` parameter name. Pre-existing issue, out of scope for the report rework.

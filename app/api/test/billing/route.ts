@@ -5,6 +5,10 @@ import { getSession, isSuperAdminRole } from "@/lib/auth";
 // Returns aggregated test billing metrics per org for super-admin billing page
 export async function GET(request: Request) {
     try {
+        const session = await getSession();
+        if (!session || !isSuperAdminRole(session.role)) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
         const { searchParams } = new URL(request.url);
         const orgId = searchParams.get("orgId");
         if (!orgId) return NextResponse.json({ error: "orgId required" }, { status: 400 });
@@ -32,7 +36,7 @@ export async function GET(request: Request) {
             take: 100,
         });
 
-        let totalLlm = 0, totalTts = 0, totalStt = 0, totalCost = 0;
+        let totalLlm = 0, totalTts = 0, totalStt = 0, totalReport = 0, totalCost = 0;
 
         const rows = testInterviews.map((iv) => {
             const m = (iv.testBillingMetrics && typeof iv.testBillingMetrics === "object")
@@ -41,8 +45,11 @@ export async function GET(request: Request) {
             const llm = Number(m.llmCost ?? 0);
             const tts = Number(m.ttsCost ?? 0);
             const stt = Number(m.sttCost ?? 0);
-            const cost = llm + tts + stt;
-            totalLlm += llm; totalTts += tts; totalStt += stt; totalCost += cost;
+            // reportLlmCost: accumulated separately by billing.record_test_report_billing_usage
+            // whenever a test session's report/summary/verdict LLM calls run (report not skipped).
+            const report = Number(m.reportLlmCost ?? 0);
+            const cost = llm + tts + stt + report;
+            totalLlm += llm; totalTts += tts; totalStt += stt; totalReport += report; totalCost += cost;
 
             const durationSec = Number(iv.interviewDuration ?? 0);
             return {
@@ -54,13 +61,15 @@ export async function GET(request: Request) {
                 llmCost: llm,
                 ttsCost: tts,
                 sttCost: stt,
+                reportCost: report,
+                reportEnabled: !m.skipReport,
                 totalCost: cost,
             };
         });
 
         return NextResponse.json({
             rows,
-            totals: { llmCost: totalLlm, ttsCost: totalTts, sttCost: totalStt, totalCost },
+            totals: { llmCost: totalLlm, ttsCost: totalTts, sttCost: totalStt, reportCost: totalReport, totalCost },
             count: testInterviews.length,
         });
     } catch (e) {

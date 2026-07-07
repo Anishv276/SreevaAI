@@ -35,7 +35,6 @@ export async function GET(request: Request) {
         completedAt: true,
         interviewDuration: true,
         recording: true,
-        billingSnapshot: true,
         application: {
           select: {
             fullName: true,
@@ -48,17 +47,23 @@ export async function GET(request: Request) {
     });
     const rows = interviews
       .map((row) => {
+        // Single source of truth: Interview.interviewDuration (set exactly once,
+        // clamped to the fixed session length for time-limit endings, by
+        // update_interview_status() in agent_persistence.py). Falls back to the
+        // recording file length only for older rows saved before that column
+        // existed. Credits are derived from that SAME durationSec, using the
+        // identical formula billing.py's deduct_quota() uses — so this table's
+        // duration and credits columns can never disagree with each other or
+        // with what was actually billed.
         const durationSec = Number(row.interviewDuration ?? getRecordingDurationSec(row.recording) ?? 0);
-        const snapshot = row.billingSnapshot && typeof row.billingSnapshot === "object"
-          ? (row.billingSnapshot as Record<string, unknown>)
-          : {};
+        const creditsUsed = durationSec > 0 ? Math.round((durationSec / 60) * 100) / 100 : 0;
         const date = (row.completedAt ?? row.updatedAt).toISOString();
         return {
           id: row.id,
           candidate: row.application?.fullName || "Unknown Candidate",
           role: row.application?.drive?.role || row.application?.drive?.title || "Unknown Role",
           interviews: 1,
-          creditsUsed: Number(snapshot.creditsUsed ?? 0),
+          creditsUsed,
           status: normalizeStatus(row.status),
           date,
           time: (() => { const m = Math.floor(durationSec / 60); const s = durationSec % 60; return durationSec ? `${m}m ${String(s).padStart(2, "0")}s` : undefined; })(),

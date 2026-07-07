@@ -8,22 +8,22 @@ from dotenv import load_dotenv
 
 from interview.agent_runtime_utils import AgentConfig, MutableStateManager
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 # INITIALIZATION
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 
 load_dotenv(override=False)
 
 logger = logging.getLogger("interview-agent")
 logger.setLevel(logging.DEBUG)
 
-# Global mutable state manager — single source of truth for DB pool, billing, etc.
+# Global mutable state manager -- single source of truth for DB pool, billing, etc.
 _state_manager = MutableStateManager()
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 # LOGGING SETUP (JSON formatter + context filter + warning sampler)
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 
 _SESSION_CONTEXT_KEYS = (
     "session_id",
@@ -99,9 +99,9 @@ logger.addHandler(handler)
 logger.propagate = False
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Log Context Management (ContextVar-based, async-safe)
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 _LOG_CONTEXT_FIELDS: ContextVar[dict[str, Any]] = ContextVar("log_context_fields", default={})
 
@@ -144,9 +144,9 @@ class _SessionLogContextFilter(logging.Filter):
 handler.addFilter(_SessionLogContextFilter())
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Warning Sampler (rate-limit noisy logs)
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 class _RuntimeWarningSampler(logging.Filter):
     """Rate-limit noisy warnings without hiding them entirely.
@@ -201,9 +201,9 @@ for logger_name in ("livekit.plugins.cartesia", "livekit"):
     _logger.addFilter(_RuntimeWarningSampler())
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 # LEGACY CONSTANTS (re-exported from AgentConfig for backward compatibility)
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 
 _config = AgentConfig.get()
 
@@ -220,13 +220,13 @@ DATABASE_URL = _config.database_url
 AGENT_NAME = _config.agent_name
 APP_BASE_URL = _config.app_base_url
 
-# STT_MODEL / LLM_MODEL / EVAL_LLM_MODEL / DEFAULT_VOICE_ID / VOICE_REGISTRY — all deleted.
+# STT_MODEL / LLM_MODEL / EVAL_LLM_MODEL / DEFAULT_VOICE_ID / VOICE_REGISTRY -- all deleted.
 # All AI model values come from the org DB row (set via Super Admin → AI Models).
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 # MUTABLE STATE ACCESSORS (replaced direct module-level vars)
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 
 # Backward-compatible getters/setters for _DB_POOL, _DB_POOL_INIT_TASK, _PENDING_MANUAL_BILLING
 # These are now stored in _state_manager instead of module-level variables.

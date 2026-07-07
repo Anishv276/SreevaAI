@@ -3,14 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { getSession, isAdminRole } from "@/lib/auth";
 import { generateId } from "@/lib/ids";
 import { sendScheduleInviteEmail } from "@/lib/mail";
-import { buildInterviewLink } from "@/lib/interview-links";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { resumeQueue } from "@/lib/queue";
 
 // POST /api/admin/interview-only
-// Interview Only mode — two paths:
-//   • No resume  → create candidate, send invite immediately
-//   • Resume URL → create candidate with resumeStatus="waiting", enqueue screening,
+// Interview Only mode -- two paths:
+//   - No resume  → create candidate, send invite immediately
+//   - Resume URL → create candidate with resumeStatus="waiting", enqueue screening,
 //                   worker auto-sends invite after scoring is done
 export async function POST(request: Request) {
     try {
@@ -103,11 +102,9 @@ export async function POST(request: Request) {
                     select: { accessToken: true },
                 });
 
-                // Schedule link uses the interview accessToken so only this candidate can book
-                const scheduleLink = `${baseUrl}/schedule/${interview?.accessToken}`;
-
                 let sent = false;
                 try {
+                    const scheduleLink = `${baseUrl}/schedule/${interview?.accessToken}`;
                     await sendScheduleInviteEmail({
                         email,
                         fullName,

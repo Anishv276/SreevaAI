@@ -471,12 +471,12 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <button className="flex items-center gap-1 h-9 px-3.5 rounded-xl text-[13px] font-semibold text-gray-600 bg-white border border-gray-200 hover:border-gray-300 shadow-sm transition-colors">
-                                ATS {resumeFilter !== "all" && <span className="bg-violet-100 text-violet-700 text-[10px] px-1.5 py-0.5 rounded-md ml-1">{resumeFilter}</span>}
+                                Resume {resumeFilter !== "all" && <span className="bg-violet-100 text-violet-700 text-[10px] px-1.5 py-0.5 rounded-md ml-1">{resumeFilter}</span>}
                                 <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
                             </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="start" className="w-44 p-1.5 rounded-xl shadow-lg border-gray-100 bg-white">
-                            <DropdownMenuLabel className="px-3 py-0.5.5 text-[9px] font-black uppercase tracking-widest text-gray-400">ATS Status</DropdownMenuLabel>
+                            <DropdownMenuLabel className="px-3 py-0.5.5 text-[9px] font-black uppercase tracking-widest text-gray-400">Resume Status</DropdownMenuLabel>
                             {[
                                 { value: "all", label: "All" },
                                 { value: "shortlisted", label: "Shortlisted" },
@@ -509,7 +509,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                         </DropdownMenuContent>
                     </DropdownMenu>
 
-                    {/* ATS Score filter */}
+                    {/* Resume Score filter */}
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <button className="flex items-center gap-1 h-9 px-3.5 rounded-xl text-[13px] font-semibold text-gray-600 bg-white border border-gray-200 hover:border-gray-300 shadow-sm transition-colors">
@@ -598,10 +598,10 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                 <TableHead className="px-6 py-4 text-[12px] font-black uppercase tracking-widest text-gray-400">CANDIDATE</TableHead>
                                 <TableHead className="px-4 py-4 text-[12px] font-black uppercase tracking-widest text-gray-400">
                                     <div className="flex items-center gap-1 cursor-pointer hover:text-gray-600 transition-colors">
-                                        ATS SCORE <ChevronDown className="h-3.5 w-3.5" />
+                                        RESUME SCORE <ChevronDown className="h-3.5 w-3.5" />
                                     </div>
                                 </TableHead>
-                                <TableHead className="px-4 py-4 text-[12px] font-black uppercase tracking-widest text-gray-400">ATS</TableHead>
+                                <TableHead className="px-4 py-4 text-[12px] font-black uppercase tracking-widest text-gray-400">RESUME STATUS</TableHead>
                                 <TableHead className="px-4 py-4 text-[12px] font-black uppercase tracking-widest text-gray-400">INTERVIEW</TableHead>
                                 <TableHead className="px-4 py-4 text-[12px] font-black uppercase tracking-widest text-gray-400 text-center">REPORTS</TableHead>
                                 <TableHead className="px-4 py-4 text-[12px] font-black uppercase tracking-widest text-gray-400 text-right">ACTIONS</TableHead>
@@ -776,17 +776,17 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                     {isWaiting || isProcessing ? (
                                                         <div className="flex items-center gap-1 px-3 py-0.5.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed">
                                                             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                                            <span className="text-[12px] font-bold">ATS Report</span>
+                                                            <span className="text-[12px] font-bold">Resume Report</span>
                                                         </div>
                                                     ) : isFailed ? (
                                                         <div className="flex items-center gap-1 px-3 py-0.5.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed">
                                                             <XCircle className="h-3.5 w-3.5" />
-                                                            <span className="text-[12px] font-bold">ATS Report</span>
+                                                            <span className="text-[12px] font-bold">Resume Report</span>
                                                         </div>
                                                     ) : (
                                                         <Link href={`/admin/candidates/${candidate.id}?report=resume&back=${encodeURIComponent(`/admin/candidates/drive/${driveId}`)}`} className="flex items-center gap-1 px-3 py-0.5.5 rounded-xl border border-[#7C3AED]/30 bg-violet-50 text-[#7C3AED] hover:bg-[#7C3AED] hover:text-white transition-colors cursor-pointer group/btn">
                                                             <svg className="h-3.5 w-3.5 opacity-70 group-hover/btn:opacity-100" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                                                            <span className="text-[12px] font-bold">ATS Report</span>
+                                                            <span className="text-[12px] font-bold">Resume Report</span>
                                                         </Link>
                                                     )}
 

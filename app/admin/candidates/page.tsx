@@ -11,9 +11,9 @@ import {
     ShieldCheck, Award, Clock, Mail, Loader2, Lock, FileText,
     Eye, Send, RefreshCw, BadgeCheck, XCircle, CheckSquare, Square, Video
 } from "lucide-react";
-import { Link } from 'next-view-transitions';
+import Link from 'next/link';
 import { useSearchParams } from "next/navigation";
-import { useTransitionRouter as useRouter } from "next-view-transitions";
+import { useRouter } from "next/navigation";
 import { toast } from "@/components/ui/toast-custom";
 import {
     DropdownMenu, DropdownMenuContent, DropdownMenuItem,
@@ -30,7 +30,7 @@ import { motion } from "framer-motion";
 import { PremiumFilter } from "@/components/admin/premium-filter";
 import { useAdminOrg } from "@/context/admin-org-context";
 // ---------------------------------------------------------------------------
-// Email confirm modal (interview link / rejection — same as drive page)
+// Email confirm modal (interview link / rejection -- same as drive page)
 // ---------------------------------------------------------------------------
 function normalizeStatusKey(value?: string) {
     return String(value || "").trim().toLowerCase().replace(/[_-]+/g, " ");
@@ -243,7 +243,7 @@ export default function CandidatesPage() {
         else if (timeline.type === "custom") { startDate = timeline.from; endDate = timeline.to; }
         return { startDate, endDate };
     };
-    // Filter/search change — show skeleton, reset to page 1
+    // Filter/search change -- show skeleton, reset to page 1
     useEffect(() => {
         setIsCandidatesTableReady(false);
         const handler = setTimeout(() => {
@@ -254,7 +254,7 @@ export default function CandidatesPage() {
         return () => clearTimeout(handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [resumeFilter, interviewFilter, roleFilter, timeline, searchTerm]);
-    // Page size change — no skeleton, just refetch silently
+    // Page size change -- no skeleton, just refetch silently
     const pageSizeRef = useRef(pageSize);
     useEffect(() => {
         if (pageSizeRef.current === pageSize) return;
@@ -328,7 +328,7 @@ export default function CandidatesPage() {
             setSendingInterviewLinkId(candidate.id);
             const res = await fetch(`/api/candidates/${candidate.id}/send-interview-link`, { method: "POST" });
             const data = await res.json().catch(() => null);
-            if (res.ok) { toast.success(data?.message || `Interview link sent to ${candidate.name}`); refetch(); return; }
+            if (res.ok) { toast.success(data?.message || `Schedule link sent to ${candidate.name}`); refetch(); return; }
             toast.error(data?.error || "Failed to send interview link");
         } catch { toast.error("Failed to send interview link"); }
         finally { setSendingInterviewLinkId(null); }
@@ -380,7 +380,7 @@ export default function CandidatesPage() {
             const results = await Promise.all(Array.from(selectedIds).map(id => fetch(`/api/candidates/${id}/send-interview-link`, { method: "POST" })));
             const failed = results.filter(r => !r.ok).length;
             const succeeded = results.length - failed;
-            if (succeeded > 0) toast.success(`Interview link sent to ${succeeded} candidate(s)`);
+            if (succeeded > 0) toast.success(`Schedule link sent to ${succeeded} candidate(s)`);
             if (failed > 0) toast.error(`Failed to send to ${failed} candidate(s)`);
             clearSelection(); refetch();
         } catch { toast.error("Failed to send interview links"); }
@@ -413,7 +413,7 @@ export default function CandidatesPage() {
                     const res = await fetch(`/api/candidates/${emailConfirm.candidateId}/send-interview-link`, { method: "POST" });
                     const data = await res.json().catch(() => null);
                     if (!res.ok) { toast.error(data?.error || "Failed to send interview link"); return; }
-                    toast.success(`Interview link sent to ${emailConfirm.candidateName}`);
+                    toast.success(`Schedule link sent to ${emailConfirm.candidateName}`);
                 } else if (status === "rejected") {
                     const res = await fetch(`/api/candidates/${emailConfirm.candidateId}/send-rejection-email`, { method: "POST" });
                     const data = await res.json().catch(() => null);
@@ -482,7 +482,7 @@ export default function CandidatesPage() {
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                             Add Candidate
                         </button>
-                        <button className="flex items-center justify-center w-7 h-7 rounded-r-xl bg-violet-600 border-l border-violet-500 text-white shadow-sm hover:bg-violet-700 transition-colors cursor-pointer">
+                        <button className="flex items-center justify-center w-8 h-10 rounded-r-xl bg-violet-600 border-l border-violet-500 text-white shadow-sm hover:bg-violet-700 transition-colors cursor-pointer">
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                         </button>
                     </div>
@@ -566,7 +566,7 @@ export default function CandidatesPage() {
                                 <TableHead className="w-[240px] h-7 font-bold text-[10px] uppercase tracking-wider text-[11px] text-gray-500">Candidate</TableHead>
                                 <TableHead className="w-[180px] h-7 font-bold text-[10px] uppercase tracking-wider text-[11px] text-gray-500">Job Role</TableHead>
                                 <TableHead className="h-7 font-bold text-[10px] uppercase tracking-wider text-[11px] text-gray-500">Score</TableHead>
-                                <TableHead className="h-7 font-bold text-[10px] uppercase tracking-wider text-[11px] text-gray-500">ATS</TableHead>
+                                <TableHead className="h-7 font-bold text-[10px] uppercase tracking-wider text-[11px] text-gray-500">Resume</TableHead>
                                 <TableHead className="h-7 font-bold text-[10px] uppercase tracking-wider text-[11px] text-gray-500">Interview</TableHead>
                                 <TableHead className="h-7 font-bold text-[10px] uppercase tracking-wider text-[11px] text-gray-500">Reports</TableHead>
                                 <TableHead className="h-7 font-bold text-[10px] uppercase tracking-wider text-[11px] text-gray-500">Added On</TableHead>
@@ -651,9 +651,9 @@ export default function CandidatesPage() {
                                                 <Link
                                                     href={orgIdParam ? `/admin/candidates/${candidate.id}?report=resume&orgId=${encodeURIComponent(orgIdParam)}` : `/admin/candidates/${candidate.id}?report=resume`}
                                                     className="inline-flex h-7 px-2 items-center justify-center gap-1.5 rounded-md bg-violet-50 text-violet-700 hover:bg-violet-100 transition-colors border border-violet-100"
-                                                    title="ATS Report">
+                                                    title="Resume Report">
                                                     <FileText className="h-3 w-3" />
-                                                    <span className="text-[10px] font-bold uppercase tracking-wider">ATS</span>
+                                                    <span className="text-[10px] font-bold uppercase tracking-wider">Resume</span>
                                                 </Link>
                                                 {interviewReportUnlocked ? (
                                                     <Link

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendScheduleInviteEmail } from "@/lib/mail";
-import { buildInterviewLink } from "@/lib/interview-links";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
 import { getOrgBillingStatus } from "@/lib/credits";
 import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
@@ -78,6 +77,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
                 completedAt: null,
                 expiresAt: driveDeadline,
                 linkStatus: "ACTIVE",
+                isTest: false,          // always clear test flag on real invite
+                interviewBrief: null,   // clear any stale brief from a previous run
             },
             create: {
                 id: generateId("int", application.fullName || applicationId),
@@ -86,12 +87,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
                 status: "PENDING",
                 expiresAt: driveDeadline,
                 linkStatus: "ACTIVE",
+                isTest: false,
             },
         });
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-        
         const scheduleLink = `${baseUrl}/schedule/${interviewRecord.accessToken}`;
-        let mailResult = await sendScheduleInviteEmail({
+        const mailResult = await sendScheduleInviteEmail({
             email: application.email,
             fullName: application.fullName || "Candidate",
             jobTitle: application.drive?.title || "Unknown Role",

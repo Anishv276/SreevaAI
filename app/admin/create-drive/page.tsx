@@ -43,7 +43,7 @@ function CreateDriveForm() {
 
   const [formData, setFormData] = useState<any>({
     title: "", role: "", deadline: "",
-    interviewLanguage: "English", interviewQuestions: [],
+    interviewQuestions: [],
     screeningThreshold: 60, screeningCriteria: {} as ScreeningCriteria,
     voiceId: fallbackVoiceId, allowedVoices: fallbackAllowedVoices,
     aiName: "Ishitha", extractedDetails: null, interviewMode: "ats",
@@ -62,7 +62,6 @@ function CreateDriveForm() {
   const jdPersistedUrlRef = useRef<string | null>(null);
   const activeDriveCount = adminOrg?.activeDriveCount ?? getActiveDriveCount(jobs);
   const maxActiveDrives = adminOrg?.maxActiveDrives;
-  const allowLanguageSelection = canUseMultilingual(organization?.plan);
   const isSuspended = isOrgRestrictedStatus(orgStatus);
   const interviewAccessLocked = quotaLocked || isSuspended;
   const billingLocked = isDriveCreationLocked(maxActiveDrives, activeDriveCount);
@@ -93,10 +92,7 @@ function CreateDriveForm() {
   }, [formData.jdPreviewUrl]);
 
   useEffect(() => {
-    if (!allowLanguageSelection && formData.interviewLanguage !== "English") {
-      setFormData((prev: any) => ({ ...prev, interviewLanguage: "English" }));
-    }
-  }, [allowLanguageSelection, formData.interviewLanguage]);
+  }, [formData.voiceId]);
 
   useEffect(() => {
     if (isEditMode && hasInitialLoadedRef.current !== driveId) {
@@ -112,7 +108,6 @@ function CreateDriveForm() {
             title: drive.title,
             role: (drive as any).role || drive.title,
             deadline: formatDateForInput((drive as any).deadline || null),
-            interviewLanguage: (drive as any).interviewLanguage || "English",
             interviewQuestions: typeof (drive as any).interviewQuestions === "string"
               ? JSON.parse((drive as any).interviewQuestions)
               : (drive as any).interviewQuestions || [],
@@ -159,7 +154,7 @@ function CreateDriveForm() {
       if (method !== "ai-chat") {
         setFormData({
           title: "", role: "", deadline: "",
-          interviewLanguage: "English", interviewQuestions: [],
+          interviewQuestions: [],
           screeningThreshold: 60, screeningCriteria: {},
           voiceId: fallbackVoiceId, allowedVoices: fallbackAllowedVoices,
           aiName: "Ishitha", extractedDetails: null, interviewMode: "ats",
@@ -261,7 +256,6 @@ function CreateDriveForm() {
       extractedDetails: currentFormData.extractedDetails
         ? typeof currentFormData.extractedDetails === "string" ? currentFormData.extractedDetails : JSON.stringify(currentFormData.extractedDetails)
         : null,
-      interviewLanguage: allowLanguageSelection ? currentFormData.interviewLanguage || "English" : "English",
       interviewQuestions: parsedQuestions,
       screeningThreshold: Number(currentFormData.screeningThreshold ?? 60),
       screeningCriteria: sanitizeScreeningCriteria(currentFormData.screeningCriteria || {}),
@@ -305,7 +299,7 @@ function CreateDriveForm() {
       return { ...prev, screeningThreshold: Number(next.threshold ?? 60), screeningCriteria: sanitizeScreeningCriteria(next.criteria || {}) };
     }), []);
 
-  // ── Success ──────────────────────────────────────────────────────────────
+  // -- Success --------------------------------------------------------------
   if (published) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-8 animate-in fade-in duration-500">
@@ -334,7 +328,7 @@ function CreateDriveForm() {
     );
   }
 
-  // ── Locked ───────────────────────────────────────────────────────────────
+  // -- Locked ---------------------------------------------------------------
   if (driveCreationLocked) {
     return (
       <div className="space-y-6 pb-10 animate-in fade-in duration-500">
@@ -375,7 +369,7 @@ function CreateDriveForm() {
     );
   }
 
-  // ── Main Form — two-column layout ────────────────────────────────────────
+  // -- Main Form -- two-column layout ----------------------------------------
   return (
     <div className="pb-10 animate-in fade-in duration-500">
       {/* Page header */}
@@ -545,15 +539,16 @@ function CreateDriveForm() {
 
           {/* Interview Setup */}
           <Card>
-            <CardHeader icon={<Mic className="h-3.5 w-3.5" />} title="Interview Setup" subtitle="Voice, language, and questions" />
-            <InterviewSetup
-              formData={formData}
-              updateFormData={setFormData}
-              allowLanguageSelection={allowLanguageSelection}
-            />
+            <CardHeader icon={<Mic className="h-3.5 w-3.5" />} title="Interview Setup" subtitle="Voice and questions" />
+            <div className="p-5 bg-white border-t border-gray-100">
+              <InterviewSetup
+                formData={formData}
+                updateFormData={setFormData}
+              />
+            </div>
           </Card>
 
-          {/* Screening — ATS only */}
+          {/* Screening — Resume only */}
           {formData.interviewMode !== "interview-only" && (
             <Card>
               <CardHeader icon={<SlidersHorizontal className="h-3.5 w-3.5" />} title="Screening Settings" subtitle="Threshold and criteria for resume scoring" />
@@ -566,7 +561,7 @@ function CreateDriveForm() {
   );
 }
 
-// ── Shared primitives ────────────────────────────────────────────────────────
+// -- Shared primitives --------------------------------------------------------
 
 function Card({ children }: { children: React.ReactNode }) {
   return (

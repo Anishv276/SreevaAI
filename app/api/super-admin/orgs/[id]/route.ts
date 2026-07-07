@@ -217,7 +217,7 @@ export async function PATCH(
             updateData,
             normalizeOrgAiConfig({ voiceId, allowedVoices })
         );
-        // Usage metrics — internal API cost tracking, untouched by billing
+        // Usage metrics -- internal API cost tracking, untouched by billing
         if (usageMetrics !== undefined) {
             if (typeof usageMetrics === "string") {
                 const trimmed = usageMetrics.trim();

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useCallback } from "react";
 import type { RefObject } from "react";
-// ms a track must remain muted before flagging — rules out brief OS permission re-checks
+// ms a track must remain muted before flagging -- rules out brief OS permission re-checks
 const MUTE_GRACE_MS = 4_000;
 // Minimum gap between repeated violations for the same track
 const COOLDOWN_MS = 30_000;
@@ -118,7 +118,7 @@ export function HardwareHeartbeat({
         if (audioTrack) attachMonitor(audioTrack, "audio");
         startPolling();
       } catch {
-        // getUserMedia failed after interview started — permissions were revoked.
+        // getUserMedia failed after interview started -- permissions were revoked.
         // Fire once per device type rather than both at once; they're independent events.
         if (!cancelled && isActiveRef.current) {
           const now = Date.now();

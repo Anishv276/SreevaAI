@@ -90,7 +90,7 @@ function footerRow(text: string) {
   </td>
 </tr>`;
 }
-// ─── 1. Interview Invitation ─────────────────────────────────────────────────
+// --- 1. Interview Invitation -------------------------------------------------
 export async function sendInterviewInviteEmail({
     email, fullName, jobTitle, orgName, interviewLink, schedulingDeadline,
 }: {
@@ -142,7 +142,7 @@ export async function sendInterviewInviteEmail({
         return { success: false, error: (error as Error)?.message || "Failed to send email" };
     }
 }
-// ─── 2. Rejection ────────────────────────────────────────────────────────────
+// --- 2. Rejection ------------------------------------------------------------
 export async function sendRejectionEmail({
     email, fullName, jobTitle, orgName,
 }: {
@@ -170,7 +170,7 @@ export async function sendRejectionEmail({
         return { success: false, error: (error as Error)?.message || "Failed to send email" };
     }
 }
-// ─── 3. Interview Completed (admin notification) ─────────────────────────────
+// --- 3. Interview Completed (admin notification) -----------------------------
 export async function sendInterviewCompletedEmail({
     adminEmail, candidateName, jobTitle, orgName, driveTitle, completedAt, reportLink,
 }: {
@@ -215,7 +215,7 @@ export async function sendInterviewCompletedEmail({
         return { success: false, error: (error as Error)?.message || "Failed to send email" };
     }
 }
-// ─── 4. Org Welcome ──────────────────────────────────────────────────────────
+// --- 4. Org Welcome ----------------------------------------------------------
 export async function sendOrgWelcomeEmail({
     email, orgName, tempPassword,
 }: {
@@ -266,7 +266,7 @@ export async function sendOrgWelcomeEmail({
         return { success: false, error: (error as Error)?.message || "Failed to send welcome email" };
     }
 }
-// ─── 5. OTP — Password Reset ─────────────────────────────────────────────────
+// --- 5. OTP -- Password Reset -------------------------------------------------
 export async function sendOtpEmail({ to, name, otp }: { to: string; name: string; otp: string }): Promise<void> {
     const subject = `${otp} is your Sreeva AI recovery code`;
     const digitBoxes = otp.split("").map(d =>
@@ -291,7 +291,7 @@ export async function sendOtpEmail({ to, name, otp }: { to: string; name: string
     `);
     await sendEmail({ to, subject, html, type: "password-reset" });
 }
-// ─── 6. Schedule Invite (candidate picks a slot) ─────────────────────────────
+// --- 6. Schedule Invite (candidate picks a slot) -----------------------------
 export async function sendScheduleInviteEmail({
     email, fullName, jobTitle, orgName, scheduleLink,
 }: {
@@ -338,7 +338,7 @@ export async function sendScheduleInviteEmail({
         return { success: false, error: (error as Error)?.message || "Failed to send email" };
     }
 }
-// ─── 7. Interview Link (after slot is booked) ────────────────────────────────
+// --- 7. Interview Link (after slot is booked) --------------------------------
 export async function sendInterviewScheduledEmail({
     email, fullName, jobTitle, orgName, interviewLink, scheduledAt, timezone,
 }: {
@@ -395,7 +395,7 @@ export async function sendInterviewScheduledEmail({
         return { success: false, error: (error as Error)?.message || "Failed to send email" };
     }
 }
-// ─── 8. OTP — Password Change ─────────────────────────────────────────────────
+// --- 8. OTP -- Password Change -------------------------------------------------
 export async function sendPasswordChangeOtpEmail({ to, otp }: { to: string; otp: string }): Promise<void> {
     const subject = `${otp} — Confirm your Sreeva AI password change`;
     const digitBoxes = otp.split("").map(d =>

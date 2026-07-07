@@ -29,7 +29,7 @@ from interview.band_classifier import (
 
 
 # ===========================================================================
-# 1. CandidateBand ordering — DSA contract
+# 1. CandidateBand ordering -- DSA contract
 # ===========================================================================
 
 class TestCandidateBandOrdering:
@@ -66,7 +66,7 @@ class TestCandidateBandOrdering:
 
 
 # ===========================================================================
-# 2. ResumeExperience.from_structured_resume — flat resume shape
+# 2. ResumeExperience.from_structured_resume -- flat resume shape
 # ===========================================================================
 
 class TestResumeExperienceFlatShape:
@@ -109,7 +109,7 @@ class TestResumeExperienceFlatShape:
 
 
 # ===========================================================================
-# 3. ResumeExperience.from_structured_resume — nested "parsed" shape
+# 3. ResumeExperience.from_structured_resume -- nested "parsed" shape
 # ===========================================================================
 
 class TestResumeExperienceNestedShape:
@@ -158,7 +158,7 @@ class TestResumeExperienceNestedShape:
 
 
 # ===========================================================================
-# 4. ResumeExperience.from_structured_resume — empty / missing data
+# 4. ResumeExperience.from_structured_resume -- empty / missing data
 # ===========================================================================
 
 class TestResumeExperienceMissingData:
@@ -195,7 +195,7 @@ class TestResumeExperienceMissingData:
 
 
 # ===========================================================================
-# 5. BandClassifier._from_seniority — known labels
+# 5. BandClassifier._from_seniority -- known labels
 # ===========================================================================
 
 class TestBandClassifierFromSeniority:
@@ -228,7 +228,7 @@ class TestBandClassifierFromSeniority:
 
 
 # ===========================================================================
-# 6. BandClassifier._from_seniority — unknown / empty labels
+# 6. BandClassifier._from_seniority -- unknown / empty labels
 # ===========================================================================
 
 class TestBandClassifierFromSeniorityUnknown:
@@ -247,7 +247,7 @@ class TestBandClassifierFromSeniorityUnknown:
 
 
 # ===========================================================================
-# 7. BandClassifier._from_years — boundary values (bisect correctness)
+# 7. BandClassifier._from_years -- boundary values (bisect correctness)
 # ===========================================================================
 
 class TestBandClassifierFromYears:
@@ -310,7 +310,7 @@ class TestBandClassifierHardFloor:
 
 
 # ===========================================================================
-# 9. BandClassifier.classify — end-to-end decision priority
+# 9. BandClassifier.classify -- end-to-end decision priority
 # ===========================================================================
 
 class TestBandClassifierClassify:
@@ -370,7 +370,7 @@ class TestBandClassifierClassify:
 
 
 # ===========================================================================
-# 10. classify_band() — public API contract & return types
+# 10. classify_band() -- public API contract & return types
 # ===========================================================================
 
 class TestClassifyBandPublicAPI:
@@ -416,7 +416,7 @@ class TestClassifyBandPublicAPI:
 
 
 # ===========================================================================
-# 11. Tulasi regression test — the bug that triggered this refactor
+# 11. Tulasi regression test -- the bug that triggered this refactor
 # ===========================================================================
 
 class TestTulasiRegression:

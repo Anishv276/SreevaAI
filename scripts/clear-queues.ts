@@ -6,15 +6,18 @@ async function clearQueues() {
         'invitation-delivery-queue',
         'email-delivery',
         'resume-processing',
+        'interview-report',
     ];
     for (const name of queueNames) {
         const q = new Queue(name, { connection: redisConnection });
-        const [waiting, delayed, failed] = await Promise.all([
+        const [waiting, delayed, failed, completed, active] = await Promise.all([
             q.getWaiting(),
             q.getDelayed(),
             q.getFailed(),
+            q.getCompleted(),
+            q.getActive(),
         ]);
-        const all = [...waiting, ...delayed, ...failed];
+        const all = [...waiting, ...delayed, ...failed, ...completed, ...active];
         console.log(`[${name}] Removing ${all.length} stale jobs...`);
         for (const job of all) {
             await job.remove();

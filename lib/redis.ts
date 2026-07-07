@@ -47,7 +47,7 @@ export function getBullPrefix(): string {
 const isBuildPhase = process.env.npm_lifecycle_event === "build" || process.env.NEXT_PHASE === "phase-production-build";
 
 function createRedisConnection(): IORedis {
-  // Always creates a FRESH connection — never returns the shared singleton.
+  // Always creates a FRESH connection -- never returns the shared singleton.
   return new IORedis(getRedisUrl() || DEFAULT_REDIS_URL, {
     maxRetriesPerRequest: null,
     lazyConnect: false,

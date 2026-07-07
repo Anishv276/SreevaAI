@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast-custom";
 import { INTERVIEW_SUPPORT_EMAIL, getInterviewActionBlockedMessage, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { useAdminOrg } from "@/context/admin-org-context";
-// ── Types ────────────────────────────────────────────────────────────────────
+// -- Types --------------------------------------------------------------------
 interface ResumeCandidate {
     id: string;
     fullName: string;
@@ -28,7 +28,7 @@ interface ResumeCandidate {
 }
 type SortKey = "aiScore" | "fullName" | "resumeStatus";
 type SortDir = "asc" | "desc";
-// ── Main export ───────────────────────────────────────────────────────────────
+// -- Main export ---------------------------------------------------------------
 export function ResumeScreening({ driveId, driveName }: { driveId: string; driveName: string }) {
     const router = useRouter();
     const [modalOpen, setModalOpen] = useState(false);
@@ -55,7 +55,7 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
         const timer = setInterval(refresh, 3000);
         return () => clearInterval(timer);
     }, [candidates, refresh]);
-    // ⚡ Read from shared context — no fetch needed
+    // ⚡ Read from shared context -- no fetch needed
     const adminOrg = useAdminOrg();
     const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
     const orgStatus = String(adminOrg?.status || "ACTIVE");
@@ -142,7 +142,7 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
         </div>
     );
 }
-// ── Empty state ───────────────────────────────────────────────────────────────
+// -- Empty state ---------------------------------------------------------------
 function EmptyState({ onUpload }: { onUpload: () => void }) {
     return (
         <div
@@ -159,7 +159,7 @@ function EmptyState({ onUpload }: { onUpload: () => void }) {
         </div>
     );
 }
-// ── Upload modal ──────────────────────────────────────────────────────────────
+// -- Upload modal --------------------------------------------------------------
 function UploadModal({
     open, onClose, driveId, driveName, onComplete,
 }: {

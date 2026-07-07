@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// --- Types --------------------------------------------------------------------
 
 interface GitHubUser {
   login: string;
@@ -77,7 +77,7 @@ interface CreateDeletePayload {
   master_branch?: string;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// --- Helpers ------------------------------------------------------------------
 
 function getBranchFromRef(ref: string): string {
   return ref.replace("refs/heads/", "").replace("refs/tags/", "tag:");
@@ -112,7 +112,7 @@ function fileStats(commits: GitHubCommit[]): string {
   return parts.join(", ") || "no file changes";
 }
 
-// ─── Slack Block Builders ─────────────────────────────────────────────────────
+// --- Slack Block Builders -----------------------------------------------------
 
 function buildPushBlocks(payload: PushPayload): object[] {
   const branch = getBranchFromRef(payload.ref);
@@ -320,7 +320,7 @@ function buildCreateDeleteBlocks(
   ];
 }
 
-// ─── Signature Verification ───────────────────────────────────────────────────
+// --- Signature Verification ---------------------------------------------------
 
 function verifySignature(body: string, signature: string | null, secret: string): boolean {
   if (!signature || !secret) return !secret; // if no secret configured, skip check
@@ -332,7 +332,7 @@ function verifySignature(body: string, signature: string | null, secret: string)
   }
 }
 
-// ─── Slack Sender ─────────────────────────────────────────────────────────────
+// --- Slack Sender -------------------------------------------------------------
 
 async function sendToSlack(blocks: object[], text: string): Promise<void> {
   const webhookUrl = process.env.SLACK_GITHUB_WEBHOOK_URL || process.env.SLACK_ERROR_WEBHOOK_URL;
@@ -353,7 +353,7 @@ async function sendToSlack(blocks: object[], text: string): Promise<void> {
   }
 }
 
-// ─── Main Handler ─────────────────────────────────────────────────────────────
+// --- Main Handler -------------------------------------------------------------
 
 export async function POST(req: NextRequest) {
   try {

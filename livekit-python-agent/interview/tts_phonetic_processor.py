@@ -47,7 +47,7 @@ class TTSPhoneticProcessor(BaseModel):
     def initialize_defaults(self) -> "TTSPhoneticProcessor":
         """Load the static rules that cover the most common Cartesia mispronunciations."""
         self.static_rules = [
-            # Common acronyms — plural before singular so "APIs" matches before "API"
+            # Common acronyms -- plural before singular so "APIs" matches before "API"
             # Uses re.IGNORECASE so both "api" and "API" are caught.
             PhoneticRule(pattern_str=r"\bAPIs\b",          replacement="A P I s"),
             PhoneticRule(pattern_str=r"\bAPI\b",           replacement="A P I"),

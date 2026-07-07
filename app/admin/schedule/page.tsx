@@ -1,14 +1,14 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useTransitionRouter as useRouter } from "next-view-transitions";
+import { useRouter } from "next/navigation";
 import { Calendar, dateFnsLocalizer, Event } from "react-big-calendar";
 import { format, parse, startOfWeek, getDay } from "date-fns";
 import { enUS } from "date-fns/locale";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import { Loader2, ChevronRight, Briefcase, ChevronLeft, Plus, X, Calendar as CalendarIcon, ChevronDown, Award, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Link } from 'next-view-transitions';
+import Link from 'next/link';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";

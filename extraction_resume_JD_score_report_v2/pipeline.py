@@ -2,14 +2,14 @@
 pipeline.py v2 — Production entry point for the HR Agent pipeline.
 
 CLI contract (called by worker.ts via scripts/extract_pdf.py):
-  python extract_pdf.py <file_path> JD               [model]          → {text, data, usage}
-  python extract_pdf.py <file_path> RESUME            [model]          → {text, data, usage}
-  python extract_pdf.py <file_path> RESUME_AND_SCORE  [model] [model]  → {text, data, score, usage_extract, usage_score}
+  python extract_pdf.py <file_path> JD               <model>          → {text, data, usage}
+  python extract_pdf.py <file_path> RESUME           <model>          → {text, data, usage}
+  python extract_pdf.py <file_path> RESUME_AND_SCORE <model> <model>  → {text, data, score, usage_extract, usage_score}
     RESUME_AND_SCORE reads JD payload JSON from stdin:
       {jd, jd_raw_text, threshold, screening_criteria}
 
-All doc types use gpt-5.4-mini (set in parser.py MODEL constant).
-model_override argv is accepted for forward-compat but ignored — model is fixed.
+model is required -- always the org's DB-configured llmResumeExtraction /
+llmJdExtraction / llmResumeReport value, passed through by worker.ts.
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ if str(_repo_root) not in sys.path:
     sys.path.insert(0, str(_repo_root))
 
 
-# ── Text extraction from file ─────────────────────────────────────────────────
+# -- Text extraction from file -------------------------------------------------
 
 def _extract_text(file_path: str) -> str:
     """Extract plain text from PDF or text file."""
@@ -57,10 +57,10 @@ def _extract_text(file_path: str) -> str:
     return path.read_text(encoding="utf-8", errors="replace").strip()
 
 
-# ── Pipeline ──────────────────────────────────────────────────────────────────
+# -- Pipeline ------------------------------------------------------------------
 
 class Pipeline:
-    def run_jd(self, file_path: str) -> dict:
+    def run_jd(self, file_path: str, model: str) -> dict:
         sys.stderr.write("--- [20%] Extracting JD text... ---\n"); sys.stderr.flush()
         raw_text = _extract_text(file_path)
         if len(raw_text.strip()) < 20:
@@ -68,14 +68,14 @@ class Pipeline:
 
         sys.stderr.write("--- [50%] Parsing JD structure... ---\n"); sys.stderr.flush()
         from extraction_resume_JD_score_report_v2.parser import DocumentParser
-        result = DocumentParser().parse(raw_text, "JD")
+        result = DocumentParser().parse(raw_text, "JD", model_override=model)
         if result.get("error"):
             return result
 
         sys.stderr.write("--- [100%] JD extraction complete. ---\n"); sys.stderr.flush()
         return {"text": raw_text, "data": result["data"], "usage": result.get("usage", {})}
 
-    def run_resume(self, file_path: str) -> dict:
+    def run_resume(self, file_path: str, model: str) -> dict:
         sys.stderr.write("--- [20%] Extracting resume text... ---\n"); sys.stderr.flush()
         raw_text = _extract_text(file_path)
         if len(raw_text.strip()) < 50:
@@ -83,7 +83,7 @@ class Pipeline:
 
         sys.stderr.write("--- [50%] Parsing resume structure... ---\n"); sys.stderr.flush()
         from extraction_resume_JD_score_report_v2.parser import DocumentParser
-        result = DocumentParser().parse(raw_text, "RESUME")
+        result = DocumentParser().parse(raw_text, "RESUME", model_override=model)
         if result.get("error"):
             return result
 
@@ -92,7 +92,7 @@ class Pipeline:
         sys.stderr.write("--- [100%] Resume extraction complete. ---\n"); sys.stderr.flush()
         return {"text": raw_text, "data": result["data"], "usage": usage}
 
-    def run_resume_and_score(self, file_path: str, jd_payload: dict) -> dict:
+    def run_resume_and_score(self, file_path: str, jd_payload: dict, extract_model: str, score_model: str) -> dict:
         # Step 1: extract text
         sys.stderr.write("--- [15%] Extracting resume text... ---\n"); sys.stderr.flush()
         raw_text = _extract_text(file_path)
@@ -105,7 +105,7 @@ class Pipeline:
         jd_data = _normalise_jd(jd_payload.get("jd") or {})
         jd_criteria = jd_data.get("criteria", [])
         parser = DocumentParser()
-        resume_result = parser.parse_resume_with_jd(raw_text, jd_criteria)
+        resume_result = parser.parse_resume_with_jd(raw_text, jd_criteria, model_override=extract_model)
         if resume_result.get("error"):
             return resume_result
         structured_resume = resume_result["data"]
@@ -122,7 +122,7 @@ class Pipeline:
             "threshold": jd_payload.get("threshold", 70),
             "screening_criteria": jd_payload.get("screening_criteria") or {},
         })
-        score_result = parser.parse(score_payload, "SCORE")
+        score_result = parser.parse(score_payload, "SCORE", model_override=score_model)
         if score_result.get("error"):
             return score_result
 
@@ -136,32 +136,34 @@ class Pipeline:
         }
 
 
-# ── CLI entry point ───────────────────────────────────────────────────────────
+# -- CLI entry point -----------------------------------------------------------
 
 def main():
     args = sys.argv[1:]
-    if len(args) < 2:
-        print(json.dumps({"error": "Usage: extract_pdf.py <file> <JD|RESUME|RESUME_AND_SCORE> [model]"}))
+    if len(args) < 3:
+        print(json.dumps({"error": "Usage: extract_pdf.py <file> <JD|RESUME> <model>  OR  extract_pdf.py <file> RESUME_AND_SCORE <extract_model> <score_model>"}))
         sys.exit(1)
 
     file_path = args[0]
     doc_type  = args[1].upper()
-    # args[2] and args[3] are model overrides from worker — accepted, ignored (MODEL is fixed)
 
     pipeline = Pipeline()
 
     try:
         if doc_type == "JD":
-            result = pipeline.run_jd(file_path)
+            result = pipeline.run_jd(file_path, args[2])
         elif doc_type == "RESUME":
-            result = pipeline.run_resume(file_path)
+            result = pipeline.run_resume(file_path, args[2])
         elif doc_type == "RESUME_AND_SCORE":
+            if len(args) < 4:
+                print(json.dumps({"error": "RESUME_AND_SCORE requires <extract_model> <score_model>"}))
+                sys.exit(1)
             raw_stdin = sys.stdin.read().strip()
             if not raw_stdin:
                 print(json.dumps({"error": "RESUME_AND_SCORE requires JD payload on stdin"}))
                 sys.exit(1)
             jd_payload = json.loads(raw_stdin)
-            result = pipeline.run_resume_and_score(file_path, jd_payload)
+            result = pipeline.run_resume_and_score(file_path, jd_payload, args[2], args[3])
         else:
             result = {"error": f"Unknown doc_type: {doc_type}", "code": "UNKNOWN_DOC_TYPE"}
     except FileNotFoundError as e:

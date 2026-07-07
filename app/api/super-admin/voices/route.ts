@@ -211,7 +211,7 @@ export async function POST(request: Request) {
     if (builtIn) {
       await prisma.engineVoice.upsert({
         where: { id },
-        update: { isActive: true, isBuiltIn: true },
+        update: { isActive: true, isBuiltIn: true, isDeleted: false },
         create: {
           id,
           name: builtIn.name,
@@ -254,6 +254,7 @@ export async function POST(request: Request) {
         tags: [],
         isBuiltIn: false,
         isActive: true,
+        isDeleted: false,
       },
       create: {
         id,

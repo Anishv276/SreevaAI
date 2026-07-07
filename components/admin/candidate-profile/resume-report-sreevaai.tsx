@@ -24,12 +24,12 @@ const bgPage = "bg-white relative overflow-hidden";
 type RadarKey = "role_fit" | "tech_depth" | "proven_impact" | "hire_risk" | "growth_velocity";
 type RadarNotes = Record<RadarKey, string>;
 
-// Research-backed 5-axis model — internal keys are technical; labels shown to HR are plain English:
+// Research-backed 5-axis model -- internal keys are technical; labels shown to HR are plain English:
 // role_fit       → "Job Match"    (does the resume cover what the JD requires?)
 // tech_depth     → "Skill Depth"  (mastery vs. surface-level exposure)
-// proven_impact  → "Track Record" (achievement density — results vs. responsibilities)
+// proven_impact  → "Track Record" (achievement density -- results vs. responsibilities)
 // hire_risk      → "Stability"    (inverted risk: high = low red flags)
-// growth_velocity→ "Career Growth" (trajectory speed — accelerating or stalling?)
+// growth_velocity→ "Career Growth" (trajectory speed -- accelerating or stalling?)
 const RESUME_RADAR_LABELS: { key: RadarKey; label: string }[] = [
   { key: "role_fit",        label: "Job Match" },
   { key: "tech_depth",      label: "Skill Depth" },
@@ -427,7 +427,7 @@ export function buildSreevaAIResumeViewModel(i: {
     }
     return Math.min(100, Math.round(total / workHistoryRows.length));
   })();
-  // ── Growth Velocity: career trajectory speed ─────────────────────────────
+  // -- Growth Velocity: career trajectory speed -----------------------------
   // Scores how fast the career is moving: title progression, scope expansion,
   // tenure stability, and whether the most recent roles show upward momentum.
   const growthVelocityScore = (() => {
@@ -488,7 +488,7 @@ export function buildSreevaAIResumeViewModel(i: {
     const n = Number(v);
     return Number.isFinite(n) ? Math.min(100, Math.max(0, Math.round(n))) : fb;
   };
-  // ── Map old/new radar keys → 5 research-backed axes ───────────────────────
+  // -- Map old/new radar keys → 5 research-backed axes -----------------------
   // role_fit      ← essentials (JD requirement coverage)
   // tech_depth    ← impactFallback repurposed (ownership + depth signals)
   // proven_impact ← evidenceFallback (measurable outcome density)
@@ -537,7 +537,7 @@ export function buildSreevaAIResumeViewModel(i: {
       : i.normalizedStatus?.toLowerCase() === "rejected"
         ? "REJECTED"
         : "BORDERLINE";
-  // ── Skill Signals: 3-bucket build ─────────────────────────────────────────
+  // -- Skill Signals: 3-bucket build -----------------------------------------
   // Bucket 1 "matched"     → in JD criteria AND found in resume (scored "meets" by scorer)
   // Bucket 2 "not_matched" → in JD criteria AND missing from resume
   // Bucket 3 "listed"      → in resume but NOT in any JD criteria (shows candidate's full stack)
@@ -545,7 +545,7 @@ export function buildSreevaAIResumeViewModel(i: {
     const normalizeKey = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, "");
     const seen = new Set<string>(); // dedup by normalised name
     const rows: SkillRow[] = [];
-    // ── MATCHED (JD criteria that the scorer confirmed) ───────────────────
+    // -- MATCHED (JD criteria that the scorer confirmed) -------------------
     const matchedMust: string[] = Array.isArray(skillMatching.matched_must) ? skillMatching.matched_must : [];
     const matchedGood: string[] = Array.isArray(skillMatching.matched_good) ? skillMatching.matched_good : [];
     for (const name of [...matchedMust, ...matchedGood]) {
@@ -561,7 +561,7 @@ export function buildSreevaAIResumeViewModel(i: {
       const note = detail?.evidence || "";
       rows.push({ name: clean, bucket: "matched", evidenceNote: note || undefined });
     }
-    // ── NOT MATCHED (JD criteria missing from resume) ─────────────────────
+    // -- NOT MATCHED (JD criteria missing from resume) ---------------------
     const missingMust: string[] = Array.isArray(skillMatching.missing_must)
       ? skillMatching.missing_must
       : Array.isArray(i.missingMustSkills) ? i.missingMustSkills : [];
@@ -640,7 +640,7 @@ export function buildSreevaAIResumeViewModel(i: {
       label: String(item.label || "").trim(),
       body: readableSummaryText(String(item.body || ""), 260),
     })).filter((item) => item.label && item.body);
-  // Exactly 3 strengths and 3 weaknesses — research-mandated cap for recruiter clarity
+  // Exactly 3 strengths and 3 weaknesses -- research-mandated cap for recruiter clarity
   const strengths: SreevaAIResumeViewModel["strengths"] =
     i.aiStrengths && i.aiStrengths.length > 0 ? sanitizeItems(i.aiStrengths).slice(0, 3) : [];
   const weaknesses: SreevaAIResumeViewModel["weaknesses"] =
@@ -665,7 +665,7 @@ export function buildSreevaAIResumeViewModel(i: {
     careerLines,
     resumeUrl: c.resumeUrl || null,
     reviewStrip: (() => {
-      // Use LLM-generated decision_reason as the primary note — it's a recruiter narrative
+      // Use LLM-generated decision_reason as the primary note -- it's a recruiter narrative
       // covering skills, experience, strengths, and gaps from the full report.
       // Human layer summary is an internal technical scorecard string, not for display.
       const aiReason = i.decisionReason

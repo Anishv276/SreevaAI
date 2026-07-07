@@ -33,7 +33,7 @@ export const TTS_MODELS = [
   { id: "bulbul:v2",             label: "Bulbul v2",           provider: "SARVAM",     description: "Stable Sarvam model" },
 ] as const;
 
-// Voices — model field is the provider's default model (for backward compat with voice pickers).
+// Voices -- model field is the provider's default model (for backward compat with voice pickers).
 // The org's actual ttsModel field overrides this at runtime.
 const _EL  = "eleven_turbo_v2_5";
 const _CAR = "cartesia/sonic-3";

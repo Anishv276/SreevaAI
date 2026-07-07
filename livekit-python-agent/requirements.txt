@@ -7,6 +7,9 @@ livekit-plugins-elevenlabs==1.5.10
 livekit-plugins-sarvam==1.5.10
 
 # ── Other ──────────────────────────────────────────────────────────────────────
+fastapi>=0.115.0
+uvicorn>=0.32.0
+python-multipart>=0.0.12
 python-dotenv>=1.2.2
 psycopg2-binary>=2.9.12
 openai>=2.37.0

@@ -24,7 +24,7 @@ from extraction_resume_JD_score_report_v2.models import (
     EvidenceSource, CriterionPriority,
 )
 
-# ── Constants ──────────────────────────────────────────────────────────────────
+# -- Constants ------------------------------------------------------------------
 
 RESULT_MULT: dict[str, float] = {
     "meets": 1.0,
@@ -56,7 +56,7 @@ ROLE_BAND_PROFILES: dict[str, dict] = {
     "manager": {"direct": 1.20, "adjacent": 0.25, "impact": 1.20, "experience": 0.80, "domain": 1.10, "blocker": 1.25, "max_positive":  8, "max_negative": 20},
 }
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
+# -- Helpers --------------------------------------------------------------------
 
 def _normalize(s: str) -> str:
     """Canonical skill key (same logic as v1 SkillManager)."""
@@ -91,7 +91,7 @@ def _seniority_rank(level: str) -> int:
     return {"intern": 0, "junior": 1, "mid": 2, "senior": 3, "lead": 4, "manager": 5}.get(level, 2)
 
 
-# ── Semantic index ─────────────────────────────────────────────────────────────
+# -- Semantic index -------------------------------------------------------------
 
 class SemanticSkillIndex:
     """
@@ -199,7 +199,7 @@ class SemanticSkillIndex:
         return self.best_skill_match(criterion_name)
 
 
-# ── Evidence pool builder ──────────────────────────────────────────────────────
+# -- Evidence pool builder ------------------------------------------------------
 
 def _build_skill_evidence_map(resume_data: dict, resume_raw_text: str = "") -> tuple[dict[str, dict], dict[str, str], str]:
     """
@@ -287,7 +287,7 @@ def _build_skill_evidence_map(resume_data: dict, resume_raw_text: str = "") -> t
                 _add(tech, company, "high", "work_history", company)
                 all_names.append(tech)
 
-    # From projects — owner-built projects with real depth count as work_history level
+    # From projects -- owner-built projects with real depth count as work_history level
     for proj in projects:
         proj_name = proj.get("name", "project")
         is_owner = proj.get("ownership_level", "") == "owner"
@@ -328,7 +328,7 @@ def _build_skill_evidence_map(resume_data: dict, resume_raw_text: str = "") -> t
             " ".join(str(t) for t in (job.get("technologies_used", []) or []))
             for job in work_history
         ),
-        # Include responsibilities/bullet_points — critical for responsibility-category criteria
+        # Include responsibilities/bullet_points -- critical for responsibility-category criteria
         " ".join(
             " ".join(str(r) for r in (job.get("responsibilities", []) or job.get("bullet_points", [])))
             for job in work_history
@@ -341,7 +341,7 @@ def _build_skill_evidence_map(resume_data: dict, resume_raw_text: str = "") -> t
         " ".join(resume_skills.get("domain_skills", []) or []),
         " ".join(c.get("claim", "") for c in (resume_data.get("core_claims", []) or [])),
         " ".join(ev.get("text", "") for ev in (resume_data.get("evidence_items", []) or [])),
-        # Include project descriptions and technologies — critical for scoring
+        # Include project descriptions and technologies -- critical for scoring
         " ".join(proj.get("description", "") for proj in (resume_data.get("projects", []) or [])),
         " ".join(
             " ".join(str(t) for t in (proj.get("technologies", []) or []))
@@ -353,7 +353,7 @@ def _build_skill_evidence_map(resume_data: dict, resume_raw_text: str = "") -> t
     return skill_evidence_map, resume_normalized, raw_corpus
 
 
-# ── Cross-validation ───────────────────────────────────────────────────────────
+# -- Cross-validation -----------------------------------------------------------
 
 def _cross_validate_experience(resume_data: dict) -> dict:
     """
@@ -365,7 +365,7 @@ def _cross_validate_experience(resume_data: dict) -> dict:
     if not work_history:
         return resume_data
 
-    # Naive sum — overlaps are handled by taking max of concurrent roles
+    # Naive sum -- overlaps are handled by taking max of concurrent roles
     # Simple approach: sort by start_date, subtract overlaps
     total_months = sum(
         (j.get("duration_months") or 0)
@@ -394,7 +394,7 @@ def _cross_validate_experience(resume_data: dict) -> dict:
     return resume_data
 
 
-# ── JD weight computation ─────────────────────────────────────────────────────
+# -- JD weight computation -----------------------------------------------------
 
 def _compute_criterion_weights(criteria: list[dict]) -> list[dict]:
     """
@@ -462,7 +462,7 @@ def _compute_criterion_weights(criteria: list[dict]) -> list[dict]:
     return result
 
 
-# ── Core criterion matching ────────────────────────────────────────────────────
+# -- Core criterion matching ----------------------------------------------------
 
 def _match_criterion(
     criterion: dict,
@@ -495,7 +495,7 @@ def _match_criterion(
     confidence = 0.0
     match_source = MatchSource(match_type=MatchType.none)
 
-    # ── Handle experience-category criteria ──────────────────────────────────
+    # -- Handle experience-category criteria ----------------------------------
     if ccategory == "experience":
         cand_yrs = resume_data.get("experience", {}).get("total_years")
         req_min = req_max = None
@@ -528,7 +528,7 @@ def _match_criterion(
         # Stack-gated experience: "3+ years JAVA backend" must not pass on years alone
         # if the named technology is absent from the resume's proven skills.
         # Extract skill-like tokens from the criterion name and require at least one
-        # to be present; otherwise the years are in the wrong stack — cap at unclear.
+        # to be present; otherwise the years are in the wrong stack -- cap at unclear.
         if result == MatchResult.meets:
             stack_tokens = set()
             for raw_word in re.split(r"[\s,/\-]+", cname):
@@ -551,7 +551,7 @@ def _match_criterion(
             match_source=match_source, score_contribution=round(contribution, 2),
         )
 
-    # ── Pass 1: evidence_items (LLM-tagged) ──────────────────────────────────
+    # -- Pass 1: evidence_items (LLM-tagged) ----------------------------------
     best_ev_level = 0
     matched_ev_text = ""
     matched_ev_company = ""
@@ -603,7 +603,7 @@ def _match_criterion(
             ev_source=ev_type,
         )
 
-    # ── Pass 1b: responsibility satisfied by its constituent skill in evidence ──
+    # -- Pass 1b: responsibility satisfied by its constituent skill in evidence --
     # A criterion like "Design, develop, test, and maintain Java-based applications"
     # is satisfied when its named technology (Java) is proven in high-level evidence,
     # even if the full criterion string was never tagged in proves[]. This is the
@@ -638,7 +638,7 @@ def _match_criterion(
                         matched_company_1b = ev.get("source_company", "")
                         matched_id_1b = ev.get("id", "")
 
-        # Check project descriptions unconditionally — covers "Build RAG systems"
+        # Check project descriptions unconditionally -- covers "Build RAG systems"
         # matching a project that built a RAG pipeline, even when criterion tokens
         # don't map to resume_normalized (common for domain-description criteria)
         for proj in (resume_data.get("projects", []) or []):
@@ -672,7 +672,7 @@ def _match_criterion(
                 ev_source=ev_type,
             )
 
-    # ── Pass 2: exact normalized skill match ─────────────────────────────────
+    # -- Pass 2: exact normalized skill match ---------------------------------
     if result == MatchResult.does_not_meet and ccategory == "skill":
         if norm_cname in resume_normalized:
             ev_info = skill_evidence_map.get(norm_cname, {})
@@ -701,7 +701,7 @@ def _match_criterion(
                 ev_source=ev_type,
             )
 
-    # ── Pass 2b: compound skill criterion ("React.js and Next.js", "Flask and FastAPI") ──
+    # -- Pass 2b: compound skill criterion ("React.js and Next.js", "Flask and FastAPI") --
     # JD criteria often bundle multiple skills into one name. Split and check each token.
     if result == MatchResult.does_not_meet and ccategory == "skill":
         # Split on commas, "and", "&", slashes
@@ -735,7 +735,7 @@ def _match_criterion(
                 ev_source=ev_type,
             )
 
-    # ── Pass 3: semantic embedding match ─────────────────────────────────────
+    # -- Pass 3: semantic embedding match -------------------------------------
     if result == MatchResult.does_not_meet and semantic_index.available and ccategory == "skill":
         best_resume_skill, sim = semantic_index.best_match(cname)
         if sim >= SIM_MEETS:
@@ -773,7 +773,7 @@ def _match_criterion(
                 ev_source=EvidenceSource.inferred,
             )
 
-    # ── Pass 3b: semantic skill match for responsibility criteria ────────────
+    # -- Pass 3b: semantic skill match for responsibility criteria ------------
     # Some responsibility criteria name a skill concept ("assist in creating GTM strategies")
     # that maps cleanly to a domain_skill ("gtm strategy"). Try the skill match path first.
     if result == MatchResult.does_not_meet and ccategory in ("responsibility", "ownership", "domain") and semantic_index.available:
@@ -793,7 +793,7 @@ def _match_criterion(
                 semantic_similarity=round(sim_s, 3), ev_source=ev_type,
             )
 
-    # ── Pass 3c: semantic evidence match (responsibility/ownership/domain) ───
+    # -- Pass 3c: semantic evidence match (responsibility/ownership/domain) ---
     # Matches criterion against responsibility sentences and evidence_item texts.
     # Catches vocabulary mismatches like "outreach systems" vs "outbound campaigns".
     # Lower thresholds than skill matching because sentence-level similarity is noisier.
@@ -826,7 +826,7 @@ def _match_criterion(
                 semantic_similarity=round(sim, 3), ev_source=EvidenceSource.inferred,
             )
 
-    # ── Pass 4a: raw text exact for skills (catches Zapier/Chroma/Git in prose) ─
+    # -- Pass 4a: raw text exact for skills (catches Zapier/Chroma/Git in prose) -
     if result == MatchResult.does_not_meet and ccategory == "skill":
         norm_in_corpus = _normalize(cname)
         if norm_in_corpus and len(norm_in_corpus) >= 3 and norm_in_corpus in raw_corpus:
@@ -834,7 +834,7 @@ def _match_criterion(
             confidence = 0.25
             match_source = MatchSource(match_type=MatchType.text, ev_source=EvidenceSource.inferred)
 
-    # ── Pass 4b: raw text (responsibility/ownership/domain only) ──────────────
+    # -- Pass 4b: raw text (responsibility/ownership/domain only) --------------
     if result == MatchResult.does_not_meet and ccategory in ("responsibility", "ownership", "domain"):
         words = [w for w in cname.lower().split() if len(w) > 3]
         if words:
@@ -845,7 +845,7 @@ def _match_criterion(
                 confidence = 0.20
                 match_source = MatchSource(match_type=MatchType.text, ev_source=EvidenceSource.inferred)
 
-    # ── Apply evidence_required constraint ────────────────────────────────────
+    # -- Apply evidence_required constraint ------------------------------------
     if cev_required == "work_history" and ev_type not in (
         EvidenceSource.work_history, EvidenceSource.work_history_outcome
     ):
@@ -861,7 +861,7 @@ def _match_criterion(
     )
 
 
-# ── Human-layer adjustment ─────────────────────────────────────────────────────
+# -- Human-layer adjustment -----------------------------------------------------
 
 def _human_layer(
     jd_data: dict,
@@ -1036,7 +1036,7 @@ def _human_layer(
     }
 
 
-# ── Main scoring function ─────────────────────────────────────────────────────
+# -- Main scoring function -----------------------------------------------------
 
 def compute_score(
     jd_data: dict,
@@ -1059,10 +1059,10 @@ def compute_score(
     if screening_criteria is None:
         screening_criteria = {}
 
-    # ── 0. Cross-validate experience ─────────────────────────────────────────
+    # -- 0. Cross-validate experience -----------------------------------------
     resume_data = _cross_validate_experience(resume_data)
 
-    # ── 1. Compute JD criterion weights from rank ─────────────────────────────
+    # -- 1. Compute JD criterion weights from rank -----------------------------
     raw_criteria = list(jd_data.get("criteria", []) or [])
 
     # Merge HR custom skills
@@ -1086,10 +1086,10 @@ def compute_score(
 
     jd_criteria = _compute_criterion_weights(raw_criteria)
 
-    # ── 2. Build resume skill pool ────────────────────────────────────────────
+    # -- 2. Build resume skill pool --------------------------------------------
     skill_evidence_map, resume_normalized, raw_corpus = _build_skill_evidence_map(resume_data, resume_raw_text)
 
-    # ── 3. Build semantic index ───────────────────────────────────────────────
+    # -- 3. Build semantic index -----------------------------------------------
     resume_skill_names = list(resume_normalized.values())
     # Build evidence texts: responsibilities + evidence_items for responsibility/ownership matching
     evidence_texts: list[tuple[str, str]] = []
@@ -1116,12 +1116,12 @@ def compute_score(
         jd_criteria, resume_skill_names, evidence_texts, client=openai_client
     )
 
-    # ── 4. Score each criterion ───────────────────────────────────────────────
+    # -- 4. Score each criterion -----------------------------------------------
     evidence_items = resume_data.get("evidence_items", []) or []
 
     # Synthesize project evidence_items when extraction didn't create them.
     # This fixes the case where v1 extraction stored projects[] but left evidence_items
-    # with only volunteer/work-history entries — common for freshers with project-only resumes.
+    # with only volunteer/work-history entries -- common for freshers with project-only resumes.
     existing_project_proves: set[str] = set()
     for ev in evidence_items:
         if ev.get("type") == "project":
@@ -1226,7 +1226,7 @@ def compute_score(
     skills_score = min(50, max(0, round((must_matched_weight / must_total_weight) * 50))) if must_total_weight else 50
     good_score = min(10, max(0, round((good_matched_weight / good_total_weight) * 10))) if good_total_weight else 5
 
-    # ── 5. Experience score (15 pts) ──────────────────────────────────────────
+    # -- 5. Experience score (15 pts) ------------------------------------------
     cv_exp = resume_data.get("experience", {})
     candidate_years = cv_exp.get("total_years")
     candidate_seniority = cv_exp.get("seniority_level", "")
@@ -1268,7 +1268,7 @@ def compute_score(
             exp_score = max(0, exp_score - 1)
     exp_score = max(0, min(15, exp_score))
 
-    # ── 6. Career quality (15 pts) ────────────────────────────────────────────
+    # -- 6. Career quality (15 pts) --------------------------------------------
     work_history = resume_data.get("work_history", [])
     career_pattern = resume_data.get("career_timeline", {}).get("progression_pattern", "unknown")
     red_flags = resume_data.get("red_flags", [])
@@ -1307,7 +1307,7 @@ def compute_score(
             career_score -= 1
     career_score = max(0, min(15, career_score))
 
-    # ── 7. Domain fit (10 pts) ────────────────────────────────────────────────
+    # -- 7. Domain fit (10 pts) ------------------------------------------------
     scoring_hints = _as_dict(jd_data.get("scoring_hints", {}))
     domain_skills = resume_data.get("skills", {}).get("domain_skills", []) or []
     jd_kw_set = {_normalize(k) for k in (jd_data.get("keywords", []) or []) if k}
@@ -1326,7 +1326,7 @@ def compute_score(
         domain_score = min(10, domain_score + 1)
     domain_score = max(0, min(10, domain_score))
 
-    # ── 8. Base total and human layer ─────────────────────────────────────────
+    # -- 8. Base total and human layer -----------------------------------------
     base_total = min(100, max(0, skills_score + exp_score + good_score + career_score + domain_score))
     human = _human_layer(
         jd_data, resume_data, base_total, criteria_results,
@@ -1334,7 +1334,7 @@ def compute_score(
     )
     adjusted_total = int(human["human_score"])
 
-    # ── 9. Hard rejection gate (v2: ≥60% critical fail for non-intern/junior) ─
+    # -- 9. Hard rejection gate (v2: ≥60% critical fail for non-intern/junior) -
     hard_rejected = False
     rejection_reasons: list[str] = []
 
@@ -1378,7 +1378,7 @@ def compute_score(
         hard_rejected = True
         rejection_reasons.append(f"Multiple high-severity flags: {[f.get('flag') for f in high_flags]}")
 
-    # ── 10. Final status ──────────────────────────────────────────────────────
+    # -- 10. Final status ------------------------------------------------------
     borderline_floor = max(0, threshold - 10)
     if hard_rejected:
         status = "Rejected"

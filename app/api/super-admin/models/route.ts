@@ -12,7 +12,7 @@ function isSuperAdmin(role: string | undefined) {
   return role === "SUPER_ADMIN";
 }
 
-// GET /api/super-admin/models?orgId=xxx — returns org's current AI config
+// GET /api/super-admin/models?orgId=xxx -- returns org's current AI config
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session || !isSuperAdmin(session.role)) {
@@ -69,7 +69,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ org });
 }
 
-// PATCH /api/super-admin/models — update org's AI config
+// PATCH /api/super-admin/models -- update org's AI config
 export async function PATCH(req: NextRequest) {
   const session = await getSession();
   if (!session || !isSuperAdmin(session.role)) {
@@ -83,6 +83,7 @@ export async function PATCH(req: NextRequest) {
   // Validate all provided model IDs
   const errors: string[] = [];
   if (fields.sttModel && !ALLOWED_STT_IDS.has(fields.sttModel)) errors.push(`Invalid sttModel: ${fields.sttModel}`);
+  if (fields.ttsProvider && !["ELEVENLABS", "CARTESIA", "SARVAM"].includes(fields.ttsProvider)) errors.push(`Invalid ttsProvider: ${fields.ttsProvider}`);
   if (fields.ttsModel && !ALLOWED_TTS_IDS.has(fields.ttsModel)) errors.push(`Invalid ttsModel: ${fields.ttsModel}`);
   if (fields.voiceId && !ALLOWED_VOICE_IDS.has(fields.voiceId)) errors.push(`Invalid voiceId: ${fields.voiceId}`);
   for (const llmField of ["llmResumeExtraction","llmJdExtraction","llmResumeReport","llmInterviewLive","llmInterviewEval","llmInterviewBrief","llmInterviewReport"] as const) {

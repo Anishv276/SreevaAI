@@ -31,7 +31,7 @@ from pydantic import BaseModel, Field, model_validator
 
 
 # ---------------------------------------------------------------------------
-# 1. Ordered Enum — CandidateBand
+# 1. Ordered Enum -- CandidateBand
 # ---------------------------------------------------------------------------
 
 class CandidateBand(IntEnum):
@@ -53,7 +53,7 @@ class CandidateBand(IntEnum):
 
 
 # ---------------------------------------------------------------------------
-# 2. Pydantic input model — ResumeExperience
+# 2. Pydantic input model -- ResumeExperience
 # ---------------------------------------------------------------------------
 
 class ResumeExperience(BaseModel):
@@ -118,7 +118,7 @@ class ResumeExperience(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# 3. OOP classifier — BandClassifier
+# 3. OOP classifier -- BandClassifier
 # ---------------------------------------------------------------------------
 
 class BandClassifier:
@@ -173,7 +173,7 @@ class BandClassifier:
     # Hard floor: these seniority labels always map to FRESHER, no override.
     _HARD_FLOOR_SENIORITIES: ClassVar[frozenset[str]] = frozenset({"intern", "fresher", "trainee"})
 
-    # ── Public API ────────────────────────────────────────────────────────────
+    # -- Public API ------------------------------------------------------------
 
     def classify(self, exp: ResumeExperience) -> CandidateBand:
         """Classify the candidate's band from their resume experience.
@@ -187,12 +187,12 @@ class BandClassifier:
         if band is None:
             band = self._from_years(exp.total_years)
 
-        # Step 3: apply hard floor — must always run last
+        # Step 3: apply hard floor -- must always run last
         band = self._apply_hard_floor(band, exp)
 
         return band
 
-    # ── Private methods (each independently testable) ─────────────────────────
+    # -- Private methods (each independently testable) -------------------------
 
     def _from_seniority(self, seniority: str) -> CandidateBand | None:
         """Look up the band for a seniority label. Returns None if unknown."""

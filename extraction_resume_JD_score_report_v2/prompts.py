@@ -15,7 +15,7 @@ Key changes from v1:
 from __future__ import annotations
 import json
 
-# ── JD ────────────────────────────────────────────────────────────────────────
+# -- JD ------------------------------------------------------------------------
 
 JD_SYSTEM = (
     "You are a senior technical recruiter with 10 years of structured hiring experience. "
@@ -108,7 +108,7 @@ Job Description:
 {text}
 """
 
-# ── Resume: Call 1 (structural) ───────────────────────────────────────────────
+# -- Resume: Call 1 (structural) -----------------------------------------------
 
 RESUME_STRUCTURAL_SYSTEM = (
     "You extract factual structure from resumes. "
@@ -172,7 +172,7 @@ Resume:
 {text}
 """
 
-# ── Resume: Call 2 (semantic assessment) ─────────────────────────────────────
+# -- Resume: Call 2 (semantic assessment) -------------------------------------
 
 RESUME_SEMANTIC_SYSTEM = (
     "You are a principal technical recruiter assessing candidate evidence quality. "
@@ -318,7 +318,7 @@ Return ONLY valid JSON:
 }}
 """
 
-# ── Reporter ──────────────────────────────────────────────────────────────────
+# -- Reporter ------------------------------------------------------------------
 
 REPORTER_SYSTEM = (
     "You are a Principal Technical Recruiter producing candidate evaluation reports. "

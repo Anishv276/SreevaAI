@@ -13,7 +13,7 @@ export const createDriveSchema = z.object({
   jdFileName: z.string().nullable().optional(),
   jdPreviewUrl: z.string().nullable().optional(),
   extractedDetails: z.string().nullable().optional(),
-  interviewLanguage: z.string().optional(),
+  timeLimit: z.number().int().min(5).max(120).default(30),
   interviewQuestions: z.array(z.any()).optional(),
   voiceId: z.string().nullable().optional(),
   aiName: z.string().optional(),
@@ -56,7 +56,7 @@ export const createCandidateSchema = z.object({
 export const bulkDeleteCandidatesSchema = z.object({
   ids: z.array(z.string().min(1)).min(1, "At least one ID required"),
 });
-// PATCH /api/candidates/[id] — allowlist of mutable status fields. Free-form
+// PATCH /api/candidates/[id] -- allowlist of mutable status fields. Free-form
 // values are capped in length to prevent junk being persisted; the route applies
 // its own canonicalization on top of this.
 export const updateCandidateStatusSchema = z.object({

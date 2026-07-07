@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession, isSuperAdminRole } from "@/lib/auth";
 import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/drive-limits";
+import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
 
 const TEST_KEY = process.env.TEST_PAGE_KEY || process.env.NEXT_PUBLIC_TEST_KEY || "1285";
 
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
         const application = await prisma.application.findUnique({
             where: { id: applicationId },
             include: {
-                drive: { include: { organization: { select: { id: true, name: true } } } },
+                drive: { include: { organization: { select: { id: true, name: true, proctoringSignals: true } } } },
                 interview: true,
             },
         });
@@ -32,7 +33,7 @@ export async function POST(request: Request) {
 
         // Create or reset interview row for test
         const interviewId = `test_${applicationId}_${Date.now()}`;
-        await prisma.interview.upsert({
+        const interview = await prisma.interview.upsert({
             where: { applicationId },
             create: {
                 id: interviewId,
@@ -53,7 +54,10 @@ export async function POST(request: Request) {
                 skillRatings: [],
                 testBillingMetrics: { skipReport, llmCost: 0, ttsCost: 0, sttCost: 0 },
             },
+            select: { accessToken: true },
         });
+
+        const proctoringSignals = normalizeProctoringSignals(application.drive?.organization?.proctoringSignals);
 
         const roomName = `interview_${applicationId}`;
         const participantIdentity = `candidate_${applicationId}`;
@@ -113,7 +117,8 @@ export async function POST(request: Request) {
             roleLabel: application.drive?.role || application.drive?.title || "Interview",
             candidateName: application.fullName,
             applicationId,
-            proctoringSignals: [],
+            interviewToken: interview.accessToken,
+            proctoringSignals,
         });
     } catch (error) {
         console.error("[TEST_TOKEN] Error:", error);
