@@ -6,37 +6,37 @@ Single source of truth for ALL billing across every product feature.
 If a billing bug is reported, this is the only file to check.
 
 Architecture:
-  ┌──────────────────────────────────────────────────────────────────────┐
-  │  Section 1 — Rate Tables            (dict literals, O(1) lookup)    │
-  │  Section 2 — Pydantic Models        (ModelBilling, FeatureBilling,  │
-  │                                      OrgBilling)                    │
-  │  Section 3 — CostStrategy (OOP)     (Protocol + 4 frozen dataclass  │
-  │                                      strategies via registry)       │
-  │  Section 4 — CostCalculator (OOP)   (wraps strategies, normalises   │
-  │                                      model names with regex cache)  │
-  │  Section 5 — UsageSummarizer (OOP)  (LiveKit AgentSessionUsage →   │
-  │                                      feature-agnostic session dict) │
-  │  Section 6 — BucketMerger (OOP)     (merges one session into the   │
-  │                                      right OrgBilling bucket)       │
-  │  Section 7 — PendingBuffer (OOP)    (in-memory accumulator for      │
-  │                                      manual LLM usage, flushed at  │
-  │                                      session end)                   │
-  │  Section 8 — BillingRepository(OOP) (all DB writes; one class owns │
-  │                                      every SQL write path)          │
-  │  Section 9 — Public API             (5 async functions, one per    │
-  │                                      feature + a flush helper)      │
-  └──────────────────────────────────────────────────────────────────────┘
+  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+  â”‚  Section 1 â€” Rate Tables            (dict literals, O(1) lookup)    â”‚
+  â”‚  Section 2 â€” Pydantic Models        (ModelBilling, FeatureBilling,  â”‚
+  â”‚                                      OrgBilling)                    â”‚
+  â”‚  Section 3 â€” CostStrategy (OOP)     (Protocol + 4 frozen dataclass  â”‚
+  â”‚                                      strategies via registry)       â”‚
+  â”‚  Section 4 â€” CostCalculator (OOP)   (wraps strategies, normalises   â”‚
+  â”‚                                      model names with regex cache)  â”‚
+  â”‚  Section 5 â€” UsageSummarizer (OOP)  (LiveKit AgentSessionUsage â†’   â”‚
+  â”‚                                      feature-agnostic session dict) â”‚
+  â”‚  Section 6 â€” BucketMerger (OOP)     (merges one session into the   â”‚
+  â”‚                                      right OrgBilling bucket)       â”‚
+  â”‚  Section 7 â€” PendingBuffer (OOP)    (in-memory accumulator for      â”‚
+  â”‚                                      manual LLM usage, flushed at  â”‚
+  â”‚                                      session end)                   â”‚
+  â”‚  Section 8 â€” BillingRepository(OOP) (all DB writes; one class owns â”‚
+  â”‚                                      every SQL write path)          â”‚
+  â”‚  Section 9 â€” Public API             (5 async functions, one per    â”‚
+  â”‚                                      feature + a flush helper)      â”‚
+  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 
 Features tracked:
-  interview         — full session: LLM (agent turns) + TTS + STT
-  interviewReport   — post-session LangGraph report pipeline LLM calls
-  resumeExtraction  — resume parse LLM call (worker.ts → Python)
-  jdExtraction      — JD parse LLM call (worker.ts → Python)
-  resumeReport      — resume scoring/report LLM calls
+  interview         â€” full session: LLM (agent turns) + TTS + STT
+  interviewReport   â€” post-session LangGraph report pipeline LLM calls
+  resumeExtraction  â€” resume parse LLM call (worker.ts â†’ Python)
+  jdExtraction      â€” JD parse LLM call (worker.ts â†’ Python)
+  resumeReport      â€” resume scoring/report LLM calls
 
 DSA choices:
   - frozenset for O(1) feature-name validation
-  - dict for O(1) rate lookups (provider → model → rate)
+  - dict for O(1) rate lookups (provider â†’ model â†’ rate)
   - Counter (O(n)) for aggregating per-model usage across a session
   - defaultdict for pending-buffer accumulation (no key-existence check)
   - re.compile() cached at class level (not per-call) for model normalisation
@@ -44,9 +44,9 @@ DSA choices:
 OOP choices:
   - Protocol  for CostStrategy (structural subtyping, no ABC overhead)
   - @dataclass(frozen=True) strategies (hashable, zero mutation risk)
-  - Registry dict maps provider string → strategy instance (O(1) dispatch)
+  - Registry dict maps provider string â†’ strategy instance (O(1) dispatch)
   - All DB writes in BillingRepository so SQL is never scattered
-  - PendingBuffer is a plain class with a defaultdict — no asyncio primitives
+  - PendingBuffer is a plain class with a defaultdict â€” no asyncio primitives
     needed because it is only ever mutated from one coroutine per session
 """
 from __future__ import annotations
@@ -140,7 +140,7 @@ _VALID_FEATURES: frozenset[str] = frozenset({
     "resumeReport",
 })
 
-# LiveKit AgentSessionUsage field mappings (src attr → public JSON key)
+# LiveKit AgentSessionUsage field mappings (src attr â†’ public JSON key)
 _USAGE_BUCKET_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
     "llm": (
         ("input_tokens",                "inputTokens"),
@@ -183,8 +183,8 @@ _USAGE_TYPE_TO_BUCKET: dict[str, str] = {
 #
 # Single canonical function for pulling token counts from any OpenAI completion
 # object. Previously duplicated in:
-#   - extraction_resume_JD_score_report_v2/parser.py
-#   - extraction_resume_JD_score_report_v2/reporter.py
+#   - extraction_resume_JD_score_report/parser.py
+#   - extraction_resume_JD_score_report/reporter.py
 #   - interview/agent_scoring.py
 #   - interview/interview_brief.py
 #
@@ -195,14 +195,14 @@ def extract_usage(completion: Any, model: str = "") -> dict[str, Any]:
     """Extract token counts from an OpenAI completion or usage object.
 
     Accepts two forms:
-      - A full ChatCompletion/streaming chunk  → reads .usage sub-object
-      - A raw usage object (CompletionUsage)   → reads .prompt_tokens directly
+      - A full ChatCompletion/streaming chunk  â†’ reads .usage sub-object
+      - A raw usage object (CompletionUsage)   â†’ reads .prompt_tokens directly
 
     Safe when usage is None. Works for both streaming and non-streaming calls.
 
     Returns:
         {
-            "model":             str   — model name from response or fallback arg,
+            "model":             str   â€” model name from response or fallback arg,
             "inputTokens":       int,
             "outputTokens":      int,
             "cachedInputTokens": int,
@@ -247,7 +247,7 @@ class ModelBilling(BaseModel):
 
 
 class FeatureBilling(BaseModel):
-    """Aggregated billing for one product feature (interview / resumeExtraction / …)."""
+    """Aggregated billing for one product feature (interview / resumeExtraction / â€¦)."""
     runs:              int   = 0
     inputTokens:       int   = 0
     cachedInputTokens: int   = 0
@@ -266,7 +266,7 @@ class FeatureBilling(BaseModel):
 
 
 class OrgBilling(BaseModel):
-    """All features for one organisation — stored inside usageMetrics.billing.
+    """All features for one organisation â€” stored inside usageMetrics.billing.
 
     chatbot removed: feature is no longer active. Existing DB rows that still
     carry a chatbot key are silently ignored by Pydantic (extra='ignore' default).
@@ -376,7 +376,7 @@ _PROVIDER_REGISTRY: dict[str, CostStrategy] = {
 # ===============================================================================
 
 class CostCalculator:
-    """Stateless cost calculator. All methods are classmethods — no instance needed."""
+    """Stateless cost calculator. All methods are classmethods â€” no instance needed."""
 
     # Compiled once at class-definition time, not per call
     _DATE_SUFFIX_RE: ClassVar[re.Pattern[str]] = re.compile(r"[-:]\d{4}-\d{2}-\d{2}$")
@@ -384,7 +384,7 @@ class CostCalculator:
 
     @classmethod
     def _norm_openai(cls, model: str) -> str:
-        """Strip date suffixes: 'gpt-4.1-mini-2025-04-14' → 'gpt-4.1-mini'."""
+        """Strip date suffixes: 'gpt-4.1-mini-2025-04-14' â†’ 'gpt-4.1-mini'."""
         return cls._DATE_SUFFIX_RE.sub("", model.strip().lower())
 
     @classmethod
@@ -452,7 +452,7 @@ class UsageSummarizer:
         """Build a session_summary dict from a LiveKit AgentSessionUsage.
 
         Uses Counter (O(n)) to aggregate per-kind usage across all model_usage
-        items. Raises ValueError if provider or model is missing — these are
+        items. Raises ValueError if provider or model is missing â€” these are
         required to attribute cost correctly.
         """
         summary: dict[str, Any] = {k: cls._empty_bucket(k) for k in _USAGE_BUCKET_FIELDS}
@@ -468,8 +468,8 @@ class UsageSummarizer:
             provider  = str(getattr(item, "provider", "") or "").strip().upper()
             model     = str(getattr(item, "model",    "") or "").strip()
             if not provider or not model:
-                raise ValueError(f"[BILLING] Cannot summarize {kind} usage — provider or model missing")
-            # Normalize OpenAI base-URL variants (e.g. "API.OPENAI.COM") → "OPENAI"
+                raise ValueError(f"[BILLING] Cannot summarize {kind} usage â€” provider or model missing")
+            # Normalize OpenAI base-URL variants (e.g. "API.OPENAI.COM") â†’ "OPENAI"
             if "OPENAI" in provider or provider in ("API", "API.OPENAI.COM"):
                 provider = "OPENAI"
             key    = f"{provider}:{model}"
@@ -513,7 +513,7 @@ class UsageSummarizer:
             provider = str(tts_provider or "").strip().upper()
             model    = str(tts_model    or "").strip()
             if not provider or not model:
-                raise ValueError("[BILLING] Cannot record TTS usage — provider or model missing")
+                raise ValueError("[BILLING] Cannot record TTS usage â€” provider or model missing")
             key = f"{provider}:{model}"
             summary["tts"] = {
                 "sessions": 1,
@@ -538,7 +538,7 @@ class UsageSummarizer:
             provider = str(stt_provider or "").strip().upper()
             model    = str(stt_model    or "").strip()
             if not provider or not model:
-                raise ValueError("[BILLING] Cannot record STT usage — provider or model missing")
+                raise ValueError("[BILLING] Cannot record STT usage â€” provider or model missing")
             key = f"{provider}:{model}"
             summary["stt"] = {
                 "sessions": 1,
@@ -701,7 +701,7 @@ class BucketMerger:
           1. Validates the feature name (O(1) frozenset check)
           2. Loads the OrgBilling Pydantic model (validates all bucket shapes)
           3. Calls the three component merges
-          4. Returns the updated dict (Pydantic → dict)
+          4. Returns the updated dict (Pydantic â†’ dict)
         """
         if feature not in _VALID_FEATURES:
             raise ValueError(f"[BILLING] Unknown feature {feature!r}. Valid: {sorted(_VALID_FEATURES)}")
@@ -789,7 +789,7 @@ class PendingBuffer:
         if not org_id or not usage:
             return
         if feature not in _VALID_FEATURES:
-            logger.warning("[BILLING] PendingBuffer.push: unknown feature %r — defaulting to 'interview'", feature)
+            logger.warning("[BILLING] PendingBuffer.push: unknown feature %r â€” defaulting to 'interview'", feature)
             feature = "interview"
         cls._store.setdefault(org_id, []).append((feature, usage))
 
@@ -863,11 +863,11 @@ def merge_manual_billing_usage(
 # ===============================================================================
 
 class BillingRepository:
-    """All DB writes for billing. Stateless — no instance data, only classmethods."""
+    """All DB writes for billing. Stateless â€” no instance data, only classmethods."""
 
     @staticmethod
     async def _get_pool():
-        from interview.agent_persistence import DatabasePool  # lazy — avoids circular at module load
+        from interview.agent_persistence import DatabasePool  # lazy â€” avoids circular at module load
         return await DatabasePool.get()
 
     @classmethod
@@ -1210,7 +1210,7 @@ class BillingRepository:
                     app_id,
                 )
                 if not marked:
-                    logger.info("[BILLING] deduct_quota: already billed for app=%s — skip", app_id)
+                    logger.info("[BILLING] deduct_quota: already billed for app=%s â€” skip", app_id)
                     return
                 await conn.execute(
                     'UPDATE "Organization" SET "interviewQuotaUsed" = COALESCE("interviewQuotaUsed", 0) + 1, "updatedAt" = NOW() WHERE id = $1',
@@ -1225,7 +1225,7 @@ class BillingRepository:
                         )
                         logger.info("[BILLING] Deducted 1 quota + %.2f credits: app=%s org=%s dur=%.0fs", credits, app_id, org_id, dur)
                     else:
-                        logger.info("[BILLING] Deducted 1 quota (no credits — dur=%.0fs): app=%s org=%s", dur, app_id, org_id)
+                        logger.info("[BILLING] Deducted 1 quota (no credits â€” dur=%.0fs): app=%s org=%s", dur, app_id, org_id)
                 else:
                     logger.warning("[BILLING] Deducted 1 quota but duration unknown: app=%s org=%s", app_id, org_id)
         except Exception as e:
@@ -1243,7 +1243,7 @@ class BillingRepository:
 async def record_manual_usage(org_id: Optional[str], feature: str, usage: dict[str, Any]) -> None:
     """Accumulate one manual LLM usage record (report pipeline, JD/resume extraction).
 
-    Does NOT write to DB — call flush_billing() at session end.
+    Does NOT write to DB â€” call flush_billing() at session end.
     Replaces: persist_org_manual_billing_usage()
     """
     if not org_id or not usage:
@@ -1293,7 +1293,7 @@ async def save_interview_billing(
         or bool(org_id and PendingBuffer.peek(org_id))
     )
     if not has_any:
-        logger.warning("[BILLING] save_interview_billing: no signal for app=%s — skipping", app_id)
+        logger.warning("[BILLING] save_interview_billing: no signal for app=%s â€” skipping", app_id)
         return
 
     summary = UsageSummarizer.from_session(session_usage)
@@ -1338,7 +1338,7 @@ async def save_org_usage_metrics(
         return
     has_plugin = bool(plugin_tts_characters or plugin_tts_audio_seconds or plugin_stt_audio_seconds)
     if session_usage is None and not has_plugin:
-        logger.info("[BILLING] save_org_usage_metrics: no usage for org=%s — skipping", org_id)
+        logger.info("[BILLING] save_org_usage_metrics: no usage for org=%s â€” skipping", org_id)
         return
 
     summary = UsageSummarizer.from_session(session_usage)
@@ -1373,7 +1373,7 @@ async def record_test_report_billing_usage(app_id: str, usage: dict[str, Any]) -
     """Record one report-pipeline LLM call's cost for a TEST session only.
 
     Keeps test-session report/summary spend out of the org's real billing
-    totals — see BillingRepository.record_test_report_llm_usage for why.
+    totals â€” see BillingRepository.record_test_report_llm_usage for why.
     """
     await BillingRepository.record_test_report_llm_usage(app_id, usage)
 

@@ -1,13 +1,13 @@
 """
-parser.py v2 — Two-pass resume extraction + JD extraction with rank-based weights.
+parser.py v2 â€” Two-pass resume extraction + JD extraction with rank-based weights.
 
 Resume extraction:
-  Call 1 (structural): dates, companies, titles, bullet_points — facts only.
-  Call 2 (semantic): ownership, impact, evidence_items — grounded in Call 1 output.
+  Call 1 (structural): dates, companies, titles, bullet_points â€” facts only.
+  Call 2 (semantic): ownership, impact, evidence_items â€” grounded in Call 1 output.
   Call 2 receives JD criteria so evidence_items can tag which criteria they prove.
 
 JD extraction:
-  Single call → criteria with priority_rank.
+  Single call â†’ criteria with priority_rank.
   Weights computed deterministically by _compute_criterion_weights in scorer.py.
 
 Score mode:
@@ -25,13 +25,13 @@ from openai import OpenAI
 
 load_dotenv()
 
-from extraction_resume_JD_score_report_v2.prompts import (
+from extraction_resume_JD_score_report.prompts import (
     JD_SYSTEM, build_jd_prompt,
     RESUME_STRUCTURAL_SYSTEM, build_resume_structural_prompt,
     RESUME_SEMANTIC_SYSTEM, build_resume_semantic_prompt,
 )
-from extraction_resume_JD_score_report_v2.scorer import compute_score, _compute_criterion_weights
-from extraction_resume_JD_score_report_v2.reporter import generate_report
+from extraction_resume_JD_score_report.scorer import compute_score, _compute_criterion_weights
+from extraction_resume_JD_score_report.reporter import generate_report
 
 
 def _get_client() -> OpenAI:
@@ -156,7 +156,7 @@ class DocumentParser:
         raise ValueError(f"Unknown doc_type: {doc_type!r}")
 
     def parse_resume_with_jd(self, text: str, jd_criteria: list[dict], model_override: str) -> dict:
-        """Used by pipeline when JD is already available — passes criteria to semantic pass."""
+        """Used by pipeline when JD is already available â€” passes criteria to semantic pass."""
         client = _get_client()
         return self._parse_resume(client, text, model_override, jd_criteria=jd_criteria)
 
@@ -235,7 +235,7 @@ class DocumentParser:
                 "status", "breakdown", "skill_matching", "exp_status", "hard_rejected",
                 "rejection_reasons", "candidate_years", "jd_min_years",
                 "work_history", "education", "core_claims", "uncertain_areas", "skill_depth",
-            }  # fit_radar intentionally NOT locked — reporter generates it, we keep it
+            }  # fit_radar intentionally NOT locked â€” reporter generates it, we keep it
             for k in LOCKED:
                 report.pop(k, None)
 
@@ -283,7 +283,7 @@ class DocumentParser:
                 "data": {
                     **score_result,
                     "recruiter_snapshot": f"Automated evaluation completed. Score: {score_result['score']}.",
-                    "decision_reason": f"Report generation failed — {score_result['status']} at {score_result['score']}. Error: {exc}",
+                    "decision_reason": f"Report generation failed â€” {score_result['status']} at {score_result['score']}. Error: {exc}",
                 },
                 "usage": {"model": report_model, "inputTokens": 0, "outputTokens": 0, "cachedInputTokens": 0},
             }

@@ -1,4 +1,4 @@
-import 'dotenv/config'; // must be FIRST — ensures .env is loaded before any lib reads process.env
+import 'dotenv/config'; // must be FIRST â€” ensures .env is loaded before any lib reads process.env
 import { Worker, Queue } from 'bullmq';
 import crypto from 'crypto';
 import { spawn } from 'child_process';
@@ -55,7 +55,7 @@ const BULL_PREFIX = getBullPrefix();
 console.log(`[Worker] PID=${process.pid}`);
 console.log(`[Worker] BullMQ prefix="${BULL_PREFIX}"`);
 
-// Persistent FastAPI extraction service (extraction_resume_JD_score_report_v2/service.py)
+// Persistent FastAPI extraction service (extraction_resume_JD_score_report/service.py)
 // replaces per-job `spawn(python, extract_pdf.py)` -- one warm process holding the
 // openai/pdfplumber imports instead of re-booting Python for every resume.
 const EXTRACT_SERVICE_URL = process.env.EXTRACT_SERVICE_URL || "http://127.0.0.1:8100";
@@ -531,7 +531,7 @@ async function shouldSkipCronRegistration() {
 }
 // -----------------------------------------------------------------------------
 // RESUME SCREENING JOB
-// Full pipeline: download → extract text → score against JD → write DB.
+// Full pipeline: download â†’ extract text â†’ score against JD â†’ write DB.
 // Job name: "screen-resume"
 // Job data: { applicationId, bucket, key, fileName, orgId }
 // -----------------------------------------------------------------------------
@@ -655,14 +655,14 @@ async function processResumeScreeningJob(job: any) {
     if (aiScore !== null) {
       const comparison = aiScore >= threshold;
       resumeStatus = comparison ? "shortlisted" : "rejected";
-      console.log(`[RESUME-WORKER] Score check: ${aiScore} >= ${threshold} = ${comparison} → ${resumeStatus}`);
+      console.log(`[RESUME-WORKER] Score check: ${aiScore} >= ${threshold} = ${comparison} â†’ ${resumeStatus}`);
     } else {
       console.log(`[RESUME-WORKER] No aiScore found, keeping resumeStatus as pending`);
     }
 
     // -- 80% Write to DB ---------------------------------------------------
     await job.updateProgress(80);
-    console.log(`[RESUME-WORKER] [80%] Saving report — applicationId=${applicationId} aiScore=${aiScore} threshold=${threshold} resumeStatus=${resumeStatus}`);
+    console.log(`[RESUME-WORKER] [80%] Saving report â€” applicationId=${applicationId} aiScore=${aiScore} threshold=${threshold} resumeStatus=${resumeStatus}`);
 
     const parsedName  = resumeData?.full_name?.trim()  || "";
     const parsedEmail = resumeData?.email?.trim()      || "";
@@ -726,7 +726,7 @@ async function processResumeScreeningJob(job: any) {
 
     // -- 100% Done ---------------------------------------------------------
     await job.updateProgress(100);
-    console.log(`[RESUME-WORKER] [100%] Job ${job.id} completed for ${applicationId} — score: ${aiScore ?? "n/a"}`);
+    console.log(`[RESUME-WORKER] [100%] Job ${job.id} completed for ${applicationId} â€” score: ${aiScore ?? "n/a"}`);
     return { applicationId, aiScore, hasScore: aiScore !== null };
 
   } catch (err: any) {
@@ -796,13 +796,13 @@ async function processResumeFileExtractJob(job: any) {
 // RESUME PROCESSING WORKER
 // Single worker, two job types:
 //   "screen-resume"      -- full pipeline: extract + score + write DB (from upload routes)
-//   "resume-file-extract"— extract only, result returned for UI polling (/api/extract)
+//   "resume-file-extract"â€” extract only, result returned for UI polling (/api/extract)
 // Workers continuously poll the queue; as soon as a slot opens the next job starts.
 // -----------------------------------------------------------------------------
 if (isQueueEnabled("resume-processing")) {
   const resumeWorker = trackWorker("resume-processing", new Worker("resume-processing", async (job, token) => {
     console.log(`\n=================================================`);
-    console.log(`▶ [RESUME WORKER] PID=${process.pid} Job: name="${job.name}" id="${job.id}"`);
+    console.log(`â–¶ [RESUME WORKER] PID=${process.pid} Job: name="${job.name}" id="${job.id}"`);
     console.log(`=================================================\n`);
 
     const orgId = job.data?.orgId as string | undefined;
@@ -831,13 +831,13 @@ if (isQueueEnabled("resume-processing")) {
     console.error(`[resume-processing] Worker error:`, err.message);
   });
   resumeWorker.on("active", (job) => {
-    console.log(`[resume-processing] ► Active: name="${job.name}" id="${job.id}" app="${job.data?.applicationId}"`);
+    console.log(`[resume-processing] â–º Active: name="${job.name}" id="${job.id}" app="${job.data?.applicationId}"`);
   });
   resumeWorker.on("completed", (job, result) => {
-    console.log(`[resume-processing] ✓ Completed: name="${job.name}" id="${job.id}" result=${JSON.stringify(result)}`);
+    console.log(`[resume-processing] âœ“ Completed: name="${job.name}" id="${job.id}" result=${JSON.stringify(result)}`);
   });
   resumeWorker.on("failed", (job, err) => {
-    console.error(`[resume-processing] ✗ Failed: name="${job?.name}" id="${job?.id}" — ${err.message}`);
+    console.error(`[resume-processing] âœ— Failed: name="${job?.name}" id="${job?.id}" â€” ${err.message}`);
     console.error(err.stack);
     const applicationId = job?.data?.applicationId as string | undefined;
     if (applicationId) {
@@ -857,7 +857,7 @@ if (isQueueEnabled("resume-processing")) {
           orgName: "unknown",
           driveName: "unknown",
           error: err.message,
-          reason: `Resume screening worker job failed — applicationId=${applicationId} (org/drive lookup failed)`,
+          reason: `Resume screening worker job failed â€” applicationId=${applicationId} (org/drive lookup failed)`,
         });
       });
     } else {
@@ -869,7 +869,7 @@ if (isQueueEnabled("resume-processing")) {
     }
   });
   resumeWorker.on("stalled", (jobId) => {
-    console.warn(`[resume-processing] ⚠ Stalled: id="${jobId}"`);
+    console.warn(`[resume-processing] âš  Stalled: id="${jobId}"`);
   });
 
   void resumeWorker.waitUntilReady()
@@ -884,7 +884,7 @@ if (isQueueEnabled("resume-processing")) {
         await guardQueue.close();
         if (all.length > 1) {
           console.warn(
-            `[resume-processing] ⚠ DUPLICATE CONSUMERS DETECTED (${all.length}) on this queue. ` +
+            `[resume-processing] âš  DUPLICATE CONSUMERS DETECTED (${all.length}) on this queue. ` +
             `Other workers will steal jobs. Addresses: ` +
             all.map((w: any) => `${w.addr}(age=${w.age}s)`).join(", ")
           );
@@ -958,7 +958,7 @@ if (isQueueEnabled("invitation-delivery-queue")) {
         action?: "shortlist" | "reject";
       } = job.data || {};
       console.log(`\n=================================================`);
-      console.log(`▶ [INVITATION WORKER] Triggered! Action: ${action} for Candidate: ${applicationId}`);
+      console.log(`â–¶ [INVITATION WORKER] Triggered! Action: ${action} for Candidate: ${applicationId}`);
       console.log(`=================================================\n`);
       if (!applicationId || !action) {
         throw new Error("Missing applicationId or action in invitation-delivery-queue job");
@@ -1104,7 +1104,7 @@ if (isQueueEnabled("recording-retention-cleanup")) {
     "recording-retention-cleanup",
     async (job) => {
       console.log(`\n=================================================`);
-      console.log(`▶ [RETENTION WORKER] Triggered! Cron job started...`);
+      console.log(`â–¶ [RETENTION WORKER] Triggered! Cron job started...`);
       console.log(`=================================================\n`);
       if (job.name === RECORDING_RETENTION_SWEEP_JOB) {
         return await processRecordingRetentionSweepJob(job);
@@ -1135,7 +1135,7 @@ if (isQueueEnabled("recording-retention-cleanup")) {
   });
 }
 /**
- * ðŸ’¾ DATABASE BACKUP WORKER (Phase 5 - Persistent Backups to R2)
+ * Ã°Å¸â€™Â¾ DATABASE BACKUP WORKER (Phase 5 - Persistent Backups to R2)
  * Runs daily at midnight to export core hiring data.
  */
 if (isQueueEnabled("interview-start")) {
@@ -1143,7 +1143,7 @@ if (isQueueEnabled("interview-start")) {
     "interview-start",
     async (job) => {
       console.log(`\n=================================================`);
-      console.log(`▶ [INTERVIEW START WORKER] Triggered! Job: ${job.name} (ID: ${job.id})`);
+      console.log(`â–¶ [INTERVIEW START WORKER] Triggered! Job: ${job.name} (ID: ${job.id})`);
       console.log(`=================================================\n`);
       if (job.name !== "mark-interview-started") {
         console.warn(`[INTERVIEW-START] Skipping unsupported job name: ${job.name}`);
@@ -1203,7 +1203,7 @@ if (isQueueEnabled("interview-finalization")) {
     async (job) => {
       const { applicationId } = job.data || {};
       console.log(`\n=================================================`);
-      console.log(`▶ [INTERVIEW FINALIZATION WORKER] Triggered! Candidate: ${applicationId}`);
+      console.log(`â–¶ [INTERVIEW FINALIZATION WORKER] Triggered! Candidate: ${applicationId}`);
       console.log(`=================================================\n`);
       if (!applicationId) {
         throw new Error("Missing applicationId in interview-finalization job");
@@ -1382,7 +1382,7 @@ if (isQueueEnabled("interview-finalization")) {
       connection: redisConnection,
       prefix: BULL_PREFIX,
       concurrency: 100,
-      lockDuration: 10 * 60 * 1000,    // 10 min lock — report generation can take a while
+      lockDuration: 10 * 60 * 1000,    // 10 min lock â€” report generation can take a while
       stalledInterval: 5 * 60 * 1000,
       maxStalledCount: 1,
       removeOnComplete: { age: 60 },
@@ -1410,7 +1410,7 @@ if (isQueueEnabled("interview-recording")) {
     async (job) => {
       const { egressId, roomName } = job.data || {};
       console.log(`\n=================================================`);
-      console.log(`▶ [INTERVIEW EGRESS WORKER] Triggered! Room: ${roomName}`);
+      console.log(`â–¶ [INTERVIEW EGRESS WORKER] Triggered! Room: ${roomName}`);
       console.log(`=================================================\n`);
       if (job.name !== "finalize-egress-recording") {
         console.warn(`[RECORDING_WORKER] Skipping unsupported job name: ${job.name}`);
@@ -1616,7 +1616,7 @@ if (isQueueEnabled("interview-recording")) {
   });
 }
 /**
- * ðŸ“¸ INTERVIEW SNAPSHOT WORKER
+ * Ã°Å¸â€œÂ¸ INTERVIEW SNAPSHOT WORKER
  * Handles proctoring snapshot uploads to R2 and DB persistence.
  * Optimized for low-memory Redis (32MB).
  */
@@ -1705,7 +1705,7 @@ if (isQueueEnabled("interview-snapshots")) {
   });
 }
 /**
- * ðŸ“„ JD UPLOAD WORKER
+ * Ã°Å¸â€œâ€ž JD UPLOAD WORKER
  * Handles asynchronous uploading of AI-generated JD PDFs to Cloudflare R2.
  */
 if (isQueueEnabled("jd-upload")) {
@@ -1772,7 +1772,7 @@ if (isQueueEnabled("jd-upload")) {
 }
 
 /**
- * 📄 JD EXTRACTION WORKER
+ * ðŸ“„ JD EXTRACTION WORKER
  * Processes jobs enqueued by /api/extract for JD files/text.
  * Calls extract_pdf.py with doc_type=JD and returns { text, data, usage }.
  * No DB writes -- caller polls /api/extract/status/[jobId] for the result.
@@ -1782,7 +1782,7 @@ if (isQueueEnabled("jd-extraction")) {
     JD_EXTRACTION_QUEUE_NAME,
     async (job, token) => {
       console.log(`\n=================================================`);
-      console.log(`▶ [JD-EXTRACTION WORKER] PID=${process.pid} Job id="${job.id}" kind="${job.data?.kind}"`);
+      console.log(`â–¶ [JD-EXTRACTION WORKER] PID=${process.pid} Job id="${job.id}" kind="${job.data?.kind}"`);
       console.log(`=================================================\n`);
       const { kind, orgOpenAIModel, orgId = null } = job.data || {};
       if (!kind) throw new Error("Invalid JD extraction job: missing kind");
@@ -1870,11 +1870,11 @@ if (isQueueEnabled("jd-extraction")) {
 }
 
 /**
- * 📋 BRIEF GENERATION WORKER
+ * ðŸ“‹ BRIEF GENERATION WORKER
  * Pre-generates the InterviewBrief for real candidates who book a slot.
  * Called from POST /api/schedule/[token] after scheduledAt is saved.
- * Runs generate_brief.py which: fetches resume + JD → LLM call → saves to DB.
- * Test interviews NEVER use this queue — they always generate live in agent_runtime.py.
+ * Runs generate_brief.py which: fetches resume + JD â†’ LLM call â†’ saves to DB.
+ * Test interviews NEVER use this queue â€” they always generate live in agent_runtime.py.
  */
 if (isQueueEnabled("brief-generation")) {
   const briefWorker = trackWorker("brief-generation", new Worker(
@@ -1884,7 +1884,7 @@ if (isQueueEnabled("brief-generation")) {
       if (!applicationId) throw new Error("[BRIEF-WORKER] Missing applicationId in job data");
 
       console.log(`\n=================================================`);
-      console.log(`▶ [BRIEF-WORKER] PID=${process.pid} Job id="${job.id}" applicationId="${applicationId}"`);
+      console.log(`â–¶ [BRIEF-WORKER] PID=${process.pid} Job id="${job.id}" applicationId="${applicationId}"`);
       console.log(`=================================================\n`);
 
       // Confirm Interview row still exists before spinning up Python
@@ -1897,17 +1897,17 @@ if (isQueueEnabled("brief-generation")) {
       });
 
       if (!interview) {
-        console.warn(`[BRIEF-WORKER] Interview not found for ${applicationId} — skipping`);
+        console.warn(`[BRIEF-WORKER] Interview not found for ${applicationId} â€” skipping`);
         return { skipped: true, reason: "interview_not_found" };
       }
       if (interview.isTest) {
         // Safety guard: should never happen since test token route doesn't enqueue this,
         // but guard explicitly so we never overwrite a test session's brief.
-        console.warn(`[BRIEF-WORKER] Skipping — isTest=true for ${applicationId}`);
+        console.warn(`[BRIEF-WORKER] Skipping â€” isTest=true for ${applicationId}`);
         return { skipped: true, reason: "is_test_session" };
       }
       if (interview.interviewBrief) {
-        console.log(`[BRIEF-WORKER] Brief already exists for ${applicationId} — skipping re-generation`);
+        console.log(`[BRIEF-WORKER] Brief already exists for ${applicationId} â€” skipping re-generation`);
         return { skipped: true, reason: "brief_already_exists" };
       }
 
@@ -1924,7 +1924,7 @@ if (isQueueEnabled("brief-generation")) {
         if (result?.error) throw new Error(`[BRIEF-WORKER] Python script error: ${result.error}`);
 
         const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-        console.log(`[BRIEF-WORKER] ✓ Brief saved for ${applicationId} in ${elapsed}s`);
+        console.log(`[BRIEF-WORKER] âœ“ Brief saved for ${applicationId} in ${elapsed}s`);
         return { success: true, applicationId, elapsedSec: parseFloat(elapsed) };
       });
     },
@@ -1932,7 +1932,7 @@ if (isQueueEnabled("brief-generation")) {
       connection: createRedisConnection(),
       prefix: BULL_PREFIX,
       concurrency: 10, // global cap raised -- per-org cap (ORG_CONCURRENCY.briefGeneration) does the real limiting
-      lockDuration: 4 * 60 * 1000, // 4 min lock — longer than the 3-min timeout
+      lockDuration: 4 * 60 * 1000, // 4 min lock â€” longer than the 3-min timeout
       removeOnComplete: { age: 60 },
       removeOnFail:    { age: 3600 },
     }
@@ -1940,19 +1940,19 @@ if (isQueueEnabled("brief-generation")) {
 
   briefWorker.on("failed", (job, err) => {
     console.error(`[BRIEF-WORKER] Job ${job?.id} failed for applicationId=${job?.data?.applicationId}: ${err.message}`);
-    // Non-fatal — agent_runtime.py will fall back to live generation
+    // Non-fatal â€” agent_runtime.py will fall back to live generation
   });
 }
 
 /**
- * 📋 INTERVIEW REPORT WORKER
+ * ðŸ“‹ INTERVIEW REPORT WORKER
  * Runs the post-interview report/summary/billing-snapshot/debug-PDF tail that
  * used to run inline inside the LiveKit agent job. Moved here because LiveKit
  * Cloud recycles the agent job process shortly after the room closes, which
  * risked killing the ~300s report pipeline mid-flight. Enqueued by
  * POST /api/internal/interview-report right after the agent persists the
  * transcript/scores. All report/billing/Slack logic stays in Python
- * (report_worker.py) — this just supervises the child process and streams
+ * (report_worker.py) â€” this just supervises the child process and streams
  * its logs into this worker's terminal.
  */
 if (isQueueEnabled("interview-report")) {
@@ -1963,7 +1963,7 @@ if (isQueueEnabled("interview-report")) {
       if (!appId) throw new Error("[REPORT-WORKER] Missing appId in job data");
 
       console.log(`\n=================================================`);
-      console.log(`▶ [REPORT-WORKER] PID=${process.pid} Job id="${job.id}" appId="${appId}"`);
+      console.log(`â–¶ [REPORT-WORKER] PID=${process.pid} Job id="${job.id}" appId="${appId}"`);
       console.log(`=================================================\n`);
 
       const app = await prisma.application.findUnique({
@@ -1980,7 +1980,7 @@ if (isQueueEnabled("interview-report")) {
         );
 
         if (result?.error) throw new Error(`[REPORT-WORKER] Python script error: ${result.error}`);
-        console.log(`[REPORT-WORKER] ✓ Report job complete for ${appId}`);
+        console.log(`[REPORT-WORKER] âœ“ Report job complete for ${appId}`);
         return result;
       });
     },

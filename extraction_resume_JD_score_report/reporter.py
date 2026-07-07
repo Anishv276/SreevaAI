@@ -17,7 +17,7 @@ import json
 import re
 from typing import Any
 
-from extraction_resume_JD_score_report_v2.prompts import build_reporter_prompt, REPORTER_SYSTEM
+from extraction_resume_JD_score_report.prompts import build_reporter_prompt, REPORTER_SYSTEM
 
 
 def _build_evidence_blocks(evidence_items: list[dict]) -> list[str]:
@@ -75,7 +75,7 @@ def _verify_grounding(report: dict, resume_data: dict) -> list[str]:
     for field in ["recruiter_snapshot", "decision_reason"]:
         text = report.get(field, "")
         # Find "At Company" or "at Company" patterns
-        cited = re.findall(r"\bAt ([A-Z][a-zA-Z0-9\s&\.]+?)(?:,|\.|\s—|\sand\s)", text)
+        cited = re.findall(r"\bAt ([A-Z][a-zA-Z0-9\s&\.]+?)(?:,|\.|\sâ€”|\sand\s)", text)
         for name in cited:
             name_clean = name.strip().lower()
             if len(name_clean) < 3:

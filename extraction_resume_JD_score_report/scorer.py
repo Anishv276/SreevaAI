@@ -1,16 +1,16 @@
 """
-scorer.py v2 — Evidence-based deterministic scoring engine.
+scorer.py v2 â€” Evidence-based deterministic scoring engine.
 
 Key changes from v1:
 1. Semantic skill matching via embeddings (optional, graceful fallback to lexical).
-   Replaces static TRANSFERABLE_SKILLS dict — covers vocabulary mismatch automatically.
+   Replaces static TRANSFERABLE_SKILLS dict â€” covers vocabulary mismatch automatically.
 2. Evidence source tied to per-skill evidence items, not per-job impact presence.
    Fixes: "all skills at a job with one impact signal get work_history_outcome" inflation.
 3. CriterionResult carries a full MatchSource trace for every criterion.
-4. Hard rejection gate: ≥60% critical failure (not "all critical") for non-intern/junior roles.
+4. Hard rejection gate: â‰¥60% critical failure (not "all critical") for non-intern/junior roles.
 5. Cross-validation: recompute total_years from work_history before scoring.
 6. Human layer adjustment bounded and documented per change.
-7. No hardcoded technology names (Java, Spring Boot DSA) in the adjustment layer —
+7. No hardcoded technology names (Java, Spring Boot DSA) in the adjustment layer â€”
    those are JD-specific, not universal blockers.
 """
 from __future__ import annotations
@@ -19,7 +19,7 @@ import re
 import math
 from typing import Optional
 
-from extraction_resume_JD_score_report_v2.models import (
+from extraction_resume_JD_score_report.models import (
     MatchResult, MatchType, MatchSource, CriterionResult,
     EvidenceSource, CriterionPriority,
 )
@@ -67,7 +67,7 @@ def _normalize(s: str) -> str:
     s = re.sub(r"js$", "", s)
     s = re.sub(r"[.\-\_\s\/\(\)]", "", s)
     s = re.sub(r"\d+$", "", s)
-    from extraction_resume_JD_score_report_v2.config import SKILL_ALIASES
+    from extraction_resume_JD_score_report.config import SKILL_ALIASES
     return SKILL_ALIASES.get(s, s)
 
 def _cosine(a: list[float], b: list[float]) -> float:
@@ -99,7 +99,7 @@ class SemanticSkillIndex:
 
     For skill criteria: matches against resume skill names.
     For responsibility/ownership/domain criteria: matches against evidence_item texts
-    and responsibility sentences — catching vocabulary mismatches like
+    and responsibility sentences â€” catching vocabulary mismatches like
     "outreach systems" vs "outbound campaigns".
 
     Falls back gracefully if embedding fails.
@@ -204,9 +204,9 @@ class SemanticSkillIndex:
 def _build_skill_evidence_map(resume_data: dict, resume_raw_text: str = "") -> tuple[dict[str, dict], dict[str, str], str]:
     """
     Build:
-    - skill_evidence_map: norm_skill → {source, evidence, confidence}
+    - skill_evidence_map: norm_skill â†’ {source, evidence, confidence}
       Source is tied to evidence_items.has_metric + ownership, NOT job-level impact presence.
-    - resume_normalized: norm_skill → original name (for exact matching)
+    - resume_normalized: norm_skill â†’ original name (for exact matching)
     - raw_text_corpus: lowercased blob for text-fallback matching
     """
     evidence_items = resume_data.get("evidence_items", []) or []
@@ -402,9 +402,9 @@ def _compute_criterion_weights(criteria: list[dict]) -> list[dict]:
     Ensures weights sum to 100 using largest-remainder method.
 
     Weight bands (points per rank position):
-      critical rank 1 → 25, rank 2 → 22, rank 3 → 19, rank 4 → 16, rank 5 → 13
-      high     rank 1 → 14, rank 2 → 12, rank 3 → 10, rank 4 → 9,  rank 5 → 8, rank 6 → 7, rank 7 → 6
-      medium   rank 1 → 8,  rank 2 → 7,  rank 3 → 6,  rank 4 → 5,  rank 5 → 4
+      critical rank 1 â†’ 25, rank 2 â†’ 22, rank 3 â†’ 19, rank 4 â†’ 16, rank 5 â†’ 13
+      high     rank 1 â†’ 14, rank 2 â†’ 12, rank 3 â†’ 10, rank 4 â†’ 9,  rank 5 â†’ 8, rank 6 â†’ 7, rank 7 â†’ 6
+      medium   rank 1 â†’ 8,  rank 2 â†’ 7,  rank 3 â†’ 6,  rank 4 â†’ 5,  rank 5 â†’ 4
     """
     WEIGHT_BANDS: dict[str, list[int]] = {
         "critical": [25, 22, 19, 16, 13, 11, 9],
@@ -500,7 +500,7 @@ def _match_criterion(
         cand_yrs = resume_data.get("experience", {}).get("total_years")
         req_min = req_max = None
         for pat, groups in [
-            (re.search(r"(\d+)\s*(?:-|to|–|—)\s*(\d+)\s*years?", cname, re.I), (1, 2)),
+            (re.search(r"(\d+)\s*(?:-|to|â€“|â€”)\s*(\d+)\s*years?", cname, re.I), (1, 2)),
             (re.search(r"(\d+)\s*\+\s*years?", cname, re.I), (1, None)),
             (re.search(r"(\d+)\s*years?", cname, re.I), (1, None)),
         ]:
@@ -534,7 +534,7 @@ def _match_criterion(
             for raw_word in re.split(r"[\s,/\-]+", cname):
                 nk = _normalize(raw_word)
                 # Only count tokens that are real skills (in resume or a known alias target)
-                from extraction_resume_JD_score_report_v2.config import SKILL_ALIASES
+                from extraction_resume_JD_score_report.config import SKILL_ALIASES
                 if nk and len(nk) >= 2 and (nk in SKILL_ALIASES.values() or nk in {"java", "python", "node", "react", "spring", "django", "dotnet", "php", "ruby", "golang", "rust", "scala", "kotlin"}):
                     stack_tokens.add(nk)
             if stack_tokens:
@@ -873,7 +873,7 @@ def _human_layer(
 ) -> dict:
     """
     Role-band-aware second-pass adjustment. Bounded to not flip a clear decision.
-    No hardcoded technology names — those are JD-specific, not universal.
+    No hardcoded technology names â€” those are JD-specific, not universal.
     """
     jd_role_key = str(jd_data.get("role_level") or "mid").lower().strip()
     band = jd_role_key if jd_role_key in ROLE_BAND_PROFILES else "mid"
@@ -969,7 +969,7 @@ def _human_layer(
     # 4. Experience gap
     if jd_min_years is not None and candidate_years is not None and tech_partial:
         if candidate_years >= jd_min_years:
-            add(int(round(3 * profile["experience"])), f"Meets experience floor ({candidate_years}yr ≥ {jd_min_years}yr)")
+            add(int(round(3 * profile["experience"])), f"Meets experience floor ({candidate_years}yr â‰¥ {jd_min_years}yr)")
         elif candidate_years + 1 >= jd_min_years:
             gap_delta = 2 if band in ("intern", "junior") else 1 if band == "mid" else 0
             if gap_delta:
@@ -1334,7 +1334,7 @@ def compute_score(
     )
     adjusted_total = int(human["human_score"])
 
-    # -- 9. Hard rejection gate (v2: ≥60% critical fail for non-intern/junior) -
+    # -- 9. Hard rejection gate (v2: â‰¥60% critical fail for non-intern/junior) -
     hard_rejected = False
     rejection_reasons: list[str] = []
 

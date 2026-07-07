@@ -1,10 +1,10 @@
 """
-pipeline.py v2 — Production entry point for the HR Agent pipeline.
+pipeline.py v2 â€” Production entry point for the HR Agent pipeline.
 
 CLI contract (called by worker.ts via scripts/extract_pdf.py):
-  python extract_pdf.py <file_path> JD               <model>          → {text, data, usage}
-  python extract_pdf.py <file_path> RESUME           <model>          → {text, data, usage}
-  python extract_pdf.py <file_path> RESUME_AND_SCORE <model> <model>  → {text, data, score, usage_extract, usage_score}
+  python extract_pdf.py <file_path> JD               <model>          â†’ {text, data, usage}
+  python extract_pdf.py <file_path> RESUME           <model>          â†’ {text, data, usage}
+  python extract_pdf.py <file_path> RESUME_AND_SCORE <model> <model>  â†’ {text, data, score, usage_extract, usage_score}
     RESUME_AND_SCORE reads JD payload JSON from stdin:
       {jd, jd_raw_text, threshold, screening_criteria}
 
@@ -51,7 +51,7 @@ def _extract_text(file_path: str) -> str:
                 return text
         except Exception:
             pass
-        raise RuntimeError("Could not extract text from PDF — file may be scanned/image-only.")
+        raise RuntimeError("Could not extract text from PDF â€” file may be scanned/image-only.")
 
     # Plain text / markdown / json
     return path.read_text(encoding="utf-8", errors="replace").strip()
@@ -67,7 +67,7 @@ class Pipeline:
             return {"error": "JD appears empty or unreadable.", "code": "EMPTY_DOCUMENT_ERROR"}
 
         sys.stderr.write("--- [50%] Parsing JD structure... ---\n"); sys.stderr.flush()
-        from extraction_resume_JD_score_report_v2.parser import DocumentParser
+        from extraction_resume_JD_score_report.parser import DocumentParser
         result = DocumentParser().parse(raw_text, "JD", model_override=model)
         if result.get("error"):
             return result
@@ -82,7 +82,7 @@ class Pipeline:
             return {"error": "Resume appears empty or unreadable.", "code": "EMPTY_DOCUMENT_ERROR"}
 
         sys.stderr.write("--- [50%] Parsing resume structure... ---\n"); sys.stderr.flush()
-        from extraction_resume_JD_score_report_v2.parser import DocumentParser
+        from extraction_resume_JD_score_report.parser import DocumentParser
         result = DocumentParser().parse(raw_text, "RESUME", model_override=model)
         if result.get("error"):
             return result
@@ -101,7 +101,7 @@ class Pipeline:
 
         # Step 2: parse resume (two-pass, JD-aware)
         sys.stderr.write("--- [35%] Parsing resume (pass 1 + 2)... ---\n"); sys.stderr.flush()
-        from extraction_resume_JD_score_report_v2.parser import DocumentParser, _normalise_jd
+        from extraction_resume_JD_score_report.parser import DocumentParser, _normalise_jd
         jd_data = _normalise_jd(jd_payload.get("jd") or {})
         jd_criteria = jd_data.get("criteria", [])
         parser = DocumentParser()

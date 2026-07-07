@@ -1,7 +1,7 @@
 """
 service.py -- Persistent FastAPI microservice replacing per-job `spawn(python, extract_pdf.py)`.
 
-Run with: uvicorn extraction_resume_JD_score_report_v2.service:app --host 0.0.0.0 --port 8100
+Run with: uvicorn extraction_resume_JD_score_report.service:app --host 0.0.0.0 --port 8100
 
 Keeps the process (and its imports: openai, pdfplumber, pypdf) warm across
 requests instead of paying interpreter boot + reimport cost per resume.
@@ -17,7 +17,7 @@ from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.concurrency import run_in_threadpool
 
-from extraction_resume_JD_score_report_v2.pipeline import Pipeline
+from extraction_resume_JD_score_report.pipeline import Pipeline
 
 app = FastAPI()
 pipeline = Pipeline()

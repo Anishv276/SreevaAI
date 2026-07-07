@@ -15,7 +15,7 @@
     "worker:jd": "cross-env WORKER_QUEUES=jd-upload,jd-extraction tsx --env-file=.env worker.ts",
     "worker:brief": "cross-env WORKER_QUEUES=brief-generation tsx --env-file=.env worker.ts",
     "worker:all": "cross-env WORKER_QUEUES=resume-processing,invitation-delivery-queue,interview-start,interview-finalization,interview-snapshots,interview-recording,recording-retention-cleanup,jd-upload,jd-extraction,brief-generation,interview-report tsx --env-file=.env worker.ts",
-    "extract-service": "python -m uvicorn extraction_resume_JD_score_report_v2.service:app --host 0.0.0.0 --port 8100",
+    "extract-service": "python -m uvicorn extraction_resume_JD_score_report.service:app --host 0.0.0.0 --port 8100",
     "clean": "node scripts/clean-next.mjs",
     "postinstall": "node scripts/fix-prisma-runtime-compat.cjs",
     "prebuild": "npm run clean",
