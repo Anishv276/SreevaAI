@@ -158,7 +158,7 @@ export async function POST(
     // Book the slot
     await prisma.interview.update({
         where: { id: interview.id },
-        data: { scheduledAt: slotDate, timezone: TIMEZONE },
+        data: { scheduledAt: slotDate, timezone: TIMEZONE, status: "SCHEDULED" },
     });
 
     // Enqueue background brief generation (slot flow only — NOT for test interviews)

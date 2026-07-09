@@ -31,9 +31,8 @@ export async function POST(
       select: {
         accessToken: true,
         expiresAt: true,
-        startedAt: true,
+        interviewStartedAt: true,
         status: true,
-        linkStatus: true,
       },
     });
     if (!interview) {
@@ -42,32 +41,20 @@ export async function POST(
     if (requireInterviewToken && interview.accessToken !== interviewToken) {
       return NextResponse.json({ error: "Invalid interview token" }, { status: 401 });
     }
-    const startNow = Date.now();
     const interviewRecordStatus = String(interview.status || "").toUpperCase();
-    if (interviewRecordStatus === "COMPLETED" || interviewRecordStatus === "NO_SHOW") {
+    if (interviewRecordStatus === "COMPLETED" || interviewRecordStatus === "FAILED") {
       return NextResponse.json({
         error: "Interview has been completed.",
         code: "INTERVIEW_COMPLETED",
       }, { status: 409 });
     }
-    if (interview.startedAt) {
-      if (interview.linkStatus === "EXPIRED") {
-        return NextResponse.json({
-          error: "Access Denied: Interview link has expired. Please contact support.",
-          code: "LINK_EXPIRED",
-        }, { status: 403 });
-      }
+    // interviewStartedAt is the real "greeting spoken" timestamp -- idempotent, one-way latch.
+    if (interview.interviewStartedAt) {
       return NextResponse.json({
         success: true,
         alreadyStarted: true,
-        startedAt: interview.startedAt,
+        startedAt: interview.interviewStartedAt,
       });
-    }
-    if (interview.linkStatus === "EXPIRED") {
-      return NextResponse.json({
-        error: "Access Denied: Interview link has expired. Please contact support.",
-        code: "LINK_EXPIRED",
-      }, { status: 403 });
     }
     await interviewStartQueue.add(
       "mark-interview-started",

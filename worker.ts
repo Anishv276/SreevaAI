@@ -184,15 +184,14 @@ async function processInterviewStartJob(job: any) {
   const existingInterview = await prisma.interview.findUnique({
     where: { applicationId },
     select: {
-      startedAt: true,
+      interviewStartedAt: true,
       status: true,
       accessToken: true,
-      linkStatus: true,
     },
   });
-  if (existingInterview?.startedAt) {
+  if (existingInterview?.interviewStartedAt) {
     console.log(
-      `[INTERVIEW-START] Interview already started for ${applicationId} at ${existingInterview.startedAt.toISOString()}`
+      `[INTERVIEW-START] Interview already started for ${applicationId} at ${existingInterview.interviewStartedAt.toISOString()}`
     );
     await prisma.application.update({
       where: { id: applicationId },
@@ -202,7 +201,7 @@ async function processInterviewStartJob(job: any) {
       success: true,
       alreadyStarted: true,
       applicationId,
-      startedAt: existingInterview.startedAt.toISOString(),
+      startedAt: existingInterview.interviewStartedAt.toISOString(),
     };
   }
   const interviewAccessToken = existingInterview?.accessToken || accessToken || crypto.randomUUID();
@@ -210,16 +209,14 @@ async function processInterviewStartJob(job: any) {
     where: { applicationId },
     update: {
       status: "IN_PROGRESS",
-      startedAt: startedAtCandidate,
-      linkStatus: "EXPIRED",
+      interviewStartedAt: startedAtCandidate,
     },
     create: {
       id: generateId("int", applicationId),
       applicationId,
       accessToken: interviewAccessToken,
       status: "IN_PROGRESS",
-      startedAt: startedAtCandidate,
-      linkStatus: "EXPIRED",
+      interviewStartedAt: startedAtCandidate,
     },
   });
   await prisma.application.update({
@@ -227,13 +224,12 @@ async function processInterviewStartJob(job: any) {
     data: { interviewStatus: "IN_PROGRESS" },
   });
   console.log(
-    `[INTERVIEW-START] Persisted start time for ${applicationId} at ${startedAtCandidate.toISOString()}`
+    `[INTERVIEW-START] Persisted interview start time for ${applicationId} at ${startedAtCandidate.toISOString()}`
   );
   return {
     success: true,
     applicationId,
     startedAt: startedAtCandidate.toISOString(),
-    linkStatus: "EXPIRED",
     interviewStatus: "IN_PROGRESS",
   };
 }
@@ -1008,9 +1004,9 @@ if (isQueueEnabled("invitation-delivery-queue")) {
               status: "PENDING",
               scheduledAt: null,
               startedAt: null,
+              interviewStartedAt: null,
               completedAt: null,
               expiresAt: driveDeadline,
-              linkStatus: "ACTIVE",
             },
             create: {
               id: generateId("int", application.fullName || applicationId),
@@ -1019,7 +1015,6 @@ if (isQueueEnabled("invitation-delivery-queue")) {
               inviteSentAt: now,
               status: "PENDING",
               expiresAt: driveDeadline,
-              linkStatus: "ACTIVE",
             },
           });
           scheduleLink = `${appUrl}/schedule/${interviewRecord.accessToken}`;

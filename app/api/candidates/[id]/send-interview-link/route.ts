@@ -75,9 +75,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
                 status: "PENDING",
                 scheduledAt: null,
                 startedAt: null,
+                interviewStartedAt: null,
                 completedAt: null,
                 expiresAt: driveDeadline,
-                linkStatus: "ACTIVE",
                 isTest: false,          // always clear test flag on real invite
                 interviewBrief: Prisma.JsonNull,   // clear any stale brief from a previous run
             },
@@ -87,7 +87,6 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
                 inviteSentAt: new Date(),
                 status: "PENDING",
                 expiresAt: driveDeadline,
-                linkStatus: "ACTIVE",
                 isTest: false,
             },
         });

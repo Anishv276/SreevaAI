@@ -44,16 +44,12 @@ export async function GET(request: Request) {
                         startedAt: true,
                         completedAt: true,
                         interviewDuration: true,
-                        linkStatus: true,
                     }
                 }
             },
             orderBy: { createdAt: "desc" }
         });
         const formattedApplications = applications.map((app: any) => {
-            const effectiveLinkStatus = app.interview
-                ? (app.interview.linkStatus || "ACTIVE")
-                : null;
             const interviewStage = app.interview
                 ? {
                     status: app.interview.status,
@@ -61,9 +57,8 @@ export async function GET(request: Request) {
                     accessToken: app.interview.accessToken,
                     expiresAt: app.interview.expiresAt,
                     mode: "DEADLINE",
-                    linkStatus: effectiveLinkStatus,
                     canStart: (() => {
-                        if (app.interview.status !== "PENDING") return false;
+                        if (!["PENDING", "SCHEDULED"].includes(app.interview.status)) return false;
                         const startedAtMs = app.interview.startedAt ? new Date(app.interview.startedAt).getTime() : null;
                         const nowMs = Date.now();
                         const withinRejoinWindow = startedAtMs === null || nowMs <= startedAtMs + 5 * 60 * 1000;

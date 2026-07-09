@@ -271,7 +271,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 if (!active) return;
                 if (!res.ok && data.error) {
                     if (data.code === "TOO_EARLY" && data.scheduledAt) {
-                        // Waiting room opened -- show hardware check but gate the Begin button
+                        // Not open yet -- no waiting room before slot time. Show hardware check
+                        // (gated) so the candidate can prep, but Begin stays locked until slot.
                         const slot = new Date(data.scheduledAt);
                         setScheduledAt(slot);
                         setSlotCountdownSecs(Math.ceil((slot.getTime() - BUTTON_UNLOCK_BEFORE_MS - Date.now()) / 1000));
@@ -283,6 +284,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             SLOT_EXPIRED: "Slot Expired",
                             NOT_SCHEDULED: "Not Scheduled",
                             INTERVIEW_COMPLETED: "Interview Completed",
+                            INTERVIEW_FAILED: "Interview Ended",
                             INTERVIEW_IN_PROGRESS: "Interview In Progress",
                         };
                         setBlockedAccessTitle(titleMap[data.code] || "Access Restricted");
@@ -544,6 +546,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 const errorCode = String(data?.code || "").toUpperCase();
                 const isInProgress = errorCode === "INTERVIEW_IN_PROGRESS" || /in progress/i.test(apiError);
                 const isCompleted = errorCode === "INTERVIEW_COMPLETED";
+                const isFailed = errorCode === "INTERVIEW_FAILED";
                 const isDriveClosed = errorCode === "DRIVE_CLOSED";
                 const isSlotExpired = errorCode === "SLOT_EXPIRED";
                 const isTooEarly = errorCode === "TOO_EARLY";
@@ -559,6 +562,13 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     return {
                         ok: false,
                         title: "Interview completed",
+                        message: apiError,
+                    };
+                }
+                if (isFailed) {
+                    return {
+                        ok: false,
+                        title: "Interview ended",
                         message: apiError,
                     };
                 }

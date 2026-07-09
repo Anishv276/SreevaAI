@@ -5,9 +5,8 @@ import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/drive-limits";
 import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
 
-// Grace: candidate must join within 5 min after slot start, and can enter 5 min before
-const PRE_OPEN_MS  = 5 * 60 * 1000;  // waiting room opens 5 min before slot
-const LATE_CLOSE_MS = 5 * 60 * 1000; // link expires 5 min after slot start
+// Window is exactly [scheduledAt, scheduledAt + 5min] -- no pre-open, no waiting room before slot.
+const LATE_CLOSE_MS = 5 * 60 * 1000; // window closes 5 min after slot start
 
 async function resolveInterview(applicationId: string) {
     return prisma.application.findUnique({
@@ -39,20 +38,24 @@ function checkDriveExpiration(drive: { closedAt?: Date | null; deadline?: Date |
     return { ok: true };
 }
 
-function checkSchedulingGate(interview: { scheduledAt: Date | null; status: string; startedAt: Date | null; linkStatus?: string | null }): {
-    ok: boolean; code?: string; error?: string; status?: number; remainingMs?: number;
+type GateInterview = {
+    scheduledAt: Date | null;
+    status: string;
+    interviewStartedAt: Date | null;
+};
+
+function checkSchedulingGate(interview: GateInterview): {
+    ok: boolean; code?: string; error?: string; status?: number; remainingMs?: number; shouldFail?: boolean;
 } {
     const interviewStatus = String(interview.status || "").toUpperCase();
-    const linkStatus = String(interview.linkStatus || "").toUpperCase();
 
     if (interviewStatus === "COMPLETED") {
         return { ok: false, code: "INTERVIEW_COMPLETED", error: "Interview completed. Please contact support@sreevaai.com for assistance.", status: 409 };
     }
 
-    if (linkStatus === "EXPIRED") {
-        return { ok: false, code: "LINK_EXPIRED", error: "Interview link has expired. Please contact support@sreevaai.com", status: 403 };
+    if (interviewStatus === "FAILED") {
+        return { ok: false, code: "INTERVIEW_FAILED", error: "This interview session has ended. Please contact support@sreevaai.com to reschedule.", status: 409 };
     }
-
 
     if (!interview.scheduledAt) {
         return { ok: false, code: "NOT_SCHEDULED", error: "No slot booked yet. Please schedule your interview first.", status: 403 };
@@ -62,22 +65,38 @@ function checkSchedulingGate(interview: { scheduledAt: Date | null; status: stri
     const slotMs = interview.scheduledAt.getTime();
     const remainingMs = slotMs - now;
 
-    if (remainingMs > PRE_OPEN_MS) {
+    if (remainingMs > 0) {
         return {
             ok: false,
             code: "TOO_EARLY",
-            error: "Waiting room is not open yet. Please return 5 minutes before your scheduled time.",
+            error: "Waiting room is not open yet. Please return at your scheduled time.",
             status: 403,
             remainingMs,
         };
     }
 
-    if (remainingMs < -LATE_CLOSE_MS) {
+    // Past the window close: fail if the greeting was never reached (interviewStartedAt unset).
+    if (remainingMs < -LATE_CLOSE_MS && !interview.interviewStartedAt) {
+        const neverJoined = interviewStatus === "SCHEDULED";
         return {
             ok: false,
             code: "SLOT_EXPIRED",
-            error: "Your slot has expired. Please contact your recruiter to reschedule.",
+            error: neverJoined
+                ? "Your slot has expired. Please contact your recruiter to reschedule."
+                : "Your interview session did not complete in time. Please contact your recruiter to reschedule.",
             status: 403,
+            shouldFail: true,
+        };
+    }
+
+    // Greeting already spoken (interviewStartedAt set) -- a second /token call means
+    // another device/tab is trying to join a session that's already live.
+    if (interview.interviewStartedAt) {
+        return {
+            ok: false,
+            code: "INTERVIEW_IN_PROGRESS",
+            error: "Interview already in progress on another session.",
+            status: 409,
         };
     }
 
@@ -114,10 +133,10 @@ export async function POST(
 
         const gate = checkSchedulingGate(interview);
         if (!gate.ok) {
-            if (gate.code === "SLOT_EXPIRED" && interview.linkStatus !== "EXPIRED") {
+            if (gate.shouldFail && interview.status !== "FAILED") {
                 await prisma.interview.update({
                     where: { applicationId },
-                    data: { linkStatus: "EXPIRED" }
+                    data: { status: "FAILED" }
                 }).catch(() => {});
             }
             return NextResponse.json(
@@ -132,11 +151,14 @@ export async function POST(
         const serverUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL || process.env.LIVEKIT_URL;
         const agentName = process.env.LIVEKIT_AGENT_NAME || "ai_interviewer";
 
-        // Mark IN_PROGRESS on first token request
-        if (interview.status === "PENDING") {
-            await prisma.interview.update({
-                where: { applicationId },
-                data: { status: "IN_PROGRESS", startedAt: new Date(), linkStatus: "EXPIRED" },
+        // Mark IN_PROGRESS the instant launching begins (first successful /token call
+        // in-window). ponytail: conditional updateMany on status=SCHEDULED is a cheap
+        // guard against two concurrent first-calls both "winning"; not a full unique
+        // constraint, fine at this scale.
+        if (interview.status === "SCHEDULED") {
+            await prisma.interview.updateMany({
+                where: { applicationId, status: "SCHEDULED" },
+                data: { status: "IN_PROGRESS", startedAt: new Date() },
             }).catch(() => {});
         }
 
@@ -234,10 +256,10 @@ export async function GET(
 
         const gate = checkSchedulingGate(interview);
         if (!gate.ok) {
-            if (gate.code === "SLOT_EXPIRED" && interview.linkStatus !== "EXPIRED") {
+            if (gate.shouldFail && interview.status !== "FAILED") {
                 await prisma.interview.update({
                     where: { applicationId },
-                    data: { linkStatus: "EXPIRED" }
+                    data: { status: "FAILED" }
                 }).catch(() => {});
             }
             return NextResponse.json(

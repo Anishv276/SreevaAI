@@ -137,6 +137,7 @@ model Interview {
   expiresAt                  DateTime?
   status                     String          @default("PENDING")
   startedAt                  DateTime?
+  interviewStartedAt         DateTime?
   completedAt                DateTime?
   interviewTranscript        String?
   createdAt                  DateTime        @default(now())
@@ -148,7 +149,6 @@ model Interview {
   billingSnapshot            Json?           @default("{}")
   integritySignals           Json?           @default("[]")
   signalAnalysis             Json?           @default("{}")
-  linkStatus                 String          @default("ACTIVE")
   questionByQuestionAnalysis Json?           @default("[]")
   scoreBreakdown             Json?           @default("{}")
   interviewSummary           Json?           @default("{}")

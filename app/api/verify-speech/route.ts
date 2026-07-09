@@ -122,7 +122,7 @@ async function validateInterviewAccess(applicationId: string, interviewToken: st
                 select: {
                     accessToken: true,
                     expiresAt: true,
-                    linkStatus: true,
+                    status: true,
                     isTest: true,
                 },
             },
@@ -138,8 +138,9 @@ async function validateInterviewAccess(applicationId: string, interviewToken: st
     }
 
     const isTest = app.interview?.isTest === true;
-    if (!isTest && app.interview.linkStatus && app.interview.linkStatus !== "ACTIVE") {
-        console.error("[verify-speech] validateInterviewAccess failed: Link not ACTIVE");
+    const status = String(app.interview.status || "").toUpperCase();
+    if (!isTest && (status === "COMPLETED" || status === "FAILED")) {
+        console.error("[verify-speech] validateInterviewAccess failed: Interview no longer active");
         return null;
     }
     return app.drive.orgId;
