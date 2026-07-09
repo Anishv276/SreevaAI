@@ -573,7 +573,7 @@ async function processResumeScreeningJob(job: any) {
     await prisma.application.update({
       where: { id: applicationId },
       data: { resumeStatus: "extracting", updatedAt: new Date() },
-    }).catch(() => {});
+    }).catch(() => { });
     const [application, org] = await Promise.all([
       prisma.application.findUnique({
         where: { id: applicationId },
@@ -644,10 +644,10 @@ async function processResumeScreeningJob(job: any) {
     await job.updateProgress(70);
     console.log(`[RESUME-WORKER] [70%] Extraction/scoring done. keys=${Object.keys(result || {}).join(",")}`);
 
-    const scoreData  = result?.score ?? null;
-    const resumeData = result?.data  ?? {};
-    const resumeText = result?.text  ?? "";
-    const aiScore    = typeof scoreData?.score === "number" ? Math.round(scoreData.score) : null;
+    const scoreData = result?.score ?? null;
+    const resumeData = result?.data ?? {};
+    const resumeText = result?.text ?? "";
+    const aiScore = typeof scoreData?.score === "number" ? Math.round(scoreData.score) : null;
     const reportJson = scoreData ? JSON.stringify(scoreData) : null;
 
     // -- Automatic ATS status: Determine based on score vs threshold --------
@@ -664,18 +664,18 @@ async function processResumeScreeningJob(job: any) {
     await job.updateProgress(80);
     console.log(`[RESUME-WORKER] [80%] Saving report â€” applicationId=${applicationId} aiScore=${aiScore} threshold=${threshold} resumeStatus=${resumeStatus}`);
 
-    const parsedName  = resumeData?.full_name?.trim()  || "";
-    const parsedEmail = resumeData?.email?.trim()      || "";
-    const parsedPhone = resumeData?.phone?.trim()      || "";
+    const parsedName = resumeData?.full_name?.trim() || "";
+    const parsedEmail = resumeData?.email?.trim() || "";
+    const parsedPhone = resumeData?.phone?.trim() || "";
 
     const updateResult = await prisma.application.update({
       where: { id: applicationId },
       data: {
         resumeText,
         resumeData: JSON.stringify({ source: { bucket, key }, parsed: resumeData }),
-        ...(aiScore   !== null && { aiScore }),
+        ...(aiScore !== null && { aiScore }),
         ...(reportJson && { fullScanReport: reportJson, aiReport: reportJson }),
-        ...(parsedName  && { fullName: parsedName }),
+        ...(parsedName && { fullName: parsedName }),
         ...(parsedEmail && { email: parsedEmail }),
         ...(parsedPhone && { phone: parsedPhone }),
         resumeStatus,
@@ -691,7 +691,7 @@ async function processResumeScreeningJob(job: any) {
     console.log(`[RESUME-WORKER] [90%] Recording billing usage...`);
     if (orgId) {
       const usageExtract = result?.usage_extract ?? result?.usage ?? null;
-      const usageScore   = result?.usage_score   ?? null;
+      const usageScore = result?.usage_score ?? null;
       if (usageExtract) {
         await recordOrgBillingUsage({
           orgId,
@@ -734,7 +734,7 @@ async function processResumeScreeningJob(job: any) {
     await prisma.application.update({
       where: { id: applicationId },
       data: { resumeStatus: "failed", updatedAt: new Date() },
-    }).catch(() => {});
+    }).catch(() => { });
     throw err;
   }
 }
@@ -824,7 +824,7 @@ if (isQueueEnabled("resume-processing")) {
     maxStalledCount: 2,
     drainDelay: 300,
     removeOnComplete: { age: 60 },
-    removeOnFail:    { age: 60 },
+    removeOnFail: { age: 60 },
   }));
 
   resumeWorker.on("error", (err) => {
@@ -939,7 +939,7 @@ async function reconcileResumeQueue() {
           aiReport: JSON.stringify({ processing: { progress: 0, stage: "failed", error: "No active screening job (reconciled)" } }),
           updatedAt: new Date(),
         },
-      }).catch(() => {});
+      }).catch(() => { });
     }
     console.warn(`[RECONCILE] Marked ${orphaned.length} orphaned resume row(s) as failed (no backing job): ${orphaned.map((o) => o.id).join(", ")}`);
   } catch (err: any) {
@@ -1934,7 +1934,7 @@ if (isQueueEnabled("brief-generation")) {
       concurrency: 10, // global cap raised -- per-org cap (ORG_CONCURRENCY.briefGeneration) does the real limiting
       lockDuration: 4 * 60 * 1000, // 4 min lock â€” longer than the 3-min timeout
       removeOnComplete: { age: 60 },
-      removeOnFail:    { age: 3600 },
+      removeOnFail: { age: 3600 },
     }
   ));
 
@@ -1992,7 +1992,7 @@ if (isQueueEnabled("interview-report")) {
       stalledInterval: 5 * 60 * 1000,
       maxStalledCount: 1,
       removeOnComplete: { age: 3600 },
-      removeOnFail:    { age: 86400 },
+      removeOnFail: { age: 86400 },
     }
   ));
 
