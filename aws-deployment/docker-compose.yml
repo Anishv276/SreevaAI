@@ -34,7 +34,7 @@ services:
       context: ..
       dockerfile: Dockerfile.frontend
     container_name: Normal-worker
-    command: ["npm", "exec", "--", "tsx", "worker.ts"]
+    command: ["node", "scripts/start-worker.mjs"]
     env_file:
       - .env
     environment:
@@ -42,6 +42,7 @@ services:
       NEXT_PUBLIC_LIVEKIT_URL: "${NEXT_PUBLIC_LIVEKIT_URL}"
       REDIS_URL: "${REDIS_URL}"
       WORKER_QUEUES: "resume-processing,invitation-delivery-queue,interview-start,interview-finalization,interview-snapshots,interview-recording,recording-retention-cleanup,jd-upload,jd-extraction,brief-generation,backup-queue"
+      EXTRACT_SERVICE_PORT: "8100"
     restart: always
     networks:
       - traefik-proxy

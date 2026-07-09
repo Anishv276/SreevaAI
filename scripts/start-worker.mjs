@@ -115,7 +115,8 @@ if (!SKIP_EXTRACT_SERVICE) {
 // Direct tsx binary avoids the npx â†’ cmd chain that prevents Ctrl+C from propagating.
 // On Windows, .cmd files require shell:true to execute.
 // We compensate by using taskkill /T on shutdown so the whole cmd+node tree dies.
-const child = spawn(TSX_BIN, ["--env-file", ENV_FILE, "worker.ts"], {
+const tsxArgs = existsSync(ENV_FILE) ? ["--env-file", ENV_FILE, "worker.ts"] : ["worker.ts"];
+const child = spawn(TSX_BIN, tsxArgs, {
   cwd: ROOT,
   env: { ...process.env, WORKER_QUEUES: QUEUES },
   stdio: "inherit",
