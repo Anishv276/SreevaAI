@@ -7,26 +7,26 @@ export async function GET() {
     if (!session || session.role !== "SUPER_ADMIN") {
       return NextResponse.json({ error: "Unauthorized access" }, { status: 403 });
     }
-    const orgs = await prisma.organization.findMany({
-      orderBy: { createdAt: "desc" },
+    const orgs = await prisma.organizationDetails.findMany({
+      orderBy: { orgCreatedAt: "desc" },
         select: {
             id: true,
             name: true,
-            slug: true,
-            plan: true,
-            status: true,
-            interviewQuotaTotal: true,
-            interviewQuotaUsed: true,
-            creditsUsed: true,
-            createdAt: true,
+            urlSlug: true,
+            billingPlan: true,
+            orgStatus: true,
+            totalInterviewsAllowed: true,
+            totalInterviewsUsed: true,
+            billingCreditsUsed: true,
+            orgCreatedAt: true,
         },
     });
     return NextResponse.json({
         orgs: orgs.map((org) => ({
         ...org,
-        interviewQuotaTotal: Number(org.interviewQuotaTotal || 0),
-        interviewQuotaUsed: Number(org.interviewQuotaUsed || 0),
-        creditsUsed: Number(org.creditsUsed || 0),
+        interviewQuotaTotal: Number(org.totalInterviewsAllowed || 0),
+        interviewQuotaUsed: Number(org.totalInterviewsUsed || 0),
+        creditsUsed: Number(org.billingCreditsUsed || 0),
       })),
     });
   } catch (error) {

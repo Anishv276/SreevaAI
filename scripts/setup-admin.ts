@@ -20,7 +20,7 @@ async function main() {
             name,
         },
     });
-    await prisma.user.upsert({
+    await prisma.organizationCredentials.upsert({
         where: { email },
         update: {
             password: hashedPassword,

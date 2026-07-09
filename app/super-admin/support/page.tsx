@@ -35,7 +35,7 @@ type SupportTicket = {
             id: string;
             fullName: string;
             email: string;
-            drive?: {
+            job?: {
                 id: string;
                 title: string;
                 organization?: { id: string; name: string; slug: string; plan: string } | null;
@@ -118,11 +118,11 @@ export default function SuperAdminSupportPage() {
     const candidateEmail = (ticket: SupportTicket) =>
         ticket.interview?.application?.email?.trim() || ticket.email || "Unknown email";
     const orgName = (ticket: SupportTicket) =>
-        ticket.interview?.application?.drive?.organization?.name?.trim() || "No organization";
+        ticket.interview?.application?.job?.organization?.name?.trim() || "No organization";
     const orgSlug = (ticket: SupportTicket) =>
-        ticket.interview?.application?.drive?.organization?.slug?.trim() || "";
-    const driveTitle = (ticket: SupportTicket) =>
-        ticket.interview?.application?.drive?.title?.trim() || "Interview";
+        ticket.interview?.application?.job?.organization?.slug?.trim() || "";
+    const jobTitle = (ticket: SupportTicket) =>
+        ticket.interview?.application?.job?.title?.trim() || "Interview";
     const visibleStats = useMemo(() => ([
         { label: "Total Tickets", value: stats.total, icon: MessageSquare, color: "text-blue-600", bg: "bg-blue-50" },
         { label: "Open", value: stats.openCount, icon: CircleDot, color: "text-amber-600", bg: "bg-amber-50" },
@@ -244,7 +244,7 @@ export default function SuperAdminSupportPage() {
                                             </td>
                                             <td className="px-4 py-4">
                                                 <span className="text-[10px] font-medium text-gray-400 truncate uppercase max-w-[120px]">
-                                                    {driveTitle(ticket)}
+                                                    {jobTitle(ticket)}
                                                 </span>
                                             </td>
                                             <td className="px-4 py-4">

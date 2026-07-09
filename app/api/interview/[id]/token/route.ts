@@ -2,7 +2,7 @@ import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-ser
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
-import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/drive-limits";
+import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/job-limits";
 import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
 
 // Grace: candidate must join within 5 min after slot start, and can enter 5 min before
@@ -13,9 +13,9 @@ async function resolveInterview(applicationId: string) {
     return prisma.application.findUnique({
         where: { id: applicationId },
         include: {
-            drive: {
+            job: {
                 include: {
-                    organization: { select: { proctoringSignals: true } },
+                    organization: { select: { enabledProctoringSignals: true } },
                 },
             },
             interview: true,
@@ -23,15 +23,15 @@ async function resolveInterview(applicationId: string) {
     });
 }
 
-function checkDriveExpiration(drive: { closedAt?: Date | null; deadline?: Date | null } | null | undefined): {
+function checkJobExpiration(job: { closedAt?: Date | null; deadline?: Date | null } | null | undefined): {
     ok: boolean; code?: string; error?: string;
 } {
-    if (!drive) return { ok: true };
+    if (!job) return { ok: true };
 
-    if (drive.closedAt && new Date(drive.closedAt) < new Date()) {
+    if (job.closedAt && new Date(job.closedAt) < new Date()) {
         return {
             ok: false,
-            code: "DRIVE_CLOSED",
+            code: "JOB_CLOSED",
             error: "Job posting has been expired. Please contact support@sreevaai.com",
         };
     }
@@ -104,10 +104,10 @@ export async function POST(
             return NextResponse.json({ error: "Invalid interview token" }, { status: 401 });
         }
 
-        const driveCheck = checkDriveExpiration(application.drive);
-        if (!driveCheck.ok) {
+        const jobCheck = checkJobExpiration(application.job);
+        if (!jobCheck.ok) {
             return NextResponse.json(
-                { error: driveCheck.error, code: driveCheck.code },
+                { error: jobCheck.error, code: jobCheck.code },
                 { status: 403 }
             );
         }
@@ -164,7 +164,7 @@ export async function POST(
                     metadata: JSON.stringify({
                         applicationId,
                         candidateName: application.fullName,
-                        roleLabel: application.drive?.role || application.drive?.title || "Interview",
+                        roleLabel: application.job?.role || application.job?.title || "Interview",
                         timeLimitMins: FIXED_INTERVIEW_DURATION_MINUTES,
                     }),
                 });
@@ -179,13 +179,13 @@ export async function POST(
         });
         at.addGrant({ roomJoin: true, room: roomName, canPublish: true, canPublishData: true, canSubscribe: true });
 
-        const proctoringSignals = normalizeProctoringSignals(application.drive?.organization?.proctoringSignals);
+        const proctoringSignals = normalizeProctoringSignals(application.job?.organization?.enabledProctoringSignals);
 
         return NextResponse.json({
             token: await at.toJwt(),
             url: serverUrl,
             duration: durationSeconds,
-            roleLabel: application.drive?.role || application.drive?.title || "Interview",
+            roleLabel: application.job?.role || application.job?.title || "Interview",
             candidateName: application.fullName,
             proctoringSignals,
             scheduledAt: interview.scheduledAt?.toISOString(),
@@ -212,7 +212,7 @@ export async function GET(
         const application = await prisma.application.findUnique({
             where: { id: applicationId },
             include: {
-                drive: true,
+                job: true,
                 interview: true
             },
         });
@@ -224,10 +224,10 @@ export async function GET(
             return NextResponse.json({ error: "Invalid interview token" }, { status: 401 });
         }
 
-        const driveCheck = checkDriveExpiration(application.drive);
-        if (!driveCheck.ok) {
+        const jobCheck = checkJobExpiration(application.job);
+        if (!jobCheck.ok) {
             return NextResponse.json(
-                { error: driveCheck.error, code: driveCheck.code },
+                { error: jobCheck.error, code: jobCheck.code },
                 { status: 403 }
             );
         }

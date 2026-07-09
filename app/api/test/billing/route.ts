@@ -17,7 +17,7 @@ export async function GET(request: Request) {
             where: {
                 isTest: true,
                 isDeleted: false,
-                application: { drive: { orgId } },
+                application: { job: { orgId } },
             },
             select: {
                 id: true,
@@ -28,7 +28,7 @@ export async function GET(request: Request) {
                 application: {
                     select: {
                         fullName: true,
-                        drive: { select: { title: true, role: true } },
+                        job: { select: { title: true, role: true } },
                     },
                 },
             },
@@ -55,7 +55,7 @@ export async function GET(request: Request) {
             return {
                 id: iv.id,
                 candidate: iv.application?.fullName || "Unknown",
-                drive: iv.application?.drive?.role || iv.application?.drive?.title || "—",
+                job: iv.application?.job?.role || iv.application?.job?.title || "—",
                 date: (iv.completedAt ?? iv.updatedAt).toISOString(),
                 duration: durationSec ? `${Math.floor(durationSec / 60)}m ${durationSec % 60}s` : "—",
                 llmCost: llm,

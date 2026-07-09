@@ -37,8 +37,8 @@ export async function GET(
         include: {
             application: {
                 include: {
-                    drive: {
-                        include: { organization: { select: { id: true, name: true, maxConcurrentSlots: true } } },
+                    job: {
+                        include: { organization: { select: { id: true, name: true, maxConcurrentInterviews: true } } },
                     },
                 },
             },
@@ -53,13 +53,13 @@ export async function GET(
         return NextResponse.json({ error: "Interview already started or completed" }, { status: 409 });
     }
 
-    const org = interview.application.drive?.organization;
-    const maxSlots = org?.maxConcurrentSlots ?? 5;
+    const org = interview.application.job?.organization;
+    const maxSlots = org?.maxConcurrentInterviews ?? 5;
 
     const result: { info: object; deadline?: string; slots?: string[] } = {
         info: {
             candidateName: interview.application.fullName,
-            jobTitle: interview.application.drive?.role || interview.application.drive?.title,
+            jobTitle: interview.application.job?.role || interview.application.job?.title,
             orgName: org?.name,
             duration: 20,
             slotDuration: 30,
@@ -67,13 +67,13 @@ export async function GET(
         },
     };
 
-    if (interview.application.drive?.deadline) {
-        result.deadline = interview.application.drive.deadline.toISOString();
+    if (interview.application.job?.deadline) {
+        result.deadline = interview.application.job.deadline.toISOString();
     }
 
     if (dateIST) {
-        const drive = interview.application.drive;
-        const deadlineMs = drive?.deadline ? drive.deadline.getTime() : null;
+        const job = interview.application.job;
+        const deadlineMs = job?.deadline ? job.deadline.getTime() : null;
         const dateMs = new Date(dateIST + "T23:59:59+05:30").getTime(); // End of day in IST
 
         // If deadline is before this date, no slots available
@@ -92,7 +92,7 @@ export async function GET(
             where: {
                 scheduledAt: { not: null },
                 isDeleted: false,
-                application: { drive: { orgId } },
+                application: { job: { orgId } },
             },
             _count: { scheduledAt: true },
         });
@@ -128,8 +128,8 @@ export async function POST(
         include: {
             application: {
                 include: {
-                    drive: {
-                        include: { organization: { select: { name: true, maxConcurrentSlots: true, id: true } } },
+                    job: {
+                        include: { organization: { select: { name: true, maxConcurrentInterviews: true, id: true } } },
                     },
                 },
             },
@@ -139,8 +139,8 @@ export async function POST(
     if (!interview) return NextResponse.json({ error: "Invalid link" }, { status: 404 });
     if (interview.scheduledAt) return NextResponse.json({ error: "Already booked", alreadyBooked: true }, { status: 409 });
 
-    const org = interview.application.drive?.organization;
-    const maxSlots = org?.maxConcurrentSlots ?? 5;
+    const org = interview.application.job?.organization;
+    const maxSlots = org?.maxConcurrentInterviews ?? 5;
     const orgId = org?.id;
 
     // Atomic concurrency check: count how many interviews share this exact slot for the org
@@ -148,7 +148,7 @@ export async function POST(
         where: { 
             scheduledAt: slotDate, 
             isDeleted: false,
-            application: { drive: { orgId } } 
+            application: { job: { orgId } } 
         },
     });
     if (count >= maxSlots) {
@@ -179,7 +179,7 @@ export async function POST(
     await sendInterviewScheduledEmail({
         email: interview.application.email,
         fullName: interview.application.fullName,
-        jobTitle: interview.application.drive?.role || interview.application.drive?.title || "Interview",
+        jobTitle: interview.application.job?.role || interview.application.job?.title || "Interview",
         orgName: org?.name || "The Organization",
         interviewLink,
         scheduledAt: slotDate,

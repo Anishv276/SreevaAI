@@ -24,7 +24,7 @@ const NAV_GROUPS: { items: NavItem[] }[] = [
     {
         items: [
             { icon: LayoutDashboard, label: "Overview", href: "/admin" },
-            { icon: Briefcase, label: "Active Jobs", href: "/admin/drives" },
+            { icon: Briefcase, label: "Active Jobs", href: "/admin/jobs" },
             { icon: Users, label: "Candidates", href: "/admin/candidates" },
             { icon: Calendar, label: "Calendar", href: "/admin/schedule" },
         ]

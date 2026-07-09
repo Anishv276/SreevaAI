@@ -103,9 +103,9 @@ function addSeconds(base: Date | null, seconds: number | null | undefined) {
 async function getRetentionDaysForApplication(applicationId: string) {
     const application = await prisma.application.findUnique({
         where: { id: applicationId },
-        select: { drive: { select: { orgId: true } } },
+        select: { job: { select: { orgId: true } } },
     }).catch(() => null);
-    const orgId = String(application?.drive?.orgId || "");
+    const orgId = String(application?.job?.orgId || "");
     if (!orgId) return null;
     const settings = await getOrgRecordingSettings(orgId);
     return settings.recordingEnabled ? settings.recordingRetentionDays : null;
@@ -299,11 +299,11 @@ export async function POST(req: Request) {
                 where: { id: applicationId },
                 select: {
                     fullName: true,
-                    drive: { select: { title: true, orgId: true, organization: { select: { slug: true } } } },
+                    job: { select: { title: true, orgId: true, organization: { select: { urlSlug: true } } } },
                 },
             });
-            const orgSlug = application?.drive?.organization?.slug || application?.drive?.orgId || "unknown-org";
-            const driveTitle = (application?.drive?.title || "unknown-job").replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+            const orgSlug = application?.job?.organization?.urlSlug || application?.job?.orgId || "unknown-org";
+            const jobTitle = (application?.job?.title || "unknown-job").replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
             const candName = (application?.fullName || applicationId)
                 .replace(/[^a-zA-Z0-9_\- ]/g, "")
                 .trim()
@@ -312,10 +312,10 @@ export async function POST(req: Request) {
             const safeCandidate = candName;
             const recordingName = buildRecordingName(
                 application?.fullName,
-                application?.drive?.title,
+                application?.job?.title,
                 applicationId
             );
-            const orgId = String(application?.drive?.orgId || "");
+            const orgId = String(application?.job?.orgId || "");
             if (orgId) {
                 const recordingSettings = await getOrgRecordingSettings(orgId);
                 if (!recordingSettings.recordingEnabled) {
@@ -357,7 +357,7 @@ export async function POST(req: Request) {
                     status: statusToLabel(active.status),
                 });
             }
-            const recordingKey = `interview/${orgSlug}/${driveTitle}/${safeCandidate}/recordings/${Date.now()}-interview-${applicationId}.mp4`;
+            const recordingKey = `interview/${orgSlug}/${jobTitle}/${safeCandidate}/recordings/${Date.now()}-interview-${applicationId}.mp4`;
             const recordingUrl = buildPublicInterviewUrl(recordingKey);
             const startedAt = new Date();
             try {

@@ -6,7 +6,7 @@ import { getSession } from "@/lib/auth";
 import { deleteUrlTargets } from "@/lib/delete-utils";
 import { getRecordingUrl } from "@/lib/recording-state";
 /**
- * GET handler to fetch and filter candidates for a specific drive.
+ * GET handler to fetch and filter candidates for a specific job.
  * Supports various query filters like status variants, date ranges, and sorting rules.
  * 
  * @param {Request} request - The standard incoming Next.js API request wrapper.
@@ -17,7 +17,7 @@ export async function GET(request: Request) {
         const session = await getSession();
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
         const { searchParams } = new URL(request.url);
-        const driveId = searchParams.get("driveId");
+        const jobId = searchParams.get("jobId");
         const startDate = searchParams.get("startDate");
         const endDate = searchParams.get("endDate");
         const search = searchParams.get("search")?.trim() || "";
@@ -60,9 +60,9 @@ export async function GET(request: Request) {
             }
         };
         const baseSelect = `
-            SELECT a.*, d.title AS "driveTitle"
+            SELECT a.*, d.title AS "jobTitle"
             FROM "Application" a
-            JOIN "Drive" d ON d.id = a."driveId"
+            JOIN "Job" d ON d.id = a."jobId"
         `;
         // -- Security & Filtering -------------------
         const isSuperAdmin = session?.role === "SUPER_ADMIN";
@@ -74,10 +74,10 @@ export async function GET(request: Request) {
         }
         // -- PRISMA QUERY BUILDER -------------------
         const where: any = {
-            drive: { orgId }
+            job: { orgId }
         };
-        if (driveId && driveId !== "all") {
-            where.driveId = driveId;
+        if (jobId && jobId !== "all") {
+            where.jobId = jobId;
         }
         if (startDate || endDate) {
             where.createdAt = {};
@@ -98,14 +98,14 @@ export async function GET(request: Request) {
             where.OR = [
                 { fullName: { contains: search, mode: "insensitive" } },
                 { email: { contains: search, mode: "insensitive" } },
-                { drive: { title: { contains: search, mode: "insensitive" } } }
+                { job: { title: { contains: search, mode: "insensitive" } } }
             ];
         }
         const [candidates, total, statsResult] = await Promise.all([
             prisma.application.findMany({
                 where,
                 include: {
-                    drive: { select: { title: true, role: true } },
+                    job: { select: { title: true, role: true } },
                     interview: { select: { inviteSentAt: true, status: true, completedAt: true, isTest: true } },
                 },
                 orderBy:
@@ -122,7 +122,7 @@ export async function GET(request: Request) {
             prisma.application.groupBy({
                 by: ['resumeStatus', 'interviewStatus'],
                 where: {
-                    drive: { orgId, ...(driveId && driveId !== "all" ? { id: driveId } : {}) }
+                    job: { orgId, ...(jobId && jobId !== "all" ? { id: jobId } : {}) }
                 },
                 _count: { _all: true }
             }),
@@ -163,11 +163,11 @@ export async function GET(request: Request) {
             }
             return {
                 id: app.id,
-                driveId: app.driveId,
+                jobId: app.jobId,
                 fullName: app.fullName,
                 name: app.fullName,
                 email: app.email,
-                role: app.drive?.role || app.drive?.title || "Unknown Role",
+                role: app.job?.role || app.job?.title || "Unknown Role",
                 score: app.aiScore || 0,
                 status: app.resumeStatus,
                 interviewStatus: app.interview?.status || app.interviewStatus,
@@ -241,7 +241,7 @@ export async function DELETE(request: Request) {
             return NextResponse.json({ error: "No candidates or organization specified for deletion" }, { status: 400 });
         }
         const whereClause: any = {
-            drive: { orgId }
+            job: { orgId }
         };
         if (ids.length > 0) {
             whereClause.id = { in: ids };

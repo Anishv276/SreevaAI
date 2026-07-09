@@ -12,11 +12,11 @@ const actions = [
     },
     {
         id: 2,
-        text: "Drive closing in 5 days",
+        text: "Job closing in 5 days",
         sub: "Product Designer",
         buttonLabel: "Extend or Close",
         buttonColor: "bg-[#2563EB] hover:bg-blue-600 text-white",
-        href: "/admin/drives",
+        href: "/admin/jobs",
     },
     {
         id: 3,
@@ -24,7 +24,7 @@ const actions = [
         sub: "2 managers haven't responded",
         buttonLabel: "Send Reminder",
         buttonColor: "bg-white border border-[#EAEAEA] hover:bg-[#F9FAFB] text-[#374151]",
-        href: "/admin/drives",
+        href: "/admin/jobs",
     },
 ];
 export function ActionRequired() {

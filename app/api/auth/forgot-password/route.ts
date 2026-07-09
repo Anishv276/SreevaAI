@@ -26,16 +26,16 @@ export async function POST(request: Request) {
             },
             select: { id: true, name: true }
         });
-        const userRecord = await prisma.user.findFirst({
+        const userRecord = await prisma.organizationCredentials.findFirst({
             where: {
                 email: {
                     equals: normalizedEmail,
                     mode: "insensitive",
                 },
             },
-            select: { id: true, name: true, role: true, orgId: true }
+            select: { id: true, name: true, platformRole: true, organizationId: true }
         });
-        if (!superAdminRecord && (!userRecord || userRecord.role !== "ADMIN")) {
+        if (!superAdminRecord && (!userRecord || userRecord.platformRole !== "ADMIN")) {
             return NextResponse.json({ error: "Access denied. Only authorized accounts can reset passwords." }, { status: 403 });
         }
         // CSPRNG -- Math.random() is not cryptographically secure and made the
@@ -45,12 +45,12 @@ export async function POST(request: Request) {
         if (superAdminRecord) {
             await prisma.superAdmin.update({
                 where: { id: superAdminRecord.id },
-                data: { resetOtp: otp, resetOtpExpires: expires }
+                data: { passwordResetOtp: otp, passwordResetOtpExpiresAt: expires }
             });
         } else if (userRecord) {
-            await prisma.user.update({
+            await prisma.organizationCredentials.update({
                 where: { id: userRecord.id },
-                data: { resetOtp: otp, resetOtpExpires: expires }
+                data: { passwordResetOtp: otp, passwordResetOtpExpiresAt: expires }
             });
         }
         const name = superAdminRecord?.name || userRecord?.name || "Admin";

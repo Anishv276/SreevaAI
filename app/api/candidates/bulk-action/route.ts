@@ -15,13 +15,13 @@ export async function POST(request: Request) {
         }
         // Security: only operate on applications belonging to this org
         const applications = await prisma.application.findMany({
-            where: { id: { in: ids }, drive: { orgId } },
+            where: { id: { in: ids }, job: { orgId } },
             select: {
                 id: true,
                 fullName: true,
                 email: true,
                 resumeUrl: true,
-                drive: { select: { id: true, title: true, orgId: true } },
+                job: { select: { id: true, title: true, orgId: true } },
             },
         });
         if (!applications.length) {

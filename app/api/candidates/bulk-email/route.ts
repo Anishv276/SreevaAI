@@ -12,7 +12,7 @@ type BulkEmailTarget = {
     fullName: string;
     email: string;
     resumeStatus: string | null;
-    drive: {
+    job: {
         id: string;
         title: string;
         orgId: string | null;
@@ -30,10 +30,10 @@ export async function POST(request: Request) {
         const orgId = session.orgId;
         if (!orgId) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
         const [org, billing] = await Promise.all([
-            prisma.organization.findUnique({ where: { id: orgId }, select: { status: true } }),
+            prisma.organizationDetails.findUnique({ where: { id: orgId }, select: { orgStatus: true } }),
             getOrgBillingStatus(orgId),
         ]);
-        const isSuspended = isOrgRestrictedStatus(org?.status);
+        const isSuspended = isOrgRestrictedStatus(org?.orgStatus);
         const quotaLocked = isInterviewQuotaLocked(billing);
         if (isSuspended || quotaLocked) {
             return NextResponse.json(
@@ -50,14 +50,14 @@ export async function POST(request: Request) {
         }
         // -- Resolve applications (direct + resume-candidate indirection) ------
         const directApplications = await prisma.application.findMany({
-            where: { id: { in: ids }, drive: { orgId } },
+            where: { id: { in: ids }, job: { orgId } },
             select: {
                 id: true,
                 fullName: true,
                 email: true,
                 resumeStatus: true,
                 resumeUrl: true,
-                drive: {
+                job: {
                     select: {
                         id: true,
                         title: true,

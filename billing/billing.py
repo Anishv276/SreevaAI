@@ -554,7 +554,7 @@ class UsageSummarizer:
             }
 
         # LLM tokens are billed per-turn via the interviewLLMGeneration hook
-        # (every live-agent turn is directive-driven, never generic chat) --
+        # (every live-agent turn is directive-jobn, never generic chat) --
         # zero them here to avoid double-billing the same tokens under the
         # session-total "interview" bucket. sessionDuration is kept: it's not
         # a token count and isn't captured anywhere else.
@@ -1185,7 +1185,7 @@ class BillingRepository:
                               NULLIF(i."recording"->>'durationSec', '')::float AS "recordingDurationSec"
                        FROM "Interview" i
                        JOIN "Application" a ON a.id = i."applicationId"
-                       JOIN "Drive"       d ON d.id  = a."driveId"
+                       JOIN "Job"       d ON d.id  = a."jobId"
                        WHERE a.id = $1 LIMIT 1""",
                     app_id,
                 )

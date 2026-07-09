@@ -25,30 +25,30 @@ export async function POST(request: Request) {
 
         const formData = await request.formData();
         const file = formData.get("file") as File | null;
-        const driveId = formData.get("driveId") as string | null;
+        const jobId = formData.get("jobId") as string | null;
         const fullName = (formData.get("fullName") as string | null)?.trim() || "";
         const email = (formData.get("email") as string | null)?.trim() || "";
         const phone = (formData.get("phone") as string | null)?.trim() || "";
 
-        if (!driveId || !fullName || !email || !file) {
-            return NextResponse.json({ error: "driveId, fullName, email, and file are required" }, { status: 400 });
+        if (!jobId || !fullName || !email || !file) {
+            return NextResponse.json({ error: "jobId, fullName, email, and file are required" }, { status: 400 });
         }
 
         const orgId = session.orgId;
         if (!orgId) return NextResponse.json({ error: "No org" }, { status: 403 });
 
-        const drive = await prisma.drive.findUnique({
-            where: { id: driveId },
-            select: { orgId: true, title: true, organization: { select: { slug: true } } },
+        const job = await prisma.job.findUnique({
+            where: { id: jobId },
+            select: { orgId: true, title: true, organization: { select: { urlSlug: true } } },
         });
-        if (!drive || drive.orgId !== orgId) {
-            return NextResponse.json({ error: "Drive not found" }, { status: 404 });
+        if (!job || job.orgId !== orgId) {
+            return NextResponse.json({ error: "Job not found" }, { status: 404 });
         }
 
         // Upload PDF to R2
-        const orgSlug = drive.organization?.slug || orgId;
+        const orgSlug = job.organization?.urlSlug || orgId;
         const safeName = sanitizeFileName(file.name);
-        const key = `resume/${orgSlug}/${driveId}/${Date.now()}-${randomUUID().slice(0, 8)}-${safeName}`;
+        const key = `resume/${orgSlug}/${jobId}/${Date.now()}-${randomUUID().slice(0, 8)}-${safeName}`;
         const buffer = Buffer.from(await file.arrayBuffer());
         const resumeUrl = await putObject(RESUME_BUCKET, key, buffer, "application/pdf");
 
@@ -66,7 +66,7 @@ export async function POST(request: Request) {
                     source: { bucket: RESUME_BUCKET, key, url: resumeUrl },
                 }),
                 aiReport: JSON.stringify({ processing: { progress: 0, stage: "waiting" } }),
-                driveId,
+                jobId,
                 resumeStatus: "waiting",
                 interviewStatus: "pending",
             },

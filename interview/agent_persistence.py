@@ -183,7 +183,7 @@ async def get_interview_context(app_id: str) -> dict:
            i.status AS "interviewStatus",
            i."interviewBrief"
     FROM "Application" a
-    JOIN "Drive" d ON a."driveId" = d.id
+    JOIN "Job" d ON a."jobId" = d.id
     LEFT JOIN "Organization" o ON d."orgId" = o.id
     LEFT JOIN "Interview" i ON i."applicationId" = a.id
     WHERE a.id = $1
@@ -204,7 +204,7 @@ async def get_interview_context(app_id: str) -> dict:
                 "extractedDetails":   row["extractedDetails"],
                 "screeningCriteria":  row["screeningCriteria"],
                 "jobTitle":           row["role"] or row["title"],
-                "driveTitle":         row["title"],
+                "jobTitle":         row["title"],
                 "jd":                 _build_jd_from_extracted(row["extractedDetails"]),
                 "orgId":              row["orgId"],
                 "orgName":            row["orgName"],
@@ -340,7 +340,7 @@ async def mark_interview_started(app_id: str) -> None:
     logger.info(f"[INTERVIEW] App {app_id} marked as IN_PROGRESS.")
 async def mark_interview_failed(app_id: str, reason: str = "technical_error") -> None:
     """Mark interview and application as FAILED in DB.
-    Called whenever the agent crashes before a normal completion so the Drive
+    Called whenever the agent crashes before a normal completion so the Job
     candidates page shows FAILED instead of hanging in IN_PROGRESS forever.
     Silently no-ops if DATABASE_URL is missing (offline/test environment).
     """

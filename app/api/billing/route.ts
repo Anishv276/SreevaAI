@@ -15,10 +15,10 @@ export async function GET(request: Request) {
         const customFrom = searchParams.get('customFrom');
         const customTo = searchParams.get('customTo');
         
-        const org = await prisma.organization.findUnique({
+        const org = await prisma.organizationDetails.findUnique({
             where: { id: orgId },
             include: {
-                drives: {
+                jobs: {
                     where: { isDeleted: false }
                 }
             }
@@ -36,7 +36,7 @@ export async function GET(request: Request) {
         // Fetch interviews for this month
         const thisMonthInterviews = await prisma.interview.findMany({
             where: {
-                application: { drive: { orgId } },
+                application: { job: { orgId } },
                 completedAt: { gte: startOfMonth },
                 status: "COMPLETED",
                 isDeleted: false
@@ -46,15 +46,15 @@ export async function GET(request: Request) {
         // Fetch interviews for last month
         const lastMonthInterviews = await prisma.interview.findMany({
             where: {
-                application: { drive: { orgId } },
+                application: { job: { orgId } },
                 completedAt: { gte: startOfLastMonth, lte: endOfLastMonth },
                 status: "COMPLETED",
                 isDeleted: false
             }
         });
 
-        const activeDrivesCount = org.drives.length;
-        const maxActiveDrivesStr = org.maxActiveDrives === "Unlimited" ? "Unlimited" : parseInt(org.maxActiveDrives);
+        const activeJobsCount = org.jobs.length;
+        const maxActiveJobsStr = org.maxActiveJobs === "Unlimited" ? "Unlimited" : parseInt(org.maxActiveJobs);
         
         const thisMonthTimeSec = thisMonthInterviews.reduce((acc, curr) => acc + (curr.interviewDuration || 0), 0);
         const lastMonthTimeSec = lastMonthInterviews.reduce((acc, curr) => acc + (curr.interviewDuration || 0), 0);
@@ -79,7 +79,7 @@ export async function GET(request: Request) {
                 trendMap.set(hourLabel, 0);
             }
             trendInterviews = await prisma.interview.findMany({
-                where: { application: { drive: { orgId } }, completedAt: { gte: startOfToday }, status: "COMPLETED", isDeleted: false }
+                where: { application: { job: { orgId } }, completedAt: { gte: startOfToday }, status: "COMPLETED", isDeleted: false }
             });
             trendInterviews.forEach(inv => {
                 if (inv.completedAt) {
@@ -97,7 +97,7 @@ export async function GET(request: Request) {
                 d.setDate(d.getDate() + 1);
             }
             trendInterviews = await prisma.interview.findMany({
-                where: { application: { drive: { orgId } }, completedAt: { gte: startOfWeek }, status: "COMPLETED", isDeleted: false }
+                where: { application: { job: { orgId } }, completedAt: { gte: startOfWeek }, status: "COMPLETED", isDeleted: false }
             });
             trendInterviews.forEach(inv => {
                 if (inv.completedAt) {
@@ -118,7 +118,7 @@ export async function GET(request: Request) {
                     trendMap.set(hourLabel, 0);
                 }
                 trendInterviews = await prisma.interview.findMany({
-                    where: { application: { drive: { orgId } }, completedAt: { gte: startDate, lte: endDate }, status: "COMPLETED", isDeleted: false }
+                    where: { application: { job: { orgId } }, completedAt: { gte: startDate, lte: endDate }, status: "COMPLETED", isDeleted: false }
                 });
                 trendInterviews.forEach(inv => {
                     if (inv.completedAt) {
@@ -135,7 +135,7 @@ export async function GET(request: Request) {
                     d.setDate(d.getDate() + 1);
                 }
                 trendInterviews = await prisma.interview.findMany({
-                    where: { application: { drive: { orgId } }, completedAt: { gte: startDate, lte: endDate }, status: "COMPLETED", isDeleted: false }
+                    where: { application: { job: { orgId } }, completedAt: { gte: startDate, lte: endDate }, status: "COMPLETED", isDeleted: false }
                 });
                 trendInterviews.forEach(inv => {
                     if (inv.completedAt) {
@@ -164,21 +164,21 @@ export async function GET(request: Request) {
         const trend = Array.from(trendMap.entries()).map(([date, count]) => ({ date, count }));
 
         // Use actual organization quota fields for interviews completed card
-        const interviewsTotal = org.interviewQuotaTotal || 300;
-        const interviewsUsed = org.interviewQuotaUsed || 0;
+        const interviewsTotal = org.totalInterviewsAllowed || 300;
+        const interviewsUsed = org.totalInterviewsUsed || 0;
 
         return NextResponse.json({
             plan: {
-                name: org.plan || "Starter",
-                price: org.plan.toLowerCase().includes("scale") ? 699 : 0,
+                name: org.billingPlan || "Starter",
+                price: org.billingPlan.toLowerCase().includes("scale") ? 699 : 0,
                 interviewsTotal,
                 interviewsUsed,
-                maxActiveDrives: maxActiveDrivesStr,
+                maxActiveJobs: maxActiveJobsStr,
                 billingCycle: "Monthly",
                 nextBillingDate: new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString(),
             },
             usage: {
-                activeDrives: activeDrivesCount,
+                activeJobs: activeJobsCount,
                 totalInterviewTime: thisMonthTimeSec, 
                 interviewsCompleted: interviewsUsed, // Send actual quota used
                 usageVsLastMonth,

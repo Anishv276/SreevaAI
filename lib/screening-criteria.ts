@@ -2,15 +2,15 @@ export interface ScreeningCriteria {
     skills?: {
         mustHave?: Array<{ name: string; weight?: number }>;
         optional?: Array<{ name: string; weight?: number }>;
-        // Backward compatibility for older saved drives.
+        // Backward compatibility for older saved jobs.
         required?: Array<{ name: string; weight?: number }>;
         niceToHave?: Array<{ name: string; weight?: number }>;
     };
     customChecks?: Array<{ text: string; required?: boolean }>;
-    // Backward compatibility for older saved drives.
+    // Backward compatibility for older saved jobs.
     evaluationInstructions?: string;
 }
-export interface DriveScreeningSettings {
+export interface JobScreeningSettings {
     threshold: number;
     criteria: ScreeningCriteria;
 }
@@ -77,10 +77,10 @@ export function sanitizeScreeningCriteria(criteria: ScreeningCriteria | Record<s
         evaluationInstructions: typeof source.evaluationInstructions === "string" ? source.evaluationInstructions : undefined,
     };
 }
-export function parseDriveScreeningSettings(
+export function parseJobScreeningSettings(
     screeningCriteria: unknown,
     threshold: number
-): DriveScreeningSettings {
+): JobScreeningSettings {
     const parsed = sanitizeScreeningCriteria(parseMaybeJson(screeningCriteria));
     return {
         threshold: Number.isFinite(threshold) ? threshold : 60,

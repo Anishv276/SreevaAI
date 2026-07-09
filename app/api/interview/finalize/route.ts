@@ -30,7 +30,7 @@ async function persistInterviewUpdateRaw(params: {
   const finalStatus = interviewStatus || "IN_PROGRESS";
   const app = await prisma.application.findUnique({
     where: { id: applicationId },
-    select: { fullName: true, drive: { select: { title: true, role: true } } }
+    select: { fullName: true, job: { select: { title: true, role: true } } }
   });
   const existingInterview = await prisma.interview.findUnique({
     where: { applicationId },
@@ -40,7 +40,7 @@ async function persistInterviewUpdateRaw(params: {
   const accessToken = crypto.randomUUID();
   const completedAtIso = recordingCompletedAt?.toISOString() || null;
   const recordingPatch: RecordingState = recordingUrl ? {
-    name: [app?.fullName, app?.drive?.title || app?.drive?.role].filter(Boolean).join(" - ") || applicationId,
+    name: [app?.fullName, app?.job?.title || app?.job?.role].filter(Boolean).join(" - ") || applicationId,
     status: finalStatus === "COMPLETED" ? "COMPLETED" : "IN_PROGRESS",
     url: recordingUrl,
     recordedAt: completedAtIso || new Date().toISOString(),
@@ -114,14 +114,14 @@ export async function POST(req: Request) {
       const appForRecordingPolicy = await prisma.application.findUnique({
         where: { id: applicationId },
         select: {
-          drive: {
+          job: {
             select: {
               orgId: true,
             },
           },
         },
       });
-      const recordingOrgId = appForRecordingPolicy?.drive?.orgId || "";
+      const recordingOrgId = appForRecordingPolicy?.job?.orgId || "";
       if (recordingOrgId) {
         recordingSettingsForOrg = await getOrgRecordingSettings(recordingOrgId);
         if (!recordingSettingsForOrg.recordingEnabled) {
@@ -193,10 +193,10 @@ export async function POST(req: Request) {
           where: { id: applicationId },
           select: {
             fullName: true,
-            drive: { select: { orgId: true, role: true, title: true } }
+            job: { select: { orgId: true, role: true, title: true } }
           }
         });
-        const orgId = appForOrg?.drive?.orgId;
+        const orgId = appForOrg?.job?.orgId;
         if (recordingUrlForPersist && orgId) {
           const recordingSettings = recordingSettingsForOrg || await getOrgRecordingSettings(orgId);
           if (recordingSettings.recordingEnabled && recordingSettings.recordingRetentionDays !== null) {

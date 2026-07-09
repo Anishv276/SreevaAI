@@ -29,19 +29,19 @@ export async function GET(request: Request) {
         const fromDate = from ? new Date(from) : null;
         const toDate = to ? new Date(to) : null;
         // -- Phase 1: Total Count (Filtered) -------------------
-        const whereClause: Prisma.OrganizationWhereInput = search ? {
+        const whereClause: Prisma.OrganizationDetailsWhereInput = search ? {
             OR: [
                 { name: { contains: search, mode: "insensitive" as const } },
-                { slug: { contains: search, mode: "insensitive" as const } },
+                { urlSlug: { contains: search, mode: "insensitive" as const } },
             ]
         } : {};
         if (fromDate && toDate) {
-            (whereClause as Prisma.OrganizationWhereInput).createdAt = {
+            (whereClause as Prisma.OrganizationDetailsWhereInput).orgCreatedAt = {
                 gte: fromDate,
                 lte: toDate
             };
         }
-        const total = await prisma.organization.count({ where: whereClause });
+        const total = await prisma.organizationDetails.count({ where: whereClause });
         const totalPages = Math.ceil(total / limit);
         // -- Phase 2: Paginated Org Data (Unified SQL) --------------
         const sqlSearch = search ? `%${search}%` : "%";
@@ -49,16 +49,16 @@ export async function GET(request: Request) {
         const orgs = (await prisma.$queryRaw`
             SELECT
                 o.*,
-                (SELECT COUNT(*)::INT FROM "User" u WHERE u."orgId" = o.id AND u."isDeleted" = false) as "adminCount",
-                (SELECT COUNT(*)::INT FROM "Drive" d WHERE d."orgId" = o.id AND d."isDeleted" = false) as "driveCount",
-                (SELECT COUNT(*)::INT FROM "Application" a JOIN "Drive" d ON d.id = a."driveId" WHERE d."orgId" = o.id AND a."isDeleted" = false AND d."isDeleted" = false) as "candidateCount",
+                (SELECT COUNT(*)::INT FROM "OrganizationCredentials" u WHERE u."organizationId" = o.id AND u."isDeleted" = false) as "adminCount",
+                (SELECT COUNT(*)::INT FROM "Job" d WHERE d."orgId" = o.id AND d."isDeleted" = false) as "jobCount",
+                (SELECT COUNT(*)::INT FROM "Application" a JOIN "Job" d ON d.id = a."jobId" WHERE d."orgId" = o.id AND a."isDeleted" = false AND d."isDeleted" = false) as "candidateCount",
                 (SELECT COUNT(*)::INT FROM "Interview" i
                  JOIN "Application" a ON a.id = i."applicationId"
-                 JOIN "Drive" d ON d.id = a."driveId"
+                 JOIN "Job" d ON d.id = a."jobId"
                  WHERE d."orgId" = o.id AND i."isDeleted" = false AND a."isDeleted" = false AND d."isDeleted" = false) as "interviewCount",
                 (SELECT COUNT(*)::INT FROM "Interview" i
                  JOIN "Application" a ON a.id = i."applicationId"
-                 JOIN "Drive" d ON d.id = a."driveId"
+                 JOIN "Job" d ON d.id = a."jobId"
                  WHERE d."orgId" = o.id AND i."isDeleted" = false AND a."isDeleted" = false AND d."isDeleted" = false AND i."status" = 'COMPLETED') as "interviewsCompleted",
                 COALESCE(o."creditsUsed", 0) as "creditsUsed"
             FROM "Organization" o
@@ -68,7 +68,7 @@ export async function GET(request: Request) {
             LIMIT ${limit} OFFSET ${offset}
         `) as Array<Record<string, unknown> & {
             adminCount: number;
-            driveCount: number;
+            jobCount: number;
             candidateCount: number;
             interviewCount: number;
             interviewsCompleted: number;
@@ -91,13 +91,13 @@ export async function GET(request: Request) {
             recentActivity,
             trends,
         ] = await Promise.all([
-            prisma.organization.count(),
-            prisma.organization.count({ where: { status: "ACTIVE" } }),
-            prisma.organization.count({ where: { status: "SUSPENDED" } }),
-            prisma.organization.count({ where: { status: "CLOSED" } }),
+            prisma.organizationDetails.count(),
+            prisma.organizationDetails.count({ where: { orgStatus: "ACTIVE" } }),
+            prisma.organizationDetails.count({ where: { orgStatus: "SUSPENDED" } }),
+            prisma.organizationDetails.count({ where: { orgStatus: "CLOSED" } }),
             prisma.$queryRaw<Array<{
                 totalAdmins: number;
-                totalDrives: number;
+                totalJobs: number;
                 totalCandidates: number;
                 totalShortlisted: number;
                 totalInterviewed: number;
@@ -106,8 +106,8 @@ export async function GET(request: Request) {
                 totalCreditsUsed: number;
             }>>`
                 SELECT
-                    (SELECT COUNT(*)::INT FROM "User" WHERE "isDeleted" = false) as "totalAdmins",
-                    (SELECT COUNT(*)::INT FROM "Drive" WHERE "isDeleted" = false) as "totalDrives",
+                    (SELECT COUNT(*)::INT FROM "OrganizationCredentials" WHERE "isDeleted" = false) as "totalAdmins",
+                    (SELECT COUNT(*)::INT FROM "Job" WHERE "isDeleted" = false) as "totalJobs",
                     (SELECT COUNT(*)::INT FROM "Application" WHERE "isDeleted" = false) as "totalCandidates",
                     (SELECT COUNT(*)::INT FROM "Application" WHERE "isDeleted" = false AND "resumeStatus" = 'shortlisted') as "totalShortlisted",
                     (SELECT COUNT(*)::INT FROM "Interview" WHERE "isDeleted" = false AND "status" = 'COMPLETED') as "totalInterviewed",
@@ -128,8 +128,8 @@ export async function GET(request: Request) {
             prisma.$queryRaw<Array<{ name: string, count: number }>>`
                 SELECT o."name", COUNT(i.id)::INT as "count"
                 FROM "Organization" o
-                JOIN "Drive" d ON d."orgId" = o.id
-                JOIN "Application" a ON a."driveId" = d.id
+                JOIN "Job" d ON d."orgId" = o.id
+                JOIN "Application" a ON a."jobId" = d.id
                 JOIN "Interview" i ON i."applicationId" = a.id
                 WHERE o."isDeleted" = false AND d."isDeleted" = false AND a."isDeleted" = false AND i."isDeleted" = false
                 GROUP BY o."name"
@@ -147,18 +147,18 @@ export async function GET(request: Request) {
                     ) org_activity
                     UNION ALL
                     SELECT * FROM (
-                        SELECT 'DRIVE' as type, d.title as detail, COALESCE(o.name, '') as org, d."createdAt" as at
-                        FROM "Drive" d
+                        SELECT 'JOB' as type, d.title as detail, COALESCE(o.name, '') as org, d."createdAt" as at
+                        FROM "Job" d
                         LEFT JOIN "Organization" o ON o.id = d."orgId"
                         WHERE d."isDeleted" = false
                         ORDER BY d."createdAt" DESC
                         LIMIT 10
-                    ) drive_activity
+                    ) job_activity
                     UNION ALL
                     SELECT * FROM (
                         SELECT 'CANDIDATE' as type, a."fullName" as detail, COALESCE(o.name, '') as org, a."createdAt" as at
                         FROM "Application" a
-                        LEFT JOIN "Drive" d ON d.id = a."driveId"
+                        LEFT JOIN "Job" d ON d.id = a."jobId"
                         LEFT JOIN "Organization" o ON o.id = d."orgId"
                         WHERE a."isDeleted" = false
                         ORDER BY a."createdAt" DESC
@@ -169,7 +169,7 @@ export async function GET(request: Request) {
                         SELECT 'INTERVIEW' as type, 'Completed' as detail, COALESCE(o.name, '') as org, i."completedAt" as at
                         FROM "Interview" i
                         JOIN "Application" a ON a.id = i."applicationId"
-                        LEFT JOIN "Drive" d ON d.id = a."driveId"
+                        LEFT JOIN "Job" d ON d.id = a."jobId"
                         LEFT JOIN "Organization" o ON o.id = d."orgId"
                         WHERE i."isDeleted" = false AND a."isDeleted" = false AND i."status" = 'COMPLETED' AND i."completedAt" IS NOT NULL
                         ORDER BY i."completedAt" DESC
@@ -184,18 +184,18 @@ export async function GET(request: Request) {
                 orgsPrev: number;
                 adminsNew: number;
                 adminsPrev: number;
-                drivesNew: number;
-                drivesPrev: number;
+                jobsNew: number;
+                jobsPrev: number;
                 candidatesNew: number;
                 candidatesPrev: number;
             }>>`
                 SELECT
                     (SELECT COUNT(*)::INT FROM "Organization" WHERE "isDeleted" = false AND "createdAt" >= ${lastWeek}) as "orgsNew",
                     (SELECT COUNT(*)::INT FROM "Organization" WHERE "isDeleted" = false AND "createdAt" >= ${twoWeeksAgo} AND "createdAt" < ${lastWeek}) as "orgsPrev",
-                    (SELECT COUNT(*)::INT FROM "User" WHERE "isDeleted" = false AND "createdAt" >= ${lastWeek}) as "adminsNew",
-                    (SELECT COUNT(*)::INT FROM "User" WHERE "isDeleted" = false AND "createdAt" >= ${twoWeeksAgo} AND "createdAt" < ${lastWeek}) as "adminsPrev",
-                    (SELECT COUNT(*)::INT FROM "Drive" WHERE "isDeleted" = false AND "createdAt" >= ${lastWeek}) as "drivesNew",
-                    (SELECT COUNT(*)::INT FROM "Drive" WHERE "isDeleted" = false AND "createdAt" >= ${twoWeeksAgo} AND "createdAt" < ${lastWeek}) as "drivesPrev",
+                    (SELECT COUNT(*)::INT FROM "OrganizationCredentials" WHERE "isDeleted" = false AND "accountCreatedAt" >= ${lastWeek}) as "adminsNew",
+                    (SELECT COUNT(*)::INT FROM "OrganizationCredentials" WHERE "isDeleted" = false AND "accountCreatedAt" >= ${twoWeeksAgo} AND "accountCreatedAt" < ${lastWeek}) as "adminsPrev",
+                    (SELECT COUNT(*)::INT FROM "Job" WHERE "isDeleted" = false AND "createdAt" >= ${lastWeek}) as "jobsNew",
+                    (SELECT COUNT(*)::INT FROM "Job" WHERE "isDeleted" = false AND "createdAt" >= ${twoWeeksAgo} AND "createdAt" < ${lastWeek}) as "jobsPrev",
                     (SELECT COUNT(*)::INT FROM "Application" WHERE "isDeleted" = false AND "createdAt" >= ${lastWeek}) as "candidatesNew",
                     (SELECT COUNT(*)::INT FROM "Application" WHERE "isDeleted" = false AND "createdAt" >= ${twoWeeksAgo} AND "createdAt" < ${lastWeek}) as "candidatesPrev"
             `,
@@ -212,7 +212,7 @@ export async function GET(request: Request) {
             suspendedOrgs,
             closedOrgs,
             totalAdmins: c.totalAdmins || 0,
-            totalDrives: c.totalDrives || 0,
+            totalJobs: c.totalJobs || 0,
             totalCandidates: c.totalCandidates || 0,
             totalShortlisted: c.totalShortlisted || 0,
             totalInterviewed: c.totalInterviewed || 0,
@@ -231,7 +231,7 @@ export async function GET(request: Request) {
             trends: {
                 orgs: calculateTrend(t.orgsNew, t.orgsPrev),
                 admins: calculateTrend(t.adminsNew, t.adminsPrev),
-                drives: calculateTrend(t.drivesNew, t.drivesPrev),
+                jobs: calculateTrend(t.jobsNew, t.jobsPrev),
                 candidates: calculateTrend(t.candidatesNew, t.candidatesPrev),
                 credits: 0
             }
@@ -280,7 +280,7 @@ export async function POST(request: Request) {
         const body = await request.json();
         const {
             orgName, slug, plan, adminEmail, adminPassword,
-            maxActiveDrives,
+            maxActiveJobs,
             interviewQuotaTotal,
             recordingEnabled,
             recordingRetentionDays,
@@ -310,7 +310,7 @@ export async function POST(request: Request) {
                 },
                 select: { id: true },
             }),
-            prisma.user.findFirst({
+            prisma.organizationCredentials.findFirst({
                 where: {
                     email: {
                         equals: normalizedAdminEmail,
@@ -336,7 +336,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "slug is required" }, { status: 400 });
         }
         // Check slug uniqueness against the exact value that will be stored.
-        const existing = await prisma.organization.findUnique({ where: { slug: normalizedSlug } });
+        const existing = await prisma.organizationDetails.findUnique({ where: { urlSlug: normalizedSlug } });
         if (existing) {
             return NextResponse.json({ error: `Slug "${normalizedSlug}" is already taken. Choose another.` }, { status: 409 });
         }
@@ -358,40 +358,40 @@ export async function POST(request: Request) {
         // Create org + admin in a transaction
         const result = await prisma.$transaction(async (tx) => {
             // Build org data explicitly to ensure exclusivity
-            const orgData: Prisma.OrganizationCreateInput & {
+            const orgData: Prisma.OrganizationDetailsCreateInput & {
                 id: string;
-                usageMetrics: Prisma.InputJsonValue;
+                platformUsageMetrics: Prisma.InputJsonValue;
             } = {
                 id: generateId("org", orgName),
                 name: orgName,
-                slug: normalizedSlug,
-                plan: normalizedPlan,
-                maxActiveDrives:
-                    maxActiveDrives !== undefined && maxActiveDrives !== null && String(maxActiveDrives).trim() !== ""
-                        ? normalizeOrgLimitInput(maxActiveDrives)
+                urlSlug: normalizedSlug,
+                billingPlan: normalizedPlan,
+                maxActiveJobs:
+                    maxActiveJobs !== undefined && maxActiveJobs !== null && String(maxActiveJobs).trim() !== ""
+                        ? normalizeOrgLimitInput(maxActiveJobs)
                         : "Unlimited",
-                maxConcurrentSlots: maxConcurrentSlots !== undefined && maxConcurrentSlots !== null ? Math.max(1, parseInt(maxConcurrentSlots)) : 5,
-                interviewQuotaTotal: Math.max(0, Math.round(Number(interviewQuotaTotal ?? 0) || 0)),
-                creditsUsed: 0,
-                recordingEnabled: resolvedRecordingEnabled ? true : null,
-                recordingRetentionDays: resolvedRecordingEnabled ? resolvedRecordingRetentionDays : null,
-                usageMetrics: {},
+                maxConcurrentInterviews: maxConcurrentSlots !== undefined && maxConcurrentSlots !== null ? Math.max(1, parseInt(maxConcurrentSlots)) : 5,
+                totalInterviewsAllowed: Math.max(0, Math.round(Number(interviewQuotaTotal ?? 0) || 0)),
+                billingCreditsUsed: 0,
+                isRecordingEnabled: resolvedRecordingEnabled ? true : null,
+                recordingKeepForDays: resolvedRecordingEnabled ? resolvedRecordingRetentionDays : null,
+                platformUsageMetrics: {},
             };
             if (resolvedSignals !== undefined) {
-                orgData.proctoringSignals = resolvedSignals;
+                orgData.enabledProctoringSignals = resolvedSignals;
             }
             // AI models set to schema defaults -- configured later via Super Admin → AI Models page
             const userId = generateId("usr", normalizedAdminEmail.split("@")[0]);
-            const org = await tx.organization.create({
+            const org = await tx.organizationDetails.create({
                 data: orgData,
             });
-            const admin = await tx.user.create({
+            const admin = await tx.organizationCredentials.create({
                 data: {
                     id: userId,
                     email: normalizedAdminEmail,
                     name: orgName,
                     password: hashedPassword,
-                    orgId: org.id,
+                    organizationId: org.id,
                 },
             });
             return { org, admin };

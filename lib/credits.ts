@@ -96,24 +96,24 @@ export async function syncOrgStatusWithInterviewQuota(orgId: string): Promise<st
     const statusControl = normalizeOrgStatusControl(current.statusControl);
     if (statusControl === ORG_STATUS_CONTROL_MANUAL) {
         if (currentStatus !== "SUSPENDED") {
-            await prisma.organization.update({
+            await prisma.organizationDetails.update({
                 where: { id: orgId },
-                data: { status: "SUSPENDED" },
+                data: { orgStatus: "SUSPENDED" },
             });
         }
         return "SUSPENDED";
     }
     if (interviewQuotaTotal > 0 && interviewQuotaRemaining <= 0 && currentStatus !== "SUSPENDED") {
-        await prisma.organization.update({
+        await prisma.organizationDetails.update({
             where: { id: orgId },
-            data: { status: "SUSPENDED" },
+            data: { orgStatus: "SUSPENDED" },
         });
         return "SUSPENDED";
     }
     if (interviewQuotaTotal > 0 && interviewQuotaRemaining > 0 && currentStatus !== "ACTIVE") {
-        await prisma.organization.update({
+        await prisma.organizationDetails.update({
             where: { id: orgId },
-            data: { status: "ACTIVE" },
+            data: { orgStatus: "ACTIVE" },
         });
         return "ACTIVE";
     }

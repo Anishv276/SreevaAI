@@ -57,9 +57,9 @@ async def _find_or_create_interview(pool, app_id: str | None) -> str:
         aid = f"test-int-{uuid.uuid4().hex[:12]}"
         async with pool.acquire() as conn:
             await conn.execute(
-                """INSERT INTO "Application" (id, "driveId", "fullName", "email")
+                """INSERT INTO "Application" (id, "jobId", "fullName", "email")
                    VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO NOTHING""",
-                aid, "test-drive-id", "Test Candidate", "test@example.com",
+                aid, "test-job-id", "Test Candidate", "test@example.com",
             )
             await conn.execute(
                 """INSERT INTO "Interview" (id, "applicationId", "accessToken", status)

@@ -25,7 +25,7 @@ export async function GET(request: Request) {
 
         const where: any = {
             application: {
-                drive: { orgId }
+                job: { orgId }
             },
             isDeleted: false
         };
@@ -62,7 +62,7 @@ export async function GET(request: Request) {
                 OR: [
                     { fullName: { contains: search, mode: "insensitive" } },
                     { email: { contains: search, mode: "insensitive" } },
-                    { drive: { title: { contains: search, mode: "insensitive" } } }
+                    { job: { title: { contains: search, mode: "insensitive" } } }
                 ]
             };
         }
@@ -76,7 +76,7 @@ export async function GET(request: Request) {
                             fullName: true,
                             email: true,
                             id: true,
-                            drive: {
+                            job: {
                                 select: { title: true, role: true }
                             }
                         }
@@ -94,7 +94,7 @@ export async function GET(request: Request) {
             candidateName: inv.application.fullName,
             candidateEmail: inv.application.email,
             applicationId: inv.application.id,
-            role: inv.application.drive?.role || inv.application.drive?.title || "Unknown Role",
+            role: inv.application.job?.role || inv.application.job?.title || "Unknown Role",
             date: inv.completedAt || inv.updatedAt || inv.createdAt,
             duration: inv.interviewDuration || 0,
             status: inv.status,

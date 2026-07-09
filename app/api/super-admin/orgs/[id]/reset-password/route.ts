@@ -40,13 +40,13 @@ export async function POST(
         if (!isMatch) {
             return NextResponse.json({ error: "Security violation: Invalid SuperAdmin password." }, { status: 401 });
         }
-        const org = await prisma.organization.findUnique({
+        const org = await prisma.organizationDetails.findUnique({
             where: { id },
             select: {
                 id: true,
                 name: true,
-                users: {
-                    orderBy: { createdAt: "asc" },
+                organizationCredentials: {
+                    orderBy: { accountCreatedAt: "asc" },
                     select: { id: true, email: true, name: true },
                 },
             },
@@ -54,12 +54,12 @@ export async function POST(
         if (!org) {
             return NextResponse.json({ error: "Organization not found" }, { status: 404 });
         }
-        const primaryAdmin = org.users[0];
+        const primaryAdmin = org.organizationCredentials[0];
         if (!primaryAdmin) {
             return NextResponse.json({ error: "No org admin found for this organization" }, { status: 404 });
         }
         const hashedPassword = await bcrypt.hash(newPassword, 10);
-        await prisma.user.update({
+        await prisma.organizationCredentials.update({
             where: { id: primaryAdmin.id },
             data: { password: hashedPassword },
         });

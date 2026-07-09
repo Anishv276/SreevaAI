@@ -29,8 +29,8 @@ interface Pagination {
 interface OrganizationSettings {
     status?: string;
     plan?: string;
-    maxActiveDrives?: string;
-    activeDriveCount?: number;
+    maxActiveJobs?: string;
+    activeJobCount?: number;
 }
 interface JobsContextType {
     jobs: Job[];
@@ -68,15 +68,15 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         }
         const requestPromise = (async () => {
             try {
-                let url = `/api/drives?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&startDate=${startDate}&endDate=${endDate}`;
+                let url = `/api/jobs?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&startDate=${startDate}&endDate=${endDate}`;
                 if (orgIdFromUrl) {
                     url += `&orgId=${orgIdFromUrl}`;
                 }
                 const res = await fetch(url);
                 if (res.ok) {
                     const result = await res.json();
-                    const { drives, pagination: pagData } = result;
-                    setJobs(drives);
+                    const { jobs, pagination: pagData } = result;
+                    setJobs(jobs);
                     setPagination(pagData);
                     return;
                 }
@@ -114,7 +114,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     }, [isAdminRoute, isCareersRoute]);
     const addJob = async (newJobData: Omit<Job, "id" | "applicants" | "createdAt">): Promise<Job> => {
         try {
-            const res = await fetch("/api/drives", {
+            const res = await fetch("/api/jobs", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(newJobData),
@@ -139,13 +139,13 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     };
     const deleteJob = async (id: string) => {
         try {
-            const res = await fetch(`/api/drives/${id}`, {
+            const res = await fetch(`/api/jobs/${id}`, {
                 method: "DELETE",
             });
             if (res.ok) {
                 setJobs((prev) => prev.filter((job) => job.id !== id));
             } else {
-                throw new Error("Failed to delete drive");
+                throw new Error("Failed to delete job");
             }
         } catch (error) {
             console.error("Failed to delete job:", error);
@@ -154,7 +154,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     };
     const updateJob = async (id: string, data: any): Promise<Job> => {
         try {
-            const res = await fetch(`/api/drives/${id}`, {
+            const res = await fetch(`/api/jobs/${id}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(data),
@@ -177,7 +177,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     };
     const bulkDeleteJobs = async (ids: string[]) => {
         try {
-            const res = await fetch("/api/drives", {
+            const res = await fetch("/api/jobs", {
                 method: "DELETE",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ ids }),
@@ -185,7 +185,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
             if (res.ok) {
                 setJobs(prev => prev.filter(job => !ids.includes(job.id)));
             } else {
-                throw new Error("Failed to bulk delete drives");
+                throw new Error("Failed to bulk delete jobs");
             }
         } catch (error) {
             console.error("Failed to bulk delete jobs:", error);

@@ -1,23 +1,23 @@
 import { formatOrgLimitValue, parseOrgLimitValue, type OrgLimitValue } from "./org-limits";
-export const UNLIMITED_ACTIVE_DRIVES = 0;
+export const UNLIMITED_ACTIVE_JOBS = 0;
 export const FIXED_INTERVIEW_DURATION_MINUTES = 20;
-export type DriveLike = {
+export type JobLike = {
 };
-export function isDriveLimitEnabled(maxActiveDrives?: OrgLimitValue): boolean {
-  return parseOrgLimitValue(maxActiveDrives) !== null;
+export function isJobLimitEnabled(maxActiveJobs?: OrgLimitValue): boolean {
+  return parseOrgLimitValue(maxActiveJobs) !== null;
 }
-export function getActiveDriveCount(drives: DriveLike[]): number {
-  return drives.length;
+export function getActiveJobCount(jobs: JobLike[]): number {
+  return jobs.length;
 }
-export function isDriveCreationLocked(maxActiveDrives?: OrgLimitValue, activeDriveCount = 0): boolean {
-  const limit = parseOrgLimitValue(maxActiveDrives);
-  return limit !== null && activeDriveCount >= limit;
+export function isJobCreationLocked(maxActiveJobs?: OrgLimitValue, activeJobCount = 0): boolean {
+  const limit = parseOrgLimitValue(maxActiveJobs);
+  return limit !== null && activeJobCount >= limit;
 }
-export function getDriveLimitRemaining(maxActiveDrives?: OrgLimitValue, activeDriveCount = 0): number | null {
-  const limit = parseOrgLimitValue(maxActiveDrives);
+export function getJobLimitRemaining(maxActiveJobs?: OrgLimitValue, activeJobCount = 0): number | null {
+  const limit = parseOrgLimitValue(maxActiveJobs);
   if (limit === null) return null;
-  return Math.max(0, limit - activeDriveCount);
+  return Math.max(0, limit - activeJobCount);
 }
-export function formatDriveLimit(maxActiveDrives?: OrgLimitValue): string {
-  return formatOrgLimitValue(maxActiveDrives);
+export function formatJobLimit(maxActiveJobs?: OrgLimitValue): string {
+  return formatOrgLimitValue(maxActiveJobs);
 }

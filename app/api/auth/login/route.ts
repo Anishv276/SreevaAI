@@ -80,14 +80,14 @@ export async function POST(request: Request) {
             });
             return response;
         }
-        const userProfile = await prisma.user.findFirst({
+        const userProfile = await prisma.organizationCredentials.findFirst({
             where: {
                 email: {
                     equals: normalizedEmail,
                     mode: "insensitive",
                 },
             },
-            include: { organization: { select: { onboardingComplete: true, status: true } } }
+            include: { organization: { select: { isOnboardingComplete: true, orgStatus: true } } }
         });
         if (!userProfile || !userProfile.password) {
             // Spend the same time as a real password check so response timing
@@ -118,8 +118,8 @@ export async function POST(request: Request) {
             email: normalizedEmail,
             name: userProfile.name || "",
             role: "ADMIN",
-            orgId: userProfile.orgId || null,
-            onboardingComplete: userProfile.organization?.onboardingComplete ?? false,
+            orgId: userProfile.organizationId || null,
+            onboardingComplete: userProfile.organization?.isOnboardingComplete ?? false,
         });
         // Log successful admin login (console only, no Slack spam)
         await logLoginAttempt({

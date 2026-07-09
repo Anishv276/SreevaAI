@@ -22,7 +22,7 @@ async function main() {
     for (const legacy of legacySuperAdmins) {
         await prisma.superAdmin.delete({ where: { id: legacy.id } });
     }
-    const existingUser = await prisma.user.findFirst({
+    const existingUser = await prisma.organizationCredentials.findFirst({
         where: {
             email: {
                 equals: email,
@@ -32,27 +32,27 @@ async function main() {
     });
     // 1. Create or update the user
     const user = existingUser
-        ? await prisma.user.update({
+        ? await prisma.organizationCredentials.update({
             where: { id: existingUser.id },
             data: {
                 email,
                 password: hashedPassword,
-                orgId: orgId,
+                organizationId: orgId,
                 name,
             },
         })
-        : await prisma.user.create({
+        : await prisma.organizationCredentials.create({
             data: {
                 id: generateId("usr", name),
                 email,
                 password: hashedPassword,
-                orgId: orgId,
+                organizationId: orgId,
                 name,
             },
         });
     console.log(`\n✅ SUCCESS: Admin Account is Ready!`);
     console.log(`📧 Email: ${user.email}`);
-    console.log(`🏢 Org ID: ${user.orgId}`);
+    console.log(`🏢 Org ID: ${user.organizationId}`);
     console.log(`\n👉 You can now log in at https://sreevaai.com/login\n`);
 }
 main()

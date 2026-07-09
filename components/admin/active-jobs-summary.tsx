@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { type DateRange } from "./date-filter";
-interface DriveSummary {
+interface JobSummary {
     id: string;
     title: string;
     role: string | null;
@@ -34,26 +34,26 @@ function getAvatarColor(index: number) {
     ];
     return colors[index % colors.length];
 }
-interface ActiveDrivesSummaryProps {
+interface ActiveJobsSummaryProps {
     dateRange: DateRange;
-    initialData?: { drives: DriveSummary[] } | null;
+    initialData?: { jobs: JobSummary[] } | null;
 }
-export function ActiveDrivesSummary({ dateRange, initialData }: ActiveDrivesSummaryProps) {
-    const [drives, setDrives] = useState<DriveSummary[]>([]);
+export function ActiveJobsSummary({ dateRange, initialData }: ActiveJobsSummaryProps) {
+    const [jobs, setJobs] = useState<JobSummary[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [retryKey, setRetryKey] = useState(0);
     const router = useRouter();
     useEffect(() => {
         if (initialData) {
-            setDrives(initialData.drives ?? []);
+            setJobs(initialData.jobs ?? []);
             setLoading(false);
             setError(null);
             return;
         }
         const controller = new AbortController();
         const { signal } = controller;
-        const loadDrives = async () => {
+        const loadJobs = async () => {
             setLoading(true);
             setError(null);
             const params = new URLSearchParams();
@@ -66,10 +66,10 @@ export function ActiveDrivesSummary({ dateRange, initialData }: ActiveDrivesSumm
             }
             params.set("limit", "3");
             try {
-                const res = await fetch(`/api/admin/drives-summary?${params.toString()}`, { signal });
+                const res = await fetch(`/api/admin/jobs-summary?${params.toString()}`, { signal });
                 if (signal.aborted) return;
                 if (res.ok) {
-                    setDrives((await res.json()).drives ?? []);
+                    setJobs((await res.json()).jobs ?? []);
                 } else {
                     setError("Failed to load active jobs.");
                 }
@@ -79,7 +79,7 @@ export function ActiveDrivesSummary({ dateRange, initialData }: ActiveDrivesSumm
                 if (!signal.aborted) setLoading(false);
             }
         };
-        void loadDrives();
+        void loadJobs();
         return () => controller.abort();
     }, [dateRange, retryKey]);
     return (
@@ -87,8 +87,8 @@ export function ActiveDrivesSummary({ dateRange, initialData }: ActiveDrivesSumm
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
                 <div>
-                    <h3 className="text-lg font-bold text-gray-900 tracking-tight">Drive Overview</h3>
-                    <p className="text-xs text-gray-500 mt-1">Overview of all job drives</p>
+                    <h3 className="text-lg font-bold text-gray-900 tracking-tight">Job Overview</h3>
+                    <p className="text-xs text-gray-500 mt-1">Overview of all job jobs</p>
                 </div>
                 <span className="text-xs font-medium text-gray-500 bg-gray-50 px-2.5 py-1 rounded-md border border-gray-200">
                     {dateRange.type === "month" ? "This month" : "Custom"}
@@ -110,17 +110,17 @@ export function ActiveDrivesSummary({ dateRange, initialData }: ActiveDrivesSumm
                             Retry
                         </button>
                     </div>
-                ) : drives.length === 0 ? (
+                ) : jobs.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full min-h-[200px] text-gray-400">
-                        <p className="text-sm font-medium">No drives found.</p>
+                        <p className="text-sm font-medium">No jobs found.</p>
                     </div>
                 ) : (
                     <div className="space-y-4">
-                        {drives.slice(0, 5).map((drive, idx) => {
+                        {jobs.slice(0, 5).map((job, idx) => {
                             const { bg, text } = getAvatarColor(idx);
-                            const roleName = drive.role || drive.title;
+                            const roleName = job.role || job.title;
                             return (
-                                <div key={drive.id} className="flex items-center justify-between group py-2">
+                                <div key={job.id} className="flex items-center justify-between group py-2">
                                     <div className="flex items-center gap-3">
                                         <div 
                                             className="h-10 w-10 rounded-xl flex items-center justify-center font-bold text-sm"
@@ -130,17 +130,17 @@ export function ActiveDrivesSummary({ dateRange, initialData }: ActiveDrivesSumm
                                         </div>
                                         <div>
                                             <h4 className="text-sm font-bold text-gray-900">{roleName}</h4>
-                                            <p className="text-[11px] text-gray-500">{drive.applied} Candidates</p>
+                                            <p className="text-[11px] text-gray-500">{job.applied} Candidates</p>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-6">
                                         <div className="text-center">
                                             <p className="text-[10px] font-bold text-gray-500 mb-0.5 uppercase">Interviewed</p>
-                                            <p className="text-sm font-black text-gray-900">{drive.interviewed}</p>
+                                            <p className="text-sm font-black text-gray-900">{job.interviewed}</p>
                                         </div>
                                         <div className="text-center">
                                             <p className="text-[10px] font-bold text-gray-500 mb-0.5 uppercase">Shortlisted</p>
-                                            <p className="text-sm font-black text-gray-900">{drive.shortlisted}</p>
+                                            <p className="text-sm font-black text-gray-900">{job.shortlisted}</p>
                                         </div>
                                     </div>
                                 </div>
@@ -153,10 +153,10 @@ export function ActiveDrivesSummary({ dateRange, initialData }: ActiveDrivesSumm
             {/* Footer */}
             <div className="pt-5 mt-auto text-center border-t border-gray-100">
                 <Link
-                    href="/admin/drives"
+                    href="/admin/jobs"
                     className="inline-flex items-center gap-1.5 text-xs font-bold text-purple-600 hover:text-purple-700 transition-colors"
                 >
-                    View all drives <ArrowRight className="h-3.5 w-3.5" />
+                    View all jobs <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
             </div>
         </div>

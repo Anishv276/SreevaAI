@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
                 COUNT(*)::INT AS count
             FROM "Interview" iv
             JOIN "Application" a ON iv."applicationId" = a."id"
-            JOIN "Drive" d ON a."driveId" = d."id"
+            JOIN "Job" d ON a."jobId" = d."id"
             WHERE d."orgId" = ${orgId}
               AND iv."isDeleted" = false
               AND a."isDeleted" = false

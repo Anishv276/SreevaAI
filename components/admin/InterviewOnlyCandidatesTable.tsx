@@ -48,7 +48,7 @@ const STATUS_TABS: { key: StatusTab; label: string }[] = [
     { key: "completed", label: "Completed" },
 ];
 
-export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId: string; refreshKey?: number }) {
+export function InterviewOnlyCandidatesTable({ jobId, refreshKey }: { jobId: string; refreshKey?: number }) {
     const { candidates, pagination, isLoading, error, fetchCandidates, clearError } = useCandidates();
     const { jobs } = useJobs();
     const [searchTerm, setSearchTerm] = useState("");
@@ -58,7 +58,7 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
     const [isBulkLoading, setIsBulkLoading] = useState(false);
     const [sendingId, setSendingId] = useState<string | null>(null);
     const [deleteConfirm, setDeleteConfirm] = useState<{ mode: "single" | "bulk"; candidateId?: string; candidateName?: string } | null>(null);
-    const [isDriveViewReady, setIsDriveViewReady] = useState(false);
+    const [isJobViewReady, setIsJobViewReady] = useState(false);
 
     const adminOrg = useAdminOrg();
     const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
@@ -69,25 +69,25 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
     const interviewFilter = activeTab === "all" ? "all" : activeTab;
 
     const refetch = (opts?: { background?: boolean; force?: boolean }) =>
-        fetchCandidates(pagination.page, pageSize, driveId, "all", interviewFilter, undefined, undefined, searchTerm, "default", opts);
+        fetchCandidates(pagination.page, pageSize, jobId, "all", interviewFilter, undefined, undefined, searchTerm, "default", opts);
 
     useEffect(() => {
         let cancelled = false;
-        if (!isDriveViewReady) setSelectedIds(new Set());
+        if (!isJobViewReady) setSelectedIds(new Set());
         const h = setTimeout(() => {
-            void fetchCandidates(1, pageSize, driveId, "all", interviewFilter, undefined, undefined, searchTerm, "default", { background: isDriveViewReady })
-                .finally(() => { if (!cancelled) setIsDriveViewReady(true); });
+            void fetchCandidates(1, pageSize, jobId, "all", interviewFilter, undefined, undefined, searchTerm, "default", { background: isJobViewReady })
+                .finally(() => { if (!cancelled) setIsJobViewReady(true); });
         }, 500);
         return () => { cancelled = true; clearTimeout(h); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [driveId, interviewFilter, searchTerm, fetchCandidates, refreshKey]);
+    }, [jobId, interviewFilter, searchTerm, fetchCandidates, refreshKey]);
 
     const handlePageChange = (n: number) => {
         if (n < 1 || n > pagination.totalPages) return;
-        fetchCandidates(n, pageSize, driveId, "all", interviewFilter, undefined, undefined, searchTerm, "default");
+        fetchCandidates(n, pageSize, jobId, "all", interviewFilter, undefined, undefined, searchTerm, "default");
     };
 
-    const filteredCandidates = candidates.filter((c: any) => c.driveId === driveId);
+    const filteredCandidates = candidates.filter((c: any) => c.jobId === jobId);
     const selectedCount = selectedIds.size;
     const isAllSelected = filteredCandidates.length > 0 && filteredCandidates.every((c: any) => selectedIds.has(c.id));
 
@@ -149,9 +149,9 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
         finally { setIsBulkLoading(false); setDeleteConfirm(null); }
     };
 
-    const driveTitle = jobs.find((j) => j.id === driveId)?.title || "Job";
+    const jobTitle = jobs.find((j) => j.id === jobId)?.title || "Job";
 
-    if (!isDriveViewReady) {
+    if (!isJobViewReady) {
         return (
             <div className="flex min-h-[40vh] items-center justify-center">
                 <div className="flex flex-col items-center gap-1.5">
@@ -311,7 +311,7 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
                                     </td>
                                     {/* Position */}
                                     <td className="px-4 py-3.5">
-                                        <span className="text-[12px] text-gray-600 font-medium">{driveTitle}</span>
+                                        <span className="text-[12px] text-gray-600 font-medium">{jobTitle}</span>
                                     </td>
                                     {/* Created */}
                                     <td className="px-4 py-3.5">
@@ -345,7 +345,7 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
                                     <td className="px-4 py-3.5 text-center" onClick={e => e.stopPropagation()}>
                                         {isDone ? (
                                             <Link
-                                                href={`/admin/candidates/${candidate.id}?back=${encodeURIComponent(`/admin/candidates/drive/${driveId}`)}`}
+                                                href={`/admin/candidates/${candidate.id}?back=${encodeURIComponent(`/admin/candidates/job/${jobId}`)}`}
                                                 className="inline-flex items-center gap-1 text-[12px] font-semibold text-blue-600 hover:text-blue-800 transition-colors"
                                             >
                                                 <FileText className="h-3.5 w-3.5" /> View

@@ -11,11 +11,11 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: "Invalid test key" }, { status: 403 });
         }
 
-        const driveId = searchParams.get("driveId");
-        if (!driveId) return NextResponse.json({ error: "driveId required" }, { status: 400 });
+        const jobId = searchParams.get("jobId");
+        if (!jobId) return NextResponse.json({ error: "jobId required" }, { status: 400 });
 
         const applications = await prisma.application.findMany({
-            where: { driveId },
+            where: { jobId },
             select: {
                 id: true,
                 fullName: true,

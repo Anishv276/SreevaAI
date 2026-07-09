@@ -12,7 +12,7 @@ async function main() {
   console.log(`Importing ${data.users.length} users...`)
   for (const user of data.users) {
     // Omitting relations, just the core fields
-    const { drives, applications, ...userData } = user
+    const { jobs, applications, ...userData } = user
     await prisma.user.upsert({
       where: { id: user.id },
       update: userData,
@@ -20,14 +20,14 @@ async function main() {
     })
   }
 
-  // 2. Import Drives
-  console.log(`Importing ${data.drives.length} drives...`)
-  for (const drive of data.drives) {
-    const { applications, ...driveData } = drive
-    await prisma.drive.upsert({
-      where: { id: drive.id },
-      update: driveData,
-      create: driveData
+  // 2. Import Jobs
+  console.log(`Importing ${data.jobs.length} jobs...`)
+  for (const job of data.jobs) {
+    const { applications, ...jobData } = job
+    await prisma.job.upsert({
+      where: { id: job.id },
+      update: jobData,
+      create: jobData
     })
   }
 

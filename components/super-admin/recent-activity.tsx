@@ -4,7 +4,7 @@ import { Clock, Building2, Briefcase, UserCheck, Video, ChevronRight, Loader2 } 
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 interface Activity {
-    type: "ORG" | "DRIVE" | "CANDIDATE" | "INTERVIEW";
+    type: "ORG" | "JOB" | "CANDIDATE" | "INTERVIEW";
     detail: string;
     org: string;
     at: string;
@@ -17,7 +17,7 @@ interface RecentActivityProps {
 }
 const ACTIVITY_CONFIG: Record<Activity["type"], { label: string; icon: React.ElementType; style: string }> = {
     ORG: { label: "New Organization", icon: Building2, style: "bg-violet-50 text-violet-600 border-violet-100" },
-    DRIVE: { label: "New Hiring Drive", icon: Briefcase, style: "bg-blue-50 text-blue-600 border-blue-100" },
+    JOB: { label: "New Hiring Job", icon: Briefcase, style: "bg-blue-50 text-blue-600 border-blue-100" },
     CANDIDATE: { label: "Candidate Applied", icon: UserCheck, style: "bg-emerald-50 text-emerald-600 border-emerald-100" },
     INTERVIEW: { label: "Interview Completed", icon: Video, style: "bg-violet-50 text-violet-600 border-violet-100" },
 };

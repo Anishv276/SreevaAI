@@ -1,30 +1,30 @@
 import { prisma } from "@/lib/prisma";
 import { getSession, isAdminRole, isSuperAdminRole, type SessionUser } from "@/lib/auth";
-export type DriveAccessResult =
+export type JobAccessResult =
     | { ok: true; session: SessionUser; orgId: string }
     | { ok: false; status: number; error: string };
 /**
- * Authorize an admin/super-admin caller against a specific drive and enforce
- * tenant isolation: a regular admin may only act on drives in their own org;
- * a SUPER_ADMIN may act on any drive. Returns the resolved drive orgId on success.
+ * Authorize an admin/super-admin caller against a specific job and enforce
+ * tenant isolation: a regular admin may only act on jobs in their own org;
+ * a SUPER_ADMIN may act on any job. Returns the resolved job orgId on success.
  *
- * Use this for every resume-screening / drive sub-route that takes a driveId from
+ * Use this for every resume-screening / job sub-route that takes a jobId from
  * the URL so cross-tenant access can't slip through a missing check.
  */
-export async function authorizeDriveAccess(driveId: string): Promise<DriveAccessResult> {
+export async function authorizeJobAccess(jobId: string): Promise<JobAccessResult> {
     const session = await getSession();
     if (!session || (!isAdminRole(session.role) && !isSuperAdminRole(session.role))) {
         return { ok: false, status: 401, error: "Not authorized" };
     }
-    const drive = await prisma.drive.findUnique({
-        where: { id: driveId },
+    const job = await prisma.job.findUnique({
+        where: { id: jobId },
         select: { id: true, orgId: true },
     });
-    if (!drive || !drive.orgId) {
-        return { ok: false, status: 404, error: "Drive not found" };
+    if (!job || !job.orgId) {
+        return { ok: false, status: 404, error: "Job not found" };
     }
-    if (!isSuperAdminRole(session.role) && drive.orgId !== session.orgId) {
-        return { ok: false, status: 403, error: "Drive belongs to a different organization" };
+    if (!isSuperAdminRole(session.role) && job.orgId !== session.orgId) {
+        return { ok: false, status: 403, error: "Job belongs to a different organization" };
     }
-    return { ok: true, session, orgId: drive.orgId };
+    return { ok: true, session, orgId: job.orgId };
 }

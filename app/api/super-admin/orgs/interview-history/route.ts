@@ -21,8 +21,8 @@ export async function GET(request: Request) {
         completedAt: Date | null;
         updatedAt: Date;
         fullName: string | null;
-        driveRole: string | null;
-        driveTitle: string | null;
+        jobRole: string | null;
+        jobTitle: string | null;
         billingSnapshot: unknown;
       }>
     >`
@@ -34,12 +34,12 @@ export async function GET(request: Request) {
         i."completedAt",
         i."updatedAt",
         a."fullName",
-        d.role AS "driveRole",
-        d.title AS "driveTitle",
+        d.role AS "jobRole",
+        d.title AS "jobTitle",
         COALESCE(i."billingSnapshot", '{}'::jsonb) AS "billingSnapshot"
       FROM "Interview" i
       JOIN "Application" a ON a.id = i."applicationId"
-      JOIN "Drive" d ON d.id = a."driveId"
+      JOIN "Job" d ON d.id = a."jobId"
       WHERE d."orgId" = ${orgId}
         AND i."isDeleted" = false
         AND a."isDeleted" = false
@@ -69,9 +69,9 @@ export async function GET(request: Request) {
           : null;
         return {
           id: row.id,
-          interviewName: String(snapshot.interviewName || `${row.fullName || "Unknown Candidate"} - ${row.driveTitle || row.driveRole || "Interview"}`),
+          interviewName: String(snapshot.interviewName || `${row.fullName || "Unknown Candidate"} - ${row.jobTitle || row.jobRole || "Interview"}`),
           candidate: String(snapshot.candidateName || row.fullName || "Unknown Candidate"),
-          role: String(snapshot.jobTitle || row.driveRole || row.driveTitle || "Unknown Role"),
+          role: String(snapshot.jobTitle || row.jobRole || row.jobTitle || "Unknown Role"),
           durationSec,
           llmCostUsd,
           ttsCostUsd,

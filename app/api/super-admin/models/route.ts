@@ -21,17 +21,17 @@ export async function GET(req: NextRequest) {
   const orgId = req.nextUrl.searchParams.get("orgId");
   if (!orgId) {
     // Return all orgs with their AI config
-    const orgs = await prisma.organization.findMany({
+    const orgs = await prisma.organizationDetails.findMany({
       where: { isDeleted: false },
       select: {
         id: true,
         name: true,
-        slug: true,
+        urlSlug: true,
         sttModel: true,
         ttsProvider: true,
         ttsModel: true,
-        voiceId: true,
-        allowedVoices: true,
+        defaultVoiceId: true,
+        allowedVoiceIds: true,
         llmResumeExtraction: true,
         llmJdExtraction: true,
         llmResumeReport: true,
@@ -42,20 +42,27 @@ export async function GET(req: NextRequest) {
       },
       orderBy: { name: "asc" },
     });
-    return NextResponse.json({ orgs });
+    return NextResponse.json({
+      orgs: orgs.map(({ defaultVoiceId, allowedVoiceIds, urlSlug, ...rest }) => ({
+        ...rest,
+        slug: urlSlug,
+        voiceId: defaultVoiceId,
+        allowedVoices: allowedVoiceIds,
+      })),
+    });
   }
 
-  const org = await prisma.organization.findFirst({
+  const org = await prisma.organizationDetails.findFirst({
     where: { id: orgId, isDeleted: false },
     select: {
       id: true,
       name: true,
-      slug: true,
+      urlSlug: true,
       sttModel: true,
       ttsProvider: true,
       ttsModel: true,
-      voiceId: true,
-      allowedVoices: true,
+      defaultVoiceId: true,
+      allowedVoiceIds: true,
       llmResumeExtraction: true,
       llmJdExtraction: true,
       llmResumeReport: true,
@@ -66,7 +73,10 @@ export async function GET(req: NextRequest) {
     },
   });
   if (!org) return NextResponse.json({ error: "Org not found" }, { status: 404 });
-  return NextResponse.json({ org });
+  const { defaultVoiceId, allowedVoiceIds, urlSlug, ...rest } = org;
+  return NextResponse.json({
+    org: { ...rest, slug: urlSlug, voiceId: defaultVoiceId, allowedVoices: allowedVoiceIds },
+  });
 }
 
 // PATCH /api/super-admin/models -- update org's AI config
@@ -91,25 +101,29 @@ export async function PATCH(req: NextRequest) {
   }
   if (errors.length) return NextResponse.json({ error: errors.join("; ") }, { status: 400 });
 
-  // Only update the fields that were sent
+  // Only update the fields that were sent. Request/response wire contract keeps
+  // the old field names (voiceId/allowedVoices); map to the renamed DB columns here.
   const updateData: Record<string, string | string[]> = {};
   const allowedFields = [
-    "sttModel","ttsProvider","ttsModel","voiceId","allowedVoices",
+    "sttModel","ttsProvider","ttsModel",
     "llmResumeExtraction","llmJdExtraction","llmResumeReport",
     "llmInterviewLive","llmInterviewEval","llmInterviewBrief","llmInterviewReport",
   ];
   for (const f of allowedFields) {
     if (fields[f] !== undefined) updateData[f] = fields[f];
   }
+  if (fields.voiceId !== undefined) updateData.defaultVoiceId = fields.voiceId;
+  if (fields.allowedVoices !== undefined) updateData.allowedVoiceIds = fields.allowedVoices;
 
-  const updated = await prisma.organization.update({
+  const updated = await prisma.organizationDetails.update({
     where: { id: orgId },
     data: updateData,
     select: {
-      id: true, sttModel: true, ttsProvider: true, ttsModel: true, voiceId: true, allowedVoices: true,
+      id: true, sttModel: true, ttsProvider: true, ttsModel: true, defaultVoiceId: true, allowedVoiceIds: true,
       llmResumeExtraction: true, llmJdExtraction: true, llmResumeReport: true,
       llmInterviewLive: true, llmInterviewEval: true, llmInterviewBrief: true, llmInterviewReport: true,
     },
   });
-  return NextResponse.json({ org: updated });
+  const { defaultVoiceId, allowedVoiceIds, ...rest } = updated;
+  return NextResponse.json({ org: { ...rest, voiceId: defaultVoiceId, allowedVoices: allowedVoiceIds } });
 }

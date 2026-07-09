@@ -26,7 +26,7 @@ export async function POST(
             include: {
                 application: {
                     include: {
-                        drive: {
+                        job: {
                             include: {
                                 organization: { select: { id: true, name: true } },
                             },

@@ -25,35 +25,35 @@ export async function GET(req: Request) {
         const start = getRangeStart(range, from);
         // --- Core Fetcher Function ---
         async function fetchActivity(dateCutoff: Date | null): Promise<[
-            Array<{ id: string; createdAt: Date; drive: { title: string | null } | null }>,
+            Array<{ id: string; createdAt: Date; job: { title: string | null } | null }>,
             Array<{
                 id: string;
                 status: string;
                 updatedAt: Date;
                 completedAt: Date | null;
-                application: { aiScore: number | null; drive: { title: string | null } | null };
+                application: { aiScore: number | null; job: { title: string | null } | null };
             }>,
-            Array<{ id: string; updatedAt: Date; drive: { title: string | null } | null }>
+            Array<{ id: string; updatedAt: Date; job: { title: string | null } | null }>
         ]> {
             const applicationWhere = {
-                drive: { orgId },
+                job: { orgId },
                 ...(dateCutoff ? { createdAt: { gte: dateCutoff } } : {}),
             };
             const recentApplications = await prisma.application.findMany({
                 where: applicationWhere,
-                select: { id: true, createdAt: true, drive: { select: { title: true } } },
+                select: { id: true, createdAt: true, job: { select: { title: true } } },
                 orderBy: { createdAt: "desc" },
                 take: 20
             });
             const recentInterviews = await prisma.interview.findMany({
                 where: {
                     ...(dateCutoff ? { updatedAt: { gte: dateCutoff } } : {}),
-                    application: { drive: { orgId } },
+                    application: { job: { orgId } },
                     status: { in: ["COMPLETED", "IN_PROGRESS"] },
                 },
                 select: {
                     id: true, status: true, updatedAt: true, completedAt: true,
-                    application: { select: { aiScore: true, drive: { select: { title: true } } } },
+                    application: { select: { aiScore: true, job: { select: { title: true } } } },
                 },
                 orderBy: { updatedAt: "desc" },
                 take: 20
@@ -61,9 +61,9 @@ export async function GET(req: Request) {
             const recentRejections = await prisma.application.findMany({
                 where: {
                     ...(dateCutoff ? { updatedAt: { gte: dateCutoff } } : {}),
-                    resumeStatus: { in: ["rejected", "REJECTED"] }, drive: { orgId },
+                    resumeStatus: { in: ["rejected", "REJECTED"] }, job: { orgId },
                 },
-                select: { id: true, updatedAt: true, drive: { select: { title: true } } },
+                select: { id: true, updatedAt: true, job: { select: { title: true } } },
                 orderBy: { updatedAt: "desc" },
                 take: 20
             });
@@ -80,44 +80,44 @@ export async function GET(req: Request) {
             id: string;
             type: "application" | "interview_completed" | "rejection";
             action: string;
-            drive: string;
+            job: string;
             time: string;
             timestamp: number;
         };
         const activities: ActivityItem[] = [];
-        // Group new uploads by drive + time window (10-min buckets)
-        const appsByDriveBucket: Record<string, { count: number; drive: string; time: Date }> = {};
+        // Group new uploads by job + time window (10-min buckets)
+        const appsByJobBucket: Record<string, { count: number; job: string; time: Date }> = {};
         for (const app of recentApplications) {
             const bucket = Math.floor(app.createdAt.getTime() / (10 * 60 * 1000));
-            const driveTitle = app.drive?.title || "Unknown Drive";
-            const key = `${driveTitle}__${bucket}`;
-            if (!appsByDriveBucket[key]) {
-                appsByDriveBucket[key] = { count: 0, drive: driveTitle, time: app.createdAt };
+            const jobTitle = app.job?.title || "Unknown Job";
+            const key = `${jobTitle}__${bucket}`;
+            if (!appsByJobBucket[key]) {
+                appsByJobBucket[key] = { count: 0, job: jobTitle, time: app.createdAt };
             }
-            appsByDriveBucket[key].count++;
+            appsByJobBucket[key].count++;
         }
-        for (const [key, val] of Object.entries(appsByDriveBucket)) {
+        for (const [key, val] of Object.entries(appsByJobBucket)) {
             activities.push({
                 id: `app_${key}`,
                 type: "application",
                 action: `${val.count} new upload${val.count > 1 ? "s" : ""}`,
-                drive: val.drive,
+                job: val.job,
                 time: timeAgo(val.time),
                 timestamp: val.time.getTime(),
             });
         }
         // Completed interviews
-        const completedByDrive: Record<string, { scores: number[]; drive: string; time: Date }> = {};
+        const completedByJob: Record<string, { scores: number[]; job: string; time: Date }> = {};
         for (const iv of recentInterviews) {
             if (iv.status !== "COMPLETED") continue;
-            const key = iv.application.drive?.title || "Unknown Drive";
-            if (!completedByDrive[key]) {
-                completedByDrive[key] = { scores: [], drive: key, time: iv.updatedAt };
+            const key = iv.application.job?.title || "Unknown Job";
+            if (!completedByJob[key]) {
+                completedByJob[key] = { scores: [], job: key, time: iv.updatedAt };
             }
-            if (iv.application.aiScore != null) completedByDrive[key].scores.push(iv.application.aiScore);
-            if (iv.updatedAt > completedByDrive[key].time) completedByDrive[key].time = iv.updatedAt;
+            if (iv.application.aiScore != null) completedByJob[key].scores.push(iv.application.aiScore);
+            if (iv.updatedAt > completedByJob[key].time) completedByJob[key].time = iv.updatedAt;
         }
-        for (const [key, val] of Object.entries(completedByDrive)) {
+        for (const [key, val] of Object.entries(completedByJob)) {
             const avgScore = val.scores.length
                 ? Math.round(val.scores.reduce((a, b) => a + b, 0) / val.scores.length)
                 : null;
@@ -127,27 +127,27 @@ export async function GET(req: Request) {
                 id: `iv_${key}`,
                 type: "interview_completed",
                 action: `AI interview${countText} completed${scoreText}`,
-                drive: val.drive,
+                job: val.job,
                 time: timeAgo(val.time),
                 timestamp: val.time.getTime(),
             });
         }
-        // Rejections grouped by drive
-        const rejByDrive: Record<string, { count: number; drive: string; time: Date }> = {};
+        // Rejections grouped by job
+        const rejByJob: Record<string, { count: number; job: string; time: Date }> = {};
         for (const rej of recentRejections) {
-            const key = rej.drive?.title || "Unknown Drive";
-            if (!rejByDrive[key]) {
-                rejByDrive[key] = { count: 0, drive: key, time: rej.updatedAt };
+            const key = rej.job?.title || "Unknown Job";
+            if (!rejByJob[key]) {
+                rejByJob[key] = { count: 0, job: key, time: rej.updatedAt };
             }
-            rejByDrive[key].count++;
-            if (rej.updatedAt > rejByDrive[key].time) rejByDrive[key].time = rej.updatedAt;
+            rejByJob[key].count++;
+            if (rej.updatedAt > rejByJob[key].time) rejByJob[key].time = rej.updatedAt;
         }
-        for (const [key, val] of Object.entries(rejByDrive)) {
+        for (const [key, val] of Object.entries(rejByJob)) {
             activities.push({
                 id: `rej_${key}`,
                 type: "rejection",
                 action: `${val.count} rejection email${val.count > 1 ? "s" : ""} sent`,
-                drive: val.drive,
+                job: val.job,
                 time: timeAgo(val.time),
                 timestamp: val.time.getTime(),
             });

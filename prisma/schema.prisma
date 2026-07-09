@@ -6,75 +6,75 @@ datasource db {
   provider = "postgresql"
 }
 
-model Organization {
-  id                     String   @id
-  name                   String
-  slug                   String   @unique
-  plan                   String   @default("STARTER")
-  maxActiveDrives        String   @default("Unlimited")
-  maxConcurrentSlots     Int      @default(5)
-  proctoringSignals      Json?    @default("{\"tab_switch\": false, \"fullscreen_exit\": false, \"window_focus_loss\": false, \"face_absence\": false, \"multiple_faces\": false, \"camera_disabled\": false, \"connection_lost\": false, \"latency_mismatch\": false, \"identity_mismatch\": false, \"microphone_disabled\": false, \"answer_integrity\": false, \"session_fingerprint\": false}")
-  status                 String   @default("ACTIVE")
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
-  onboardingComplete     Boolean  @default(false)
+model OrganizationDetails {
+  id                       String   @id
+  name                     String
+  urlSlug                  String   @unique
+  billingPlan              String   @default("STARTER")
+  maxActiveJobs            String   @default("Unlimited")
+  maxConcurrentInterviews  Int      @default(5)
+  enabledProctoringSignals Json?    @default("{\"tab_switch\": false, \"fullscreen_exit\": false, \"window_focus_loss\": false, \"face_absence\": false, \"multiple_faces\": false, \"camera_disabled\": false, \"connection_lost\": false, \"latency_mismatch\": false, \"identity_mismatch\": false, \"microphone_disabled\": false, \"answer_integrity\": false, \"session_fingerprint\": false}")
+  orgStatus                String   @default("ACTIVE")
+  orgCreatedAt             DateTime @default(now())
+  orgUpdatedAt             DateTime @updatedAt
+  isOnboardingComplete     Boolean  @default(false)
   // AI Model Configuration (all set via Super Admin → Models page)
-  sttModel               String   @default("flux-general-en")
-  ttsProvider            String   @default("ELEVENLABS")
-  ttsModel               String   @default("eleven_turbo_v2_5")
-  voiceId                String   @default("EXAVITQu4vr4xnSDxMaL")
-  allowedVoices          String[] @default([])
-  llmResumeExtraction    String   @default("gpt-5.4-mini")
-  llmJdExtraction        String   @default("gpt-5.4-mini")
-  llmResumeReport        String   @default("gpt-5.4-mini")
-  llmInterviewLive       String   @default("gpt-4.1-mini")
-  llmInterviewEval       String   @default("gpt-4.1-nano")
-  llmInterviewBrief      String   @default("gpt-4.1")
-  llmInterviewReport     String   @default("gpt-5.4-mini")
-  interviewQuotaTotal    Int      @default(0)
-  interviewQuotaUsed     Int      @default(0)
-  creditsUsed            Float    @default(0)
-  statusControl          String   @default("QUOTA")
-  usageMetrics           Json?    @default("{}")
-  recordingEnabled       Boolean?
-  recordingRetentionDays Int?
-  isDeleted              Boolean  @default(false)
-  drives                 Drive[]
-  users                  User[]
+  sttModel                 String   @default("flux-general-en")
+  ttsProvider              String   @default("ELEVENLABS")
+  ttsModel                 String   @default("eleven_turbo_v2_5")
+  defaultVoiceId           String   @default("EXAVITQu4vr4xnSDxMaL")
+  allowedVoiceIds          String[] @default([])
+  llmResumeExtraction      String   @default("gpt-5.4-mini")
+  llmJdExtraction          String   @default("gpt-5.4-mini")
+  llmResumeReport          String   @default("gpt-5.4-mini")
+  llmInterviewLive         String   @default("gpt-4.1-mini")
+  llmInterviewEval         String   @default("gpt-4.1-nano")
+  llmInterviewBrief        String   @default("gpt-4.1")
+  llmInterviewReport       String   @default("gpt-5.4-mini")
+  totalInterviewsAllowed   Int      @default(0)
+  totalInterviewsUsed      Int      @default(0)
+  billingCreditsUsed       Float    @default(0)
+  quotaControlMode         String   @default("QUOTA")
+  platformUsageMetrics     Json?    @default("{}")
+  isRecordingEnabled       Boolean?
+  recordingKeepForDays     Int?
+  isDeleted                Boolean  @default(false)
+  jobs                     Job[]
+  organizationCredentials  OrganizationCredentials[]
 
-  @@index([status])
-  @@index([createdAt(sort: Desc)])
+  @@index([orgStatus])
+  @@index([orgCreatedAt(sort: Desc)])
 }
 
 model SuperAdmin {
-  id              String    @id @default(cuid())
-  email           String    @unique
-  password        String
-  name            String
-  resetOtp        String?
-  resetOtpExpires DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  isDeleted       Boolean   @default(false)
+  id                         String    @id @default(cuid())
+  email                      String    @unique
+  password                   String
+  name                       String
+  passwordResetOtp           String?
+  passwordResetOtpExpiresAt  DateTime?
+  accountCreatedAt           DateTime  @default(now())
+  accountUpdatedAt           DateTime  @updatedAt
+  isDeleted                  Boolean   @default(false)
 }
 
-model User {
-  id              String        @id
-  email           String        @unique
-  name            String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  password        String?
-  role            String?       @default("ADMIN")
-  orgId           String?
-  resetOtp        String?
-  resetOtpExpires DateTime?
-  isDeleted       Boolean       @default(false)
-  drives          Drive[]       @relation("CreatedDrives")
-  organization    Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)
+model OrganizationCredentials {
+  id                        String               @id
+  email                     String               @unique
+  name                      String?
+  accountCreatedAt          DateTime             @default(now())
+  accountUpdatedAt          DateTime             @updatedAt
+  password                  String?
+  platformRole              String?              @default("ADMIN")
+  organizationId            String?
+  passwordResetOtp          String?
+  passwordResetOtpExpiresAt DateTime?
+  isDeleted                 Boolean              @default(false)
+  jobs                      Job[]                @relation("CreatedJobs")
+  organization              OrganizationDetails? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }
 
-model Drive {
+model Job {
   id                 String            @id
   title              String
   role               String?
@@ -94,8 +94,8 @@ model Drive {
   interviewMode      String?           @default("ats")
   isDeleted          Boolean           @default(false)
   applications       Application[]
-  creator            User              @relation("CreatedDrives", fields: [creatorId], references: [id], onDelete: Cascade)
-  organization       Organization?     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  creator            OrganizationCredentials @relation("CreatedJobs", fields: [creatorId], references: [id], onDelete: Cascade)
+  organization       OrganizationDetails?    @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
   @@index([orgId, createdAt(sort: Desc)])
@@ -113,17 +113,17 @@ model Application {
   updatedAt       DateTime     @updatedAt
   resumeText      String?
   resumeData      String?
-  driveId         String
+  jobId           String
   resumeStatus    String       @default("pending")
   interviewStatus String       @default("pending")
   fullScanReport  String?
   isDeleted       Boolean      @default(false)
   fileName        String?
-  drive           Drive        @relation(fields: [driveId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  job             Job          @relation(fields: [jobId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   interview       Interview?
 
-  @@index([driveId, resumeStatus, updatedAt])
-  @@index([driveId, aiScore(sort: Desc), updatedAt(sort: Desc)])
+  @@index([jobId, resumeStatus, updatedAt])
+  @@index([jobId, aiScore(sort: Desc), updatedAt(sort: Desc)])
   @@index([createdAt(sort: Desc)])
   @@index([updatedAt(sort: Desc)])
 }

@@ -9,12 +9,12 @@ interface SuperAdminStats {
     suspendedOrgs: number;
     closedOrgs: number;
     totalAdmins: number;
-    totalDrives: number;
+    totalJobs: number;
     totalCandidates: number;
     totalCreditsUsed: number;
     platformHealth: number;
     engagedOrgs: number;
-    trends: { orgs: number; admins: number; drives: number; candidates: number };
+    trends: { orgs: number; admins: number; jobs: number; candidates: number };
 }
 interface SuperAdminStatsGridProps {
     stats?: SuperAdminStats | null;
@@ -111,8 +111,8 @@ export function SuperAdminStatsGrid({
         },
         {
             label: "Global Jobs",
-            value: s.totalDrives,
-            trend: s.trends?.drives ?? 0,
+            value: s.totalJobs,
+            trend: s.trends?.jobs ?? 0,
             icon: Briefcase,
             color: "text-violet-600",
             iconBg: "bg-violet-50",

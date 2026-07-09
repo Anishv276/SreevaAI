@@ -1,6 +1,6 @@
 /**
  * End-to-end integration test: 2 sequential resume uploads.
- * Exercises the EXACT same path as POST /api/drives/[id]/resume-screening:
+ * Exercises the EXACT same path as POST /api/jobs/[id]/resume-screening:
  *   R2 upload → DB row → BullMQ enqueue → worker pickup
  *
  * Worker must already be running: npm run worker
@@ -17,8 +17,8 @@ import { resumeQueue } from '../lib/queue';
 const RESUME_BUCKET = process.env.R2_RESUMES_BUCKET || 'resumes';
 
 // -- Config ------------------------------------------------------------------
-// Use the drive that already exists from previous tests
-const DRIVE_ID   = 'drv-gtm-engineer-fresher-7263';
+// Use the job that already exists from previous tests
+const JOB_ID   = 'drv-gtm-engineer-fresher-7263';
 const FILE_1     = 'C:/Users/vamsi/OneDrive/Desktop/Vamsi resume - GTM.pdf';
 const FILE_2     = 'C:/Users/vamsi/OneDrive/Desktop/Files/1.pdf';
 const POLL_MS    = 2_000;  // how often to check DB status
@@ -29,7 +29,7 @@ function guessName(n: string) { return n.replace(/\.[^/.]+$/, '').replace(/[_-]+
 function buildProgressState(p: number, stage: string) { return JSON.stringify({ processing: { progress: p, stage } }); }
 function ts() { return new Date().toISOString(); }
 
-async function uploadOne(label: string, filePath: string, drive: any) {
+async function uploadOne(label: string, filePath: string, jobRecord: any) {
   const fileName = filePath.split(/[\\/]/).pop()!;
   console.log(`\n${'═'.repeat(60)}`);
   console.log(`${ts()} ▶ [UPLOAD ${label}] ${fileName}`);
@@ -41,9 +41,9 @@ async function uploadOne(label: string, filePath: string, drive: any) {
 
   // -- 2. R2 upload (same as route) ---------------------------------------
   const safeName  = sanitizeFileName(fileName);
-  const orgSlug   = drive.organization?.slug || drive.orgId;
-  const driveSlug = drive.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-  const key       = `resume/${orgSlug}/${driveSlug}/${Date.now()}_0_${safeName}`;
+  const orgSlug   = jobRecord.organization?.urlSlug || jobRecord.orgId;
+  const jobSlug = jobRecord.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+  const key       = `resume/${orgSlug}/${jobSlug}/${Date.now()}_0_${safeName}`;
   const uploadedUrl = await putObject(RESUME_BUCKET, key, buffer, 'application/pdf');
   console.log(`${ts()}   ✓ R2 upload → ${key}`);
 
@@ -60,7 +60,7 @@ async function uploadOne(label: string, filePath: string, drive: any) {
       aiReport:        buildProgressState(0, 'waiting'),
       resumeText:      null,
       resumeData:      JSON.stringify({ source: { bucket: RESUME_BUCKET, key } }),
-      driveId:         DRIVE_ID,
+      jobId:         JOB_ID,
       fileName,
       resumeStatus:    'waiting',
       interviewStatus: 'pending',
@@ -73,7 +73,7 @@ async function uploadOne(label: string, filePath: string, drive: any) {
   try {
     job = await resumeQueue.add(
       'screen-resume',
-      { applicationId, bucket: RESUME_BUCKET, key, fileName, orgId: drive.orgId },
+      { applicationId, bucket: RESUME_BUCKET, key, fileName, orgId: jobRecord.orgId },
       { attempts: 2, backoff: { type: 'exponential', delay: 5000 } }
     );
     console.log(`${ts()}   ✓ Enqueued  job.id="${job.id}"  applicationId="${applicationId}"`);
@@ -143,18 +143,18 @@ async function main() {
   await checkQ.close();
   await checkConn.quit();
 
-  const drive = await prisma.drive.findUnique({
-    where: { id: DRIVE_ID },
-    select: { id: true, title: true, orgId: true, organization: { select: { slug: true } } },
+  const job = await prisma.job.findUnique({
+    where: { id: JOB_ID },
+    select: { id: true, title: true, orgId: true, organization: { select: { urlSlug: true } } },
   });
-  if (!drive) throw new Error(`Drive ${DRIVE_ID} not found`);
-  console.log(`${ts()} Drive: "${drive.title}" (${drive.id})`);
+  if (!job) throw new Error(`Job ${JOB_ID} not found`);
+  console.log(`${ts()} Job: "${job.title}" (${job.id})`);
 
   // -- Upload 1 ------------------------------------------------------------
-  const result1 = await uploadOne('1/2', FILE_1, drive);
+  const result1 = await uploadOne('1/2', FILE_1, job);
 
   // -- Upload 2 ------------------------------------------------------------
-  const result2 = await uploadOne('2/2', FILE_2, drive);
+  const result2 = await uploadOne('2/2', FILE_2, job);
 
   // -- Final summary -------------------------------------------------------
   console.log(`\n${'═'.repeat(60)}`);

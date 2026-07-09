@@ -15,8 +15,8 @@ export type Candidate = {
     email: string;
     phone: string;
     location: string;
-    role: string; // derived from Drive title
-    driveId: string; // to link to specific drive
+    role: string; // derived from Job title
+    jobId: string; // to link to specific job
     status: string;
     interviewStatus?: string;
     score: number;
@@ -48,7 +48,7 @@ interface Pagination {
 type CandidateFetchParams = {
     page: number;
     limit: number;
-    driveId?: string;
+    jobId?: string;
     resumeStatus?: string;
     interviewStatus?: string;
     startDate?: string;
@@ -74,7 +74,7 @@ interface CandidatesContextType {
     fetchCandidates: (
         page?: number,
         limit?: number,
-        driveId?: string,
+        jobId?: string,
         resumeStatus?: string,
         interviewStatus?: string,
         startDate?: string,
@@ -132,7 +132,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
     const buildFetchKey = (
         page: number,
         limit: number,
-        driveId?: string,
+        jobId?: string,
         resumeStatus?: string,
         interviewStatus?: string,
         startDate?: string,
@@ -143,7 +143,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         return [
             page,
             limit,
-            driveId || "all",
+            jobId || "all",
             resumeStatus || "all",
             interviewStatus || "all",
             startDate || "none",
@@ -155,7 +155,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
     const fetchCandidatesInternal = useCallback(async (
         page: number = 1,
         limit: number = DEFAULT_LIMIT,
-        driveId?: string,
+        jobId?: string,
         resumeStatus?: string,
         interviewStatus?: string,
         startDate?: string,
@@ -167,7 +167,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         const currentFetchParams: CandidateFetchParams = {
             page,
             limit,
-            driveId,
+            jobId,
             resumeStatus,
             interviewStatus,
             startDate,
@@ -175,7 +175,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             search,
             sort,
         };
-        const key = buildFetchKey(page, limit, driveId, resumeStatus, interviewStatus, startDate, endDate, search, sort);
+        const key = buildFetchKey(page, limit, jobId, resumeStatus, interviewStatus, startDate, endDate, search, sort);
         const now = Date.now();
         const inFlight = inFlightRequestsRef.current.get(key);
         if (inFlight) {
@@ -221,8 +221,8 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                 if (orgIdFromUrl) {
                     params.set("orgId", orgIdFromUrl);
                 }
-                if (driveId && driveId !== "all") {
-                    params.set("driveId", driveId);
+                if (jobId && jobId !== "all") {
+                    params.set("jobId", jobId);
                 }
                 if (resumeStatus && resumeStatus !== "all") {
                     params.set("resumeStatus", resumeStatus);
@@ -264,8 +264,8 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                         email: c.email || "",
                         phone: c.phone || "",
                         location: c.location || "-",
-                        role: c.jobRole || c.jobrole || c.role || c.driveTitle || c.drivetitle || "Unknown Role",
-                        driveId: c.driveId?.toString(),
+                        role: c.jobRole || c.jobrole || c.role || c.jobTitle || c.jobtitle || "Unknown Role",
+                        jobId: c.jobId?.toString(),
                         status: c.status,
                         interviewStatus: c.interviewStatus,
                         score: c.score || 0,
@@ -314,7 +314,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
     const fetchCandidates = useCallback(async (
         page: number = 1,
         limit: number = DEFAULT_LIMIT,
-        driveId?: string,
+        jobId?: string,
         resumeStatus?: string,
         interviewStatus?: string,
         startDate?: string,
@@ -323,7 +323,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         sort?: "default" | "score_desc" | "score_asc",
         options?: { force?: boolean; background?: boolean }
     ) => {
-        await fetchCandidatesInternal(page, limit, driveId, resumeStatus, interviewStatus, startDate, endDate, search, sort, options);
+        await fetchCandidatesInternal(page, limit, jobId, resumeStatus, interviewStatus, startDate, endDate, search, sort, options);
     }, [fetchCandidatesInternal]);
     const scheduleStreamRefresh = useCallback(() => {
         // Cancel any pending timer and restart -- ensures the latest SSE event always
@@ -339,7 +339,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             void fetchCandidatesInternal(
                 lastParams?.page ?? current.page,
                 lastParams?.limit ?? current.limit,
-                lastParams?.driveId,
+                lastParams?.jobId,
                 lastParams?.resumeStatus,
                 lastParams?.interviewStatus,
                 lastParams?.startDate,
@@ -463,7 +463,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             await fetchCandidatesInternal(
                 lastParams?.page ?? current.page,
                 lastParams?.limit ?? current.limit,
-                lastParams?.driveId,
+                lastParams?.jobId,
                 lastParams?.resumeStatus,
                 lastParams?.interviewStatus,
                 lastParams?.startDate,
@@ -490,7 +490,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                 await fetchCandidatesInternal(
                     lastParams?.page ?? current.page,
                     lastParams?.limit ?? current.limit,
-                    lastParams?.driveId,
+                    lastParams?.jobId,
                     lastParams?.resumeStatus,
                     lastParams?.interviewStatus,
                     lastParams?.startDate,

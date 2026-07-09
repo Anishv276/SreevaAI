@@ -14,10 +14,10 @@ export async function GET(
         }
         const { id } = await params;
 
-        const org = await prisma.organization.findUnique({
+        const org = await prisma.organizationDetails.findUnique({
             where: { id },
             select: {
-                id: true, usageMetrics: true,
+                id: true, platformUsageMetrics: true,
                 llmResumeExtraction: true, llmJdExtraction: true,
                 llmInterviewReport: true, llmResumeReport: true,
                 llmInterviewEval: true, llmInterviewLive: true, llmInterviewBrief: true,
@@ -39,13 +39,13 @@ export async function GET(
                    ) AS "interviewDuration"
             FROM "Interview" i
             JOIN "Application" a ON a.id = i."applicationId"
-            JOIN "Drive" d ON d.id = a."driveId"
+            JOIN "Job" d ON d.id = a."jobId"
             WHERE d."orgId" = ${id}
             AND i."isDeleted" = false AND a."isDeleted" = false AND d."isDeleted" = false
         `);
 
-        const orgUsage = (org.usageMetrics && typeof org.usageMetrics === "object")
-            ? (org.usageMetrics as Record<string, any>)
+        const orgUsage = (org.platformUsageMetrics && typeof org.platformUsageMetrics === "object")
+            ? (org.platformUsageMetrics as Record<string, any>)
             : {};
 
         const aggregates: Record<string, any> = {

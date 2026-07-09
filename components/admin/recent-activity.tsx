@@ -4,7 +4,7 @@ const activities = [
     {
         id: 1,
         action: "15 new applications",
-        drive: "Backend Engineer",
+        job: "Backend Engineer",
         time: "2m ago",
         icon: UserPlus,
         color: "bg-[#FFF4ED] text-[#7C3AED]",
@@ -12,7 +12,7 @@ const activities = [
     {
         id: 2,
         action: "AI interview completed · Score 87%",
-        drive: "Product Designer",
+        job: "Product Designer",
         time: "1h ago",
         icon: FileCheck,
         color: "bg-green-50 text-green-600",
@@ -20,7 +20,7 @@ const activities = [
     {
         id: 3,
         action: "Interview scheduled",
-        drive: "Senior Frontend Engineer",
+        job: "Senior Frontend Engineer",
         time: "3h ago",
         icon: Calendar,
         color: "bg-blue-50 text-blue-600",
@@ -28,7 +28,7 @@ const activities = [
     {
         id: 4,
         action: "AI screening done for 8 candidates",
-        drive: "Data Analyst",
+        job: "Data Analyst",
         time: "5h ago",
         icon: FileCheck,
         color: "bg-green-50 text-green-600",
@@ -36,7 +36,7 @@ const activities = [
     {
         id: 5,
         action: "12 rejection emails sent",
-        drive: "Backend Engineer",
+        job: "Backend Engineer",
         time: "1d ago",
         icon: XCircle,
         color: "bg-red-50 text-red-500",
@@ -69,7 +69,7 @@ export function RecentActivity() {
                                     <p className="text-[13px] font-semibold text-[#111827] leading-snug">
                                         {activity.action}
                                     </p>
-                                    <p className="text-[11.5px] text-[#6B7280] mt-0.5 truncate">{activity.drive}</p>
+                                    <p className="text-[11.5px] text-[#6B7280] mt-0.5 truncate">{activity.job}</p>
                                 </div>
                                 {/* Time */}
                                 <span className="text-[11px] text-[#9CA3AF] whitespace-nowrap flex-shrink-0 mt-0.5">

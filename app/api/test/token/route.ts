@@ -2,7 +2,7 @@ import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-ser
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession, isSuperAdminRole } from "@/lib/auth";
-import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/drive-limits";
+import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/job-limits";
 import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
 
 const TEST_KEY = process.env.TEST_PAGE_KEY || process.env.NEXT_PUBLIC_TEST_KEY || "1285";
@@ -22,7 +22,7 @@ export async function POST(request: Request) {
         const application = await prisma.application.findUnique({
             where: { id: applicationId },
             include: {
-                drive: { include: { organization: { select: { id: true, name: true, proctoringSignals: true } } } },
+                job: { include: { organization: { select: { id: true, name: true, enabledProctoringSignals: true } } } },
                 interview: true,
             },
         });
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
             select: { accessToken: true },
         });
 
-        const proctoringSignals = normalizeProctoringSignals(application.drive?.organization?.proctoringSignals);
+        const proctoringSignals = normalizeProctoringSignals(application.job?.organization?.enabledProctoringSignals);
 
         const roomName = `interview_${applicationId}`;
         const participantIdentity = `candidate_${applicationId}`;
@@ -92,7 +92,7 @@ export async function POST(request: Request) {
                     metadata: JSON.stringify({
                         applicationId,
                         candidateName: application.fullName,
-                        roleLabel: application.drive?.role || application.drive?.title || "Interview",
+                        roleLabel: application.job?.role || application.job?.title || "Interview",
                         timeLimitMins: FIXED_INTERVIEW_DURATION_MINUTES,
                         isTest: true,
                         skipReport,
@@ -114,7 +114,7 @@ export async function POST(request: Request) {
             token: await at.toJwt(),
             url: serverUrl,
             duration: durationSeconds,
-            roleLabel: application.drive?.role || application.drive?.title || "Interview",
+            roleLabel: application.job?.role || application.job?.title || "Interview",
             candidateName: application.fullName,
             applicationId,
             interviewToken: interview.accessToken,

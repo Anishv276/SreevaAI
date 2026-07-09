@@ -6,7 +6,7 @@ import { generateId } from "@/lib/ids";
 import { getOrgBillingStatus } from "@/lib/credits";
 import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
-import { authorizeDriveAccess } from "@/lib/drive-access";
+import { authorizeJobAccess } from "@/lib/job-access";
 import { resumeQueue } from "@/lib/queue";
 
 const RESUME_BUCKET = process.env.R2_RESUMES_BUCKET || "resumes";
@@ -33,7 +33,7 @@ function buildProgressState(progress: number, stage: string, extra?: Record<stri
 
 const MAX_RESUMES = 500;
 
-// POST /api/drives/[id]/resume-screening -> upload resumes and queue processing
+// POST /api/jobs/[id]/resume-screening -> upload resumes and queue processing
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -44,11 +44,11 @@ export async function POST(
       return NextResponse.json({ error: "Not authorized" }, { status: 401 });
     }
 
-    const { id: driveId } = await params;
+    const { id: jobId } = await params;
     const formData = await request.formData();
     const files = formData.getAll("files") as File[];
 
-    console.log(`[RESUME-UPLOAD] Received ${files.length} file(s) for drive=${driveId}`);
+    console.log(`[RESUME-UPLOAD] Received ${files.length} file(s) for job=${jobId}`);
 
     if (!files.length) {
       return NextResponse.json({ error: "No files provided" }, { status: 400 });
@@ -57,29 +57,29 @@ export async function POST(
       return NextResponse.json({ error: `Maximum ${MAX_RESUMES} resumes per upload` }, { status: 400 });
     }
 
-    const drive = await prisma.drive.findUnique({
-      where: { id: driveId },
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
       select: {
         id: true,
         title: true,
         orgId: true,
-        organization: { select: { slug: true } },
+        organization: { select: { urlSlug: true } },
       },
     });
-    if (!drive) {
-      return NextResponse.json({ error: "Drive not found" }, { status: 404 });
+    if (!job) {
+      return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
-    if (!drive.orgId) {
-      return NextResponse.json({ error: "Drive has no organisation" }, { status: 400 });
+    if (!job.orgId) {
+      return NextResponse.json({ error: "Job has no organisation" }, { status: 400 });
     }
-    if (!isSuperAdminRole(session.role) && drive.orgId !== session.orgId) {
-      return NextResponse.json({ error: "Drive belongs to a different organization" }, { status: 403 });
+    if (!isSuperAdminRole(session.role) && job.orgId !== session.orgId) {
+      return NextResponse.json({ error: "Job belongs to a different organization" }, { status: 403 });
     }
 
-    const orgSlug = drive.organization?.slug || drive.orgId;
-    const safeDriveTitle = drive.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+    const orgSlug = job.organization?.urlSlug || job.orgId;
+    const safeJobTitle = job.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
 
-    const billingStatus = await getOrgBillingStatus(drive.orgId);
+    const billingStatus = await getOrgBillingStatus(job.orgId);
     if (billingStatus.interviewQuotaTotal > 0 && !billingStatus.hasSufficientInterviews) {
       return NextResponse.json(
         {
@@ -110,7 +110,7 @@ export async function POST(
       try {
         const buffer = Buffer.from(await file.arrayBuffer());
         const safeName = sanitizeFileName(fileName);
-        const key = `resume/${orgSlug}/${safeDriveTitle}/${Date.now()}_${index}_${safeName}`;
+        const key = `resume/${orgSlug}/${safeJobTitle}/${Date.now()}_${index}_${safeName}`;
         const uploadedUrl = await putObject(RESUME_BUCKET, key, buffer, file.type || "application/pdf");
         const applicationId = `${generateId("app", guessNameFromFile(fileName))}-${randomUUID().slice(0, 8)}`;
         prepared.push({
@@ -120,7 +120,7 @@ export async function POST(
           bucket: RESUME_BUCKET,
           key,
           uploadedUrl,
-          downloadUrl: `/api/drives/${driveId}/resume-screening/download?candidateId=${applicationId}`,
+          downloadUrl: `/api/jobs/${jobId}/resume-screening/download?candidateId=${applicationId}`,
         });
         console.log(`[RESUME-UPLOAD] Stored ${fileName} in R2 -> ${key}`);
       } catch (uploadErr: any) {
@@ -151,7 +151,7 @@ export async function POST(
           resumeData: JSON.stringify({
             source: { bucket: row.bucket, key: row.key, url: row.uploadedUrl, downloadUrl: row.downloadUrl },
           }),
-          driveId,
+          jobId,
           fileName: row.fileName,
           resumeStatus: "waiting",
           interviewStatus: "pending",
@@ -163,7 +163,7 @@ export async function POST(
     }
 
     const candidateIds = prepared.map((row) => row.applicationId);
-    console.log(`[RESUME-UPLOAD] Persisted ${candidateIds.length} candidate(s) for drive=${driveId}`);
+    console.log(`[RESUME-UPLOAD] Persisted ${candidateIds.length} candidate(s) for job=${jobId}`);
 
     // -- Enqueue one screening job per resume immediately ----------------------
     // Each job is independent: the worker picks it up as soon as a concurrency
@@ -177,7 +177,7 @@ export async function POST(
             bucket: row.bucket,
             key: row.key,
             fileName: row.fileName,
-            orgId: drive.orgId,
+            orgId: job.orgId,
           },
           {
             attempts: 2,
@@ -224,24 +224,24 @@ export async function POST(
   }
 }
 
-// GET /api/drives/[id]/resume-screening -> fetch all candidates
+// GET /api/jobs/[id]/resume-screening -> fetch all candidates
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id: driveId } = await params;
-    const access = await authorizeDriveAccess(driveId);
+    const { id: jobId } = await params;
+    const access = await authorizeJobAccess(jobId);
     if (!access.ok) {
       return NextResponse.json({ error: access.error }, { status: access.status });
     }
 
     const candidates = await prisma.application.findMany({
-      where: { driveId },
+      where: { jobId },
       orderBy: { createdAt: "asc" },
       select: {
         id: true,
-        driveId: true,
+        jobId: true,
         fullName: true,
         fileName: true,
         email: true,

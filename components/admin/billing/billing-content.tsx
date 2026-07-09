@@ -184,15 +184,15 @@ export function BillingContent(props?: any) {
                                 <div className="h-8 w-8 rounded-full bg-emerald-100 flex items-center justify-center mb-3">
                                     <Briefcase className="h-4 w-4 text-emerald-600" />
                                 </div>
-                                <p className="text-[11px] font-semibold text-gray-500 mb-1">Active Drives</p>
+                                <p className="text-[11px] font-semibold text-gray-500 mb-1">Active Jobs</p>
                                 <div className="flex items-baseline gap-1 mb-3">
-                                    <span className="text-2xl font-black text-gray-900 leading-none">{usage.activeDrives}</span>
-                                    <span className="text-xs font-bold text-gray-400">/ {plan.maxActiveDrives}</span>
+                                    <span className="text-2xl font-black text-gray-900 leading-none">{usage.activeJobs}</span>
+                                    <span className="text-xs font-bold text-gray-400">/ {plan.maxActiveJobs}</span>
                                 </div>
                                 <div className="h-1.5 w-full bg-emerald-200/50 rounded-full mb-2 overflow-hidden">
-                                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: plan.maxActiveDrives === 'Unlimited' ? '100%' : `${Math.min(100, (usage.activeDrives / plan.maxActiveDrives) * 100)}%` }} />
+                                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: plan.maxActiveJobs === 'Unlimited' ? '100%' : `${Math.min(100, (usage.activeJobs / plan.maxActiveJobs) * 100)}%` }} />
                                 </div>
-                                <p className="text-[10px] font-bold text-emerald-700">{plan.maxActiveDrives === 'Unlimited' ? 'Active' : `${(usage.activeDrives / plan.maxActiveDrives * 100).toFixed(0)}% used`}</p>
+                                <p className="text-[10px] font-bold text-emerald-700">{plan.maxActiveJobs === 'Unlimited' ? 'Active' : `${(usage.activeJobs / plan.maxActiveJobs * 100).toFixed(0)}% used`}</p>
                             </div>
 
                             {/* Card 3 */}
@@ -411,7 +411,7 @@ export function BillingContent(props?: any) {
                         <div className="space-y-3 mb-8">
                             {(resolvedPlan?.features?.slice(0, 5) || [
                                 `${plan.interviewsTotal} Interviews / month`,
-                                `${plan.maxActiveDrives} Active drives`,
+                                `${plan.maxActiveJobs} Active jobs`,
                                 'Resume screening',
                                 'Adaptive AI Interview',
                                 'Priority support'

@@ -34,7 +34,7 @@ export function normalizeOrgPlan(plan?: string | null): OrgPlanId | null {
   if (raw in PLAN_LABELS) return raw as OrgPlanId;
   return LEGACY_PLAN_MAP[raw] || null;
 }
-export function getDefaultMaxActiveDrivesForPlan(plan?: string | null): number {
+export function getDefaultMaxActiveJobsForPlan(plan?: string | null): number {
   const normalized = normalizeOrgPlan(plan);
   if (normalized === "STARTER") return 1;
   if (normalized === "PRO") return 5;

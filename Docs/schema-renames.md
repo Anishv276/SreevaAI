@@ -10,7 +10,6 @@ This document lists all proposed renames for the Prisma schema — from current 
 
 | Current Model Name | Proposed Model Name | Reason |
 |---|---|---|
-| `Drive` | `JobPosting` | "Drive" is internal jargon — it's actually a job posting / hiring campaign |
 | `EngineVoice` | `AIVoice` | "Engine" is internal jargon — these are AI voices available in the system |
 
 ---
@@ -23,7 +22,6 @@ This document lists all proposed renames for the Prisma schema — from current 
 |---|---|---|
 | `slug` | `urlSlug` | Makes clear it's used in URLs |
 | `plan` | `billingPlan` | "plan" alone is vague |
-| `maxActiveDrives` | `maxActiveJobPostings` | "Drives" is internal jargon |
 | `maxConcurrentSlots` | `maxConcurrentInterviews` | Plain English |
 | `proctoringSignals` | `enabledProctoringSignals` | Clarifies these are on/off toggles |
 | `status` | `orgStatus` | Scoped so it's not confused with other status fields |
@@ -66,27 +64,6 @@ This document lists all proposed renames for the Prisma schema — from current 
 
 ---
     
-### `Drive` → (model renamed to `JobPosting`)
-
-| Current Field | Proposed Field | Reason |
-|---|---|---|
-| `role` | `jobRole` | "role" alone is ambiguous |
-| `screeningThreshold` | `aiScorePassThreshold` | What threshold? The AI screening pass score |
-| `creatorId` | `createdByUserId` | Who created it? A user |
-| `createdAt` | `jobPostingCreatedAt` | Scoped |
-| `updatedAt` | `jobPostingUpdatedAt` | Scoped |
-| `screeningCriteria` | `aiScreeningCriteria` | AI-based screening rules |
-| `extractedDetails` | `jdExtractedDetails` | Extracted from the Job Description (JD) |
-| `interviewQuestions` | `customInterviewQuestions` | "custom" clarifies these are recruiter-added questions |
-| `jdFileName` | `jobDescriptionFileName` | Spelled out fully |
-| `jdPreviewUrl` | `jobDescriptionPreviewUrl` | Spelled out fully |
-| `orgId` | `organizationId` | Spelled out fully |
-| `aiName` | `aiInterviewerName` | The AI interviewer's display name |
-| `voiceId` | `defaultVoiceId` | Default voice for this job posting |
-| `interviewMode` | `jobPostingMode` | Scoped |
-
----
-
 ### `Application`
 
 | Current Field | Proposed Field | Reason |
@@ -98,7 +75,6 @@ This document lists all proposed renames for the Prisma schema — from current 
 | `updatedAt` | `applicationUpdatedAt` | Scoped |
 | `resumeText` | `resumeRawText` | Raw extracted text from the resume |
 | `resumeData` | `resumeParsedData` | Parsed/structured resume data |
-| `driveId` | `jobPostingId` | After Drive → JobPosting rename |
 | `resumeStatus` | `resumeScreeningStatus` | Screening status of the resume |
 | `interviewStatus` | `interviewPhaseStatus` | Clarity |
 | `fullScanReport` | `resumeFullScanReport` | Clarity |
@@ -164,9 +140,9 @@ This document lists all proposed renames for the Prisma schema — from current 
 
 | Category | Count |
 |---|---|
-| Model renames | 2 |
-| Field renames | 87 |
-| Total changes | 89 |
+| Model renames | 1 |
+| Field renames | 85 |
+| Total changes | 86 |
 
 ---
 

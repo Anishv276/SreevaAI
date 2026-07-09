@@ -14,7 +14,7 @@ export async function GET(req: Request) {
         const from = searchParams.get("from") ?? undefined;
         const limit = Math.min(20, Math.max(1, parseInt(searchParams.get("limit") || "20")));
         const start = getRangeStart(range, from);
-        const drives = await prisma.drive.findMany({
+        const jobs = await prisma.job.findMany({
             where: { orgId, isDeleted: false },
             select: {
                 id: true,
@@ -34,8 +34,8 @@ export async function GET(req: Request) {
             orderBy: { createdAt: "desc" },
             take: limit,
         });
-        const result = drives.map((drive: (typeof drives)[number]) => {
-            const apps = drive.applications;
+        const result = jobs.map((job: (typeof jobs)[number]) => {
+            const apps = job.applications;
             const applied = apps.length;
             const screened = apps.filter((a: (typeof apps)[number]) => a.aiScore != null).length;
             const interviewed = apps.filter(
@@ -47,10 +47,10 @@ export async function GET(req: Request) {
             // Screening progress: screened/applied as %
             const screeningPct = applied > 0 ? Math.round((screened / applied) * 100) : 0;
             return {
-                id: drive.id,
-                title: drive.title,
-                role: drive.role,
-                screeningThreshold: Number(drive.screeningThreshold ?? 60),
+                id: job.id,
+                title: job.title,
+                role: job.role,
+                screeningThreshold: Number(job.screeningThreshold ?? 60),
                 screeningPct,
                 applied,
                 screened,
@@ -58,9 +58,9 @@ export async function GET(req: Request) {
                 shortlisted,
             };
         });
-        return NextResponse.json({ drives: result });
+        return NextResponse.json({ jobs: result });
     } catch (error: any) {
-        console.error("Drives summary error:", error);
+        console.error("Jobs summary error:", error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

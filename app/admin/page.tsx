@@ -3,13 +3,13 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Plus, Lock, ArrowRight, Loader2 } from "lucide-react";
 import { useJobs } from "@/context/jobs-context";
-import { getActiveDriveCount, isDriveCreationLocked } from "@/lib/drive-limits";
+import { getActiveJobCount, isJobCreationLocked } from "@/lib/job-limits";
 import { getInterviewQuotaSupportMessage, getSupportComposeUrl, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 import { StatsGrid } from "@/components/admin/stats-grid";
 import { HiringFunnel } from "@/components/admin/hiring-funnel";
 import { ScoreDistribution } from "@/components/admin/score-distribution";
-import { ActiveDrivesSummary } from "@/components/admin/active-drives-summary";
+import { ActiveJobsSummary } from "@/components/admin/active-jobs-summary";
 import { NeedsAction } from "@/components/admin/needs-action";
 import { UpcomingActivity } from "@/components/admin/upcoming-activity";
 import { TopCandidates } from "@/components/admin/top-candidates";
@@ -22,9 +22,9 @@ export default function DashboardPage() {
     const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
     const orgStatus = String(adminOrg?.status || "ACTIVE").toUpperCase();
     const { jobs } = useJobs();
-    const activeDriveCount = adminOrg?.activeDriveCount ?? getActiveDriveCount(jobs);
+    const activeJobCount = adminOrg?.activeJobCount ?? getActiveJobCount(jobs);
     const isSuspended = isOrgRestrictedStatus(orgStatus);
-    const driveCreationLocked = isDriveCreationLocked(adminOrg?.maxActiveDrives, activeDriveCount) || quotaLocked || isSuspended;
+    const jobCreationLocked = isJobCreationLocked(adminOrg?.maxActiveJobs, activeJobCount) || quotaLocked || isSuspended;
 
     const [dashboardData, setDashboardData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -79,16 +79,16 @@ export default function DashboardPage() {
 
                 <div className="flex items-center gap-2.5 flex-wrap">
                     <DateFilter value={dateRange} onChange={setDateRange} />
-                    {driveCreationLocked ? (
+                    {jobCreationLocked ? (
                         <div className="flex items-center gap-2.5">
                             <button
                                 disabled
                                 className="inline-flex items-center gap-1.5 h-9 px-4 rounded-xl text-sm font-medium text-gray-400 cursor-not-allowed"
                                 style={{ background: "#F5F3FF", border: "1px solid #E9E7FF" }}
-                                title={quotaLocked || isSuspended ? getInterviewQuotaSupportMessage("interviews") : "Drive limit reached"}
+                                title={quotaLocked || isSuspended ? getInterviewQuotaSupportMessage("interviews") : "Job limit reached"}
                             >
                                 <Lock className="h-3.5 w-3.5" />
-                                {quotaLocked || isSuspended ? "Locked" : "New Drive"}
+                                {quotaLocked || isSuspended ? "Locked" : "New Job"}
                             </button>
                             {(quotaLocked || isSuspended) ? (
                                 <a
@@ -107,12 +107,12 @@ export default function DashboardPage() {
                         </div>
                     ) : (
                         <Link
-                            href="/admin/create-drive"
+                            href="/admin/create-job"
                             className="btn-shimmer inline-flex items-center gap-1.5 h-9 px-4 rounded-xl text-sm font-medium text-white transition-all"
                             style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: "0 4px 12px rgba(124,58,237,0.25)" }}
                         >
                             <Plus className="h-4 w-4" />
-                            New Drive
+                            New Job
                         </Link>
                     )}
                 </div>
@@ -137,7 +137,7 @@ export default function DashboardPage() {
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
                         <HiringFunnel dateRange={dateRange} initialData={dashboardData?.stats} />
                         <ScoreDistribution dateRange={dateRange} initialData={dashboardData?.scoreDistribution} />
-                        <ActiveDrivesSummary dateRange={dateRange} initialData={dashboardData?.drivesSummary} />
+                        <ActiveJobsSummary dateRange={dateRange} initialData={dashboardData?.jobsSummary} />
                     </div>
 
                     {/* ── Action + Talent Row ── */}

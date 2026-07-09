@@ -1,18 +1,18 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { createDriveSchema, bulkDeleteSchema } from "@/lib/validation";
+import { createJobSchema, bulkDeleteSchema } from "@/lib/validation";
 import { getSession } from "@/lib/auth";
 import { sanitizeObject } from "@/lib/utils";
 import { generateId } from "@/lib/ids";
 import { deleteUrlTargets } from "@/lib/delete-utils";
 import { getRecordingUrl } from "@/lib/recording-state";
 import { getOrgBillingStatus } from "@/lib/credits";
-import { isDriveCreationLocked } from "@/lib/drive-limits";
-import { normalizeDriveAiConfig } from "@/lib/ai-provider-config";
+import { isJobCreationLocked } from "@/lib/job-limits";
+import { normalizeJobAiConfig } from "@/lib/ai-provider-config";
 import { getInterviewQuotaSupportMessage, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { parseOrgLimitValue } from "@/lib/org-limits";
-import { parseDriveScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
+import { parseJobScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
 function normalizeDeadlineDate(deadline?: string | null) {
     if (!deadline) return null;
     const parsed = new Date(`${deadline}T23:59:59.999`);
@@ -31,7 +31,7 @@ export async function GET(request: Request) {
         const orgId = searchParams.get("orgId");
         const startDate = searchParams.get("startDate");
         const endDate = searchParams.get("endDate");
-        const where: Prisma.DriveWhereInput = {};
+        const where: Prisma.JobWhereInput = {};
         if (startDate || endDate) {
             where.createdAt = {};
             if (startDate) (where.createdAt as Prisma.DateTimeFilter).gte = new Date(startDate);
@@ -54,8 +54,8 @@ export async function GET(request: Request) {
                 { role: { contains: search, mode: "insensitive" } }
             ];
         }
-        const [drives, total] = await Promise.all([
-            prisma.drive.findMany({
+        const [jobs, total] = await Promise.all([
+            prisma.job.findMany({
                 where,
                 orderBy: { createdAt: "desc" },
                 skip,
@@ -82,17 +82,17 @@ export async function GET(request: Request) {
                     },
                 },
             }),
-            prisma.drive.count({ where })
+            prisma.job.count({ where })
         ]);
-        const formattedDrives = drives.map((drive) => {
-            const screeningThreshold = Number(drive.screeningThreshold ?? 60);
-            const parsedScreening = parseDriveScreeningSettings(
-                drive.screeningCriteria,
+        const formattedJobs = jobs.map((job) => {
+            const screeningThreshold = Number(job.screeningThreshold ?? 60);
+            const parsedScreening = parseJobScreeningSettings(
+                job.screeningCriteria,
                 screeningThreshold,
             );
             return {
-                ...drive,
-                applicants: drive._count?.applications || 0,
+                ...job,
+                applicants: job._count?.applications || 0,
                 screeningThreshold: parsedScreening.threshold,
                 screeningCriteria: JSON.stringify({
                     threshold: parsedScreening.threshold,
@@ -101,11 +101,11 @@ export async function GET(request: Request) {
                 aiScreening: {
                     enabled: true,
                 },
-                interviewQuestions: drive.interviewQuestions ? JSON.parse(drive.interviewQuestions) : []
+                interviewQuestions: job.interviewQuestions ? JSON.parse(job.interviewQuestions) : []
             };
         });
         return NextResponse.json({
-            drives: formattedDrives,
+            jobs: formattedJobs,
             pagination: {
                 total,
                 page,
@@ -118,8 +118,8 @@ export async function GET(request: Request) {
             }
         });
     } catch (error) {
-        console.error("Error fetching drives:", error);
-        return NextResponse.json({ error: "Failed to fetch drives" }, { status: 500 });
+        console.error("Error fetching jobs:", error);
+        return NextResponse.json({ error: "Failed to fetch jobs" }, { status: 500 });
     }
 }
 export async function POST(request: Request) {
@@ -127,12 +127,12 @@ export async function POST(request: Request) {
         const session = await getSession();
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
         if (session.orgId) {
-            const org = await prisma.organization.findUnique({
+            const org = await prisma.organizationDetails.findUnique({
                 where: { id: session.orgId },
-                select: { status: true, maxActiveDrives: true }
+                select: { orgStatus: true, maxActiveJobs: true }
             });
-            if (isOrgRestrictedStatus(org?.status)) {
-                return NextResponse.json({ error: "Drive creation is blocked because your organization is restricted." }, { status: 403 });
+            if (isOrgRestrictedStatus(org?.orgStatus)) {
+                return NextResponse.json({ error: "Job creation is blocked because your organization is restricted." }, { status: 403 });
             }
             const billingStatus = await getOrgBillingStatus(session.orgId);
             if (billingStatus.interviewQuotaTotal > 0 && !billingStatus.hasSufficientInterviews) {
@@ -144,18 +144,18 @@ export async function POST(request: Request) {
                     { status: 402 }
                 );
             }
-            const maxActiveDrives = parseOrgLimitValue(org?.maxActiveDrives);
-            if (maxActiveDrives !== null) {
-                const activeDriveCount = await prisma.drive.count({
+            const maxActiveJobs = parseOrgLimitValue(org?.maxActiveJobs);
+            if (maxActiveJobs !== null) {
+                const activeJobCount = await prisma.job.count({
                     where: { orgId: session.orgId }
                 });
-                if (isDriveCreationLocked(maxActiveDrives, activeDriveCount)) {
+                if (isJobCreationLocked(maxActiveJobs, activeJobCount)) {
                     return NextResponse.json(
                         {
-                            error: "Drive limit reached. Upgrade your plan or increase the limit to create another drive.",
-                            code: "DRIVE_LIMIT_REACHED",
-                            activeDriveCount,
-                            maxActiveDrives,
+                            error: "Job limit reached. Upgrade your plan or increase the limit to create another job.",
+                            code: "JOB_LIMIT_REACHED",
+                            activeJobCount,
+                            maxActiveJobs,
                         },
                         { status: 409 }
                     );
@@ -164,16 +164,16 @@ export async function POST(request: Request) {
         }
         const rawBody = await request.json();
         const body = sanitizeObject(rawBody);
-        const result = createDriveSchema.safeParse(body);
+        const result = createJobSchema.safeParse(body);
         if (!result.success) {
-            console.error("[POST /api/drives] Validation failed:", JSON.stringify(result.error.flatten().fieldErrors, null, 2));
+            console.error("[POST /api/jobs] Validation failed:", JSON.stringify(result.error.flatten().fieldErrors, null, 2));
             return NextResponse.json(
                 { error: "Validation failed", details: result.error.flatten().fieldErrors },
                 { status: 400 }
             );
         }
         const data = result.data;
-        const aiConfig = normalizeDriveAiConfig({
+        const aiConfig = normalizeJobAiConfig({
             next: { voiceId: data.voiceId },
         });
         const screeningCriteria = (() => {
@@ -193,10 +193,10 @@ export async function POST(request: Request) {
             ...normalizedScreeningCriteria,
             ...(data.screeningThreshold !== undefined ? { threshold: data.screeningThreshold } : {}),
         };
-        const driveId = generateId("drv", data.title);
-        const drive = await prisma.drive.create({
+        const jobId = generateId("drv", data.title);
+        const job = await prisma.job.create({
             data: {
-                id: driveId,
+                id: jobId,
                 title: data.title,
                 role: data.role || null,
                 extractedDetails: data.extractedDetails || null,
@@ -213,11 +213,11 @@ export async function POST(request: Request) {
                 ...aiConfig,
             },
         });
-        return NextResponse.json(drive);
+        return NextResponse.json(job);
     } catch (error: any) {
-        console.error("Error creating drive:", error);
+        console.error("Error creating job:", error);
         return NextResponse.json({
-            error: "Failed to create drive",
+            error: "Failed to create job",
             details: error.message,
             code: error.code
         }, { status: 500 });
@@ -237,23 +237,23 @@ export async function DELETE(request: Request) {
         }
         const { ids } = result.data;
         // -- SECURITY: Ensure IDs belong to the Org -----------
-        const belongsToOrg = await prisma.drive.findMany({
+        const belongsToOrg = await prisma.job.findMany({
             where: { id: { in: ids }, orgId: session.orgId },
             select: { id: true },
         });
         const validIds = belongsToOrg.map((d: (typeof belongsToOrg)[number]) => d.id);
-        if (validIds.length === 0) return NextResponse.json({ message: "No matching drives found" });
+        if (validIds.length === 0) return NextResponse.json({ message: "No matching jobs found" });
         // -- SOFT DELETE: DATABASE CLEANUP (Cascading) ---------------------------
         await prisma.$transaction(async (tx) => {
             const timestamp = Date.now().toString();
-            // 1. Soft Delete Drives
-            await tx.drive.updateMany({
+            // 1. Soft Delete Jobs
+            await tx.job.updateMany({
                 where: { id: { in: validIds } },
                 data: { isDeleted: true }
             });
             // 2. Soft Delete Applications
             await tx.application.updateMany({
-                where: { driveId: { in: validIds } },
+                where: { jobId: { in: validIds } },
                 data: { isDeleted: true }
             });
             // 5. Soft Delete Interviews (rename unique keys via Raw SQL)
@@ -264,22 +264,22 @@ export async function DELETE(request: Request) {
                     SET "isDeleted" = true,
                         "applicationId" = 'del_' || ${timestamp} || '_' || "applicationId",
                         "accessToken" = 'del_' || ${timestamp} || '_' || "accessToken"
-                    WHERE "applicationId" IN (SELECT "id" FROM "Application" WHERE "driveId" IN (${idList}))
+                    WHERE "applicationId" IN (SELECT "id" FROM "Application" WHERE "jobId" IN (${idList}))
                 `;
                 // 6. Soft Delete Support Tickets
                 await tx.$executeRaw`
                     UPDATE "SupportTicket" SET "status" = 'DELETED'
                     WHERE "interviewId" IN (
                         SELECT "id" FROM "Interview" WHERE "applicationId" IN (
-                            SELECT "id" FROM "Application" WHERE "driveId" IN (${idList})
+                            SELECT "id" FROM "Application" WHERE "jobId" IN (${idList})
                         )
                     )
                 `;
             }
         });
-        return NextResponse.json({ message: `${validIds.length} drives soft-deleted successfully` });
+        return NextResponse.json({ message: `${validIds.length} jobs soft-deleted successfully` });
     } catch (error) {
-        console.error("Error bulk deleting drives:", error);
-        return NextResponse.json({ error: "Failed to delete drives" }, { status: 500 });
+        console.error("Error bulk deleting jobs:", error);
+        return NextResponse.json({ error: "Failed to delete jobs" }, { status: 500 });
     }
 }

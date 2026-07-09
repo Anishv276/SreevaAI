@@ -117,7 +117,7 @@ async function validateInterviewAccess(applicationId: string, interviewToken: st
     const app = await prisma.application.findUnique({
         where: { id: applicationId },
         select: {
-            drive: { select: { orgId: true } },
+            job: { select: { orgId: true } },
             interview: {
                 select: {
                     accessToken: true,
@@ -128,8 +128,8 @@ async function validateInterviewAccess(applicationId: string, interviewToken: st
             },
         },
     });
-    if (!app?.drive?.orgId || !app.interview) {
-        console.error("[verify-speech] validateInterviewAccess failed: Missing orgId or interview", { orgId: app?.drive?.orgId, hasInterview: !!app?.interview });
+    if (!app?.job?.orgId || !app.interview) {
+        console.error("[verify-speech] validateInterviewAccess failed: Missing orgId or interview", { orgId: app?.job?.orgId, hasInterview: !!app?.interview });
         return null;
     }
     if (isInterviewTokenRequired() && app.interview?.accessToken !== interviewToken) {
@@ -142,7 +142,7 @@ async function validateInterviewAccess(applicationId: string, interviewToken: st
         console.error("[verify-speech] validateInterviewAccess failed: Link not ACTIVE");
         return null;
     }
-    return app.drive.orgId;
+    return app.job.orgId;
 }
 export async function POST(req: NextRequest) {
     try {

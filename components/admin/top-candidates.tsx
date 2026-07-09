@@ -11,7 +11,7 @@ interface TopCandidate {
     name: string;
     initials: string;
     role: string;
-    driveTitle: string;
+    jobTitle: string;
     interviewScore: number | null;
     resumeScore: number | null;
     status: string;
@@ -129,7 +129,7 @@ export function TopCandidates({ dateRange, initialData }: TopCandidatesProps) {
                                                 {c.name}
                                             </p>
                                             <p className="text-xs font-medium text-gray-500 truncate mt-0.5">
-                                                {c.role || c.driveTitle}
+                                                {c.role || c.jobTitle}
                                             </p>
                                         </div>
                                     </div>

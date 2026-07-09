@@ -15,36 +15,36 @@ import { useJobs } from "@/context/jobs-context";
 import { useAdminOrg } from "@/context/admin-org-context";
 import { cn } from "@/lib/utils";
 import { ResumeScreening } from "@/components/admin/resume-screening";
-export default function DriveDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const router = useRouter();
-    const { id: driveId } = use(params);
+    const { id: jobId } = use(params);
     const { jobs } = useJobs();
     // ⚡ Read from shared context -- no fetch needed
     const adminOrg = useAdminOrg();
     const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
-    const [drive, setDrive] = useState<any>(null);
+    const [job, setJob] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     useEffect(() => {
-        const loadDrive = async () => {
+        const loadJob = async () => {
             try {
-                const res = await fetch(`/api/drives/${driveId}`, { cache: "no-store" });
+                const res = await fetch(`/api/jobs/${jobId}`, { cache: "no-store" });
                 if (!res.ok) {
-                    toast.error("Failed to fetch drive details");
-                    router.push("/admin/drives");
+                    toast.error("Failed to fetch job details");
+                    router.push("/admin/jobs");
                     return;
                 }
                 const data = await res.json();
-                setDrive(data);
+                setJob(data);
             } catch (err) {
-                console.error("Load drive error:", err);
+                console.error("Load job error:", err);
                 toast.error("An error occurred");
             } finally {
                 setLoading(false);
             }
         };
-        loadDrive();
-    }, [driveId]);
-    if (loading || !drive) {
+        loadJob();
+    }, [jobId]);
+    if (loading || !job) {
         return (
             <div className="flex items-center justify-center min-h-screen">
                 <Loader2 className="h-10 w-10 text-violet-500 animate-spin" />
@@ -67,13 +67,13 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                             <div className="min-w-0">
                                 <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.24em] text-gray-400">
                                     <Briefcase className="h-3.5 w-3.5 text-[#7C3AED]" />
-                                    Drive Candidates
+                                    Job Candidates
                                 </div>
                                 <h1 className="mt-2 text-[clamp(2rem,4vw,3.75rem)] font-black leading-[0.95] tracking-tight text-slate-950">
-                                    {drive.title}
+                                    {job.title}
                                 </h1>
                                 <p className="mt-3 max-w-2xl text-sm font-medium text-gray-500">
-                                    {drive.role || "Job Description"}
+                                    {job.role || "Job Description"}
                                 </p>
                             </div>
                         </div>
@@ -98,11 +98,11 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                                 {quotaLocked ? "Upload Locked" : "Upload Resumes"}
                             </button>
                             <button
-                                onClick={() => router.push(`/admin/create-drive?id=${driveId}&mode=edit`)}
+                                onClick={() => router.push(`/admin/create-job?id=${jobId}&mode=edit`)}
                                 className="inline-flex h-10 items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-600 transition-colors hover:border-slate-300 hover:bg-violet-50 hover:text-gray-900"
                             >
                                 <Pencil className="h-4 w-4" />
-                                Edit Drive
+                                Edit Job
                             </button>
                         </div>
                     </div>
@@ -143,8 +143,8 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                                 </div>
                             ) : (
                                 <ResumeScreening
-                                    driveId={driveId}
-                                    driveName={drive?.title || ""}
+                                    jobId={jobId}
+                                    jobName={job?.title || ""}
                                 />
                             )}
                     </div>

@@ -1384,7 +1384,7 @@ async def entrypoint(ctx: JobContext):
         raise connect_result
     # Room is now connected -- define the failure helper here so it can use ctx.room.
     # Any failure AFTER this point must call _fail_interview() so:
-    #   1. DB is marked FAILED (Drive candidates page shows FAILED, not stuck IN_PROGRESS)
+    #   1. DB is marked FAILED (Job candidates page shows FAILED, not stuck IN_PROGRESS)
     #   2. Frontend receives an error event and shows the support message to the candidate
     async def _fail_interview(reason: str) -> None:
         logger.error(f"[INTERVIEW_FAIL] app_id={app_id} reason={reason}")
@@ -1544,7 +1544,7 @@ async def entrypoint(ctx: JobContext):
     _brief_openai_client: AsyncOpenAI = _SHARED_OPENAI_CLIENT
 
     # Band seed: resume-only classification (seniority_level + total_years).
-    # Always computed regardless of brief source — band drives prompt logic downstream.
+    # Always computed regardless of brief source — band jobs prompt logic downstream.
     _band_seed, _total_years, _seniority = classify_band(structured_resume)
     logger.info(
         "[BAND] seed=%s | total_years=%.1f | seniority=%s",
@@ -1753,7 +1753,7 @@ async def entrypoint(ctx: JobContext):
                 ):
                     _add(token)
         return terms[:97]  # provider prepends 3 base terms and caps at 100.
-    # VAD removed: Flux STT native EOT drives all turn boundaries (turn_detection="stt").
+    # VAD removed: Flux STT native EOT jobs all turn boundaries (turn_detection="stt").
     # Silero ONNX model is no longer needed -- saves ~200ms prewarm startup time.
     flux_session_keyterms = _build_flux_session_keyterms()
     logger.info("[STT_FLUX] static session keyterms prepared: %d extra terms", len(flux_session_keyterms))
@@ -1930,7 +1930,7 @@ async def entrypoint(ctx: JobContext):
         "tts": tts_plugin,
         "turn_handling": TurnHandlingOptions(
             preemptive_generation={"enabled": False},
-            # Flux STT drives turn boundaries -- no separate endpointing detector needed.
+            # Flux STT jobs turn boundaries -- no separate endpointing detector needed.
             turn_detection="stt",
             interruption=InterruptionOptions(
                 enabled=True,
@@ -1969,7 +1969,7 @@ async def entrypoint(ctx: JobContext):
     from livekit.agents.beta.tools import EndCallTool
 
     # -- Candidate meta-intent tools ------------------------------------------
-    # Replace regex pattern-matching with LLM-driven tool calls.
+    # Replace regex pattern-matching with LLM-jobn tool calls.
     # The LLM decides when to call these based on semantic understanding of what
     # the candidate said -- not string matching on their exact words.
 
@@ -2770,7 +2770,7 @@ async def entrypoint(ctx: JobContext):
             # --- Per-Turn Answer Evaluator (Decision Engine) ---
             # Fires on every candidate response. Evaluates answer quality in real-time
             # and injects a NEXT_TURN_DIRECTIVE before Ishita generates her next response.
-            # Decision: PROBE (which mode) or MOVE_ON - fully signal-driven, no fixed depth.
+            # Decision: PROBE (which mode) or MOVE_ON - fully signal-jobn, no fixed depth.
             # Greeting = turn 1, warmup question = turn 2, interview starts at turn 3.
             # Warmup turns (before warmup_complete) are recorded as zero-scored placeholders
             # so they never pollute the technical or communication score averages.
@@ -3336,7 +3336,7 @@ async def entrypoint(ctx: JobContext):
                         )
                     # If LLM directive generation failed, use a minimal instruction
                     # that lets the LLM generate a natural question from the TOPIC_LOCK context.
-                    # No rule-based template -- LLM drives the opener.
+                    # No rule-based template -- LLM jobs the opener.
                     if not _directive:
                         _full_ctx = _active_topic or _new_topic_title
                         if _new_topic_item and _new_topic_item.full_description:
@@ -3414,7 +3414,7 @@ async def entrypoint(ctx: JobContext):
                     logger.info("[AGENT] turn=%d | MOVE_ON directive injected (LLM) | new_topic=%r", turn_snapshot, _active_topic)
                     logger.info("[MOVE_ON_DIRECTIVE] turn=%d:\n%s", turn_snapshot, _directive)
                 else:
-                    # -- PROBE -- LLM-driven directive using TopicItem brief context --
+                    # -- PROBE -- LLM-jobn directive using TopicItem brief context --
                     _prev_q = (payload.get("question") or "").strip()
                     _prev_a = (payload.get("answer") or "").strip()
                     _topic_follow_ups = int((_new_topic_state_dict or {}).get("follow_up_turns", 0) or 0)
@@ -3581,7 +3581,7 @@ async def entrypoint(ctx: JobContext):
                 agent._directive_ready.set()
             finally:
                 # Do NOT touch agent._waiting_for_eval / _directive_ready here.
-                # await session.say() above synchronously drives on_conversation_item_added
+                # await session.say() above synchronously jobs on_conversation_item_added
                 # for the assistant message before returning, which (since turn_count
                 # reaches 2, not warmup_complete) is the authoritative gate-closer for
                 # "wait for the candidate's warmup answer" (see the turn_count==2 branch

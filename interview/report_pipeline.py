@@ -1711,7 +1711,7 @@ async def _node_assemble(state: ReportState) -> dict:
     integrity_signals_analysis = state.get("integrity_narratives") or {}
 
     # Content-layer integrity signal: fold the answer-integrity verdict into the
-    # same browser-events list that drives the deterministic integrity score,
+    # same browser-events list that jobs the deterministic integrity score,
     # so a candidate who behaves cleanly but cheats in what they SAID (AI-read
     # phrasing, or contradicts themselves across turns) still gets caught. Only
     # fires as an event above the threshold; the raw score is always kept in

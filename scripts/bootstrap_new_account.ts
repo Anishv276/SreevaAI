@@ -14,8 +14,8 @@ async function main() {
     console.log("🚀 Performing full database wipe...");
     // 0. Clear existing data
     await prisma.superAdmin.deleteMany({});
-    await prisma.user.deleteMany({});
-    await prisma.organization.deleteMany({});
+    await prisma.organizationCredentials.deleteMany({});
+    await prisma.organizationDetails.deleteMany({});
     console.log("✅ Database cleared.");
     const hashedPassword = await bcrypt.hash(password, 10);
     // 1. Create SuperAdmin Profille
@@ -33,35 +33,35 @@ async function main() {
     });
     console.log("✅ SuperAdmin profile created:", email);
     // 2. Create Organization
-    const org = await prisma.organization.upsert({
+    const org = await prisma.organizationDetails.upsert({
         where: { id: orgId },
         update: {
             name: "Sreeva AI",
-            slug: "sreeva",
+            urlSlug: "sreeva",
         },
         create: {
             id: orgId,
             name: "Sreeva AI",
-            slug: "sreeva",
-            onboardingComplete: true,
+            urlSlug: "sreeva",
+            isOnboardingComplete: true,
         }
     });
     console.log("✅ Organization created:", org.name);
     // 3. Create Admin User (for the organization)
-    const user = await prisma.user.upsert({
+    const user = await prisma.organizationCredentials.upsert({
         where: { email },
         update: {
             password: hashedPassword,
-            role: "ADMIN",
-            orgId: org.id,
+            platformRole: "ADMIN",
+            organizationId: org.id,
             name: "Sreeva Admin",
         },
         create: {
             id: "admin-user-id",
             email,
             password: hashedPassword,
-            role: "ADMIN",
-            orgId: org.id,
+            platformRole: "ADMIN",
+            organizationId: org.id,
             name: "Sreeva Admin",
         }
     });

@@ -30,7 +30,7 @@ import { motion } from "framer-motion";
 import { PremiumFilter } from "@/components/admin/premium-filter";
 import { useAdminOrg } from "@/context/admin-org-context";
 // ---------------------------------------------------------------------------
-// Email confirm modal (interview link / rejection -- same as drive page)
+// Email confirm modal (interview link / rejection -- same as job page)
 // ---------------------------------------------------------------------------
 function normalizeStatusKey(value?: string) {
     return String(value || "").trim().toLowerCase().replace(/[_-]+/g, " ");
@@ -225,7 +225,7 @@ export default function CandidatesPage() {
     } | null>(null);
     const searchParams = useSearchParams();
     const router = useRouter();
-    const driveIdParam = searchParams.get("driveId");
+    const jobIdParam = searchParams.get("jobId");
     const orgIdParam = searchParams.get("orgId");
     const adminOrg = useAdminOrg();
     const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
@@ -234,7 +234,7 @@ export default function CandidatesPage() {
     const isInterviewActionBlocked = isSuspended || quotaLocked;
     const interviewActionBlockedMessage = getInterviewActionBlockedMessage(isSuspended);
     const tableIsLoading = isLoading || !isCandidatesTableReady;
-    useEffect(() => { setRoleFilter(driveIdParam || "all"); }, [driveIdParam]);
+    useEffect(() => { setRoleFilter(jobIdParam || "all"); }, [jobIdParam]);
     const getDateRange = () => {
         let startDate: string | undefined, endDate: string | undefined;
         if (timeline.type === "today") { startDate = new Date().toISOString().split("T")[0]; endDate = startDate; }
@@ -305,11 +305,11 @@ export default function CandidatesPage() {
         fetchCandidates(page, pageSize, roleFilter, resumeFilter, interviewFilter, startDate, endDate, searchTerm);
     };
     const handlePageChange = (p: number) => { if (p >= 1 && p <= pagination.totalPages) refetch(p); };
-    const handleMoveToDrive = (candidateDriveId?: string | null) => {
-        if (!candidateDriveId) { toast.error("This candidate is not linked to a job yet."); return; }
+    const handleMoveToJob = (candidateJobId?: string | null) => {
+        if (!candidateJobId) { toast.error("This candidate is not linked to a job yet."); return; }
         const href = orgIdParam
-            ? `/admin/candidates/drive/${encodeURIComponent(candidateDriveId)}?orgId=${encodeURIComponent(orgIdParam)}`
-            : `/admin/candidates/drive/${encodeURIComponent(candidateDriveId)}`;
+            ? `/admin/candidates/job/${encodeURIComponent(candidateJobId)}?orgId=${encodeURIComponent(orgIdParam)}`
+            : `/admin/candidates/job/${encodeURIComponent(candidateJobId)}`;
         router.push(href);
     };
     const handleUpdateStatus = async (applicationId: string, statusUpdate: { resumeStatus?: string }, successMsg: string) => {
@@ -687,16 +687,16 @@ export default function CandidatesPage() {
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end" side="bottom" sideOffset={8} collisionPadding={12}
                                                     className="w-[260px] max-h-[70vh] overflow-y-auto origin-top-right p-2.5 rounded-2xl shadow-xl border-gray-100 bg-white">
-                                                    {/* Go to Job Drive */}
+                                                    {/* Go to Job Job */}
                                                     <DropdownMenuLabel className="px-2 py-0.5.5 text-[11px] font-black uppercase tracking-[0.1em] text-gray-400 mb-1">
                                                         Job <span className="text-gray-300 font-bold">({candidate.role || "Open Role"})</span>
                                                     </DropdownMenuLabel>
                                                     <DropdownMenuItem
-                                                        onClick={() => handleMoveToDrive(candidate.driveId)}
-                                                        disabled={!candidate.driveId}
+                                                        onClick={() => handleMoveToJob(candidate.jobId)}
+                                                        disabled={!candidate.jobId}
                                                         className={cn("rounded-xl px-3 py-2.5 mb-3 text-[14px] font-bold cursor-pointer transition-colors",
-                                                            candidate.driveId ? "bg-gray-50/80 text-gray-900 hover:bg-gray-100 focus:bg-gray-100" : "bg-gray-50/40 text-gray-400 opacity-70")}>
-                                                        <Briefcase className="h-4 w-4 mr-3 shrink-0 text-gray-700" /> Go to Job Drive
+                                                            candidate.jobId ? "bg-gray-50/80 text-gray-900 hover:bg-gray-100 focus:bg-gray-100" : "bg-gray-50/40 text-gray-400 opacity-70")}>
+                                                        <Briefcase className="h-4 w-4 mr-3 shrink-0 text-gray-700" /> Go to Job Job
                                                     </DropdownMenuItem>
                                                     
                                                     {/* Shortlist */}

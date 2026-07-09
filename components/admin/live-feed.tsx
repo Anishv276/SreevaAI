@@ -9,7 +9,7 @@ interface FeedItem {
     id: string;
     type: ActivityType;
     action: string;
-    drive: string;
+    job: string;
     time: string;
     timestamp: number;
     isDemo?: boolean;

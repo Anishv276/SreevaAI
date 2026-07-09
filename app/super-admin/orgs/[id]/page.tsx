@@ -7,7 +7,7 @@ import { ProctoringSignalsSection } from "@/components/super-admin/proctoring-si
 import { DEFAULT_ORG_PLAN, ORG_PLAN_OPTIONS, normalizeOrgPlan } from "@/lib/org-plans";
 import { getProctoringSignalsForPlan, normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { cn } from "@/lib/utils";
-import { Steps } from "@/components/create-drive/steps";
+import { Steps } from "@/components/create-job/steps";
 import { formatOrgLimitValue } from "@/lib/org-limits";
 // UI Components
 function PremiumInput({ label, icon: Icon, error, required = true, type = "text", showPasswordToggle = false, ...props }: any) {
@@ -86,7 +86,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
     });
     const [form, setForm] = useState({
         name: "", slug: "", plan: DEFAULT_ORG_PLAN,
-        maxActiveDrives: "Unlimited",
+        maxActiveJobs: "Unlimited",
         maxConcurrentSlots: "5",
         proctoringSignals: getProctoringSignalsForPlan(DEFAULT_ORG_PLAN),
         adminEmail: "", adminPassword: "",
@@ -102,7 +102,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                 setForm({
                     name: data.name || "", slug: data.slug || "",
                     plan: normalizeOrgPlan(data.plan) || DEFAULT_ORG_PLAN,
-                    maxActiveDrives: formatOrgLimitValue(data.maxActiveDrives),
+                    maxActiveJobs: formatOrgLimitValue(data.maxActiveJobs),
                     maxConcurrentSlots: data.maxConcurrentSlots != null ? String(data.maxConcurrentSlots) : "5",
                     proctoringSignals: normalizeProctoringSignals(data.proctoringSignals),
                     adminEmail: data.users && data.users.length > 0 ? data.users[0].email : "",
@@ -222,7 +222,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
                         <SectionHeader title="Billing & Quotas" />
                         <div className="grid md:grid-cols-2 gap-6 bg-gray-50/50 p-6 rounded-2xl border border-gray-100 shadow-inner">
-                            <LimitControl label="Job Limit" value={form.maxActiveDrives} onChange={val => setForm(p => ({ ...p, maxActiveDrives: val }))} />
+                            <LimitControl label="Job Limit" value={form.maxActiveJobs} onChange={val => setForm(p => ({ ...p, maxActiveJobs: val }))} />
                             <PremiumInput
                                 label="Max Concurrent Slots"
                                 icon={Clock}

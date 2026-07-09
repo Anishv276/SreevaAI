@@ -90,17 +90,17 @@ export async function POST(req: Request) {
       where: { id: applicationId },
       select: {
         fullName: true,
-        drive: {
+        job: {
           select: {
             organization: {
-              select: { proctoringSignals: true },
+              select: { enabledProctoringSignals: true },
             },
           },
         },
       },
     });
     const orgToggles = normalizeProctoringSignals(
-      app?.drive?.organization?.proctoringSignals || DEFAULT_PROCTORING_SIGNALS,
+      app?.job?.organization?.enabledProctoringSignals || DEFAULT_PROCTORING_SIGNALS,
     );
     const events = requestedEvents.filter((event) => {
       const normalizedType = getProctoringCategory(event.eventType);

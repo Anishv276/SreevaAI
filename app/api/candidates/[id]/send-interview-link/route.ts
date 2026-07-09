@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { sendScheduleInviteEmail } from "@/lib/mail";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
 import { getOrgBillingStatus } from "@/lib/credits";
@@ -22,7 +23,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         const application = await prisma.application.findUnique({
             where: { id: applicationId },
             include: {
-                drive: {
+                job: {
                     include: {
                         organization: {
                             select: {
@@ -38,7 +39,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             console.error(`[INTERVIEW] Application not found for ID: ${applicationId}`);
             return NextResponse.json({ error: "Application not found" }, { status: 404 });
         }
-        if (!isSuperAdmin && session.orgId && application.drive?.orgId !== session.orgId) {
+        if (!isSuperAdmin && session.orgId && application.job?.orgId !== session.orgId) {
             return NextResponse.json({ error: "Forbidden: Candidate belongs to another organization" }, { status: 403 });
         }
         if (!isSuperAdmin && session.orgId) {
@@ -66,7 +67,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         if (!application.email) {
             return NextResponse.json({ error: "Candidate email is missing" }, { status: 400 });
         }
-        const driveDeadline = application.drive?.deadline ? new Date(application.drive.deadline) : null;
+        const jobDeadline = application.job?.deadline ? new Date(application.job.deadline) : null;
         const interviewRecord = await prisma.interview.upsert({
             where: { applicationId },
             update: {
@@ -75,17 +76,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
                 scheduledAt: null,
                 startedAt: null,
                 completedAt: null,
-                expiresAt: driveDeadline,
+                expiresAt: jobDeadline,
                 linkStatus: "ACTIVE",
                 isTest: false,          // always clear test flag on real invite
-                interviewBrief: null,   // clear any stale brief from a previous run
+                interviewBrief: Prisma.JsonNull,   // clear any stale brief from a previous run
             },
             create: {
                 id: generateId("int", application.fullName || applicationId),
                 applicationId,
                 inviteSentAt: new Date(),
                 status: "PENDING",
-                expiresAt: driveDeadline,
+                expiresAt: jobDeadline,
                 linkStatus: "ACTIVE",
                 isTest: false,
             },
@@ -95,8 +96,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         const mailResult = await sendScheduleInviteEmail({
             email: application.email,
             fullName: application.fullName || "Candidate",
-            jobTitle: application.drive?.title || "Unknown Role",
-            orgName: application.drive?.organization?.name || "Sreeva AI",
+            jobTitle: application.job?.title || "Unknown Role",
+            orgName: application.job?.organization?.name || "Sreeva AI",
             scheduleLink,
         });
 

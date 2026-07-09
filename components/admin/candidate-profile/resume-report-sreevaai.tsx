@@ -295,7 +295,7 @@ export function buildSreevaAIResumeViewModel(i: {
     createdAt?: string;
     location?: string;
     resumeUrl?: string | null;
-    drive?: { role?: string; title?: string };
+    job?: { role?: string; title?: string };
     experienceYears?: number | null;
   };
   backHref?: string;
@@ -650,7 +650,7 @@ export function buildSreevaAIResumeViewModel(i: {
     processing: !i.hasResumeText && !i.hasAiReport,
     fullName: c.fullName || "Candidate",
     displayAvatar: i.displayAvatar,
-    roleLabel: String(c.drive?.role || c.drive?.title || "Requisition").replace(/[-—]/g, " ").trim() || "Role",
+    roleLabel: String(c.job?.role || c.job?.title || "Requisition").replace(/[-—]/g, " ").trim() || "Role",
     locationLine: (c.location || "").replace(/[-—]/g, " ").trim() || "",
     experienceLine: candidateExperienceLine,
     fitPercent: Math.min(100, Math.max(0, Math.round(i.matchScore))),

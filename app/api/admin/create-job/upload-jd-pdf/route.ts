@@ -2,14 +2,14 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { jdUploadQueue } from "@/lib/queue";
 import { prisma } from "@/lib/prisma";
-import { logDriveError } from "@/lib/slack-error-logger";
+import { logJobError } from "@/lib/slack-error-logger";
 export async function POST(req: Request) {
     try {
         const session = await getSession();
         if (!session?.orgId) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
-        const org = await prisma.organization.findUnique({ where: { id: session.orgId }, select: { name: true } });
+        const org = await prisma.organizationDetails.findUnique({ where: { id: session.orgId }, select: { name: true } });
         const orgName = org?.name || session.orgId;
         const contentLength = req.headers.get("content-length");
         console.log(`[API] Processing upload request. Header Content-Length: ${contentLength} bytes`);
@@ -18,9 +18,9 @@ export async function POST(req: Request) {
             formData = await req.formData();
         } catch (parseError: any) {
             console.error("[UPLOAD_JD_PDF_PARSE_ERROR]", parseError);
-            await logDriveError({
+            await logJobError({
                 orgName,
-                driveName: "JD Upload (pre-creation)",
+                jobName: "JD Upload (pre-creation)",
                 operation: "upload_jd",
                 error: parseError.message || String(parseError),
                 reason: "JD PDF form data parse failed — file too large or request interrupted",
@@ -63,9 +63,9 @@ export async function POST(req: Request) {
     } catch (error: any) {
         console.error("[UPLOAD_JD_PDF_QUEUE_ERROR]", error);
         const session = await getSession().catch(() => null);
-        await logDriveError({
+        await logJobError({
             orgName: session?.orgId || "unknown",
-            driveName: "JD Upload (pre-creation)",
+            jobName: "JD Upload (pre-creation)",
             operation: "upload_jd",
             error: error.message || String(error),
             reason: "JD upload enqueue to Redis queue failed",

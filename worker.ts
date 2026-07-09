@@ -22,7 +22,7 @@ import {
   scheduleRecordingRetentionDeletion,
 } from "./lib/recording-retention";
 import { mergeRecordingState, normalizeRecordingState, parseJsonRecord } from "./lib/recording-state";
-import { logRedisError, logResumeUploadError, logDriveError, logWorkerError, logLiveKitError } from "./lib/slack-error-logger";
+import { logRedisError, logResumeUploadError, logJobError, logWorkerError, logLiveKitError } from "./lib/slack-error-logger";
 import { runWithOrgSlot } from "./lib/org-concurrency";
 
 // Per-org concurrency caps -- how many jobs of a given queue may run
@@ -248,7 +248,7 @@ async function processRecordingRetentionSweepJob(job: any) {
         i."recording"
       FROM "Interview" i
       JOIN "Application" a ON a.id = i."applicationId"
-      JOIN "Drive" d ON d.id = a."driveId"
+      JOIN "Job" d ON d.id = a."jobId"
       JOIN "Organization" o ON o.id = d."orgId"
       WHERE COALESCE(
           NULLIF(i."recording"->>'url', ''),
@@ -578,7 +578,7 @@ async function processResumeScreeningJob(job: any) {
       prisma.application.findUnique({
         where: { id: applicationId },
         select: {
-          drive: {
+          job: {
             select: {
               extractedDetails: true,
               screeningCriteria: true,
@@ -587,7 +587,7 @@ async function processResumeScreeningJob(job: any) {
           },
         },
       }),
-      prisma.organization.findUnique({
+      prisma.organizationDetails.findUnique({
         where: { id: orgId },
         select: { llmResumeExtraction: true, llmResumeReport: true },
       }),
@@ -597,12 +597,12 @@ async function processResumeScreeningJob(job: any) {
     }
 
     const extractedDetails = (() => {
-      try { return JSON.parse(application?.drive?.extractedDetails || "{}"); } catch { return {}; }
+      try { return JSON.parse(application?.job?.extractedDetails || "{}"); } catch { return {}; }
     })();
     const screeningCriteria = (() => {
-      try { return JSON.parse(application?.drive?.screeningCriteria || "{}"); } catch { return {}; }
+      try { return JSON.parse(application?.job?.screeningCriteria || "{}"); } catch { return {}; }
     })();
-    const dbThreshold = application?.drive?.screeningThreshold;
+    const dbThreshold = application?.job?.screeningThreshold;
     const threshold = dbThreshold || 60;
     const hasJd = Object.keys(extractedDetails).length > 0;
 
@@ -843,11 +843,11 @@ if (isQueueEnabled("resume-processing")) {
     if (applicationId) {
       prisma.application.findUnique({
         where: { id: applicationId },
-        select: { fullName: true, drive: { select: { title: true, organization: { select: { name: true } } } } },
+        select: { fullName: true, job: { select: { title: true, organization: { select: { name: true } } } } },
       }).then((app) => {
         logResumeUploadError({
-          orgName: app?.drive?.organization?.name || "unknown",
-          driveName: app?.drive?.title || "unknown",
+          orgName: app?.job?.organization?.name || "unknown",
+          jobName: app?.job?.title || "unknown",
           candidateName: app?.fullName || undefined,
           error: err.message,
           reason: `Resume screening worker job failed (name="${job?.name}")`,
@@ -855,9 +855,9 @@ if (isQueueEnabled("resume-processing")) {
       }).catch(() => {
         logResumeUploadError({
           orgName: "unknown",
-          driveName: "unknown",
+          jobName: "unknown",
           error: err.message,
-          reason: `Resume screening worker job failed — applicationId=${applicationId} (org/drive lookup failed)`,
+          reason: `Resume screening worker job failed — applicationId=${applicationId} (org/job lookup failed)`,
         });
       });
     } else {
@@ -970,7 +970,7 @@ if (isQueueEnabled("invitation-delivery-queue")) {
           email: true,
           fullName: true,
           aiScore: true,
-          drive: {
+          job: {
             select: {
               id: true,
               title: true,
@@ -994,13 +994,13 @@ if (isQueueEnabled("invitation-delivery-queue")) {
         return { skipped: true, reason: "missing_email" };
       }
 
-      const orgId = application.drive?.orgId;
+      const orgId = application.job?.orgId;
       return runWithOrgSlot("invitation-delivery-queue", job, token, orgId, ORG_CONCURRENCY.invitationDelivery, async () => {
         const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://sreevaai.com';
         const now = new Date();
         let scheduleLink: string | undefined;
         if (action === "shortlist") {
-          const driveDeadline = application.drive?.deadline ? new Date(application.drive.deadline) : null;
+          const jobDeadline = application.job?.deadline ? new Date(application.job.deadline) : null;
           const interviewRecord = await prisma.interview.upsert({
             where: { applicationId },
             update: {
@@ -1009,7 +1009,7 @@ if (isQueueEnabled("invitation-delivery-queue")) {
               scheduledAt: null,
               startedAt: null,
               completedAt: null,
-              expiresAt: driveDeadline,
+              expiresAt: jobDeadline,
               linkStatus: "ACTIVE",
             },
             create: {
@@ -1018,7 +1018,7 @@ if (isQueueEnabled("invitation-delivery-queue")) {
               accessToken: crypto.randomUUID(),
               inviteSentAt: now,
               status: "PENDING",
-              expiresAt: driveDeadline,
+              expiresAt: jobDeadline,
               linkStatus: "ACTIVE",
             },
           });
@@ -1031,16 +1031,16 @@ if (isQueueEnabled("invitation-delivery-queue")) {
           mailResult = await sendScheduleInviteEmail({
             email: application.email,
             fullName: application.fullName || "Candidate",
-            jobTitle: application.drive?.title || "Unknown Role",
-            orgName: application.drive?.organization?.name || "Sreeva AI",
+            jobTitle: application.job?.title || "Unknown Role",
+            orgName: application.job?.organization?.name || "Sreeva AI",
             scheduleLink,
           });
         } else if (action === "reject") {
           mailResult = await sendRejectionEmail({
             email: application.email,
             fullName: application.fullName || "Candidate",
-            jobTitle: application.drive?.title || "Unknown Role",
-            orgName: application.drive?.organization?.name || "Sreeva AI",
+            jobTitle: application.job?.title || "Unknown Role",
+            orgName: application.job?.organization?.name || "Sreeva AI",
           });
         } else {
           throw new Error(`Unsupported invitation action: ${action}`);
@@ -1214,14 +1214,14 @@ if (isQueueEnabled("interview-finalization")) {
         const appForPolicy = await prisma.application.findUnique({
           where: { id: applicationId },
           select: {
-            drive: {
+            job: {
               select: {
                 orgId: true,
               },
             },
           },
         });
-        const policyOrgId = String(appForPolicy?.drive?.orgId || "");
+        const policyOrgId = String(appForPolicy?.job?.orgId || "");
         const recordingSettings = policyOrgId
           ? await getOrgRecordingSettings(policyOrgId)
           : { recordingEnabled: false, recordingRetentionDays: null };
@@ -1334,7 +1334,7 @@ if (isQueueEnabled("interview-finalization")) {
               where: { id: applicationId },
               select: {
                 fullName: true,
-                drive: {
+                job: {
                   select: {
                     title: true,
                     orgId: true,
@@ -1344,23 +1344,22 @@ if (isQueueEnabled("interview-finalization")) {
                 interview: { select: { completedAt: true } },
               },
             });
-            const notifyOrgId = appForNotify?.drive?.orgId;
+            const notifyOrgId = appForNotify?.job?.orgId;
             if (notifyOrgId) {
-              const admins = await prisma.user.findMany({
-                where: { orgId: notifyOrgId },
+              const admins = await prisma.organizationCredentials.findMany({
+                where: { organizationId: notifyOrgId },
                 select: { email: true, name: true },
               });
               const { sendInterviewCompletedEmail } = await import('./lib/mail');
               const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://sreevaai.com';
               const reportLink = `${appUrl}/admin/candidates/${applicationId}`;
               await Promise.allSettled(
-                admins.map(admin =>
+                admins.map((admin: { email: string; name: string | null }) =>
                   sendInterviewCompletedEmail({
                     adminEmail: admin.email,
                     candidateName: appForNotify?.fullName || "Candidate",
-                    jobTitle: appForNotify?.drive?.title || "Unknown Role",
-                    orgName: appForNotify?.drive?.organization?.name || "Sreeva AI",
-                    driveTitle: appForNotify?.drive?.title,
+                    jobTitle: appForNotify?.job?.title || "Unknown Role",
+                    orgName: appForNotify?.job?.organization?.name || "Sreeva AI",
                     completedAt: appForNotify?.interview?.completedAt ?? undefined,
                     reportLink,
                   })
@@ -1432,7 +1431,7 @@ if (isQueueEnabled("interview-recording")) {
         where: { id: applicationId },
         select: {
           fullName: true,
-          drive: {
+          job: {
             select: {
               orgId: true,
               title: true,
@@ -1441,7 +1440,7 @@ if (isQueueEnabled("interview-recording")) {
           },
         },
       });
-      const orgId = String(application?.drive?.orgId || "");
+      const orgId = String(application?.job?.orgId || "");
       const recordingSettings = orgId
         ? await getOrgRecordingSettings(orgId)
         : { recordingEnabled: false, recordingRetentionDays: null };
@@ -1520,7 +1519,7 @@ if (isQueueEnabled("interview-recording")) {
       const recordingCleanupAttemptsToPersist = shouldStoreRecording ? 0 : 1;
       const recordingCleanupLastErrorToPersist = null;
       const recordingDeletedAtToPersist = shouldStoreRecording ? null : completedAt;
-      const recordingName = [application?.fullName, application?.drive?.title || application?.drive?.role]
+      const recordingName = [application?.fullName, application?.job?.title || application?.job?.role]
         .filter(Boolean)
         .join(" ") || applicationId;
       const recordingToPersist = mergeRecordingState(interviewRow?.recording, {
@@ -1638,12 +1637,12 @@ if (isQueueEnabled("interview-snapshots")) {
           where: { id: applicationId },
           select: {
             fullName: true,
-            drive: { select: { title: true, organization: { select: { slug: true } } } },
+            job: { select: { title: true, organization: { select: { urlSlug: true } } } },
           },
         });
         // 3. Resolve Folder & Key
-        const orgSlug = application?.drive?.organization?.slug || "unknown-org";
-        const driveTitle = (application?.drive?.title || "unknown-job").replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+        const orgSlug = application?.job?.organization?.urlSlug || "unknown-org";
+        const jobTitle = (application?.job?.title || "unknown-job").replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
         const candName = (application?.fullName || candidateName || applicationId)
           .replace(/[^a-zA-Z0-9_\- ]/g, "")
           .trim()
@@ -1651,7 +1650,7 @@ if (isQueueEnabled("interview-snapshots")) {
           .toLowerCase();
         const timestamp = Date.now();
         const snapshotLabel = label || "snapshot";
-        const key = `interview/${orgSlug}/${driveTitle}/${candName}/snapshots/${snapshotLabel}_${timestamp}.jpg`;
+        const key = `interview/${orgSlug}/${jobTitle}/${candName}/snapshots/${snapshotLabel}_${timestamp}.jpg`;
         const bucket = process.env.R2_INTERVIEW_BUCKET || "interview";
         // 4. Upload to R2
         const url = await putObject(bucket, key, buffer, "image/jpeg");
@@ -1742,20 +1741,20 @@ if (isQueueEnabled("jd-upload")) {
     console.log(`[FATAL] JD Upload Job ${job?.id} failed: ${err.message}`);
     const orgId = job?.data?.orgId as string | undefined;
     if (orgId) {
-      prisma.organization.findUnique({ where: { id: orgId }, select: { name: true } })
+      prisma.organizationDetails.findUnique({ where: { id: orgId }, select: { name: true } })
         .then((org) => {
-          logDriveError({
+          logJobError({
             orgName: org?.name || orgId,
-            driveName: "JD Upload",
+            jobName: "JD Upload",
             operation: "upload_jd",
             error: err.message,
             reason: "JD upload worker job failed",
           });
         })
         .catch(() => {
-          logDriveError({
+          logJobError({
             orgName: orgId,
-            driveName: "JD Upload",
+            jobName: "JD Upload",
             operation: "upload_jd",
             error: err.message,
             reason: "JD upload worker job failed (org lookup failed)",
@@ -1840,20 +1839,20 @@ if (isQueueEnabled("jd-extraction")) {
     console.error(`[JD-EXTRACTION WORKER] Job ${job?.id} failed: ${err.message}`);
     const orgId = job?.data?.orgId as string | undefined;
     if (orgId) {
-      prisma.organization.findUnique({ where: { id: orgId }, select: { name: true } })
+      prisma.organizationDetails.findUnique({ where: { id: orgId }, select: { name: true } })
         .then((org) => {
-          logDriveError({
+          logJobError({
             orgName: org?.name || orgId,
-            driveName: "JD Extraction",
+            jobName: "JD Extraction",
             operation: "upload_jd",
             error: err.message,
             reason: "JD extraction worker job failed",
           });
         })
         .catch(() => {
-          logDriveError({
+          logJobError({
             orgName: orgId,
-            driveName: "JD Extraction",
+            jobName: "JD Extraction",
             operation: "upload_jd",
             error: err.message,
             reason: "JD extraction worker job failed (org lookup failed)",
@@ -1892,7 +1891,7 @@ if (isQueueEnabled("brief-generation")) {
         where: { applicationId },
         select: {
           id: true, isTest: true, scheduledAt: true, interviewBrief: true,
-          application: { select: { drive: { select: { orgId: true } } } },
+          application: { select: { job: { select: { orgId: true } } } },
         },
       });
 
@@ -1911,7 +1910,7 @@ if (isQueueEnabled("brief-generation")) {
         return { skipped: true, reason: "brief_already_exists" };
       }
 
-      const orgId = interview.application?.drive?.orgId;
+      const orgId = interview.application?.job?.orgId;
       return runWithOrgSlot("brief-generation", job, token, orgId, ORG_CONCURRENCY.briefGeneration, async () => {
         console.log(`[BRIEF-WORKER] Starting brief generation for ${applicationId}`);
         const t0 = Date.now();
@@ -1968,9 +1967,9 @@ if (isQueueEnabled("interview-report")) {
 
       const app = await prisma.application.findUnique({
         where: { id: appId },
-        select: { drive: { select: { orgId: true } } },
+        select: { job: { select: { orgId: true } } },
       });
-      const orgId = app?.drive?.orgId;
+      const orgId = app?.job?.orgId;
 
       return runWithOrgSlot("interview-report", job, token, orgId, ORG_CONCURRENCY.interviewReport, async () => {
         const result = await runPythonJsonWithStdin(

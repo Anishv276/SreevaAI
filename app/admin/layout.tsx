@@ -20,36 +20,36 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         redirect("/login?from=admin");
     }
     // Fetch all org data server-side so the client context is pre-seeded (zero client fetches on load)
-    let orgData: Record<string, any> = { status: "ACTIVE", onboardingComplete: session.onboardingComplete === true };
+    let orgData: Record<string, any> = { status: "ACTIVE", isOnboardingComplete: session.onboardingComplete === true };
     if (session.orgId) {
         try {
-            const org = await prisma.organization.findUnique({
+            const org = await prisma.organizationDetails.findUnique({
                 where: { id: session.orgId },
                 select: {
-                    status: true,
-                    statusControl: true,
-                    onboardingComplete: true,
-                    plan: true,
+                    orgStatus: true,
+                    quotaControlMode: true,
+                    isOnboardingComplete: true,
+                    billingPlan: true,
                     name: true,
-                    voiceId: true,
-                    allowedVoices: true,
+                    defaultVoiceId: true,
+                    allowedVoiceIds: true,
                     sttModel: true,
-                    interviewQuotaTotal: true,
-                    interviewQuotaUsed: true,
-                    maxActiveDrives: true,
-                    _count: { select: { drives: true } },
+                    totalInterviewsAllowed: true,
+                    totalInterviewsUsed: true,
+                    maxActiveJobs: true,
+                    _count: { select: { jobs: true } },
                 },
             });
             if (org) {
                 // Derive effective status inline -- same logic as getEffectiveOrgStatus but no extra DB round-trip
-                let effectiveStatus = String(org.status || "ACTIVE").toUpperCase();
-                if (org.statusControl === "QUOTA" && org.interviewQuotaTotal > 0 && org.interviewQuotaUsed >= org.interviewQuotaTotal) {
+                let effectiveStatus = String(org.orgStatus || "ACTIVE").toUpperCase();
+                if (org.quotaControlMode === "QUOTA" && org.totalInterviewsAllowed > 0 && org.totalInterviewsUsed >= org.totalInterviewsAllowed) {
                     effectiveStatus = "QUOTA_EXCEEDED";
                 }
                 orgData = {
                     ...org,
                     status: effectiveStatus,
-                    activeDriveCount: (org as any)._count?.drives ?? 0,
+                    activeJobCount: (org as any)._count?.jobs ?? 0,
                 };
             }
         } catch (error) {
@@ -63,7 +63,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         redirect("/login");
     }
     // Real-time synchronization: prioritize DB state over session cookie for onboarding UI
-    const needsOnboarding = orgData.onboardingComplete !== true;
+    const needsOnboarding = orgData.isOnboardingComplete !== true;
     const showSidebar = !needsOnboarding;
     return (
         <>
@@ -82,8 +82,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                     interviewQuotaRemaining: orgData.interviewQuotaTotal != null
                         ? Math.max(0, Number(orgData.interviewQuotaTotal) - Number(orgData.interviewQuotaUsed || 0))
                         : undefined,
-                    maxActiveDrives: orgData.maxActiveDrives ?? undefined,
-                    activeDriveCount: orgData.activeDriveCount ?? undefined,
+                    maxActiveJobs: orgData.maxActiveJobs ?? undefined,
+                    activeJobCount: orgData.activeJobCount ?? undefined,
                 }}
             >
                 <AdminStatusGate initialStatus={orgData.status}>

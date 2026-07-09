@@ -27,13 +27,13 @@ interface DashboardStats extends ChartStats {
     suspendedOrgs: number;
     closedOrgs: number;
     totalAdmins: number;
-    totalDrives: number;
+    totalJobs: number;
     totalCandidates: number;
     totalCreditsUsed: number;
     platformHealth: number;
     engagedOrgs: number;
-    trends: { orgs: number; admins: number; drives: number; candidates: number };
-    recentActivity: { type: "ORG" | "DRIVE" | "CANDIDATE" | "INTERVIEW"; detail: string; org: string; at: string }[];
+    trends: { orgs: number; admins: number; jobs: number; candidates: number };
+    recentActivity: { type: "ORG" | "JOB" | "CANDIDATE" | "INTERVIEW"; detail: string; org: string; at: string }[];
 }
 function getStatusBadge(org: Org) {
     const quotaTotal = Number(org.interviewQuotaTotal || 0);

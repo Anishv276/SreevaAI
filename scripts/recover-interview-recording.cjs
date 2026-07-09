@@ -106,7 +106,7 @@ async function main() {
     where: { id: applicationId },
     select: {
       fullName: true,
-      drive: { select: { title: true } },
+      job: { select: { title: true } },
       interview: {
         select: {
           interviewDuration: true,
@@ -119,7 +119,7 @@ async function main() {
     throw new Error(`Application not found: ${applicationId}`);
   }
 
-  const safeCandidate = buildCandidateRoleFolder(app.fullName, app.drive?.title, applicationId);
+  const safeCandidate = buildCandidateRoleFolder(app.fullName, app.job?.title, applicationId);
   const prefix = `candidates/${safeCandidate}/recordings/.chunks/`;
   const objects = await listObjects(prefix);
 

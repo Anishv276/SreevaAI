@@ -22,7 +22,7 @@ export async function POST(req: Request) {
             if (passwords?.next) {
                 const { isValid, error: strengthError } = validatePasswordStrength(passwords.next);
                 if (!isValid) throw new Error(strengthError);
-                const user = await tx.user.findUnique({
+                const user = await tx.organizationCredentials.findUnique({
                     where: { id: session.userId },
                     select: { password: true }
                 });
@@ -35,13 +35,13 @@ export async function POST(req: Request) {
                 await invalidateUserSessions(session.userId);
             }
             if (Object.keys(userUpdate).length > 0) {
-                await tx.user.update({ where: { id: session.userId }, data: userUpdate });
+                await tx.organizationCredentials.update({ where: { id: session.userId }, data: userUpdate });
             }
-            await tx.organization.update({
+            await tx.organizationDetails.update({
                 where: { id: session.orgId as string },
                 data: {
                     name: company.name,
-                    onboardingComplete: true,
+                    isOnboardingComplete: true,
                 }
             });
         });

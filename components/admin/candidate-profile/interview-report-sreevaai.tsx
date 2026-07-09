@@ -324,7 +324,7 @@ function buildTopStrengthsRisks(args: {
 }
 export function buildSreevaAIInterviewViewModel(i: {
   backHref?: string;
-  candidate: { fullName?: string; createdAt?: string; location?: string; interview?: any; assessment?: any; drive?: { role?: string; title?: string } };
+  candidate: { fullName?: string; createdAt?: string; location?: string; interview?: any; assessment?: any; job?: { role?: string; title?: string } };
   mounted: boolean;
   displayAvatar: string;
   interviewReportScores: Record<string, any>;
@@ -659,7 +659,7 @@ export function buildSreevaAIInterviewViewModel(i: {
     backHref: i.backHref || "/admin/candidates",
     fullName: c.fullName || "Candidate",
     displayAvatar: i.displayAvatar,
-    roleLabel: String(c.drive?.role || c.drive?.title || "").trim() || "Role",
+    roleLabel: String(c.job?.role || c.job?.title || "").trim() || "Role",
     interviewedOn,
 
     recommendation,
@@ -1625,7 +1625,7 @@ export function InterviewReportSreevaAI({
                 </div>
 
                 <div className="mb-6">
-                  <h3 className="text-[13px] font-bold text-[#111827] mb-3 flex items-center gap-2"><Folder className="h-4 w-4" /> Drive</h3>
+                  <h3 className="text-[13px] font-bold text-[#111827] mb-3 flex items-center gap-2"><Folder className="h-4 w-4" /> Job</h3>
                   <div className="rounded-lg bg-[#F8FAFC] px-3 py-2 text-[12px] font-medium text-[#4B5563]">
                     {model.roleLabel}
                   </div>

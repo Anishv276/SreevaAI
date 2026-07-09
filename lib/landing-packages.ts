@@ -27,7 +27,7 @@ export const LANDING_PACKAGES: LandingPackage[] = [
     description: "For teams piloting AI screening on 1–2 roles.",
     features: [
       "30 Interviews / month",
-      "1 Active drive",
+      "1 Active job",
       "Resume screening",
       "Adaptive AI Interview",
       "Smart follow-ups",
@@ -52,7 +52,7 @@ export const LANDING_PACKAGES: LandingPackage[] = [
     description: "For teams hiring across multiple roles each month.",
     features: [
       "100 Interviews / month",
-      "5 Active drives",
+      "5 Active jobs",
       "Resume screening",
       "Adaptive AI Interview",
       "Smart follow-ups",
@@ -78,7 +78,7 @@ export const LANDING_PACKAGES: LandingPackage[] = [
     description: "For high-volume hiring or agencies.",
     features: [
       "300 Interviews / month",
-      "10 Active drives",
+      "10 Active jobs",
       "Resume screening",
       "Adaptive AI Interview",
       "Smart follow-ups",
@@ -103,7 +103,7 @@ export const LANDING_PACKAGES: LandingPackage[] = [
     featured: false,
     features: [
       "600+ Interviews / month",
-      "Unlimited Active drives",
+      "Unlimited Active jobs",
       "Resume screening",
       "Adaptive AI Interview",
       "Smart follow-ups",

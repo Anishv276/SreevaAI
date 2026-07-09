@@ -33,12 +33,12 @@ interface Candidate {
     resumeStatus: string;
     interviewStatus: string;
     createdAt: string;
-    driveId: string;
-    driveTitle: string | null;
-    driveRole: string | null;
+    jobId: string;
+    jobTitle: string | null;
+    jobRole: string | null;
     interview: { status: string; completedAt: string | null; inviteSentAt: string | null } | null;
 }
-interface Drive { id: string; title: string; role: string | null; }
+interface Job { id: string; title: string; role: string | null; }
 interface Pagination { total: number; page: number; limit: number; totalPages: number; }
 interface Stats {
     shortlisted: number;
@@ -110,8 +110,8 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
 
     const [orgName,       setOrgName]       = useState("");
     const [candidates,    setCandidates]    = useState<Candidate[]>([]);
-    const [drives,        setDrives]        = useState<Drive[]>([]);
-    const [drivesLoaded,  setDrivesLoaded]  = useState(false);
+    const [jobs,        setJobs]        = useState<Job[]>([]);
+    const [jobsLoaded,  setJobsLoaded]  = useState(false);
     const [pagination,    setPagination]    = useState<Pagination>({ total: 0, page: 1, limit: 20, totalPages: 1 });
     const [stats,         setStats]         = useState<Stats>({ shortlisted: 0, rejected: 0, interviewRunning: 0, interviewPending: 0, interviewCompleted: 0 });
     const [isLoading,     setIsLoading]     = useState(true);
@@ -124,7 +124,7 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
     const [searchTerm,      setSearchTerm]      = useState("");
     const [resumeFilter,    setResumeFilter]    = useState("all");
     const [interviewFilter, setInterviewFilter] = useState("all");
-    const [driveFilter,     setDriveFilter]     = useState("all");
+    const [jobFilter,     setJobFilter]     = useState("all");
     const [timeline,        setTimeline]        = useState<DateRange>({ type: "all" });
     const [pageSize,        setPageSize]        = useState(20);
     const [currentPage,     setCurrentPage]     = useState(1);
@@ -141,13 +141,13 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
     }, [timeline]);
 
     const fetchCandidates = useCallback(async (page: number, opts: {
-        search?: string; driveId?: string; resumeStatus?: string; interviewStatus?: string;
+        search?: string; jobId?: string; resumeStatus?: string; interviewStatus?: string;
         limit?: number; startDate?: string; endDate?: string;
     } = {}) => {
         try {
             const p = new URLSearchParams({ page: String(page), limit: String(opts.limit ?? pageSize) });
             if (opts.search)                                             p.set("search",          opts.search);
-            if (opts.driveId         && opts.driveId !== "all")         p.set("driveId",          opts.driveId);
+            if (opts.jobId         && opts.jobId !== "all")         p.set("jobId",          opts.jobId);
             if (opts.resumeStatus    && opts.resumeStatus !== "all")    p.set("resumeStatus",     opts.resumeStatus);
             if (opts.interviewStatus && opts.interviewStatus !== "all") p.set("interviewStatus",  opts.interviewStatus);
             if (opts.startDate) p.set("startDate", opts.startDate);
@@ -159,13 +159,13 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
             setCandidates(data.candidates ?? []);
             setPagination(data.pagination);
             if (data.stats) setStats(data.stats);
-            if (!drivesLoaded && data.drives?.length) { setDrives(data.drives); setDrivesLoaded(true); }
+            if (!jobsLoaded && data.jobs?.length) { setJobs(data.jobs); setJobsLoaded(true); }
             setError(null);
         } catch (e: any) {
             setError(e.message || "Failed to load candidates");
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [orgId, pageSize, drivesLoaded]);
+    }, [orgId, pageSize, jobsLoaded]);
 
     // Initial org name fetch
     useEffect(() => {
@@ -181,12 +181,12 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
         const { startDate, endDate } = getDateRange();
         const t = setTimeout(() => {
             setCurrentPage(1);
-            fetchCandidates(1, { search: searchTerm, driveId: driveFilter, resumeStatus: resumeFilter, interviewStatus: interviewFilter, startDate, endDate, limit: pageSize })
+            fetchCandidates(1, { search: searchTerm, jobId: jobFilter, resumeStatus: resumeFilter, interviewStatus: interviewFilter, startDate, endDate, limit: pageSize })
                 .finally(() => setIsCandidatesTableReady(true));
         }, 200);
         return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [searchTerm, resumeFilter, interviewFilter, driveFilter, timeline]);
+    }, [searchTerm, resumeFilter, interviewFilter, jobFilter, timeline]);
 
     // Initial load
     useEffect(() => {
@@ -200,7 +200,7 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
         if (pageSizeRef.current === pageSize) return;
         pageSizeRef.current = pageSize;
         const { startDate, endDate } = getDateRange();
-        fetchCandidates(1, { search: searchTerm, driveId: driveFilter, resumeStatus: resumeFilter, interviewStatus: interviewFilter, startDate, endDate, limit: pageSize });
+        fetchCandidates(1, { search: searchTerm, jobId: jobFilter, resumeStatus: resumeFilter, interviewStatus: interviewFilter, startDate, endDate, limit: pageSize });
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pageSize]);
 
@@ -225,7 +225,7 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
         if (p < 1 || p > pagination.totalPages) return;
         setCurrentPage(p);
         const { startDate, endDate } = getDateRange();
-        fetchCandidates(p, { search: searchTerm, driveId: driveFilter, resumeStatus: resumeFilter, interviewStatus: interviewFilter, startDate, endDate, limit: pageSize });
+        fetchCandidates(p, { search: searchTerm, jobId: jobFilter, resumeStatus: resumeFilter, interviewStatus: interviewFilter, startDate, endDate, limit: pageSize });
     };
 
     const tableIsLoading = isLoading || !isCandidatesTableReady;
@@ -310,10 +310,10 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
                                     { value: "inprogress", label: "In Progress", colorClass: "text-blue-600" },
                                     { value: "finished",   label: "Completed",   colorClass: "text-emerald-600" },
                                 ]} />
-                            <PremiumFilter value={driveFilter} onChange={setDriveFilter} icon={Briefcase} placeholder="All Job Roles"
+                            <PremiumFilter value={jobFilter} onChange={setJobFilter} icon={Briefcase} placeholder="All Job Roles"
                                 options={[
                                     { value: "all", label: "All Job Roles" },
-                                    ...drives.map(d => ({ value: d.id, label: d.title || d.role || d.id })),
+                                    ...jobs.map(d => ({ value: d.id, label: d.title || d.role || d.id })),
                                 ]} />
                         </div>
                     </div>
@@ -376,9 +376,9 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
                                         </TableCell>
                                         <TableCell className="py-5">
                                             <div className="flex flex-col max-w-[180px]">
-                                                <span className="text-sm font-bold text-gray-700 truncate">{c.driveTitle || c.driveRole || "—"}</span>
-                                                {c.driveRole && c.driveTitle && (
-                                                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-tighter mt-0.5 truncate">{c.driveRole}</span>
+                                                <span className="text-sm font-bold text-gray-700 truncate">{c.jobTitle || c.jobRole || "—"}</span>
+                                                {c.jobRole && c.jobTitle && (
+                                                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-tighter mt-0.5 truncate">{c.jobRole}</span>
                                                 )}
                                             </div>
                                         </TableCell>

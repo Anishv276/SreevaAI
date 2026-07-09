@@ -1,5 +1,5 @@
 import { Skeleton } from "@/components/ui/skeleton";
-export default function DrivesLoading() {
+export default function JobsLoading() {
     return (
         <div className="space-y-8 pb-12 animate-in-fade">
             <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">

@@ -19,10 +19,10 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: "orgId required" }, { status: 400 });
         }
 
-        const org = await prisma.organization.findUnique({
+        const org = await prisma.organizationDetails.findUnique({
             where: { id: orgId },
             include: {
-                drives: {
+                jobs: {
                     where: { isDeleted: false }
                 }
             }
@@ -39,7 +39,7 @@ export async function GET(request: Request) {
 
         const thisMonthInterviews = await prisma.interview.findMany({
             where: {
-                application: { drive: { orgId } },
+                application: { job: { orgId } },
                 completedAt: { gte: startOfMonth },
                 status: "COMPLETED",
                 isDeleted: false
@@ -48,15 +48,15 @@ export async function GET(request: Request) {
 
         const lastMonthInterviews = await prisma.interview.findMany({
             where: {
-                application: { drive: { orgId } },
+                application: { job: { orgId } },
                 completedAt: { gte: startOfLastMonth, lte: endOfLastMonth },
                 status: "COMPLETED",
                 isDeleted: false
             }
         });
 
-        const activeDrivesCount = org.drives.length;
-        const maxActiveDrivesStr = org.maxActiveDrives === "Unlimited" ? "Unlimited" : parseInt(org.maxActiveDrives);
+        const activeJobsCount = org.jobs.length;
+        const maxActiveJobsStr = org.maxActiveJobs === "Unlimited" ? "Unlimited" : parseInt(org.maxActiveJobs);
 
         const thisMonthTimeSec = thisMonthInterviews.reduce((acc, curr) => acc + (curr.interviewDuration || 0), 0);
         const lastMonthTimeSec = lastMonthInterviews.reduce((acc, curr) => acc + (curr.interviewDuration || 0), 0);
@@ -80,7 +80,7 @@ export async function GET(request: Request) {
                 trendMap.set(hourLabel, 0);
             }
             trendInterviews = await prisma.interview.findMany({
-                where: { application: { drive: { orgId } }, completedAt: { gte: startOfToday }, status: "COMPLETED", isDeleted: false }
+                where: { application: { job: { orgId } }, completedAt: { gte: startOfToday }, status: "COMPLETED", isDeleted: false }
             });
             trendInterviews.forEach(inv => {
                 if (inv.completedAt) {
@@ -98,7 +98,7 @@ export async function GET(request: Request) {
                 d.setDate(d.getDate() + 1);
             }
             trendInterviews = await prisma.interview.findMany({
-                where: { application: { drive: { orgId } }, completedAt: { gte: startOfWeek }, status: "COMPLETED", isDeleted: false }
+                where: { application: { job: { orgId } }, completedAt: { gte: startOfWeek }, status: "COMPLETED", isDeleted: false }
             });
             trendInterviews.forEach(inv => {
                 if (inv.completedAt) {
@@ -119,7 +119,7 @@ export async function GET(request: Request) {
                     trendMap.set(hourLabel, 0);
                 }
                 trendInterviews = await prisma.interview.findMany({
-                    where: { application: { drive: { orgId } }, completedAt: { gte: startDate, lte: endDate }, status: "COMPLETED", isDeleted: false }
+                    where: { application: { job: { orgId } }, completedAt: { gte: startDate, lte: endDate }, status: "COMPLETED", isDeleted: false }
                 });
                 trendInterviews.forEach(inv => {
                     if (inv.completedAt) {
@@ -136,7 +136,7 @@ export async function GET(request: Request) {
                     d.setDate(d.getDate() + 1);
                 }
                 trendInterviews = await prisma.interview.findMany({
-                    where: { application: { drive: { orgId } }, completedAt: { gte: startDate, lte: endDate }, status: "COMPLETED", isDeleted: false }
+                    where: { application: { job: { orgId } }, completedAt: { gte: startDate, lte: endDate }, status: "COMPLETED", isDeleted: false }
                 });
                 trendInterviews.forEach(inv => {
                     if (inv.completedAt) {
@@ -163,12 +163,12 @@ export async function GET(request: Request) {
 
         const trend = Array.from(trendMap.entries()).map(([date, count]) => ({ date, count }));
 
-        const interviewsTotal = org.interviewQuotaTotal || 300;
-        const interviewsUsed = org.interviewQuotaUsed || 0;
+        const interviewsTotal = org.totalInterviewsAllowed || 300;
+        const interviewsUsed = org.totalInterviewsUsed || 0;
 
         // Build consumption hub from usageMetrics.billing
-        const usageMetrics = (org.usageMetrics && typeof org.usageMetrics === "object")
-            ? (org.usageMetrics as Record<string, any>)
+        const usageMetrics = (org.platformUsageMetrics && typeof org.platformUsageMetrics === "object")
+            ? (org.platformUsageMetrics as Record<string, any>)
             : {};
         const billing = (usageMetrics.billing && typeof usageMetrics.billing === "object")
             ? (usageMetrics.billing as Record<string, any>)
@@ -202,16 +202,16 @@ export async function GET(request: Request) {
 
         return NextResponse.json({
             plan: {
-                name: org.plan || "Starter",
-                price: org.plan.toLowerCase().includes("scale") ? 699 : 0,
+                name: org.billingPlan || "Starter",
+                price: org.billingPlan.toLowerCase().includes("scale") ? 699 : 0,
                 interviewsTotal,
                 interviewsUsed,
-                maxActiveDrives: maxActiveDrivesStr,
+                maxActiveJobs: maxActiveJobsStr,
                 billingCycle: "Monthly",
                 nextBillingDate: new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString(),
             },
             usage: {
-                activeDrives: activeDrivesCount,
+                activeJobs: activeJobsCount,
                 totalInterviewTime: thisMonthTimeSec,
                 interviewsCompleted: interviewsUsed,
                 usageVsLastMonth,
@@ -225,7 +225,7 @@ export async function GET(request: Request) {
                 sttCostUsd: Math.round(totalSttCost * 1e6) / 1e6,
                 totalCostUsd: Math.round((totalLlmCost + totalTtsCost + totalSttCost) * 1e6) / 1e6,
             },
-            creditsUsed: Number(org.creditsUsed || 0),
+            creditsUsed: Number(org.billingCreditsUsed || 0),
         });
     } catch (error) {
         console.error("Super-admin billing error:", error);

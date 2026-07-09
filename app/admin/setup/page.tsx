@@ -238,7 +238,7 @@ export default function OnboardingPage() {
                                 <div>
                                     <h2 className="text-xl font-bold text-gray-900">You're all set!</h2>
                                     <p className="text-sm text-gray-500 mt-1.5 leading-relaxed">
-                                        Your workspace is activated. Start your first AI-powered recruitment drive.
+                                        Your workspace is activated. Start your first AI-powered recruitment job.
                                     </p>
                                 </div>
                                 <button

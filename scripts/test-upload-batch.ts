@@ -12,7 +12,7 @@ import { generateId } from '../lib/ids';
 import { resumeQueue } from '../lib/queue';
 
 const RESUME_BUCKET = process.env.R2_RESUMES_BUCKET || 'resumes';
-const DRIVE_ID = 'drv-gtm-engineer-fresher-7263';
+const JOB_ID = 'drv-gtm-engineer-fresher-7263';
 const FILE_SMALL = 'C:/Users/vamsi/OneDrive/Desktop/Vamsi resume - GTM.pdf';
 const FILE_LARGE = 'C:/Users/vamsi/OneDrive/Desktop/Files/1.pdf';
 const POLL_MS = 2000;
@@ -23,15 +23,15 @@ function guessName(n: string) { return n.replace(/\.[^/.]+$/, '').replace(/[_-]+
 function buildProgressState(p: number, stage: string) { return JSON.stringify({ processing: { progress: p, stage } }); }
 function ts() { return new Date().toISOString(); }
 
-async function uploadOne(label: string, filePath: string, drive: any) {
+async function uploadOne(label: string, filePath: string, jobRecord: any) {
   const fileName = filePath.split(/[\\/]/).pop()!;
   console.log(`\n  ${label} ${fileName}`);
 
   const buffer = readFileSync(filePath);
   const safeName = sanitizeFileName(fileName);
-  const orgSlug = drive.organization?.slug || drive.orgId;
-  const driveSlug = drive.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-  const key = `resume/${orgSlug}/${driveSlug}/${Date.now()}_0_${safeName}`;
+  const orgSlug = jobRecord.organization?.urlSlug || jobRecord.orgId;
+  const jobSlug = jobRecord.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+  const key = `resume/${orgSlug}/${jobSlug}/${Date.now()}_0_${safeName}`;
   const uploadedUrl = await putObject(RESUME_BUCKET, key, buffer, 'application/pdf');
 
   const applicationId = `${generateId('app', guessName(fileName))}-${randomUUID().slice(0, 8)}`;
@@ -46,7 +46,7 @@ async function uploadOne(label: string, filePath: string, drive: any) {
       aiReport: buildProgressState(0, 'waiting'),
       resumeText: null,
       resumeData: JSON.stringify({ source: { bucket: RESUME_BUCKET, key } }),
-      driveId: DRIVE_ID,
+      jobId: JOB_ID,
       fileName,
       resumeStatus: 'waiting',
       interviewStatus: 'pending',
@@ -58,7 +58,7 @@ async function uploadOne(label: string, filePath: string, drive: any) {
     bucket: RESUME_BUCKET,
     key,
     fileName,
-    orgId: drive.orgId,
+    orgId: jobRecord.orgId,
   });
 
   console.log(`    ✓ Enqueued job.id="${job.id}" app="${applicationId}"`);
@@ -116,31 +116,31 @@ async function main() {
   await checkQ.close();
   await checkConn.quit();
 
-  const drive = await prisma.drive.findUnique({
-    where: { id: DRIVE_ID },
-    select: { id: true, title: true, orgId: true, organization: { select: { slug: true } } },
+  const job = await prisma.job.findUnique({
+    where: { id: JOB_ID },
+    select: { id: true, title: true, orgId: true, organization: { select: { urlSlug: true } } },
   });
-  if (!drive) throw new Error(`Drive ${DRIVE_ID} not found`);
+  if (!job) throw new Error(`Job ${JOB_ID} not found`);
 
   // Batch 1: Upload 2
   console.log(`\n${'─'.repeat(70)}\n  BATCH 1: Upload 2 files (small + large)\n${'─'.repeat(70)}`);
   const batch1 = [
-    await uploadOne('  1a.', FILE_SMALL, drive),
-    await uploadOne('  1b.', FILE_LARGE, drive),
+    await uploadOne('  1a.', FILE_SMALL, job),
+    await uploadOne('  1b.', FILE_LARGE, job),
   ];
   await waitForDone(batch1.map(b => b.applicationId));
 
   // Batch 2: Upload 2
   console.log(`\n${'─'.repeat(70)}\n  BATCH 2: Upload 2 more files\n${'─'.repeat(70)}`);
   const batch2 = [
-    await uploadOne('  2a.', FILE_SMALL, drive),
-    await uploadOne('  2b.', FILE_LARGE, drive),
+    await uploadOne('  2a.', FILE_SMALL, job),
+    await uploadOne('  2b.', FILE_LARGE, job),
   ];
   await waitForDone(batch2.map(b => b.applicationId));
 
   // Batch 3: Upload 1
   console.log(`\n${'─'.repeat(70)}\n  BATCH 3: Upload 1 file\n${'─'.repeat(70)}`);
-  const batch3 = [await uploadOne('  3.', FILE_SMALL, drive)];
+  const batch3 = [await uploadOne('  3.', FILE_SMALL, job)];
   await waitForDone(batch3.map(b => b.applicationId));
 
   // Summary

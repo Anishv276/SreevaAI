@@ -30,7 +30,7 @@ export async function GET(request: Request) {
                                 { fullName: { contains: q, mode: "insensitive" } },
                                 { email: { contains: q, mode: "insensitive" } },
                                 {
-                                    drive: {
+                                    job: {
                                         organization: {
                                             name: { contains: q, mode: "insensitive" },
                                         },
@@ -54,10 +54,10 @@ export async function GET(request: Request) {
                         include: {
                             application: {
                                 include: {
-                                    drive: {
+                                    job: {
                                         include: {
                                             organization: {
-                                                select: { id: true, name: true, slug: true, plan: true },
+                                                select: { id: true, name: true, urlSlug: true, billingPlan: true },
                                             },
                                         },
                                     },
@@ -78,10 +78,10 @@ export async function GET(request: Request) {
             ? await prisma.application.findMany({
                 where: { id: { in: missingApplicationIds } },
                 include: {
-                    drive: {
+                    job: {
                         include: {
                             organization: {
-                                select: { id: true, name: true, slug: true, plan: true },
+                                select: { id: true, name: true, urlSlug: true, billingPlan: true },
                             },
                         },
                     },

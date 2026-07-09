@@ -25,7 +25,7 @@ interface ResultItem {
 
 export function InterviewOnlyPanel() {
     const { jobs } = useJobs();
-    const [selectedDriveId, setSelectedDriveId] = useState<string>("");
+    const [selectedJobId, setSelectedJobId] = useState<string>("");
     const [mode, setMode] = useState<"single" | "bulk">("single");
 
     // Single candidate form
@@ -42,9 +42,9 @@ export function InterviewOnlyPanel() {
     const [results, setResults] = useState<ResultItem[] | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    const activeDrives = jobs.filter((j: any) => !j.isDeleted);
+    const activeJobs = jobs.filter((j: any) => !j.isDeleted);
 
-    const selectedDrive = activeDrives.find((j: any) => j.id === selectedDriveId);
+    const selectedJob = activeJobs.find((j: any) => j.id === selectedJobId);
 
     function parseCsv(text: string): SingleCandidate[] {
         const lines = text.split(/\r?\n/).filter(Boolean);
@@ -79,8 +79,8 @@ export function InterviewOnlyPanel() {
     }
 
     async function submitCandidates(candidates: SingleCandidate[]) {
-        if (!selectedDriveId) {
-            setError("Please select a drive first.");
+        if (!selectedJobId) {
+            setError("Please select a job first.");
             return;
         }
         setError(null);
@@ -88,7 +88,7 @@ export function InterviewOnlyPanel() {
         const res = await fetch("/api/admin/interview-only", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ driveId: selectedDriveId, candidates }),
+            body: JSON.stringify({ jobId: selectedJobId, candidates }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Failed");
@@ -155,25 +155,25 @@ export function InterviewOnlyPanel() {
                     </div>
                 </div>
 
-                {/* Drive selector */}
+                {/* Job selector */}
                 <div className="flex items-center gap-3">
                     <Briefcase className="h-4 w-4 text-gray-400 shrink-0" />
                     <div className="relative w-full max-w-xs">
                         <select
-                            value={selectedDriveId}
-                            onChange={(e) => { setSelectedDriveId(e.target.value); setResults(null); setError(null); }}
+                            value={selectedJobId}
+                            onChange={(e) => { setSelectedJobId(e.target.value); setResults(null); setError(null); }}
                             className="w-full appearance-none border border-gray-200 rounded-full px-4 py-2 text-[13px] font-semibold text-gray-700 bg-white focus:outline-none focus:ring-1 focus:ring-violet-1000 focus:border-violet-500 pr-8"
                         >
-                            <option value="">Select a drive / job</option>
-                            {activeDrives.map((j: any) => (
+                            <option value="">Select a job / job</option>
+                            {activeJobs.map((j: any) => (
                                 <option key={j.id} value={j.id}>{j.title}</option>
                             ))}
                         </select>
                         <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
                     </div>
-                    {selectedDrive && (
+                    {selectedJob && (
                         <span className="text-[12px] font-medium text-violet-500 bg-violet-50 border border-violet-100 px-3 py-1 rounded-full">
-                            {selectedDrive.title}
+                            {selectedJob.title}
                         </span>
                     )}
                 </div>
@@ -243,7 +243,7 @@ export function InterviewOnlyPanel() {
 
                                     <Button
                                         type="submit"
-                                        disabled={formLoading || !selectedDriveId}
+                                        disabled={formLoading || !selectedJobId}
                                         className="w-full h-11 rounded-xl bg-violet-500 hover:bg-violet-600 text-white font-bold text-[13px] shadow-sm transition-all"
                                     >
                                         {formLoading ? (
@@ -334,7 +334,7 @@ export function InterviewOnlyPanel() {
                                         )}
                                         <Button
                                             onClick={handleBulkSubmit}
-                                            disabled={bulkLoading || !selectedDriveId}
+                                            disabled={bulkLoading || !selectedJobId}
                                             className="w-full h-11 rounded-xl bg-violet-500 hover:bg-violet-600 text-white font-bold text-[13px] shadow-sm transition-all"
                                         >
                                             {bulkLoading ? (

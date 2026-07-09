@@ -28,7 +28,7 @@ const TEST_KEY = process.env.NEXT_PUBLIC_TEST_KEY || "1285";
 
 // --- Types -------------------------------------------------------------------
 type Org = { id: string; name: string; slug: string; status: string };
-type Drive = { id: string; title: string; role: string | null; status: string; _count: { applications: number } };
+type Job = { id: string; title: string; role: string | null; status: string; _count: { applications: number } };
 type Candidate = {
     id: string; fullName: string; email: string; interviewStatus: string | null;
     aiScore: number | null;
@@ -412,15 +412,15 @@ function TestPageContent() {
     const [isLoggingOut, setIsLoggingOut] = useState(false);
     
     const [orgs, setOrgs] = useState<Org[]>([]);
-    const [drives, setDrives] = useState<Drive[]>([]);
+    const [jobs, setJobs] = useState<Job[]>([]);
     const [candidates, setCandidates] = useState<Candidate[]>([]);
 
     const [selectedOrg, setSelectedOrg] = useState<Org | null>(null);
-    const [selectedDrive, setSelectedDrive] = useState<Drive | null>(null);
+    const [selectedJob, setSelectedJob] = useState<Job | null>(null);
     const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
 
     const [loadingOrgs, setLoadingOrgs] = useState(true);
-    const [loadingDrives, setLoadingDrives] = useState(false);
+    const [loadingJobs, setLoadingJobs] = useState(false);
     const [loadingCandidates, setLoadingCandidates] = useState(false);
 
     const [enableReport, setEnableReport] = useState(false);
@@ -484,20 +484,20 @@ function TestPageContent() {
 
 
     useEffect(() => {
-        if (!selectedOrg) { setDrives([]); setSelectedDrive(null); return; }
-        setLoadingDrives(true);
-        fetch(`/api/test/drives?key=${TEST_KEY}&orgId=${selectedOrg.id}`).then(r => r.json()).then(d => {
-            setDrives(d.drives || []); setLoadingDrives(false);
-        }).catch(() => setLoadingDrives(false));
+        if (!selectedOrg) { setJobs([]); setSelectedJob(null); return; }
+        setLoadingJobs(true);
+        fetch(`/api/test/jobs?key=${TEST_KEY}&orgId=${selectedOrg.id}`).then(r => r.json()).then(d => {
+            setJobs(d.jobs || []); setLoadingJobs(false);
+        }).catch(() => setLoadingJobs(false));
     }, [selectedOrg]);
 
     useEffect(() => {
-        if (!selectedDrive) { setCandidates([]); setSelectedCandidate(null); return; }
+        if (!selectedJob) { setCandidates([]); setSelectedCandidate(null); return; }
         setLoadingCandidates(true);
-        fetch(`/api/test/candidates?key=${TEST_KEY}&driveId=${selectedDrive.id}`).then(r => r.json()).then(d => {
+        fetch(`/api/test/candidates?key=${TEST_KEY}&jobId=${selectedJob.id}`).then(r => r.json()).then(d => {
             setCandidates(d.candidates || []); setLoadingCandidates(false);
         }).catch(() => setLoadingCandidates(false));
-    }, [selectedDrive]);
+    }, [selectedJob]);
 
     const requestFullscreenMode = useCallback(async () => {
         try {
@@ -635,7 +635,7 @@ function TestPageContent() {
         postProctoringViolation(eventType, reason, severity, metadata);
     }, [isCameraDisabledEnabled, isMicrophoneDisabledEnabled, postProctoringViolation]);
 
-    // Live fullscreen state -- drives the persistent "return to fullscreen" banner below,
+    // Live fullscreen state -- jobs the persistent "return to fullscreen" banner below,
     // independent of the one-shot violation modal (which only fires once per exit and can
     // be dismissed, leaving no other way back in otherwise).
     useEffect(() => {
@@ -834,7 +834,7 @@ function TestPageContent() {
                                     const org = orgs.find(o => o.id === val);
                                     if (org) {
                                         setSelectedOrg(org);
-                                        setSelectedDrive(null);
+                                        setSelectedJob(null);
                                         setSelectedCandidate(null);
                                     }
                                 }}
@@ -851,21 +851,21 @@ function TestPageContent() {
 
                         <div className="w-[180px]">
                             <Select 
-                                value={selectedDrive?.id || ""} 
+                                value={selectedJob?.id || ""} 
                                 onValueChange={val => {
-                                    const drive = drives.find(d => d.id === val);
-                                    if (drive) {
-                                        setSelectedDrive(drive);
+                                    const job = jobs.find(d => d.id === val);
+                                    if (job) {
+                                        setSelectedJob(job);
                                         setSelectedCandidate(null);
                                     }
                                 }}
-                                disabled={!selectedOrg || loadingDrives || drives.length === 0 || isActive}
+                                disabled={!selectedOrg || loadingJobs || jobs.length === 0 || isActive}
                             >
                                 <SelectTrigger className="w-full h-9 bg-white border border-gray-200 rounded-xl text-[12px] font-semibold text-gray-700 shadow-sm focus:ring-violet-500 transition-all">
-                                    <SelectValue placeholder="Select Drive" />
+                                    <SelectValue placeholder="Select Job" />
                                 </SelectTrigger>
                                 <SelectContent className="rounded-xl border-[#E9E7FF] shadow-xl">
-                                    {drives.map(d => <SelectItem key={d.id} value={d.id} className="text-[12px] font-medium py-2">{d.title}</SelectItem>)}
+                                    {jobs.map(d => <SelectItem key={d.id} value={d.id} className="text-[12px] font-medium py-2">{d.title}</SelectItem>)}
                                 </SelectContent>
                             </Select>
                         </div>
@@ -877,7 +877,7 @@ function TestPageContent() {
                                     const candidate = candidates.find(c => c.id === val);
                                     if (candidate) setSelectedCandidate(candidate);
                                 }}
-                                disabled={!selectedDrive || loadingCandidates || candidates.length === 0 || isActive}
+                                disabled={!selectedJob || loadingCandidates || candidates.length === 0 || isActive}
                             >
                                 <SelectTrigger className="w-full h-9 bg-white border border-gray-200 rounded-xl text-[12px] font-semibold text-gray-700 shadow-sm focus:ring-violet-500 transition-all">
                                     <SelectValue placeholder="Select Candidate" />

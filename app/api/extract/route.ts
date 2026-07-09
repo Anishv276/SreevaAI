@@ -74,7 +74,7 @@ export async function POST(request: Request) {
         const type = typeRaw as "JD" | "RESUME";
         const isJd = typeRaw === "JD";
         // Fetch org's LLM model from DB -- set via Super Admin → AI Models
-        const orgRow = await prisma.organization.findUnique({
+        const orgRow = await prisma.organizationDetails.findUnique({
             where: { id: orgId },
             select: { llmJdExtraction: true, llmResumeExtraction: true },
         });
@@ -144,8 +144,8 @@ export async function POST(request: Request) {
                 (async () => {
                     try {
                         const bucket = process.env.R2_JDS_BUCKET || "jds";
-                        const orgForSlug = await prisma.organization.findUnique({ where: { id: orgId }, select: { slug: true } });
-                        const orgSlug = orgForSlug?.slug || orgId;
+                        const orgForSlug = await prisma.organizationDetails.findUnique({ where: { id: orgId }, select: { urlSlug: true } });
+                        const orgSlug = orgForSlug?.urlSlug || orgId;
                         const fileName = `JDs/${orgSlug}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_').toLowerCase()}`;
                         console.log("[STORAGE_PUSH]: Uploading JD to R2", fileName);
                         const { putObject } = await import("@/lib/s3");
@@ -190,8 +190,8 @@ export async function POST(request: Request) {
         const byteLength = buffer.length;
         console.log("[FILE_EXTRACT_START]:", { name: file.name, size: byteLength, type });
         const bucket = process.env.R2_RESUMES_BUCKET || "resumes";
-        const orgForSlug = await prisma.organization.findUnique({ where: { id: orgId }, select: { slug: true } });
-        const orgSlug = orgForSlug?.slug || orgId;
+        const orgForSlug = await prisma.organizationDetails.findUnique({ where: { id: orgId }, select: { urlSlug: true } });
+        const orgSlug = orgForSlug?.urlSlug || orgId;
         const fileName = `resume/${orgSlug}/general_extraction/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_').toLowerCase()}`;
         console.log("[STORAGE_PUSH]: Uploading to R2", fileName);
         const { putObject } = await import("@/lib/s3");

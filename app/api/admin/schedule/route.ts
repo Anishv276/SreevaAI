@@ -14,7 +14,7 @@ export async function GET(req: Request) {
         const interviews = await prisma.interview.findMany({
             where: {
                 application: {
-                    drive: {
+                    job: {
                         orgId: orgId
                     }
                 },
@@ -38,7 +38,7 @@ export async function GET(req: Request) {
                         fullName: true,
                         resumeUrl: true,
                         aiScore: true,
-                        drive: {
+                        job: {
                             select: {
                                 id: true,
                                 title: true,
@@ -64,15 +64,15 @@ export async function GET(req: Request) {
 
             return {
                 id: iv.id,
-                title: `${iv.application.fullName} - ${iv.application.drive?.title || "Interview"}`,
+                title: `${iv.application.fullName} - ${iv.application.job?.title || "Interview"}`,
                 start,
                 end,
                 status: iv.status,
                 candidate: {
                     id: iv.application.id,
                     name: iv.application.fullName,
-                    role: iv.application.drive?.role || iv.application.drive?.title,
-                    driveId: iv.application.drive?.id,
+                    role: iv.application.job?.role || iv.application.job?.title,
+                    jobId: iv.application.job?.id,
                     score: iv.application.aiScore,
                     resumeUrl: iv.application.resumeUrl
                 }

@@ -65,7 +65,7 @@ TYPE_EMOJIS = {
     "login": "🔐",
     "resume_upload": "📄",
     "livekit": "🎙️",
-    "drive": "💾",
+    "job": "💾",
     "api": "⚠️",
     "database": "🗄️",
     "interview": "🎤",
@@ -89,7 +89,7 @@ def _build_error_message(
     error: str,
     reason: Optional[str] = None,
     org_name: Optional[str] = None,
-    drive_name: Optional[str] = None,
+    job_name: Optional[str] = None,
     candidate_name: Optional[str] = None,
     user_id: Optional[str] = None,
     context: Optional[dict[str, Any]] = None,
@@ -104,8 +104,8 @@ def _build_error_message(
 
     if org_name:
         details += f"🏢 **Org:** {org_name}\n"
-    if drive_name:
-        details += f"💾 **Drive:** {drive_name}\n"
+    if job_name:
+        details += f"💾 **Job:** {job_name}\n"
     if candidate_name:
         details += f"👤 **Candidate:** {candidate_name}\n"
     if user_id:
@@ -246,7 +246,7 @@ async def log_database_error(
 async def log_resume_upload_error(
     *,
     org_name: str,
-    drive_name: str,
+    job_name: str,
     candidate_name: Optional[str] = None,
     error: str,
     reason: Optional[str] = None,
@@ -259,32 +259,32 @@ async def log_resume_upload_error(
         error=error,
         reason=reason or "Resume upload processing failed",
         org_name=org_name,
-        drive_name=drive_name,
+        job_name=job_name,
         candidate_name=candidate_name,
         context=context,
     )
     await _post_to_slack(message, "resume_upload")
 
 
-async def log_drive_error(
+async def log_job_error(
     *,
     org_name: str,
-    drive_name: str,
+    job_name: str,
     operation: str,
     error: str,
     reason: Optional[str] = None,
 ) -> None:
-    """Log drive operation error."""
+    """Log job operation error."""
     context = {"operation": operation}
     message = _build_error_message(
-        error_type="drive",
+        error_type="job",
         error=error,
-        reason=reason or f"Drive {operation} failed",
+        reason=reason or f"Job {operation} failed",
         org_name=org_name,
-        drive_name=drive_name,
+        job_name=job_name,
         context=context,
     )
-    await _post_to_slack(message, "drive")
+    await _post_to_slack(message, "job")
 
 
 async def log_tts_error(

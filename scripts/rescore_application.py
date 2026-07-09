@@ -1,5 +1,5 @@
 """
-rescore_application.py — Re-score a stored application against its drive's JD using v2 scorer.
+rescore_application.py — Re-score a stored application against its job's JD using v2 scorer.
 Usage: python scripts/rescore_application.py <app_id_or_name>
 
 Updates aiScore and aiReport in the DB.
@@ -20,31 +20,31 @@ def rescore(identifier: str, dry_run: bool = False):
 
     # Find the application
     if identifier.startswith("app-"):
-        cur.execute('SELECT id,"fullName","resumeData","resumeText","driveId","aiScore" FROM "Application" WHERE id=%s', (identifier,))
+        cur.execute('SELECT id,"fullName","resumeData","resumeText","jobId","aiScore" FROM "Application" WHERE id=%s', (identifier,))
     else:
-        cur.execute('SELECT id,"fullName","resumeData","resumeText","driveId","aiScore" FROM "Application" WHERE "fullName" ILIKE %s AND "isDeleted"=false ORDER BY "createdAt" DESC LIMIT 1', (f"%{identifier}%",))
+        cur.execute('SELECT id,"fullName","resumeData","resumeText","jobId","aiScore" FROM "Application" WHERE "fullName" ILIKE %s AND "isDeleted"=false ORDER BY "createdAt" DESC LIMIT 1', (f"%{identifier}%",))
     row = cur.fetchone()
     if not row:
         print(f"Application not found: {identifier}")
         return
 
-    app_id, name, resume_raw, resume_text, drive_id, old_score = row
+    app_id, name, resume_raw, resume_text, job_id, old_score = row
     resume = json.loads(resume_raw).get("parsed", {})
     resume_text = resume_text or ""
 
     # Get JD
-    cur.execute('SELECT "extractedDetails","screeningCriteria","title" FROM "Drive" WHERE id=%s', (drive_id,))
+    cur.execute('SELECT "extractedDetails","screeningCriteria","title" FROM "Job" WHERE id=%s', (job_id,))
     dr = cur.fetchone()
     if not dr or not dr[0]:
-        print(f"Drive not found or has no JD: {drive_id}")
+        print(f"Job not found or has no JD: {job_id}")
         return
 
     jd = _normalise_jd(json.loads(dr[0]))
     screening = json.loads(dr[1]) if dr[1] else {}
-    drive_title = dr[2]
+    job_title = dr[2]
 
     print(f"Rescoring: {name}")
-    print(f"Drive: {drive_title}")
+    print(f"Job: {job_title}")
     print(f"Old score: {old_score}")
 
     oai = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
@@ -68,14 +68,14 @@ def rescore(identifier: str, dry_run: bool = False):
     import asyncio
     try:
         # Org's configured model for resume reports -- no hardcoded fallback.
-        cur.execute('SELECT o."id", o."llmResumeReport" FROM "Drive" d JOIN "Organization" o ON o.id = d."orgId" WHERE d.id=%s', (drive_id,))
+        cur.execute('SELECT o."id", o."llmResumeReport" FROM "Job" d JOIN "Organization" o ON o.id = d."orgId" WHERE d.id=%s', (job_id,))
         org_row = cur.fetchone()
         if not org_row:
-            print(f"Org not found for drive: {drive_id}")
+            print(f"Org not found for job: {job_id}")
             return
         report_model = org_row[1]
         report, report_usage = generate_report(jd, resume, "", resume_text, score_result, oai, report_model, screening)
-        # Bill the org that owns this drive for the rescore LLM call
+        # Bill the org that owns this job for the rescore LLM call
         if org_row and org_row[0] and report_usage.get("inputTokens"):
             asyncio.run(record_external_billing_usage(org_row[0], "resumeReport", report_usage))
             print(f"[BILLING] Recorded resumeReport usage: {report_usage.get('inputTokens')} in / {report_usage.get('outputTokens')} out tokens")

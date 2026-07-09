@@ -26,7 +26,7 @@ type OrgFormState = {
   orgName: string;
   slug: string;
   plan: OrgPlanId;
-  maxActiveDrives: string;
+  maxActiveJobs: string;
   maxConcurrentSlots: string;
   interviewQuotaTotal: string;
   recordingEnabled: boolean;
@@ -214,7 +214,7 @@ export default function NewOrgPage() {
     orgName: "",
     slug: "",
     plan: DEFAULT_ORG_PLAN,
-    maxActiveDrives: "Unlimited",
+    maxActiveJobs: "Unlimited",
     maxConcurrentSlots: "5",
     interviewQuotaTotal: "100",
     recordingEnabled: false,
@@ -282,7 +282,7 @@ export default function NewOrgPage() {
           plan: form.plan,
           adminEmail: form.adminEmail.trim(),
           adminPassword: form.adminPassword,
-          maxActiveDrives: form.maxActiveDrives,
+          maxActiveJobs: form.maxActiveJobs,
           maxConcurrentSlots: Number(form.maxConcurrentSlots || 5),
           interviewQuotaTotal: Number(form.interviewQuotaTotal || 0),
           recordingEnabled: form.recordingEnabled ? true : null,
@@ -410,8 +410,8 @@ export default function NewOrgPage() {
           <div className="mt-6 grid gap-6 md:grid-cols-2">
             <LimitControl
               label="Job Limit"
-              value={form.maxActiveDrives}
-              onChange={(value) => updateForm({ maxActiveDrives: value })}
+              value={form.maxActiveJobs}
+              onChange={(value) => updateForm({ maxActiveJobs: value })}
             />
             <TextInput
               label="Max Concurrent Slots"

@@ -16,7 +16,7 @@ async function main() {
 
   for (const col of textCols) {
     try {
-      await prisma.$executeRawUnsafe(`ALTER TABLE "Drive" ADD COLUMN IF NOT EXISTS "${col}" TEXT`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "Job" ADD COLUMN IF NOT EXISTS "${col}" TEXT`);
       console.log("  ✅ " + col);
     } catch (e) {
       console.log("  ❌ " + col + " — " + e.message.split("\n")[0]);
@@ -24,7 +24,7 @@ async function main() {
   }
   for (const col of intCols) {
     try {
-      await prisma.$executeRawUnsafe(`ALTER TABLE "Drive" ADD COLUMN IF NOT EXISTS "${col}" INTEGER DEFAULT 0`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "Job" ADD COLUMN IF NOT EXISTS "${col}" INTEGER DEFAULT 0`);
       console.log("  ✅ " + col);
     } catch (e) {
       console.log("  ❌ " + col + " — " + e.message.split("\n")[0]);
@@ -32,7 +32,7 @@ async function main() {
   }
   for (const col of boolCols) {
     try {
-      await prisma.$executeRawUnsafe(`ALTER TABLE "Drive" ADD COLUMN IF NOT EXISTS "${col}" BOOLEAN DEFAULT true`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "Job" ADD COLUMN IF NOT EXISTS "${col}" BOOLEAN DEFAULT true`);
       console.log("  ✅ " + col);
     } catch (e) {
       console.log("  ❌ " + col + " — " + e.message.split("\n")[0]);
@@ -48,21 +48,21 @@ async function main() {
   ];
   for (const col of dropCols) {
     try {
-      await prisma.$executeRawUnsafe(`ALTER TABLE "Drive" DROP COLUMN IF EXISTS "${col}"`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "Job" DROP COLUMN IF EXISTS "${col}"`);
       console.log("  🗑  dropped " + col);
     } catch (e) {
       console.log("  ⚠  " + col + " — " + e.message.split("\n")[0]);
     }
   }
 
-  console.log("\nStep 3: Test-fetching drives...");
+  console.log("\nStep 3: Test-fetching jobs...");
   try {
-    const drives = await prisma.drive.findMany({
+    const jobs = await prisma.job.findMany({
       include: { _count: { select: { applications: true } } },
     });
-    console.log("  ✅ Successfully fetched", drives.length, "drive(s).");
-    if (drives.length > 0) {
-      console.log("  Sample drive fields:", Object.keys(drives[0]));
+    console.log("  ✅ Successfully fetched", jobs.length, "job(s).");
+    if (jobs.length > 0) {
+      console.log("  Sample job fields:", Object.keys(jobs[0]));
     }
   } catch (e) {
     console.error("  ❌ FETCH FAILED:", e.message);

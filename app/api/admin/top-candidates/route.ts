@@ -20,7 +20,7 @@ export async function GET(req: Request) {
         // Top candidates this period = recently completed interviews with highest AI score
         const applications = await prisma.application.findMany({
             where: {
-                drive: { orgId },
+                job: { orgId },
                 aiScore: { not: null },
                 updatedAt: { gte: start },
                 interview: { status: "COMPLETED" },
@@ -30,7 +30,7 @@ export async function GET(req: Request) {
                 fullName: true,
                 aiScore: true,
                 resumeStatus: true,
-                drive: { select: { title: true, role: true } },
+                job: { select: { title: true, role: true } },
                 interview: {
                     select: {
                         status: true,
@@ -60,8 +60,8 @@ export async function GET(req: Request) {
                 id: app.id,
                 name: app.fullName || "Unnamed Candidate",
                 initials,
-                role: app.drive.role || app.drive.title,
-                driveTitle: app.drive.title,
+                role: app.job.role || app.job.title,
+                jobTitle: app.job.title,
                 interviewScore: app.aiScore,
                 resumeScore: null,
                 status: displayStatus,

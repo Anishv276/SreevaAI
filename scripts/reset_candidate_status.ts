@@ -9,17 +9,17 @@ dotenv.config();
 const prisma = new PrismaClient();
 async function main() {
     // Find all candidates incorrectly rejected (has a score but status is REJECTED)
-    // Adjust driveId filter if you want to target a specific drive
+    // Adjust jobId filter if you want to target a specific job
     const rejected = await prisma.application.findMany({
         where: { resumeStatus: "REJECTED" },
-        include: { drive: { select: { title: true, screeningThreshold: true } } },
+        include: { job: { select: { title: true, screeningThreshold: true } } },
     });
     console.log(`Found ${rejected.length} rejected candidate(s):`);
     for (const app of rejected) {
-        const threshold = Number(app.drive?.screeningThreshold ?? 0);
+        const threshold = Number(app.job?.screeningThreshold ?? 0);
         const score = app.aiScore ?? 0;
         console.log(
-            `  - ${app.fullName} | score=${score} | threshold=${threshold} | drive="${app.drive?.title}"`
+            `  - ${app.fullName} | score=${score} | threshold=${threshold} | job="${app.job?.title}"`
         );
         if (score >= threshold) {
             // This candidate SHOULD have been shortlisted - fix it now

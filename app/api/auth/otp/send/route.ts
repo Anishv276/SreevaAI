@@ -17,7 +17,7 @@ export async function POST() {
             targetEmail = normalizeEmail(process.env.MASTER_ADMIN_EMAIL || "");
             if (!targetEmail) return NextResponse.json({ error: "Master identity not configured" }, { status: 500 });
         } else {
-            const user = await prisma.user.findUnique({
+            const user = await prisma.organizationCredentials.findUnique({
                 where: { id: session.userId },
                 select: { email: true }
             });
@@ -37,12 +37,12 @@ export async function POST() {
         if (isSuperAdmin) {
             await prisma.superAdmin.update({
                 where: { id: session.userId },
-                data: { resetOtp: otp, resetOtpExpires: expires }
+                data: { passwordResetOtp: otp, passwordResetOtpExpiresAt: expires }
             });
         } else {
-            await prisma.user.update({
+            await prisma.organizationCredentials.update({
                 where: { id: session.userId },
-                data: { resetOtp: otp, resetOtpExpires: expires }
+                data: { passwordResetOtp: otp, passwordResetOtpExpiresAt: expires }
             });
         }
         try {

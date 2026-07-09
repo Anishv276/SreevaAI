@@ -32,8 +32,8 @@ export async function GET(req: NextRequest) {
             rejected: number;
             rejectedPrev: number;
         };
-        type DriveStatsRow = {
-            activeDrives: number;
+        type JobStatsRow = {
+            activeJobs: number;
             closingSoon: number;
         };
         const appStats = await prisma.$queryRaw<AppStatsRow[]>`
@@ -73,24 +73,24 @@ export async function GET(req: NextRequest) {
                     AND (LOWER(a."resumeStatus") = 'rejected' OR LOWER(a."interviewStatus") = 'rejected')
                 )::INT AS "rejectedPrev"
             FROM "Application" a
-            JOIN "Drive" d ON d.id = a."driveId"
+            JOIN "Job" d ON d.id = a."jobId"
             LEFT JOIN "Interview" i ON i."applicationId" = a.id
             WHERE d."orgId" = ${orgId}
               AND a."isDeleted" = false
               AND d."isDeleted" = false
         `;
-        const driveStats = await prisma.$queryRaw<DriveStatsRow[]>`
+        const jobStats = await prisma.$queryRaw<JobStatsRow[]>`
             SELECT
-                COUNT(*)::INT AS "activeDrives",
+                COUNT(*)::INT AS "activeJobs",
                 0::INT AS "closingSoon"
-            FROM "Drive"
+            FROM "Job"
             WHERE "orgId" = ${orgId}
               AND "isDeleted" = false
         `;
         const scoreStats = await prisma.$queryRaw<Array<{ avgScore: number | null }>>(Prisma.sql`
             SELECT COALESCE(AVG(a."aiScore"), 0)::FLOAT AS "avgScore"
             FROM "Application" a
-            JOIN "Drive" d ON d.id = a."driveId"
+            JOIN "Job" d ON d.id = a."jobId"
             WHERE d."orgId" = ${orgId}
               AND a."isDeleted" = false
               AND d."isDeleted" = false
@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
               AND a."updatedAt" >= ${start}
         `);
         const s = appStats[0];
-        const d = driveStats[0];
+        const d = jobStats[0];
         function safeRound(val: number | string | null | undefined) {
             return val != null ? Math.round(Number(val)) : null;
         }
@@ -115,7 +115,7 @@ export async function GET(req: NextRequest) {
         const liveInterviews = Number(s.liveInterviews);
         const avgScore = Number(scoreStats[0]?.avgScore || 0);
         const response = NextResponse.json({
-            activeDrives: Number(d.activeDrives),
+            activeJobs: Number(d.activeJobs),
             closingSoon: Number(d.closingSoon),
             totalCandidates: applications,
             applicationsToday: Number(s.applicationsToday),

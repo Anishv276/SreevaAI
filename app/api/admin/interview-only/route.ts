@@ -19,24 +19,24 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json();
-        const { driveId, candidates } = body as {
-            driveId: string;
+        const { jobId, candidates } = body as {
+            jobId: string;
             candidates: { fullName: string; email: string; phone: string; resumeUrl?: string }[];
         };
 
-        if (!driveId || !Array.isArray(candidates) || candidates.length === 0) {
-            return NextResponse.json({ error: "driveId and candidates[] required" }, { status: 400 });
+        if (!jobId || !Array.isArray(candidates) || candidates.length === 0) {
+            return NextResponse.json({ error: "jobId and candidates[] required" }, { status: 400 });
         }
 
         const orgId = session.orgId;
         if (!orgId) return NextResponse.json({ error: "No org" }, { status: 403 });
 
-        const drive = await prisma.drive.findUnique({
-            where: { id: driveId },
+        const job = await prisma.job.findUnique({
+            where: { id: jobId },
             include: { organization: { select: { name: true } } },
         });
-        if (!drive || drive.orgId !== orgId) {
-            return NextResponse.json({ error: "Drive not found" }, { status: 404 });
+        if (!job || job.orgId !== orgId) {
+            return NextResponse.json({ error: "Job not found" }, { status: 404 });
         }
 
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.sreevaai.com";
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
                     email,
                     phone: phone || "",
                     resumeUrl: resumeUrl || "",
-                    driveId,
+                    jobId,
                     resumeStatus: hasResume ? "waiting" : "skipped",
                     interviewStatus: "pending",
                 },
@@ -108,9 +108,9 @@ export async function POST(request: Request) {
                     await sendScheduleInviteEmail({
                         email,
                         fullName,
-                        jobTitle: drive.title,
+                        jobTitle: job.title,
                         scheduleLink,
-                        orgName: drive.organization?.name || "The Company",
+                        orgName: job.organization?.name || "The Company",
                     });
                     sent = true;
                 } catch (e) {

@@ -3,8 +3,8 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Loader2, Lock, Plus, Upload, Edit3, AlertTriangle } from "lucide-react";
-import { DriveCandidatesTable } from "@/components/admin/drive-candidates-table";
-import { DriveResumeUploadModal } from "@/components/admin/drive-resume-upload-modal";
+import { JobCandidatesTable } from "@/components/admin/job-candidates-table";
+import { JobResumeUploadModal } from "@/components/admin/job-resume-upload-modal";
 import { AddCandidateDrawer } from "@/components/admin/AddCandidateDrawer";
 import { InterviewOnlyCandidatesTable } from "@/components/admin/InterviewOnlyCandidatesTable";
 import { toast } from "@/components/ui/toast-custom";
@@ -13,7 +13,7 @@ import { useAdminOrg } from "@/context/admin-org-context";
 import { useCandidates } from "@/context/candidates-context";
 import { motion } from "framer-motion";
 
-interface DriveDetails {
+interface JobDetails {
     id: string;
     title: string;
     role?: string | null;
@@ -31,10 +31,10 @@ interface DriveDetails {
     screeningCriteria?: Record<string, any> | string | null;
 }
 
-export default function DriveCandidatesPage() {
-    const params = useParams<{ driveId: string }>();
-    const driveId = typeof params?.driveId === "string" ? params.driveId : Array.isArray(params?.driveId) ? params.driveId[0] : "";
-    const [drive, setDrive] = useState<DriveDetails | null>(null);
+export default function JobCandidatesPage() {
+    const params = useParams<{ jobId: string }>();
+    const jobId = typeof params?.jobId === "string" ? params.jobId : Array.isArray(params?.jobId) ? params.jobId[0] : "";
+    const [job, setJob] = useState<JobDetails | null>(null);
     const [loading, setLoading] = useState(true);
     const [uploadOpen, setUploadOpen] = useState(false);
     const [drawerOpen, setDrawerOpen] = useState(false);
@@ -47,16 +47,16 @@ export default function DriveCandidatesPage() {
     const { stats, pagination } = useCandidates();
 
     useEffect(() => {
-        if (!driveId) return;
+        if (!jobId) return;
         let ignore = false;
-        const loadDrive = async () => {
+        const loadJob = async () => {
             try {
                 setLoading(true);
-                const res = await fetch(`/api/drives/${driveId}`);
-                if (!res.ok) throw new Error("Failed to fetch drive");
+                const res = await fetch(`/api/jobs/${jobId}`);
+                if (!res.ok) throw new Error("Failed to fetch job");
                 const data = await res.json();
                 if (ignore) return;
-                setDrive({
+                setJob({
                     id: data.id,
                     title: data.title,
                     role: data.role || null,
@@ -74,23 +74,23 @@ export default function DriveCandidatesPage() {
                     screeningCriteria: data.screeningCriteria || null,
                 });
             } catch (error) {
-                console.error("Failed to fetch drive:", error);
+                console.error("Failed to fetch job:", error);
             } finally {
                 if (!ignore) setLoading(false);
             }
         };
-        void loadDrive();
+        void loadJob();
         return () => { ignore = true; };
-    }, [driveId, refreshKey]);
+    }, [jobId, refreshKey]);
 
-    if (!driveId) {
+    if (!jobId) {
         return (
             <div className="min-h-screen flex items-center justify-center">
                 <p className="text-sm font-bold uppercase tracking-widest text-gray-400">Job not found</p>
             </div>
         );
     }
-    if (loading && !drive) {
+    if (loading && !job) {
         return (
             <div className="min-h-screen flex items-center justify-center">
                 <div className="flex flex-col items-center gap-3">
@@ -101,8 +101,8 @@ export default function DriveCandidatesPage() {
         );
     }
 
-    const applicantCount = pagination.total || drive?.applicants || 0;
-    const isInterviewOnly = drive?.interviewMode === "interview-only";
+    const applicantCount = pagination.total || job?.applicants || 0;
+    const isInterviewOnly = job?.interviewMode === "interview-only";
 
     const getPct = (val: number) => {
         if (!applicantCount) return 0;
@@ -116,7 +116,7 @@ export default function DriveCandidatesPage() {
             <div className="flex items-center justify-between px-4 py-3 bg-white sticky top-0 z-30 rounded-xl" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
                 {/* Left: Back */}
                 <Link
-                    href="/admin/drives"
+                    href="/admin/jobs"
                     className="inline-flex items-center gap-2 text-[13px] font-semibold text-gray-500 hover:text-gray-900 transition-colors"
                 >
                     <ArrowLeft className="h-4 w-4" />
@@ -167,7 +167,7 @@ export default function DriveCandidatesPage() {
                         className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3.5 text-[12px] font-bold text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-colors shadow-sm"
                     >
                         <Edit3 className="h-3.5 w-3.5" />
-                        Edit Drive
+                        Edit Job
                     </button>
                 </div>
             </div>
@@ -187,14 +187,14 @@ export default function DriveCandidatesPage() {
                         <div>
                             <div className="flex items-center gap-2.5 mb-1">
                                 <h1 className="text-xl font-bold text-gray-900 tracking-tight">
-                                    {drive?.title || "GTM Engineer"}
+                                    {job?.title || "GTM Engineer"}
                                 </h1>
                                 <span className="inline-flex h-5 items-center px-2 rounded-md bg-emerald-50 text-[10px] font-bold uppercase tracking-wider text-emerald-600 border border-emerald-100">
                                     Active
                                 </span>
                             </div>
                             <p className="text-[13px] text-gray-500 font-medium">
-                                {drive?.title || "GTM Engineer"} • Created on 27 Jun 2026
+                                {job?.title || "GTM Engineer"} • Created on 27 Jun 2026
                             </p>
                         </div>
                     </div>
@@ -266,33 +266,33 @@ export default function DriveCandidatesPage() {
 
                 {/* Table — determined by interviewMode set at job creation */}
                 <motion.div
-                    key={drive?.interviewMode || "ats"}
+                    key={job?.interviewMode || "ats"}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ duration: 0.15 }}
                     className="flex flex-col flex-1 min-h-0"
                 >
                     {isInterviewOnly ? (
-                        <InterviewOnlyCandidatesTable driveId={driveId} refreshKey={refreshKey} />
+                        <InterviewOnlyCandidatesTable jobId={jobId} refreshKey={refreshKey} />
                     ) : (
-                        <DriveCandidatesTable driveId={driveId} refreshKey={refreshKey} />
+                        <JobCandidatesTable jobId={jobId} refreshKey={refreshKey} />
                     )}
                 </motion.div>
             </div>
 
-            <DriveResumeUploadModal
+            <JobResumeUploadModal
                 open={uploadOpen}
                 onOpenChange={setUploadOpen}
-                driveId={driveId}
-                driveName={drive?.title || "Job"}
+                jobId={jobId}
+                jobName={job?.title || "Job"}
                 mode={isInterviewOnly ? "interview-only" : "ats"}
                 onUploaded={() => setRefreshKey(v => v + 1)}
             />
             <AddCandidateDrawer
                 open={drawerOpen}
                 onClose={() => setDrawerOpen(false)}
-                driveId={driveId}
-                driveName={drive?.title || "Job"}
+                jobId={jobId}
+                jobName={job?.title || "Job"}
                 mode={isInterviewOnly ? "interview-only" : "ats"}
                 onDone={() => setRefreshKey(v => v + 1)}
             />
@@ -322,7 +322,7 @@ export default function DriveCandidatesPage() {
                                 Cancel
                             </button>
                             <Link
-                                href={`/admin/create-drive?id=${driveId}&mode=edit`}
+                                href={`/admin/create-job?id=${jobId}&mode=edit`}
                                 onClick={() => setEditWarningOpen(false)}
                                 className="h-9 px-5 rounded-xl bg-[#7C3AED] hover:bg-violet-600 text-[13px] font-bold text-white transition-colors flex items-center gap-2"
                             >

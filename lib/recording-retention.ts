@@ -60,15 +60,15 @@ export function extractRecordingKey(params: {
   return getKeyFromUrl(url);
 }
 export async function getOrgRecordingSettings(orgId: string) {
-  const org = await prisma.organization.findUnique({
+  const org = await prisma.organizationDetails.findUnique({
     where: { id: orgId },
     select: {
-      recordingEnabled: true,
-      recordingRetentionDays: true,
+      isRecordingEnabled: true,
+      recordingKeepForDays: true,
     },
   });
-  const recordingRetentionDays = normalizeRecordingRetentionDays(org?.recordingRetentionDays);
-  const recordingEnabled = org?.recordingEnabled === true && recordingRetentionDays !== null;
+  const recordingRetentionDays = normalizeRecordingRetentionDays(org?.recordingKeepForDays);
+  const recordingEnabled = org?.isRecordingEnabled === true && recordingRetentionDays !== null;
   return {
     recordingEnabled,
     recordingRetentionDays,

@@ -14,15 +14,15 @@ export async function GET(request: Request) {
         const orgId = searchParams.get("orgId");
         if (!orgId) return NextResponse.json({ error: "orgId required" }, { status: 400 });
 
-        const drives = await prisma.drive.findMany({
+        const jobs = await prisma.job.findMany({
             where: { orgId, isDeleted: false },
             select: { id: true, title: true, role: true, _count: { select: { applications: true } } },
             orderBy: { createdAt: "desc" },
         });
 
-        return NextResponse.json({ drives });
+        return NextResponse.json({ jobs });
     } catch (e) {
-        console.error("[TEST_DRIVES]", e);
+        console.error("[TEST_JOBS]", e);
         return NextResponse.json({ error: "Failed" }, { status: 500 });
     }
 }

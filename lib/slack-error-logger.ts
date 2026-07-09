@@ -4,7 +4,7 @@
  * - Login failures / successes
  * - Resume upload failures
  * - LiveKit session failures
- * - Drive operations
+ * - Job operations
  * - General API errors
  *
  * Wire this into Next.js route handlers with try/catch:
@@ -12,9 +12,9 @@
  */
 
 export interface ErrorAlert {
-  type: 'login' | 'resume_upload' | 'livekit' | 'drive' | 'api' | 'database' | 'interview' | 'tts' | 'stt' | 'llm' | 'redis' | 'worker';
+  type: 'login' | 'resume_upload' | 'livekit' | 'job' | 'api' | 'database' | 'interview' | 'tts' | 'stt' | 'llm' | 'redis' | 'worker';
   orgName?: string;
-  driveName?: string;
+  jobName?: string;
   candidateName?: string;
   userId?: string;
   error: Error | string;
@@ -34,7 +34,7 @@ const TYPE_EMOJIS: ErrorEmoji = {
   login: '🔐',
   resume_upload: '📄',
   livekit: '🎙️',
-  drive: '💾',
+  job: '💾',
   api: '⚠️',
   database: '🗄️',
   interview: '🎤',
@@ -69,7 +69,7 @@ function buildErrorMessage(alert: ErrorAlert): string {
   details += `_${timestamp}_\n\n`;
 
   if (alert.orgName) details += `🏢 **Org:** ${alert.orgName}\n`;
-  if (alert.driveName) details += `💾 **Drive:** ${alert.driveName}\n`;
+  if (alert.jobName) details += `💾 **Job:** ${alert.jobName}\n`;
   if (alert.candidateName) details += `👤 **Candidate:** ${alert.candidateName}\n`;
   if (alert.userId) details += `👨‍💼 **User ID:** ${alert.userId}\n`;
 
@@ -171,7 +171,7 @@ export async function logLoginAttempt(params: {
  */
 export async function logResumeUploadError(params: {
   orgName: string;
-  driveName: string;
+  jobName: string;
   candidateName?: string;
   fileSize?: number;
   error: Error | string;
@@ -180,7 +180,7 @@ export async function logResumeUploadError(params: {
   await alertError({
     type: 'resume_upload',
     orgName: params.orgName,
-    driveName: params.driveName,
+    jobName: params.jobName,
     candidateName: params.candidateName,
     error: params.error,
     reason: params.reason || 'Resume upload processing failed',
@@ -215,21 +215,21 @@ export async function logLiveKitError(params: {
 }
 
 /**
- * Wrapper for drive operations (create, update, delete)
+ * Wrapper for job operations (create, update, delete)
  */
-export async function logDriveError(params: {
+export async function logJobError(params: {
   orgName: string;
-  driveName: string;
+  jobName: string;
   operation: 'create' | 'update' | 'delete' | 'list' | 'upload_jd';
   error: Error | string;
   reason?: string;
 }): Promise<void> {
   await alertError({
-    type: 'drive',
+    type: 'job',
     orgName: params.orgName,
-    driveName: params.driveName,
+    jobName: params.jobName,
     error: params.error,
-    reason: params.reason || `Drive ${params.operation} operation failed`,
+    reason: params.reason || `Job ${params.operation} operation failed`,
     context: { operation: params.operation },
     timestamp: new Date(),
   });
@@ -240,7 +240,7 @@ export async function logDriveError(params: {
  */
 export async function logTTSError(params: {
   orgName?: string;
-  driveName?: string;
+  jobName?: string;
   candidateName?: string;
   provider: string; // cartesia, elevenlabs, sarvam, etc.
   error: Error | string;
@@ -249,7 +249,7 @@ export async function logTTSError(params: {
   await alertError({
     type: 'tts',
     orgName: params.orgName,
-    driveName: params.driveName,
+    jobName: params.jobName,
     candidateName: params.candidateName,
     error: params.error,
     reason: params.reason || 'TTS provider failed',
@@ -263,7 +263,7 @@ export async function logTTSError(params: {
  */
 export async function logSTTError(params: {
   orgName?: string;
-  driveName?: string;
+  jobName?: string;
   candidateName?: string;
   provider: string; // deepgram, etc.
   error: Error | string;
@@ -272,7 +272,7 @@ export async function logSTTError(params: {
   await alertError({
     type: 'stt',
     orgName: params.orgName,
-    driveName: params.driveName,
+    jobName: params.jobName,
     candidateName: params.candidateName,
     error: params.error,
     reason: params.reason || 'STT provider failed',
@@ -286,7 +286,7 @@ export async function logSTTError(params: {
  */
 export async function logLLMError(params: {
   orgName?: string;
-  driveName?: string;
+  jobName?: string;
   candidateName?: string;
   provider: string; // openai, etc.
   error: Error | string;
@@ -295,7 +295,7 @@ export async function logLLMError(params: {
   await alertError({
     type: 'llm',
     orgName: params.orgName,
-    driveName: params.driveName,
+    jobName: params.jobName,
     candidateName: params.candidateName,
     error: params.error,
     reason: params.reason || 'LLM call failed',

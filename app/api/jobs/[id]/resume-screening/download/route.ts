@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { authorizeDriveAccess } from "@/lib/drive-access";
+import { authorizeJobAccess } from "@/lib/job-access";
 export async function GET(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const { id: driveId } = await params;
-        const access = await authorizeDriveAccess(driveId);
+        const { id: jobId } = await params;
+        const access = await authorizeJobAccess(jobId);
         if (!access.ok) {
             return NextResponse.json({ error: access.error }, { status: access.status });
         }
@@ -22,8 +22,8 @@ export async function GET(
         if (!candidate) {
             return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
         }
-        if (candidate.driveId !== driveId) {
-            return NextResponse.json({ error: "Candidate not in this drive" }, { status: 403 });
+        if (candidate.jobId !== jobId) {
+            return NextResponse.json({ error: "Candidate not in this job" }, { status: 403 });
         }
         const resumeText = candidate.resumeText || "";
         const fileName = (candidate.fileName || candidateId).replace(".pdf", ".txt");

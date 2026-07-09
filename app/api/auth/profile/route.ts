@@ -16,7 +16,7 @@ export async function GET() {
             });
         } else {
             // ADMIN or others (regular users)
-            user = await prisma.user.findUnique({
+            user = await prisma.organizationCredentials.findUnique({
                 where: { id: session.userId },
                 select: { name: true, email: true }
             });
@@ -51,23 +51,23 @@ export async function PATCH(request: Request) {
             if (session.role === "SUPER_ADMIN") {
                 currentUser = await prisma.superAdmin.findUnique({ where: { id: session.userId } });
                 // Verify Super Admin OTP
-                if (!currentUser || currentUser.resetOtp !== otp || (currentUser.resetOtpExpires && currentUser.resetOtpExpires < new Date())) {
+                if (!currentUser || currentUser.passwordResetOtp !== otp || (currentUser.passwordResetOtpExpiresAt && currentUser.passwordResetOtpExpiresAt < new Date())) {
                     return NextResponse.json({ error: "Invalid or expired security code" }, { status: 400 });
                 }
                 await prisma.superAdmin.update({
                     where: { id: session.userId },
-                    data: { resetOtp: null, resetOtpExpires: null }
+                    data: { passwordResetOtp: null, passwordResetOtpExpiresAt: null }
                 });
             } else {
-                currentUser = await prisma.user.findUnique({ where: { id: session.userId } });
+                currentUser = await prisma.organizationCredentials.findUnique({ where: { id: session.userId } });
                 // Verify regular Admin/User OTP
-                if (!currentUser || currentUser.resetOtp !== otp || (currentUser.resetOtpExpires && currentUser.resetOtpExpires < new Date())) {
+                if (!currentUser || currentUser.passwordResetOtp !== otp || (currentUser.passwordResetOtpExpiresAt && currentUser.passwordResetOtpExpiresAt < new Date())) {
                     return NextResponse.json({ error: "Invalid or expired security code" }, { status: 400 });
                 }
                 // Clear OTP for User
-                await prisma.user.update({
+                await prisma.organizationCredentials.update({
                     where: { id: session.userId },
-                    data: { resetOtp: null, resetOtpExpires: null }
+                    data: { passwordResetOtp: null, passwordResetOtpExpiresAt: null }
                 });
             }
             if (!currentUser) return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -93,7 +93,7 @@ export async function PATCH(request: Request) {
                 data: updateData
             });
         } else {
-            await prisma.user.update({
+            await prisma.organizationCredentials.update({
                 where: { id: session.userId },
                 data: updateData
             });

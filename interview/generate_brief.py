@@ -168,7 +168,7 @@ class BriefRepository:
         d."interviewQuestions",
         o."llmInterviewBrief"
     FROM "Application" a
-    JOIN "Drive" d ON a."driveId" = d.id
+    JOIN "Job" d ON a."jobId" = d.id
     LEFT JOIN "Organization" o ON d."orgId" = o.id
     WHERE a.id = $1
     LIMIT 1
@@ -185,7 +185,7 @@ class BriefRepository:
         self._pool = pool
 
     async def fetch_application(self, application_id: str) -> ApplicationRow:
-        """Fetch and validate application + drive + org config from DB."""
+        """Fetch and validate application + job + org config from DB."""
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(self._FETCH_QUERY, application_id)
         if not row:

@@ -9,8 +9,8 @@ export type OrgData = {
     voiceId?: string | null;
     allowedVoices?: string[];
     sttModel?: string | null;
-    maxActiveDrives?: string | null;
-    activeDriveCount?: number;
+    maxActiveJobs?: string | null;
+    activeJobCount?: number;
     proctoringSignals?: string | null;
     interviewQuotaTotal?: number;
     interviewQuotaUsed?: number;

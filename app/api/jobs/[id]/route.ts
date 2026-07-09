@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { updateDriveSchema } from "@/lib/validation";
+import { updateJobSchema } from "@/lib/validation";
 import { deleteUrlTargets } from "@/lib/delete-utils";
 import { getRecordingUrl } from "@/lib/recording-state";
-import { normalizeDriveAiConfig } from "@/lib/ai-provider-config";
+import { normalizeJobAiConfig } from "@/lib/ai-provider-config";
 import { safeJsonParse } from "@/lib/utils";
 import { getSession } from "@/lib/auth";
-import { parseDriveScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
+import { parseJobScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
 import { isOrgRestrictedStatus } from "@/lib/interview-quota";
 function normalizeDeadlineDate(deadline?: string | null) {
     if (!deadline) return null;
@@ -16,17 +16,17 @@ function normalizeDeadlineDate(deadline?: string | null) {
 }
 export const dynamic = "force-dynamic";
 /**
- * GET handler to fetch the metadata for a specific recruitment drive.
+ * GET handler to fetch the metadata for a specific recruitment job.
  *
  * @param {Request} request - The standard incoming API request wrapper.
  * @param {Object} context - URL route mapping parameters.
  * @param {Promise<{id: string}>} context.params - Async parameter identifier tuple.
- * @returns {Promise<NextResponse>} Complete drive configuration or 404 error state.
+ * @returns {Promise<NextResponse>} Complete job configuration or 404 error state.
  */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
         const { id } = await params;
-        const drive = await prisma.drive.findFirst({
+        const job = await prisma.job.findFirst({
             where: {
                 id
             },
@@ -50,7 +50,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 interviewMode: true,
                 organization: {
                     select: {
-                        status: true,
+                        orgStatus: true,
                         name: true,
                     },
                 },
@@ -59,15 +59,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 },
             },
         });
-        if (!drive) {
-            return NextResponse.json({ error: "Drive not found" }, { status: 404 });
+        if (!job) {
+            return NextResponse.json({ error: "Job not found" }, { status: 404 });
         }
-        if (drive.organization && isOrgRestrictedStatus(drive.organization.status)) {
+        if (job.organization && isOrgRestrictedStatus(job.organization.orgStatus)) {
             return NextResponse.json({ error: "This organization is currently suspended. Access is restricted." }, { status: 403 });
         }
-        const screeningThreshold = Number(drive.screeningThreshold ?? 60);
-        const parsedCriteria = parseDriveScreeningSettings(
-            drive.screeningCriteria,
+        const screeningThreshold = Number(job.screeningThreshold ?? 60);
+        const parsedCriteria = parseJobScreeningSettings(
+            job.screeningCriteria,
             screeningThreshold,
         );
         const screeningCriteria = JSON.stringify({
@@ -76,19 +76,19 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         });
         const interviewQuestions = (() => {
             try {
-                const raw = drive.interviewQuestions;
+                const raw = job.interviewQuestions;
                 return raw ? JSON.parse(raw) : [];
             } catch {
                 return [];
             }
         })();
         return NextResponse.json({
-            ...drive,
-            orgId: drive.orgId,
+            ...job,
+            orgId: job.orgId,
             screeningThreshold,
             screeningCriteria,
             interviewQuestions,
-            applicants: drive._count?.applications || 0,
+            applicants: job._count?.applications || 0,
             aiScreening: {
                 enabled: true,
                 weights: {} // Schema doesn't have a weights field yet
@@ -99,15 +99,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             }
         });
     } catch (error: any) {
-        console.error("[GET_DRIVE_ERROR]:", error);
+        console.error("[GET_JOB_ERROR]:", error);
         return NextResponse.json({
-            error: "Failed to fetch drive",
+            error: "Failed to fetch job",
             details: error.message
         }, { status: 500 });
     }
 }
 /**
- * PATCH handler to update metadata details for a specific recruitment drive.
+ * PATCH handler to update metadata details for a specific recruitment job.
  *
  * @param {Request} request - The standard incoming API request wrapper.
  * @param {Object} context - URL route mapping parameters.
@@ -115,12 +115,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
  * @returns {Promise<NextResponse>} Success confirmation payload.
  */
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
-    let driveId: string = "";
+    let jobId: string = "";
     try {
         const session = await getSession();
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
         const { id } = await params;
-        driveId = id;
+        jobId = id;
         const rawBody = await request.text();
         if (!rawBody.trim()) {
             return NextResponse.json(
@@ -137,7 +137,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
                 { status: 400 }
             );
         }
-        const result = updateDriveSchema.safeParse(body);
+        const result = updateJobSchema.safeParse(body);
         if (!result.success) {
             return NextResponse.json(
                 { error: "Validation failed", details: result.error.flatten().fieldErrors },
@@ -145,8 +145,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             );
         }
         const data = result.data;
-        const existingDrive = await prisma.drive.findUnique({
-            where: { id: driveId },
+        const existingJob = await prisma.job.findUnique({
+            where: { id: jobId },
             select: {
                 orgId: true,
                 extractedDetails: true,
@@ -154,12 +154,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
                 voiceId: true,
             },
         });
-        if (!existingDrive) {
-            return NextResponse.json({ error: "Drive not found" }, { status: 404 });
+        if (!existingJob) {
+            return NextResponse.json({ error: "Job not found" }, { status: 404 });
         }
         const isSuperAdmin = session.role === "SUPER_ADMIN";
-        if (!isSuperAdmin && existingDrive.orgId !== session.orgId) {
-            return NextResponse.json({ error: "Access Denied: Ownership required to modify drive" }, { status: 403 });
+        if (!isSuperAdmin && existingJob.orgId !== session.orgId) {
+            return NextResponse.json({ error: "Access Denied: Ownership required to modify job" }, { status: 403 });
         }
         const updateData: Record<string, unknown> = {};
         if (data.title !== undefined) updateData.title = data.title;
@@ -168,7 +168,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (data.jdFileName !== undefined) updateData.jdFileName = data.jdFileName;
         if (data.jdPreviewUrl !== undefined) {
             const persistedJdUrl = data.jdPreviewUrl?.startsWith("blob:")
-                ? existingDrive.jdPreviewUrl || null
+                ? existingJob.jdPreviewUrl || null
                 : (data.jdPreviewUrl || null);
             if (persistedJdUrl !== null) {
                 updateData.jdPreviewUrl = persistedJdUrl;
@@ -201,8 +201,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (data.interviewQuestions !== undefined) updateData.interviewQuestions = data.interviewQuestions ? JSON.stringify(data.interviewQuestions) : undefined;
         Object.assign(
             updateData,
-            normalizeDriveAiConfig({
-                current: existingDrive,
+            normalizeJobAiConfig({
+                current: existingJob,
                 next: { voiceId: data.voiceId },
             })
         );
@@ -214,20 +214,20 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
                 { status: 400 }
             );
         }
-        const updated = await prisma.drive.update({
-            where: { id: driveId },
+        const updated = await prisma.job.update({
+            where: { id: jobId },
             data: updateData,
         });
         return NextResponse.json(updated);
     } catch (error: any) {
-        console.error("Error updating drive:", {
-            id: driveId,
+        console.error("Error updating job:", {
+            id: jobId,
             error: error.message,
             stack: error.stack,
             code: error.code
         });
         return NextResponse.json({
-            error: "Failed to update drive",
+            error: "Failed to update job",
             details: error.message,
             code: error.code
         }, { status: 500 });
@@ -238,49 +238,49 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
         const session = await getSession();
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
         const { id } = await params;
-        const driveId = id;
-        const drive = await prisma.drive.findUnique({
-            where: { id: driveId },
+        const jobId = id;
+        const job = await prisma.job.findUnique({
+            where: { id: jobId },
             select: { orgId: true }
         });
-        if (!drive) {
-            return NextResponse.json({ error: "Drive not found" }, { status: 404 });
+        if (!job) {
+            return NextResponse.json({ error: "Job not found" }, { status: 404 });
         }
         const isSuperAdmin = session.role === "SUPER_ADMIN";
-        if (!isSuperAdmin && drive.orgId !== session.orgId) {
-            return NextResponse.json({ error: "Access Denied: Ownership required to remove drive" }, { status: 403 });
+        if (!isSuperAdmin && job.orgId !== session.orgId) {
+            return NextResponse.json({ error: "Access Denied: Ownership required to remove job" }, { status: 403 });
         }
         // -- SOFT DELETE: DATABASE CLEANUP (Cascading) ---------------------------
         // We use raw SQL to handle appending timestamps to unique columns safely.
         await prisma.$transaction(async (tx) => {
             const timestamp = Date.now().toString();
-            // 1. Soft Delete Drive
-            await tx.$executeRaw`UPDATE "Drive" SET "isDeleted" = true WHERE "id" = ${driveId}`;
+            // 1. Soft Delete Job
+            await tx.$executeRaw`UPDATE "Job" SET "isDeleted" = true WHERE "id" = ${jobId}`;
             // 2. Soft Delete Resume Candidates
-            await tx.$executeRaw`UPDATE "ResumeCandidate" SET "isDeleted" = true WHERE "driveId" = ${driveId}`;
+            await tx.$executeRaw`UPDATE "ResumeCandidate" SET "isDeleted" = true WHERE "jobId" = ${jobId}`;
             // 4. Soft Delete Applications
-            await tx.$executeRaw`UPDATE "Application" SET "isDeleted" = true WHERE "driveId" = ${driveId}`;
+            await tx.$executeRaw`UPDATE "Application" SET "isDeleted" = true WHERE "jobId" = ${jobId}`;
             // 5. Soft Delete Interviews (rename applicationId and accessToken)
             await tx.$executeRaw`
                 UPDATE "Interview" 
                 SET "isDeleted" = true, 
                     "applicationId" = 'del_' || ${timestamp} || '_' || "applicationId", 
                     "accessToken" = 'del_' || ${timestamp} || '_' || "accessToken"
-                WHERE "applicationId" IN (SELECT "id" FROM "Application" WHERE "driveId" = ${driveId})
+                WHERE "applicationId" IN (SELECT "id" FROM "Application" WHERE "jobId" = ${jobId})
             `;
             // 6. Soft Delete Support Tickets
             await tx.$executeRaw`
                 UPDATE "SupportTicket" SET "status" = 'DELETED'
                 WHERE "interviewId" IN (
                     SELECT "id" FROM "Interview" WHERE "applicationId" IN (
-                        SELECT "id" FROM "Application" WHERE "driveId" = ${driveId}
+                        SELECT "id" FROM "Application" WHERE "jobId" = ${jobId}
                     )
                 )
             `;
         });
-        return NextResponse.json({ message: "Drive soft-deleted successfully" });
+        return NextResponse.json({ message: "Job soft-deleted successfully" });
     } catch (error) {
-        console.error("Error deleting drive:", error);
-        return NextResponse.json({ error: "Failed to delete drive" }, { status: 500 });
+        console.error("Error deleting job:", error);
+        return NextResponse.json({ error: "Failed to delete job" }, { status: 500 });
     }
 }

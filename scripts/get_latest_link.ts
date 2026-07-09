@@ -3,7 +3,7 @@ const prisma = new PrismaClient();
 async function main() {
   const latestApplication = await prisma.application.findFirst({
     orderBy: { createdAt: "desc" },
-    include: { drive: true, interview: true },
+    include: { job: true, interview: true },
   });
   if (!latestApplication) {
     console.log("No applications found in the database.");
@@ -13,7 +13,7 @@ async function main() {
   console.log("--- LATEST CANDIDATE ---");
   console.log(`Name: ${latestApplication.fullName}`);
   console.log(`Email: ${latestApplication.email}`);
-  console.log(`Applied for: ${latestApplication.drive.title}`);
+  console.log(`Applied for: ${latestApplication.job.title}`);
   console.log(`Application ID: ${latestApplication.id}`);
   console.log("-----------------------");
   console.log(`\n👉 TEST INTERVIEW LINK: ${interviewLink}\n`);

@@ -36,11 +36,11 @@ export async function GET(request: Request) {
             voiceId: string | null;
             allowedVoices: string[] | null;
             sttModel: string | null;
-            maxActiveDrives: string | null;
+            maxActiveJobs: string | null;
             proctoringSignals: unknown;
             interviewQuotaTotal: number | null;
             interviewQuotaUsed: number | null;
-            activeDriveCount: number | null;
+            activeJobCount: number | null;
         }>>(
             Prisma.sql`
                 SELECT
@@ -52,15 +52,15 @@ export async function GET(request: Request) {
                     o."voiceId",
                     o."allowedVoices",
                     o."sttModel",
-                    o."maxActiveDrives",
+                    o."maxActiveJobs",
                     o."proctoringSignals",
                     o."interviewQuotaTotal",
                     o."interviewQuotaUsed",
                     (
                         SELECT COUNT(*)
-                        FROM "Drive" d
+                        FROM "Job" d
                         WHERE d."orgId" = o.id AND d."isDeleted" = false
-                    )::INT AS "activeDriveCount"
+                    )::INT AS "activeJobCount"
                 FROM "Organization" o
                 WHERE o.id = ${orgId} AND o."isDeleted" = false
                 LIMIT 1
@@ -77,7 +77,7 @@ export async function GET(request: Request) {
         return NextResponse.json({
             ...org,
             status: effectiveStatus,
-            activeDriveCount: Number(org.activeDriveCount ?? 0),
+            activeJobCount: Number(org.activeJobCount ?? 0),
         }, {
             headers: { 'Cache-Control': 'private, max-age=120' }
         });
@@ -96,7 +96,7 @@ export async function PATCH(req: Request) {
         const { name } = body;
         const data: Record<string, any> = {};
         if (name !== undefined) data.name = name;
-        const updatedOrg = await prisma.organization.update({
+        const updatedOrg = await prisma.organizationDetails.update({
             where: { id: session.orgId },
             data
         });

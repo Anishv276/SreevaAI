@@ -36,10 +36,10 @@ export async function GET() {
             trends,
             recentlyActiveOrgs,
         ] = await Promise.all([
-            prisma.organization.count(),
+            prisma.organizationDetails.count(),
             prisma.$queryRaw<Array<{
                 totalAdmins: number;
-                totalDrives: number;
+                totalJobs: number;
                 totalCandidates: number;
                 totalShortlisted: number;
                 totalInterviewed: number;
@@ -49,7 +49,7 @@ export async function GET() {
             }>>`
                 SELECT
                     (SELECT COUNT(*)::INT FROM "SuperAdmin" WHERE "isDeleted" = false) AS "totalAdmins",
-                    (SELECT COUNT(*)::INT FROM "Drive" WHERE "isDeleted" = false) AS "totalDrives",
+                    (SELECT COUNT(*)::INT FROM "Job" WHERE "isDeleted" = false) AS "totalJobs",
                     (SELECT COUNT(*)::INT FROM "Application" WHERE "isDeleted" = false) AS "totalCandidates",
                     (SELECT COUNT(*)::INT FROM "Application" WHERE "isDeleted" = false AND UPPER("resumeStatus") = 'SHORTLISTED') AS "totalShortlisted",
                     (SELECT COUNT(*)::INT FROM "Interview" WHERE "isDeleted" = false AND "status" = 'COMPLETED') AS "totalInterviewed",
@@ -78,8 +78,8 @@ export async function GET() {
             prisma.$queryRaw<Array<InterviewRow>>(Prisma.sql`
                 SELECT o.name, COUNT(i.id)::INT AS count
                 FROM "Organization" o
-                JOIN "Drive" d ON d."orgId" = o.id
-                JOIN "Application" a ON a."driveId" = d.id
+                JOIN "Job" d ON d."orgId" = o.id
+                JOIN "Application" a ON a."jobId" = d.id
                 JOIN "Interview" i ON i."applicationId" = a.id
                 WHERE o."isDeleted" = false AND d."isDeleted" = false AND a."isDeleted" = false AND i."isDeleted" = false
                 GROUP BY o.id, o.name
@@ -89,8 +89,8 @@ export async function GET() {
             prisma.$queryRaw<Array<{ totalInterviews: number }>>(Prisma.sql`
                 SELECT COUNT(i.id)::INT AS "totalInterviews"
                 FROM "Organization" o
-                JOIN "Drive" d ON d."orgId" = o.id
-                JOIN "Application" a ON a."driveId" = d.id
+                JOIN "Job" d ON d."orgId" = o.id
+                JOIN "Application" a ON a."jobId" = d.id
                 JOIN "Interview" i ON i."applicationId" = a.id
                 WHERE o."isDeleted" = false AND d."isDeleted" = false AND a."isDeleted" = false AND i."isDeleted" = false
             `),
@@ -114,18 +114,18 @@ export async function GET() {
                     ) org_activity
                     UNION ALL
                     SELECT * FROM (
-                        SELECT 'DRIVE'::text AS type, d.title AS detail, COALESCE(o.name, '')::text AS org, d."createdAt" AS at
-                        FROM "Drive" d
+                        SELECT 'JOB'::text AS type, d.title AS detail, COALESCE(o.name, '')::text AS org, d."createdAt" AS at
+                        FROM "Job" d
                         LEFT JOIN "Organization" o ON o.id = d."orgId"
                         WHERE d."isDeleted" = false
                         ORDER BY d."createdAt" DESC
                         LIMIT 10
-                    ) drive_activity
+                    ) job_activity
                     UNION ALL
                     SELECT * FROM (
                         SELECT 'CANDIDATE'::text AS type, a."fullName" AS detail, COALESCE(o.name, '')::text AS org, a."createdAt" AS at
                         FROM "Application" a
-                        LEFT JOIN "Drive" d ON d.id = a."driveId"
+                        LEFT JOIN "Job" d ON d.id = a."jobId"
                         LEFT JOIN "Organization" o ON o.id = d."orgId"
                         WHERE a."isDeleted" = false
                         ORDER BY a."createdAt" DESC
@@ -136,7 +136,7 @@ export async function GET() {
                         SELECT 'INTERVIEW'::text AS type, 'Completed'::text AS detail, COALESCE(o.name, '')::text AS org, i."completedAt" AS at
                         FROM "Interview" i
                         JOIN "Application" a ON a.id = i."applicationId"
-                        LEFT JOIN "Drive" d ON d.id = a."driveId"
+                        LEFT JOIN "Job" d ON d.id = a."jobId"
                         LEFT JOIN "Organization" o ON o.id = d."orgId"
                         WHERE i."isDeleted" = false AND a."isDeleted" = false AND i."status" = 'COMPLETED' AND i."completedAt" IS NOT NULL
                         ORDER BY i."completedAt" DESC
@@ -151,26 +151,26 @@ export async function GET() {
                 orgsPrev: number;
                 adminsNew: number;
                 adminsPrev: number;
-                drivesNew: number;
-                drivesPrev: number;
+                jobsNew: number;
+                jobsPrev: number;
                 candidatesNew: number;
                 candidatesPrev: number;
             }>>`
                 SELECT
                     (SELECT COUNT(*)::INT FROM "Organization" WHERE "isDeleted" = false AND "createdAt" >= ${lastWeek}) AS "orgsNew",
                     (SELECT COUNT(*)::INT FROM "Organization" WHERE "isDeleted" = false AND "createdAt" >= ${twoWeeksAgo} AND "createdAt" < ${lastWeek}) AS "orgsPrev",
-                    (SELECT COUNT(*)::INT FROM "SuperAdmin" WHERE "isDeleted" = false AND "createdAt" >= ${lastWeek}) AS "adminsNew",
-                    (SELECT COUNT(*)::INT FROM "SuperAdmin" WHERE "isDeleted" = false AND "createdAt" >= ${twoWeeksAgo} AND "createdAt" < ${lastWeek}) AS "adminsPrev",
-                    (SELECT COUNT(*)::INT FROM "Drive" WHERE "isDeleted" = false AND "createdAt" >= ${lastWeek}) AS "drivesNew",
-                    (SELECT COUNT(*)::INT FROM "Drive" WHERE "isDeleted" = false AND "createdAt" >= ${twoWeeksAgo} AND "createdAt" < ${lastWeek}) AS "drivesPrev",
+                    (SELECT COUNT(*)::INT FROM "SuperAdmin" WHERE "isDeleted" = false AND "accountCreatedAt" >= ${lastWeek}) AS "adminsNew",
+                    (SELECT COUNT(*)::INT FROM "SuperAdmin" WHERE "isDeleted" = false AND "accountCreatedAt" >= ${twoWeeksAgo} AND "accountCreatedAt" < ${lastWeek}) AS "adminsPrev",
+                    (SELECT COUNT(*)::INT FROM "Job" WHERE "isDeleted" = false AND "createdAt" >= ${lastWeek}) AS "jobsNew",
+                    (SELECT COUNT(*)::INT FROM "Job" WHERE "isDeleted" = false AND "createdAt" >= ${twoWeeksAgo} AND "createdAt" < ${lastWeek}) AS "jobsPrev",
                     (SELECT COUNT(*)::INT FROM "Application" WHERE "isDeleted" = false AND "createdAt" >= ${lastWeek}) AS "candidatesNew",
                     (SELECT COUNT(*)::INT FROM "Application" WHERE "isDeleted" = false AND "createdAt" >= ${twoWeeksAgo} AND "createdAt" < ${lastWeek}) AS "candidatesPrev"
             `,
             prisma.$queryRaw<Array<{ count: number }>>`
                 SELECT COUNT(DISTINCT o.id)::INT AS count
                 FROM "Organization" o
-                JOIN "Drive" d ON d."orgId" = o.id
-                JOIN "Application" a ON a."driveId" = d.id
+                JOIN "Job" d ON d."orgId" = o.id
+                JOIN "Application" a ON a."jobId" = d.id
                 JOIN "Interview" i ON i."applicationId" = a.id
                 WHERE o."isDeleted" = false AND d."isDeleted" = false AND a."isDeleted" = false AND i."isDeleted" = false AND i."status" = 'COMPLETED' AND i."completedAt" >= ${thirtyDaysAgo}
             `,
@@ -231,7 +231,7 @@ export async function GET() {
             suspendedOrgs,
             closedOrgs,
             totalAdmins: Number(c.totalAdmins || 0),
-            totalDrives: Number(c.totalDrives || 0),
+            totalJobs: Number(c.totalJobs || 0),
             totalCandidates: Number(c.totalCandidates || 0),
             totalShortlisted: Number(c.totalShortlisted || 0),
             totalInterviewed: Number(c.totalInterviewed || 0),
@@ -251,7 +251,7 @@ export async function GET() {
             trends: {
                 orgs: calc(Number(t.orgsNew), Number(t.orgsPrev)),
                 admins: calc(Number(t.adminsNew), Number(t.adminsPrev)),
-                drives: calc(Number(t.drivesNew), Number(t.drivesPrev)),
+                jobs: calc(Number(t.jobsNew), Number(t.jobsPrev)),
                 candidates: calc(Number(t.candidatesNew), Number(t.candidatesPrev)),
             },
         }, {

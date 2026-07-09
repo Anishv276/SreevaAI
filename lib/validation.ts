@@ -1,9 +1,9 @@
 import { z } from "zod";
-export const driveIdSchema = z.object({
-  id: z.string().min(1, "Drive ID is required"),
+export const jobIdSchema = z.object({
+  id: z.string().min(1, "Job ID is required"),
 });
-export const createDriveSchema = z.object({
-  title: z.preprocess((val) => (typeof val === 'string' && val.trim() !== '') ? val : "Untitled Drive", z.string().min(1).max(200)),
+export const createJobSchema = z.object({
+  title: z.preprocess((val) => (typeof val === 'string' && val.trim() !== '') ? val : "Untitled Job", z.string().min(1).max(200)),
   role: z.string().optional(),
   deadline: z.preprocess((val) => {
     if (typeof val !== "string") return val ?? undefined;
@@ -21,7 +21,7 @@ export const createDriveSchema = z.object({
   screeningCriteria: z.union([z.string(), z.record(z.string(), z.any())]).optional(),
   interviewMode: z.enum(["ats", "interview-only"]).optional(),
 });
-export const updateDriveSchema = createDriveSchema.partial();
+export const updateJobSchema = createJobSchema.partial();
 export const bulkDeleteSchema = z.object({
   ids: z.array(z.string()).min(1, "At least one ID required"),
 });
@@ -29,7 +29,7 @@ export const candidateIdSchema = z.object({
   id: z.string().min(1, "Candidate ID is required"),
 });
 export const createCandidateSchema = z.object({
-  driveId: z.string().min(1, "Valid drive ID required"),
+  jobId: z.string().min(1, "Valid job ID required"),
   fullName: z.string().min(1, "Full name is required").max(100),
   email: z.string().email("Valid email required"),
   phone: z.string()
@@ -76,17 +76,17 @@ export const presignedUrlSchema = z.object({
   fileName: z.string().min(1, "File name required").max(255),
   fileType: z.string().min(1, "File type required").regex(/^[\w-]+\/[\w-]+$/, "Invalid MIME type"),
   fileSize: z.number().max(10 * 1024 * 1024, "File size must be less than 10MB").optional(),
-  driveId: z.string().optional(),
+  jobId: z.string().optional(),
   type: z.enum(["JD", "RESUME"]).optional().default("RESUME"),
 });
 export const extractSchema = z.object({
   type: z.enum(["JD", "RESUME"]),
   url: z.string().url().optional(),
 });
-export const driveQuerySchema = z.object({
+export const jobQuerySchema = z.object({
 });
 export const candidateQuerySchema = z.object({
-  driveId: z.string().optional(),
+  jobId: z.string().optional(),
 });
 export const interviewFinalizeSchema = z.object({
   applicationId: z.string().min(1, "Application ID required"),

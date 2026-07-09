@@ -19,7 +19,7 @@ export async function GET(
         const limit   = Math.min(250, Math.max(1, parseInt(searchParams.get("limit") || "50")));
         const offset  = (page - 1) * limit;
         const search  = searchParams.get("search")?.trim() || "";
-        const driveId = searchParams.get("driveId") || "";
+        const jobId = searchParams.get("jobId") || "";
         const resumeStatus    = searchParams.get("resumeStatus")    || "";
         const interviewStatus = searchParams.get("interviewStatus") || "";
         const startDate = searchParams.get("startDate") || "";
@@ -27,11 +27,11 @@ export async function GET(
 
         const where: any = {
             isDeleted: false,
-            drive: { orgId, isDeleted: false },
+            job: { orgId, isDeleted: false },
         };
 
-        if (driveId && driveId !== "all") {
-            where.driveId = driveId;
+        if (jobId && jobId !== "all") {
+            where.jobId = jobId;
         }
         if (resumeStatus && resumeStatus !== "all") {
             where.resumeStatus = { contains: resumeStatus, mode: "insensitive" };
@@ -48,17 +48,17 @@ export async function GET(
             where.OR = [
                 { fullName: { contains: search, mode: "insensitive" } },
                 { email:    { contains: search, mode: "insensitive" } },
-                { drive: { title: { contains: search, mode: "insensitive" } } },
+                { job: { title: { contains: search, mode: "insensitive" } } },
             ];
         }
 
-        const orgWhere = { isDeleted: false, drive: { orgId, isDeleted: false } };
+        const orgWhere = { isDeleted: false, job: { orgId, isDeleted: false } };
 
-        const [candidates, total, drives, shortlisted, rejected, interviewRunning, interviewPending, interviewCompleted] = await Promise.all([
+        const [candidates, total, jobs, shortlisted, rejected, interviewRunning, interviewPending, interviewCompleted] = await Promise.all([
             prisma.application.findMany({
                 where,
                 include: {
-                    drive: { select: { id: true, title: true, role: true } },
+                    job: { select: { id: true, title: true, role: true } },
                     interview: {
                         select: {
                             status: true,
@@ -73,7 +73,7 @@ export async function GET(
                 take: limit,
             }),
             prisma.application.count({ where }),
-            prisma.drive.findMany({
+            prisma.job.findMany({
                 where: { orgId, isDeleted: false },
                 select: { id: true, title: true, role: true },
                 orderBy: { createdAt: "desc" },
@@ -97,9 +97,9 @@ export async function GET(
                 interviewStatus: a.interviewStatus,
                 createdAt:       a.createdAt,
                 updatedAt:       a.updatedAt,
-                driveId:         a.driveId,
-                driveTitle:      a.drive?.title ?? null,
-                driveRole:       a.drive?.role  ?? null,
+                jobId:         a.jobId,
+                jobTitle:      a.job?.title ?? null,
+                jobRole:       a.job?.role  ?? null,
                 interview: a.interview ? {
                     status:         a.interview.status,
                     completedAt:    a.interview.completedAt,
@@ -113,7 +113,7 @@ export async function GET(
                 limit,
                 totalPages: Math.ceil(total / limit),
             },
-            drives,
+            jobs,
             stats: {
                 shortlisted,
                 rejected,

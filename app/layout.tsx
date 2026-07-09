@@ -14,7 +14,7 @@ export const metadata: Metadata = {
     default: "Sreeva AI - AI-Powered Recruitment Platform",
     template: "%s | Sreeva AI",
   },
-  description: "Automate your hiring process with AI-driven screening and interviews using adaptive intelligence.",
+  description: "Automate your hiring process with AI-jobn screening and interviews using adaptive intelligence.",
   keywords: ["AI Recruitment", "AI Interviewer", "Candidate Screening", "SreevaAI", "Adaptive AI", "Sreeva AI", "technical interview automation", "automated hiring"],
   authors: [{ name: "Sreeva AI Team" }],
   metadataBase: new URL("https://www.sreevaai.com"),
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
   // No root canonical -- each page declares its own via page-level metadata
   openGraph: {
     title: "Sreeva AI - AI-Powered Recruitment Platform",
-    description: "Automate your hiring process with AI-driven screening and interviews using adaptive intelligence.",
+    description: "Automate your hiring process with AI-jobn screening and interviews using adaptive intelligence.",
     url: "https://www.sreevaai.com",
     siteName: "Sreeva AI",
     images: [
@@ -43,7 +43,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "Sreeva AI - AI-Powered Recruitment Platform",
-    description: "Automate your hiring process with AI-driven screening and interviews using adaptive intelligence.",
+    description: "Automate your hiring process with AI-jobn screening and interviews using adaptive intelligence.",
     images: [{ url: "/og-image.png", alt: "Sreeva AI — adaptive AI interviewer for first-round hiring" }],
   },
   robots: {

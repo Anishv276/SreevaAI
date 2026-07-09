@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GET as getStats } from "@/app/api/admin/stats/route";
-import { GET as getDrivesSummary } from "@/app/api/admin/drives-summary/route";
+import { GET as getJobsSummary } from "@/app/api/admin/jobs-summary/route";
 import { GET as getScoreDistribution } from "@/app/api/admin/score-distribution/route";
 import { GET as getTopCandidates } from "@/app/api/admin/top-candidates/route";
 import { GET as getNeedsAction } from "@/app/api/admin/needs-action/route";
@@ -10,14 +10,14 @@ export async function GET(req: NextRequest) {
     try {
         const [
             statsRes,
-            drivesRes,
+            jobsRes,
             scoreRes,
             topRes,
             needsRes,
             activityRes
         ] = await Promise.all([
             getStats(req),
-            getDrivesSummary(req),
+            getJobsSummary(req),
             getScoreDistribution(req),
             getTopCandidates(req),
             getNeedsAction(),
@@ -30,14 +30,14 @@ export async function GET(req: NextRequest) {
 
         const [
             stats,
-            drivesSummary,
+            jobsSummary,
             scoreDistribution,
             topCandidates,
             needsAction,
             activity
         ] = await Promise.all([
             statsRes.json().catch(() => ({})),
-            drivesRes.json().catch(() => ({ drives: [] })),
+            jobsRes.json().catch(() => ({ jobs: [] })),
             scoreRes.json().catch(() => ({ total: 0, distribution: [] })),
             topRes.json().catch(() => ({ candidates: [] })),
             needsRes.json().catch(() => ({})),
@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
 
         const response = NextResponse.json({
             stats,
-            drivesSummary,
+            jobsSummary,
             scoreDistribution,
             topCandidates,
             needsAction,

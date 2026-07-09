@@ -13,7 +13,7 @@ import { FaceProctoring } from "@/components/careers/interview/FaceProctoring";
 import { HardwareHeartbeat } from "@/components/careers/interview/HardwareHeartbeat";
 import { ConnectionProctoring } from "@/components/careers/interview/ConnectionProctoring";
 import { CandidateRatingForm } from "@/components/careers/interview/CandidateRatingForm";
-import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/drive-limits";
+import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/job-limits";
 import { useSearchParams } from "next/navigation";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { BASIC_PLAN_SIGNALS, normalizeProctoringSignals } from "@/lib/proctoring-signals";
@@ -235,7 +235,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             platform: navigator.platform,
             userAgent: navigator.userAgent,
             hardwareConcurrency: navigator.hardwareConcurrency ?? null,
-            deviceMemory: (navigator as Record<string, unknown>).deviceMemory ?? null,
+            deviceMemory: (navigator as unknown as Record<string, unknown>).deviceMemory ?? null,
             canvasHash,
             sessionId: (() => { try { return sessionStorage.getItem("fp_session_id") || ""; } catch { return ""; } })(),
             collectedAt: Date.now(),
@@ -278,7 +278,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         setPhase("check");
                     } else {
                         const titleMap: Record<string, string> = {
-                            DRIVE_CLOSED: "Job Posting Expired",
+                            JOB_CLOSED: "Job Posting Expired",
                             LINK_EXPIRED: "Link Expired",
                             SLOT_EXPIRED: "Slot Expired",
                             NOT_SCHEDULED: "Not Scheduled",
@@ -544,7 +544,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 const errorCode = String(data?.code || "").toUpperCase();
                 const isInProgress = errorCode === "INTERVIEW_IN_PROGRESS" || /in progress/i.test(apiError);
                 const isCompleted = errorCode === "INTERVIEW_COMPLETED";
-                const isDriveClosed = errorCode === "DRIVE_CLOSED";
+                const isJobClosed = errorCode === "JOB_CLOSED";
                 const isSlotExpired = errorCode === "SLOT_EXPIRED";
                 const isTooEarly = errorCode === "TOO_EARLY";
                 const isLinkExpired = errorCode === "LINK_EXPIRED";
@@ -562,7 +562,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         message: apiError,
                     };
                 }
-                if (isDriveClosed) {
+                if (isJobClosed) {
                     return {
                         ok: false,
                         title: "Job posting expired",
@@ -753,7 +753,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 if (res.ok) return;
                 const errorCode = String(data?.code || "").toUpperCase();
                 const errorMessage = String(data?.error || data?.message || "Unable to record interview start.");
-                if (res.status === 401 || res.status === 403 || errorCode === "LINK_EXPIRED" || errorCode === "DRIVE_CLOSED") {
+                if (res.status === 401 || res.status === 403 || errorCode === "LINK_EXPIRED" || errorCode === "JOB_CLOSED") {
                     await resetToHardwareCheck(errorMessage);
                     return;
                 }
@@ -823,7 +823,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 setPhase("launching");
                 const durationSeconds = sessionDurationRef.current;
                 if (typeof durationSeconds !== "number" || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
-                    throw new Error("Interview duration is not configured for this drive.");
+                    throw new Error("Interview duration is not configured for this job.");
                 }
                 await requestFullscreenMode();
                 if (lkRoomRef.current) {

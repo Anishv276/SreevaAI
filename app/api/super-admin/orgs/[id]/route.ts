@@ -24,10 +24,10 @@ export async function GET(
             return NextResponse.json({ error: "Unauthorized access" }, { status: 403 });
         }
         const { id } = await params;
-        const org = await prisma.organization.findUnique({
+        const org = await prisma.organizationDetails.findUnique({
             where: { id },
             include: {
-                users: {
+                organizationCredentials: {
                     select: { id: true, name: true, email: true }
                 }
             }
@@ -50,7 +50,7 @@ export async function GET(
         const effectiveStatus = await getEffectiveOrgStatus(id);
         return NextResponse.json({
             ...org,
-            status: String(effectiveStatus || org.status || "ACTIVE").toUpperCase(),
+            status: String(effectiveStatus || org.orgStatus || "ACTIVE").toUpperCase(),
             interviewQuotaTotal: billingRows[0]?.interviewQuotaTotal ?? 0,
             interviewQuotaUsed: billingRows[0]?.interviewQuotaUsed ?? 0,
             creditsUsed: billingRows[0]?.creditsUsed ?? 0,
@@ -74,7 +74,7 @@ export async function PATCH(
         const rawBody = await request.text();
         const body = rawBody.trim() ? JSON.parse(rawBody) : {};
         const {
-            name, plan, status, slug, maxActiveDrives,
+            name, plan, status, slug, maxActiveJobs,
             recordingEnabled, recordingRetentionDays,
             proctoringSignals,
             adminEmail,
@@ -91,17 +91,17 @@ export async function PATCH(
             interviewQuotaTotal !== undefined ? Math.max(0, Math.round(Number(interviewQuotaTotal) || 0)) : undefined;
         const shouldApplyInterviewQuotaTopUp =
             parsedInterviewQuotaTopUp !== undefined && parsedInterviewQuotaTopUp > 0;
-        const existingOrg = await prisma.organization.findUnique({
+        const existingOrg = await prisma.organizationDetails.findUnique({
             where: { id },
             select: {
-                status: true,
-                interviewQuotaTotal: true,
-                interviewQuotaUsed: true,
-                plan: true,
-                voiceId: true,
-                allowedVoices: true,
-                recordingEnabled: true,
-                recordingRetentionDays: true,
+                orgStatus: true,
+                totalInterviewsAllowed: true,
+                totalInterviewsUsed: true,
+                billingPlan: true,
+                defaultVoiceId: true,
+                allowedVoiceIds: true,
+                isRecordingEnabled: true,
+                recordingKeepForDays: true,
             },
         });
         if (!existingOrg) {
@@ -135,7 +135,7 @@ export async function PATCH(
                 return NextResponse.json({ error: "usageMetrics must be an object or JSON string" }, { status: 400 });
             }
         }
-        const currentInterviewQuotaTotal = Math.max(0, Math.round(Number(existingOrg.interviewQuotaTotal || 0)));
+        const currentInterviewQuotaTotal = Math.max(0, Math.round(Number(existingOrg.totalInterviewsAllowed || 0)));
         const shouldUpdateInterviewQuotaTotal =
             parsedInterviewQuotaTotal !== undefined &&
             !isNaN(parsedInterviewQuotaTotal) &&
@@ -146,7 +146,7 @@ export async function PATCH(
             name === undefined &&
             plan === undefined &&
             slug === undefined &&
-            maxActiveDrives === undefined &&
+            maxActiveJobs === undefined &&
             recordingEnabled === undefined &&
             recordingRetentionDays === undefined &&
             proctoringSignals === undefined &&
@@ -175,23 +175,23 @@ export async function PATCH(
         // Build update - only write fields that were sent
         const updateData: Record<string, unknown> = {};
         if (name !== undefined) updateData.name = name;
-        if (plan !== undefined) updateData.plan = normalizedPlan || plan;
-        if (maxActiveDrives !== undefined && String(maxActiveDrives).trim() !== "") {
-            updateData.maxActiveDrives = normalizeOrgLimitInput(maxActiveDrives);
+        if (plan !== undefined) updateData.billingPlan = normalizedPlan || plan;
+        if (maxActiveJobs !== undefined && String(maxActiveJobs).trim() !== "") {
+            updateData.maxActiveJobs = normalizeOrgLimitInput(maxActiveJobs);
         }
         if (maxConcurrentSlots !== undefined && maxConcurrentSlots !== null) {
-            updateData.maxConcurrentSlots = Math.max(1, parseInt(maxConcurrentSlots));
+            updateData.maxConcurrentInterviews = Math.max(1, parseInt(maxConcurrentSlots));
         }
         if (proctoringSignals !== undefined) {
-            updateData.proctoringSignals = normalizeProctoringSignals(proctoringSignals);
+            updateData.enabledProctoringSignals = normalizeProctoringSignals(proctoringSignals);
         }
         if (status !== undefined) {
-            updateData.status = directStatus;
+            updateData.orgStatus = directStatus;
         }
-        if (slug !== undefined) updateData.slug = slug;
-        const currentRecordingRetentionDays = normalizeRecordingRetentionDays(existingOrg.recordingRetentionDays);
+        if (slug !== undefined) updateData.urlSlug = slug;
+        const currentRecordingRetentionDays = normalizeRecordingRetentionDays(existingOrg.recordingKeepForDays);
         const currentRecordingEnabled =
-            existingOrg.recordingEnabled === true && currentRecordingRetentionDays !== null;
+            existingOrg.isRecordingEnabled === true && currentRecordingRetentionDays !== null;
         const recordingEnabledProvided = recordingEnabled !== undefined;
         const recordingRetentionProvided = recordingRetentionDays !== undefined;
         const nextRecordingEnabled = recordingEnabledProvided
@@ -207,11 +207,11 @@ export async function PATCH(
             );
         }
         if (recordingEnabledProvided || recordingRetentionProvided) {
-            updateData.recordingEnabled = nextRecordingEnabled ? true : null;
-            updateData.recordingRetentionDays = nextRecordingEnabled ? nextRecordingRetentionDays : null;
+            updateData.isRecordingEnabled = nextRecordingEnabled ? true : null;
+            updateData.recordingKeepForDays = nextRecordingEnabled ? nextRecordingRetentionDays : null;
         }
         if (shouldUpdateInterviewQuotaTotal) {
-            updateData.interviewQuotaTotal = parsedInterviewQuotaTotal;
+            updateData.totalInterviewsAllowed = parsedInterviewQuotaTotal;
         }
         Object.assign(
             updateData,
@@ -238,7 +238,7 @@ export async function PATCH(
         if (adminEmail) {
             const normalizedEmail = normalizeEmail(adminEmail);
             const [existingUser, existingSuperAdmin] = await Promise.all([
-                prisma.user.findFirst({
+                prisma.organizationCredentials.findFirst({
                     where: {
                         email: {
                             equals: normalizedEmail,
@@ -262,9 +262,9 @@ export async function PATCH(
             }
             if (existingUser) {
                 // Find the actual primary admin for this org
-                const currentAdmin = await prisma.user.findFirst({
-                    where: { orgId: id },
-                    orderBy: { createdAt: "asc" }
+                const currentAdmin = await prisma.organizationCredentials.findFirst({
+                    where: { organizationId: id },
+                    orderBy: { accountCreatedAt: "asc" }
                 });
                 // Conflict: Email belongs to SOMEONE ELSE
                 if (currentAdmin && existingUser.id !== currentAdmin.id) {
@@ -284,7 +284,7 @@ export async function PATCH(
         let primaryAdminId: string | null = null;
         const updated = await prisma.$transaction(async (tx) => {
             // 1. Update Org
-            const org = await tx.organization.update({
+            const org = await tx.organizationDetails.update({
                 where: { id },
                 data: updateData,
             });
@@ -309,9 +309,9 @@ export async function PATCH(
             // 2. Update Primary Admin if email/password provided
             if (adminEmail !== undefined || (adminPassword !== undefined && String(adminPassword).trim())) {
                 // Find the first org user
-                const admin = await tx.user.findFirst({
-                    where: { orgId: id },
-                    orderBy: { createdAt: "asc" }
+                const admin = await tx.organizationCredentials.findFirst({
+                    where: { organizationId: id },
+                    orderBy: { accountCreatedAt: "asc" }
                 });
                 if (admin) {
                     primaryAdminId = admin.id;
@@ -321,7 +321,7 @@ export async function PATCH(
                         adminUpdate.password = await bcrypt.hash(String(adminPassword).trim(), 10);
                     }
                     if (Object.keys(adminUpdate).length > 0) {
-                        await tx.user.update({
+                        await tx.organizationCredentials.update({
                             where: { id: admin.id },
                             data: adminUpdate
                         });
@@ -347,12 +347,13 @@ export async function PATCH(
                 creditsUsed: billingRows[0]?.creditsUsed ?? 0,
             };
         });
+        const result: Record<string, unknown> = { ...updated };
         if (shouldSyncQuotaStatus || directStatus === "ACTIVE") {
             const syncedStatus = await syncOrgStatusWithInterviewQuota(id);
             if (syncedStatus) {
-                updated.status = String(syncedStatus).toUpperCase();
+                result.status = String(syncedStatus).toUpperCase();
             }
-            updated.statusControl =
+            result.statusControl =
                 directStatus === "ACTIVE"
                     ? ORG_STATUS_CONTROL_QUOTA
                     : nextStatusControl ?? currentStatusControl;
@@ -360,7 +361,7 @@ export async function PATCH(
         if (primaryAdminId && adminPassword !== undefined && String(adminPassword).trim()) {
             await invalidateUserSessions(primaryAdminId);
         }
-        return NextResponse.json(updated);
+        return NextResponse.json(result);
     } catch (error) {
         console.error("Error updating org:", error);
         return NextResponse.json({ error: "Failed to update organization" }, { status: 500 });
@@ -384,18 +385,18 @@ export async function DELETE(
             // 1. Soft Delete Organization (rename slug)
             await tx.$executeRaw`UPDATE "Organization" SET "isDeleted" = true, "slug" = 'del_' || ${timestamp} || '_' || "slug" WHERE "id" = ${id}`;
             // 2. Soft Delete Users (rename email)
-            await tx.$executeRaw`UPDATE "User" SET "isDeleted" = true, "email" = 'del_' || ${timestamp} || '_' || "email" WHERE "orgId" = ${id}`;
-            // 3. Soft Delete Drives
-            await tx.$executeRaw`UPDATE "Drive" SET "isDeleted" = true WHERE "orgId" = ${id}`;
+            await tx.$executeRaw`UPDATE "OrganizationCredentials" SET "isDeleted" = true, "email" = 'del_' || ${timestamp} || '_' || "email" WHERE "organizationId" = ${id}`;
+            // 3. Soft Delete Jobs
+            await tx.$executeRaw`UPDATE "Job" SET "isDeleted" = true WHERE "orgId" = ${id}`;
             // 4. Soft Delete Resume Candidates
             await tx.$executeRaw`
                 UPDATE "ResumeCandidate" SET "isDeleted" = true 
-                WHERE "driveId" IN (SELECT "id" FROM "Drive" WHERE "orgId" = ${id})
+                WHERE "jobId" IN (SELECT "id" FROM "Job" WHERE "orgId" = ${id})
             `;
             // 6. Soft Delete Applications
             await tx.$executeRaw`
                 UPDATE "Application" SET "isDeleted" = true 
-                WHERE "driveId" IN (SELECT "id" FROM "Drive" WHERE "orgId" = ${id})
+                WHERE "jobId" IN (SELECT "id" FROM "Job" WHERE "orgId" = ${id})
             `;
             // 7. Soft Delete Interviews (rename applicationId and accessToken)
             await tx.$executeRaw`
@@ -404,8 +405,8 @@ export async function DELETE(
                     "applicationId" = 'del_' || ${timestamp} || '_' || "applicationId", 
                     "accessToken" = 'del_' || ${timestamp} || '_' || "accessToken"
                 WHERE "applicationId" IN (
-                    SELECT "id" FROM "Application" WHERE "driveId" IN (
-                        SELECT "id" FROM "Drive" WHERE "orgId" = ${id}
+                    SELECT "id" FROM "Application" WHERE "jobId" IN (
+                        SELECT "id" FROM "Job" WHERE "orgId" = ${id}
                     )
                 )
             `;
@@ -414,8 +415,8 @@ export async function DELETE(
                 UPDATE "SupportTicket" SET "status" = 'DELETED'
                 WHERE "interviewId" IN (
                     SELECT "id" FROM "Interview" WHERE "applicationId" IN (
-                        SELECT "id" FROM "Application" WHERE "driveId" IN (
-                            SELECT "id" FROM "Drive" WHERE "orgId" = ${id}
+                        SELECT "id" FROM "Application" WHERE "jobId" IN (
+                            SELECT "id" FROM "Job" WHERE "orgId" = ${id}
                         )
                     )
                 )

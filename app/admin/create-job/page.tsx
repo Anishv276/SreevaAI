@@ -2,38 +2,38 @@
 import { useState, useRef, useEffect, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "@/components/ui/toast-custom";
-import { JobDescription } from "@/components/create-drive/job-description";
-import { InterviewSetup } from "@/components/create-drive/interview-setup";
-import { ScreeningSettings } from "@/components/create-drive/screening-settings";
+import { JobDescription } from "@/components/create-job/job-description";
+import { InterviewSetup } from "@/components/create-job/interview-setup";
+import { ScreeningSettings } from "@/components/create-job/screening-settings";
 import { useJobs } from "@/context/jobs-context";
 import { cn } from "@/lib/utils";
 import { getInterviewActionBlockedMessage, getInterviewQuotaSupportMessage, getSupportComposeUrl, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { canUseMultilingual } from "@/lib/org-plans";
-import { parseDriveScreeningSettings, sanitizeScreeningCriteria, type ScreeningCriteria } from "@/lib/screening-criteria";
-import { formatDriveLimit, getActiveDriveCount, isDriveCreationLocked } from "@/lib/drive-limits";
+import { parseJobScreeningSettings, sanitizeScreeningCriteria, type ScreeningCriteria } from "@/lib/screening-criteria";
+import { formatJobLimit, getActiveJobCount, isJobCreationLocked } from "@/lib/job-limits";
 import { CheckCircle2, Rocket, ChevronLeft, ChevronRight, Loader2, Lock, Zap, LayoutList, Calendar, FileText, Mic, SlidersHorizontal } from "lucide-react";
 import { useAdminOrg } from "@/context/admin-org-context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PremiumDatePicker } from "@/components/ui/premium-date-picker";
 
-export default function CreateDrivePage() {
+export default function CreateJobPage() {
   return (
     <Suspense fallback={
       <div className="flex items-center justify-center h-64">
         <div className="h-5 w-5 rounded-full border-2 border-violet-500 border-t-transparent animate-spin" />
       </div>
     }>
-      <CreateDriveForm />
+      <CreateJobForm />
     </Suspense>
   );
 }
 
-function CreateDriveForm() {
+function CreateJobForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const driveId = searchParams.get("id");
-  const isEditMode = !!driveId;
+  const jobId = searchParams.get("id");
+  const isEditMode = !!jobId;
   const isEditAction = searchParams.get("mode") === "edit";
   const { addJob, jobs, updateJob, organization } = useJobs();
   const adminOrg = useAdminOrg();
@@ -49,7 +49,7 @@ function CreateDriveForm() {
     aiName: "Ishitha", extractedDetails: null, interviewMode: "ats",
   });
   const [published, setPublished] = useState(false);
-  const [publishedDriveId, setPublishedDriveId] = useState<string | null>(null);
+  const [publishedJobId, setPublishedJobId] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
@@ -60,12 +60,12 @@ function CreateDriveForm() {
   const hasInitialLoadedRef = useRef<string | null>(null);
   const formDataRef = useRef<any>(formData);
   const jdPersistedUrlRef = useRef<string | null>(null);
-  const activeDriveCount = adminOrg?.activeDriveCount ?? getActiveDriveCount(jobs);
-  const maxActiveDrives = adminOrg?.maxActiveDrives;
+  const activeJobCount = adminOrg?.activeJobCount ?? getActiveJobCount(jobs);
+  const maxActiveJobs = adminOrg?.maxActiveJobs;
   const isSuspended = isOrgRestrictedStatus(orgStatus);
   const interviewAccessLocked = quotaLocked || isSuspended;
-  const billingLocked = isDriveCreationLocked(maxActiveDrives, activeDriveCount);
-  const driveCreationLocked = !isEditMode && (billingLocked || interviewAccessLocked);
+  const billingLocked = isJobCreationLocked(maxActiveJobs, activeJobCount);
+  const jobCreationLocked = !isEditMode && (billingLocked || interviewAccessLocked);
 
   const formatDateForInput = (value?: string | null) => {
     if (!value) return "";
@@ -95,42 +95,42 @@ function CreateDriveForm() {
   }, [formData.voiceId]);
 
   useEffect(() => {
-    if (isEditMode && hasInitialLoadedRef.current !== driveId) {
-      const loadDrive = async () => {
+    if (isEditMode && hasInitialLoadedRef.current !== jobId) {
+      const loadJob = async () => {
         try {
-          const res = await fetch(`/api/drives/${driveId}`, { cache: "no-store" });
-          if (!res.ok) { toast.error("Failed to fetch drive details"); return; }
-          const drive = await res.json();
-          if (drive.error) { toast.error(drive.error); return; }
-          hasInitialLoadedRef.current = driveId;
+          const res = await fetch(`/api/jobs/${jobId}`, { cache: "no-store" });
+          if (!res.ok) { toast.error("Failed to fetch job details"); return; }
+          const job = await res.json();
+          if (job.error) { toast.error(job.error); return; }
+          hasInitialLoadedRef.current = jobId;
           setFormData((prev: any) => ({
             ...prev,
-            title: drive.title,
-            role: (drive as any).role || drive.title,
-            deadline: formatDateForInput((drive as any).deadline || null),
-            interviewQuestions: typeof (drive as any).interviewQuestions === "string"
-              ? JSON.parse((drive as any).interviewQuestions)
-              : (drive as any).interviewQuestions || [],
+            title: job.title,
+            role: (job as any).role || job.title,
+            deadline: formatDateForInput((job as any).deadline || null),
+            interviewQuestions: typeof (job as any).interviewQuestions === "string"
+              ? JSON.parse((job as any).interviewQuestions)
+              : (job as any).interviewQuestions || [],
             ...(() => {
-              const parsed = parseDriveScreeningSettings((drive as any).screeningCriteria, Number((drive as any).screeningThreshold ?? 60));
+              const parsed = parseJobScreeningSettings((job as any).screeningCriteria, Number((job as any).screeningThreshold ?? 60));
               return { screeningThreshold: parsed.threshold, screeningCriteria: parsed.criteria };
             })(),
-            jdFileName: (drive as any).jdFileName || "",
-            jdPreviewUrl: (drive as any).jdPreviewUrl || "",
-            extractedDetails: (drive as any).extractedDetails || null,
-            voiceId: (drive as any).voiceId || adminOrg?.voiceId || fallbackVoiceId,
+            jdFileName: (job as any).jdFileName || "",
+            jdPreviewUrl: (job as any).jdPreviewUrl || "",
+            extractedDetails: (job as any).extractedDetails || null,
+            voiceId: (job as any).voiceId || adminOrg?.voiceId || fallbackVoiceId,
             allowedVoices: Array.isArray(adminOrg?.allowedVoices) ? adminOrg.allowedVoices : fallbackAllowedVoices,
-            aiName: (drive as any).aiName || "Ishitha",
-            interviewMode: (drive as any).interviewMode || "ats",
+            aiName: (job as any).aiName || "Ishitha",
+            interviewMode: (job as any).interviewMode || "ats",
           }));
         } catch (err) {
-          console.error("Failed to load drive:", err);
-          toast.error("An error occurred while loading drive details");
+          console.error("Failed to load job:", err);
+          toast.error("An error occurred while loading job details");
         }
       };
-      loadDrive();
+      loadJob();
     }
-  }, [isEditMode, driveId, adminOrg?.voiceId, fallbackVoiceId, fallbackAllowedVoices]);
+  }, [isEditMode, jobId, adminOrg?.voiceId, fallbackVoiceId, fallbackAllowedVoices]);
 
   useEffect(() => {
     const method = searchParams.get("method");
@@ -143,7 +143,7 @@ function CreateDriveForm() {
           setFormData((prev: any) => ({ ...prev, ...jdData }));
           localStorage.removeItem("jd_draft");
           toast.success("Job description synced from AI Assistant!");
-        } catch (e) { console.error("CreateDrive Sync - Parse Error:", e); }
+        } catch (e) { console.error("CreateJob Sync - Parse Error:", e); }
       }
     }
   }, [searchParams]);
@@ -230,8 +230,8 @@ function CreateDriveForm() {
 
   const handlePublish = async () => {
     const currentFormData = formDataRef.current;
-    if (driveCreationLocked && !isEditMode) {
-      toast.error(interviewAccessLocked ? getInterviewQuotaSupportMessage("interviews") : "Drive limit reached. Go to Billing to upgrade your plan.");
+    if (jobCreationLocked && !isEditMode) {
+      toast.error(interviewAccessLocked ? getInterviewQuotaSupportMessage("interviews") : "Job limit reached. Go to Billing to upgrade your plan.");
       return;
     }
     if (!String(currentFormData.deadline || "").trim()) {
@@ -266,22 +266,22 @@ function CreateDriveForm() {
     try {
       let savedId: string | null = null;
       if (isEditMode) {
-        await updateJob(driveId!, jobData);
-        savedId = driveId;
+        await updateJob(jobId!, jobData);
+        savedId = jobId;
       } else {
         const result = await addJob({ ...jobData, postedAt: new Date().toISOString() } as any);
         savedId = result?.id;
       }
       if (savedId) {
-        setPublishedDriveId(savedId);
+        setPublishedJobId(savedId);
         setPublished(true);
         toast.success(isEditAction ? "Job updated successfully!" : "Job created successfully!");
       } else {
-        throw new Error("Failed to retrieve Drive ID after saving.");
+        throw new Error("Failed to retrieve Job ID after saving.");
       }
     } catch (error: any) {
       const msg = error.details ? `${error.message}: ${JSON.stringify(error.details)}` : error.message;
-      toast.error(msg || "Failed to save drive details. Please try again.");
+      toast.error(msg || "Failed to save job details. Please try again.");
     } finally {
       setIsSavingDraft(false);
     }
@@ -320,7 +320,7 @@ function CreateDriveForm() {
         <button
           className="btn-shimmer inline-flex items-center gap-2 h-10 px-6 rounded-xl text-sm font-medium text-white"
           style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: "0 4px 14px rgba(124,58,237,0.3)" }}
-          onClick={() => router.push(publishedDriveId ? `/admin/candidates/drive/${publishedDriveId}` : "/admin/drives")}
+          onClick={() => router.push(publishedJobId ? `/admin/candidates/job/${publishedJobId}` : "/admin/jobs")}
         >
           <ChevronRight className="h-4 w-4" /> View Job
         </button>
@@ -329,7 +329,7 @@ function CreateDriveForm() {
   }
 
   // -- Locked ---------------------------------------------------------------
-  if (driveCreationLocked) {
+  if (jobCreationLocked) {
     return (
       <div className="space-y-6 pb-10 animate-in fade-in duration-500">
         <button onClick={() => router.push("/admin")}
@@ -352,7 +352,7 @@ function CreateDriveForm() {
             </h2>
             <p className="text-sm text-gray-400">
               {interviewAccessLocked ? getInterviewActionBlockedMessage(isSuspended)
-                : `Your plan allows ${formatDriveLimit(maxActiveDrives)} active jobs. You currently have ${activeDriveCount} active.`}
+                : `Your plan allows ${formatJobLimit(maxActiveJobs)} active jobs. You currently have ${activeJobCount} active.`}
             </p>
           </div>
           <a href={getSupportComposeUrl(interviewAccessLocked
@@ -384,7 +384,7 @@ function CreateDriveForm() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => router.push(isEditMode ? "/admin/drives" : "/admin")}
+            onClick={() => router.push(isEditMode ? "/admin/jobs" : "/admin")}
             className="inline-flex items-center justify-center h-10 px-4 rounded-xl bg-white text-sm font-medium text-gray-600 hover:text-violet-600 hover:bg-violet-50 transition-all self-start sm:self-auto"
             style={{ border: "1px solid #E9E7FF" }}>
             <ChevronLeft className="h-4 w-4" />

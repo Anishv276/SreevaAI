@@ -11,9 +11,9 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: "Invalid test key" }, { status: 403 });
         }
 
-        const orgs = await prisma.organization.findMany({
+        const orgs = await prisma.organizationDetails.findMany({
             where: { isDeleted: false },
-            select: { id: true, name: true, slug: true, status: true },
+            select: { id: true, name: true, urlSlug: true, orgStatus: true },
             orderBy: { name: "asc" },
         });
 

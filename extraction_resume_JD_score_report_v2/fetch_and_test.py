@@ -2,7 +2,7 @@
 fetch_and_test.py — Fetch real JD + resume from DB, run v1 vs v2 scoring comparison.
 
 Looks for:
-  - Drive with title/role matching "GTM" (the JD)
+  - Job with title/role matching "GTM" (the JD)
   - Application with fullName matching "Vadla Vamsi Krishna" (the resume)
 
 Then runs both scorers against the already-parsed data stored in the DB
@@ -34,10 +34,10 @@ def get_conn():
     return psycopg2.connect(url)
 
 
-def fetch_gtm_drive(cur) -> dict | None:
+def fetch_gtm_job(cur) -> dict | None:
     cur.execute("""
         SELECT id, title, role, "extractedDetails", "screeningCriteria", "jdPreviewUrl"
-        FROM "Drive"
+        FROM "Job"
         WHERE ("title" ILIKE '%gtm%' OR "role" ILIKE '%gtm%')
           AND "isDeleted" = false
         ORDER BY "createdAt" DESC
@@ -46,7 +46,7 @@ def fetch_gtm_drive(cur) -> dict | None:
     rows = cur.fetchall()
     if not rows:
         return None
-    print(f"\nFound {len(rows)} GTM drive(s):")
+    print(f"\nFound {len(rows)} GTM job(s):")
     for i, r in enumerate(rows):
         print(f"  [{i}] id={r[0]}  title={r[1]}  role={r[2]}")
     row = rows[0]
@@ -63,7 +63,7 @@ def fetch_gtm_drive(cur) -> dict | None:
         except Exception:
             pass
     return {
-        "drive_id": row[0],
+        "job_id": row[0],
         "title": row[1],
         "role": row[2],
         "jd_data": extracted,
@@ -72,20 +72,20 @@ def fetch_gtm_drive(cur) -> dict | None:
     }
 
 
-def fetch_vamsi_application(cur, drive_id: str | None = None) -> dict | None:
-    if drive_id:
+def fetch_vamsi_application(cur, job_id: str | None = None) -> dict | None:
+    if job_id:
         cur.execute("""
-            SELECT id, "fullName", email, "resumeData", "resumeText", "aiScore", "aiReport", "driveId"
+            SELECT id, "fullName", email, "resumeData", "resumeText", "aiScore", "aiReport", "jobId"
             FROM "Application"
             WHERE "fullName" ILIKE %s
               AND "isDeleted" = false
-              AND "driveId" = %s
+              AND "jobId" = %s
             ORDER BY "createdAt" DESC
             LIMIT 5
-        """, ('%vamsi%', drive_id))
+        """, ('%vamsi%', job_id))
     else:
         cur.execute("""
-            SELECT id, "fullName", email, "resumeData", "resumeText", "aiScore", "aiReport", "driveId"
+            SELECT id, "fullName", email, "resumeData", "resumeText", "aiScore", "aiReport", "jobId"
             FROM "Application"
             WHERE "fullName" ILIKE %s
               AND "isDeleted" = false
@@ -97,7 +97,7 @@ def fetch_vamsi_application(cur, drive_id: str | None = None) -> dict | None:
         return None
     print(f"\nFound {len(rows)} Vamsi application(s):")
     for i, r in enumerate(rows):
-        print(f"  [{i}] id={r[0]}  name={r[1]}  email={r[2]}  drive={r[7]}  existing_score={r[5]}")
+        print(f"  [{i}] id={r[0]}  name={r[1]}  email={r[2]}  job={r[7]}  existing_score={r[5]}")
     row = rows[0]
     resume_data = {}
     if row[3]:
@@ -113,34 +113,34 @@ def fetch_vamsi_application(cur, drive_id: str | None = None) -> dict | None:
         "resume_text": row[4] or "",
         "existing_score": row[5],
         "existing_report": row[6],
-        "drive_id": row[7],
+        "job_id": row[7],
     }
 
 
 # -- Comparison runner ---------------------------------------------------------
 
-def run(drive_id_override: str | None = None):
+def run(job_id_override: str | None = None):
     conn = get_conn()
     cur = conn.cursor()
 
-    print("=== Fetching GTM Drive ===")
-    drive = fetch_gtm_drive(cur)
-    if not drive:
-        print("ERROR: No GTM drive found. Check drive title/role in DB.")
+    print("=== Fetching GTM Job ===")
+    job = fetch_gtm_job(cur)
+    if not job:
+        print("ERROR: No GTM job found. Check job title/role in DB.")
         return
 
-    print(f"\nUsing drive: {drive['title']} ({drive['drive_id']})")
-    jd_data = drive["jd_data"]
+    print(f"\nUsing job: {job['title']} ({job['job_id']})")
+    jd_data = job["jd_data"]
     if not jd_data:
-        print("WARNING: Drive has no extractedDetails (JD not yet parsed). Cannot score.")
-        print("Drive screening criteria:", json.dumps(drive["screening_criteria"], indent=2)[:400])
+        print("WARNING: Job has no extractedDetails (JD not yet parsed). Cannot score.")
+        print("Job screening criteria:", json.dumps(job["screening_criteria"], indent=2)[:400])
         return
 
     print("\n=== Fetching Vamsi Application ===")
-    app = fetch_vamsi_application(cur, drive["drive_id"])
+    app = fetch_vamsi_application(cur, job["job_id"])
     if not app:
-        # Try without drive filter
-        print("  Not found in GTM drive, searching all drives...")
+        # Try without job filter
+        print("  Not found in GTM job, searching all jobs...")
         app = fetch_vamsi_application(cur, None)
     if not app:
         print("ERROR: No application found for 'Vamsi'. Check name in DB.")
@@ -157,7 +157,7 @@ def run(drive_id_override: str | None = None):
     if "parsed" in resume_data:
         resume_data = resume_data["parsed"]
 
-    screening = drive["screening_criteria"]
+    screening = job["screening_criteria"]
 
     # -- Run scorer ------------------------------------------------------------
     oai = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
@@ -173,7 +173,7 @@ def run(drive_id_override: str | None = None):
 
     # -- Print results ---------------------------------------------------------
     print("\n" + "=" * 80)
-    print(f"  RESULTS: {app['full_name']} vs {drive['title']}")
+    print(f"  RESULTS: {app['full_name']} vs {job['title']}")
     print("=" * 80)
 
     prod = app["existing_score"]

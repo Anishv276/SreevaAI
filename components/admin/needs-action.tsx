@@ -12,7 +12,7 @@ interface NeedsActionData {
     upcomingActivity: {
         reportsReadyForReview: number;
         candidatesYetToStart: number;
-        drivesExpiringSoon: number;
+        jobsExpiringSoon: number;
         invitesSentLast24h: number;
     };
 }
@@ -89,12 +89,12 @@ export function NeedsAction({ initialData }: NeedsActionProps = {}) {
             href: "/admin/candidates?status=invited",
         },
         {
-            title: `${data.upcomingActivity.drivesExpiringSoon} drives expiring soon`,
-            sub: "Drives expiring in the next 3 days",
+            title: `${data.upcomingActivity.jobsExpiringSoon} jobs expiring soon`,
+            sub: "Jobs expiring in the next 3 days",
             icon: FileWarning,
             bg: "bg-purple-50",
             text: "text-purple-500",
-            href: "/admin/drives",
+            href: "/admin/jobs",
         },
     ] : [];
 
@@ -127,7 +127,7 @@ export function NeedsAction({ initialData }: NeedsActionProps = {}) {
                             className="bg-transparent border-none shadow-none"
                         />
                     </div>
-                ) : total === 0 && data?.upcomingActivity.drivesExpiringSoon === 0 ? (
+                ) : total === 0 && data?.upcomingActivity.jobsExpiringSoon === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full min-h-[200px] gap-2 text-center">
                         <div className="h-10 w-10 rounded-2xl bg-emerald-50 flex items-center justify-center">
                             <Clock className="h-5 w-5 text-emerald-500" />
@@ -144,7 +144,7 @@ export function NeedsAction({ initialData }: NeedsActionProps = {}) {
                     >
                         {actions.map((item, idx) => {
                             if (idx < 3 && total === 0 && item.title.startsWith("0")) return null;
-                            if (idx === 3 && data?.upcomingActivity.drivesExpiringSoon === 0) return null;
+                            if (idx === 3 && data?.upcomingActivity.jobsExpiringSoon === 0) return null;
                             
                             return (
                                 <motion.div

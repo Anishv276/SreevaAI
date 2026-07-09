@@ -16,14 +16,14 @@ import {
 import { useJobs } from "@/context/jobs-context";
 import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
-import { getActiveDriveCount, isDriveCreationLocked } from "@/lib/drive-limits";
+import { getActiveJobCount, isJobCreationLocked } from "@/lib/job-limits";
 import { isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import Link from "next/link";
 import { useAdminOrg } from "@/context/admin-org-context";
 import { ALL_VOICES } from "@/lib/constants/voices";
 import { cn } from "@/lib/utils";
 
-export default function DrivesPage() {
+export default function JobsPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const orgId = searchParams.get("orgId");
@@ -35,7 +35,7 @@ export default function DrivesPage() {
     const orgStatus = String(adminOrg?.status || "ACTIVE").toUpperCase();
     const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-    const [driveToDelete, setDriveToDelete] = useState<string | null>(null);
+    const [jobToDelete, setJobToDelete] = useState<string | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
 
     useEffect(() => {
@@ -64,19 +64,19 @@ export default function DrivesPage() {
     };
 
     const isSuspended = isOrgRestrictedStatus(orgStatus);
-    const activeDriveCount = adminOrg?.activeDriveCount ?? getActiveDriveCount(jobs);
+    const activeJobCount = adminOrg?.activeJobCount ?? getActiveJobCount(jobs);
     const interviewAccessLocked = quotaLocked || isSuspended;
-    const driveCreationLocked = isDriveCreationLocked(adminOrg?.maxActiveDrives, activeDriveCount) || interviewAccessLocked;
+    const jobCreationLocked = isJobCreationLocked(adminOrg?.maxActiveJobs, activeJobCount) || interviewAccessLocked;
 
     const confirmDelete = async () => {
-        if (!driveToDelete) return;
+        if (!jobToDelete) return;
         setIsDeleting(true);
         try {
-            await deleteJob(driveToDelete);
+            await deleteJob(jobToDelete);
             setIsDeleteModalOpen(false);
-            setDriveToDelete(null);
+            setJobToDelete(null);
         } catch {
-            toast.error("Failed to delete drive");
+            toast.error("Failed to delete job");
         } finally {
             setIsDeleting(false);
         }
@@ -106,12 +106,12 @@ export default function DrivesPage() {
                         />
                     </div>
                     <DateFilter value={timeline} onChange={setTimeline} />
-                    {driveCreationLocked ? (
+                    {jobCreationLocked ? (
                         <button disabled className="h-9 px-4 rounded-xl text-gray-400 font-medium text-sm flex items-center gap-1.5 cursor-not-allowed" style={{ background: "#F5F3FF", border: "1px solid #E9E7FF" }}>
                             <Lock className="h-3.5 w-3.5" /> {interviewAccessLocked ? "Locked" : "New Job"}
                         </button>
                     ) : (
-                        <Link href="/admin/create-drive">
+                        <Link href="/admin/create-job">
                             <button className="btn-shimmer h-9 px-5 rounded-xl text-white font-semibold text-sm flex items-center gap-1.5 transition-all" style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: "0 4px 12px rgba(124,58,237,0.25)" }}>
                                 <Plus className="h-4 w-4" /> New Job
                             </button>
@@ -136,8 +136,8 @@ export default function DrivesPage() {
                         <p className="text-sm text-gray-400 mb-6 leading-relaxed">
                             Create your first job and candidates will appear automatically.
                         </p>
-                        {!driveCreationLocked && (
-                            <Link href="/admin/create-drive">
+                        {!jobCreationLocked && (
+                            <Link href="/admin/create-job">
                                 <button className="btn-shimmer h-9 px-5 rounded-xl text-white font-semibold text-sm flex items-center gap-1.5" style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: "0 4px 12px rgba(124,58,237,0.25)" }}>
                                     <Plus className="h-4 w-4" /> Create First Job
                                 </button>
@@ -146,20 +146,19 @@ export default function DrivesPage() {
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-                        {jobs.map((drive) => {
-                            const applicants = Number(drive.applicants || 0);
-                            const deadlineText = drive.deadline
-                                ? new Date(drive.deadline).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+                        {jobs.map((job) => {
+                            const applicants = Number(job.applicants || 0);
+                            const deadlineText = job.deadline
+                                ? new Date(job.deadline).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
                                 : null;
-                            const isExpired = drive.deadline ? new Date(drive.deadline) < new Date() : false;
-                            const voice = ALL_VOICES.find(v => v.id === drive.voiceId);
-                            const timeLimit = drive.timeLimit || 30;
-                            const isInterviewOnly = (drive as any).interviewMode === "interview-only";
+                            const isExpired = job.deadline ? new Date(job.deadline) < new Date() : false;
+                            const voice = ALL_VOICES.find(v => v.id === job.voiceId);
+                            const isInterviewOnly = (job as any).interviewMode === "interview-only";
 
                             return (
                                 <div
-                                    key={drive.id}
-                                    onClick={() => router.push(`/admin/candidates/drive/${encodeURIComponent(drive.id)}`)}
+                                    key={job.id}
+                                    onClick={() => router.push(`/admin/candidates/job/${encodeURIComponent(job.id)}`)}
                                     className="group relative bg-white rounded-2xl cursor-pointer flex flex-col overflow-hidden transition-all duration-200"
                                     style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 4px rgba(124,58,237,0.04)" }}
                                     onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "#C4B5FD"; (e.currentTarget as HTMLElement).style.boxShadow = "0 6px 24px rgba(124,58,237,0.1)"; (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; }}
@@ -187,10 +186,10 @@ export default function DrivesPage() {
                                                     }
                                                 </span>
                                                 <h3 className="text-[15px] font-semibold text-gray-900 leading-snug tracking-tight line-clamp-2">
-                                                    {drive.title}
+                                                    {job.title}
                                                 </h3>
-                                                {drive.role && drive.role !== drive.title && (
-                                                    <p className="text-xs text-gray-400 font-medium mt-0.5 truncate">{drive.role}</p>
+                                                {job.role && job.role !== job.title && (
+                                                    <p className="text-xs text-gray-400 font-medium mt-0.5 truncate">{job.role}</p>
                                                 )}
                                             </div>
                                         </div>
@@ -205,14 +204,14 @@ export default function DrivesPage() {
                                             <DropdownMenuContent align="end" className="w-48 p-1.5 rounded-xl bg-white shadow-xl" style={{ border: "1px solid #E9E7FF" }}>
                                                 <DropdownMenuItem
                                                     className="rounded-lg py-2 px-3 text-gray-700 font-medium text-sm cursor-pointer"
-                                                    onClick={(e) => { e.stopPropagation(); router.push(`/admin/create-drive?id=${drive.id}&mode=edit${orgId ? `&orgId=${orgId}` : ""}`); }}
+                                                    onClick={(e) => { e.stopPropagation(); router.push(`/admin/create-job?id=${job.id}&mode=edit${orgId ? `&orgId=${orgId}` : ""}`); }}
                                                 >
                                                     <Edit className="h-3.5 w-3.5 mr-2 text-gray-400" /> Edit Details
                                                 </DropdownMenuItem>
                                                 <div className="h-px bg-gray-100 my-1 mx-1" />
                                                 <DropdownMenuItem
                                                     className="rounded-lg py-2 px-3 text-red-600 font-medium text-sm cursor-pointer focus:bg-red-50"
-                                                    onClick={(e) => { e.stopPropagation(); setDriveToDelete(drive.id); setIsDeleteModalOpen(true); }}
+                                                    onClick={(e) => { e.stopPropagation(); setJobToDelete(job.id); setIsDeleteModalOpen(true); }}
                                                 >
                                                     <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
                                                 </DropdownMenuItem>
@@ -269,7 +268,7 @@ export default function DrivesPage() {
                                     {/* ── CTA ── */}
                                     <div className="px-5 pb-5 mt-auto">
                                         <button
-                                            onClick={(e) => { e.stopPropagation(); router.push(`/admin/candidates/drive/${encodeURIComponent(drive.id)}`); }}
+                                            onClick={(e) => { e.stopPropagation(); router.push(`/admin/candidates/job/${encodeURIComponent(job.id)}`); }}
                                             className="btn-shimmer w-full h-10 rounded-xl text-white font-semibold text-sm flex items-center justify-center gap-2 transition-all"
                                             style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: "0 4px 12px rgba(124,58,237,0.2)" }}
                                         >

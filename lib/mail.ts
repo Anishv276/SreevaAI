@@ -172,13 +172,12 @@ export async function sendRejectionEmail({
 }
 // --- 3. Interview Completed (admin notification) -----------------------------
 export async function sendInterviewCompletedEmail({
-    adminEmail, candidateName, jobTitle, orgName, driveTitle, completedAt, reportLink,
+    adminEmail, candidateName, jobTitle, orgName, completedAt, reportLink,
 }: {
     adminEmail: string;
     candidateName: string;
     jobTitle: string;
     orgName: string;
-    driveTitle?: string;
     completedAt?: Date;
     reportLink?: string;
 }): Promise<MailResult> {
@@ -195,7 +194,7 @@ export async function sendInterviewCompletedEmail({
           ${infoCard([
               { label: "Candidate", value: candidateName },
               { label: "Role", value: jobTitle },
-              { label: "Drive", value: driveTitle || orgName },
+              { label: "Job", value: jobTitle || orgName },
               { label: "Completed", value: completedStr },
           ])}
           ${tipBox(`<strong>What's in the report</strong><br/>AI scores across depth, clarity, specificity &amp; grounding · Full transcript · Proctoring signals · Recruiter recommendation`)}
@@ -229,7 +228,7 @@ export async function sendOrgWelcomeEmail({
         ${header("Workspace Ready", "Welcome to Sreeva AI!")}
         <tr><td style="padding:32px 36px 0;">
           <p style="margin:0;font-size:15px;color:#404040;line-height:1.75;">
-            Your workspace for <strong style="color:#111;">${orgName}</strong> is live. You can now build recruitment drives, shortlist candidates, and run AI-powered interviews at scale.
+            Your workspace for <strong style="color:#111;">${orgName}</strong> is live. You can now build recruitment jobs, shortlist candidates, and run AI-powered interviews at scale.
           </p>
           ${infoCard([
               { label: "Organization", value: orgName },
@@ -242,7 +241,7 @@ export async function sendOrgWelcomeEmail({
               ${[
                   ["1", "Log in with your credentials above"],
                   ["2", "Complete your organization profile &amp; settings"],
-                  ["3", "Create your first recruitment drive"],
+                  ["3", "Create your first recruitment job"],
                   ["4", "Shortlist candidates and send interview invitations"],
               ].map(([n, text]) => `
               <tr>

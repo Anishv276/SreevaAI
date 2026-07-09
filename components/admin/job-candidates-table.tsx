@@ -126,7 +126,7 @@ function AtsScoreGauge({ score }: { score: number }) {
     );
 }
 
-export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string, refreshKey?: number }) {
+export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refreshKey?: number }) {
     const { candidates, pagination, isLoading, error, fetchCandidates, clearError } = useCandidates();
     const { organization } = useJobs();
     const [scoreMin, setScoreMin] = useState(0);
@@ -141,7 +141,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [isSelectionMode, setIsSelectionMode] = useState(true);
     const [isBulkLoading, setIsBulkLoading] = useState(false);
-    const [isDriveViewReady, setIsDriveViewReady] = useState(false);
+    const [isJobViewReady, setIsJobViewReady] = useState(false);
     const [emailConfirm, setEmailConfirm] = useState<{
         mode: "single" | "bulk";
         candidateId?: string;
@@ -170,20 +170,20 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
     };
     useEffect(() => {
         let cancelled = false;
-        if (!isDriveViewReady) setSelectedIds(new Set());
+        if (!isJobViewReady) setSelectedIds(new Set());
         const handler = setTimeout(() => {
             const { startDate, endDate } = getDateRange();
-            void fetchCandidates(1, pageSize, driveId, resumeFilter, interviewFilter, startDate, endDate, undefined, scoreSort, { background: isDriveViewReady })
-                .finally(() => { if (!cancelled) setIsDriveViewReady(true); });
+            void fetchCandidates(1, pageSize, jobId, resumeFilter, interviewFilter, startDate, endDate, undefined, scoreSort, { background: isJobViewReady })
+                .finally(() => { if (!cancelled) setIsJobViewReady(true); });
         }, 500);
         return () => { cancelled = true; clearTimeout(handler); };
-    }, [driveId, resumeFilter, interviewFilter, timeline, fetchCandidates, scoreSort, refreshKey]);
+    }, [jobId, resumeFilter, interviewFilter, timeline, fetchCandidates, scoreSort, refreshKey]);
     const pageSizeRef = useRef(pageSize);
     useEffect(() => {
         if (pageSizeRef.current === pageSize) return;
         pageSizeRef.current = pageSize;
         const { startDate, endDate } = getDateRange();
-        void fetchCandidates(1, pageSize, driveId, resumeFilter, interviewFilter, startDate, endDate, undefined, scoreSort);
+        void fetchCandidates(1, pageSize, jobId, resumeFilter, interviewFilter, startDate, endDate, undefined, scoreSort);
     }, [pageSize]);
     useEffect(() => {
         const hasPending = candidates.some((c: any) => {
@@ -193,10 +193,10 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         if (!hasPending) return;
         const timer = setInterval(() => {
             const { startDate, endDate } = getDateRange();
-            void fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, startDate, endDate, undefined, scoreSort, { background: true, force: true });
+            void fetchCandidates(pagination.page, pageSize, jobId, resumeFilter, interviewFilter, startDate, endDate, undefined, scoreSort, { background: true, force: true });
         }, 3000);
         return () => clearInterval(timer);
-    }, [candidates, pagination.page, pageSize, driveId, resumeFilter, interviewFilter, scoreSort]);
+    }, [candidates, pagination.page, pageSize, jobId, resumeFilter, interviewFilter, scoreSort]);
     const handlePageChange = (newPage: number) => {
         if (newPage < 1 || newPage > pagination.totalPages) return;
         let startDate: string | undefined;
@@ -216,7 +216,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
             startDate = timeline.from;
             endDate = timeline.to;
         }
-        fetchCandidates(newPage, pageSize, driveId, resumeFilter, interviewFilter, startDate, endDate, undefined, scoreSort);
+        fetchCandidates(newPage, pageSize, jobId, resumeFilter, interviewFilter, startDate, endDate, undefined, scoreSort);
     };
     const handleUpdateStatus = async (applicationId: string, statusUpdate: { resumeStatus?: string }, successMsg: string) => {
         try {
@@ -227,7 +227,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
             });
             if (res.ok) {
                 toast.success(successMsg);
-                fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
+                fetchCandidates(pagination.page, pageSize, jobId, resumeFilter, interviewFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
             } else {
                 toast.error("Failed to update status");
             }
@@ -248,7 +248,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
             const data = await res.json().catch(() => null);
             if (res.ok) {
                 toast.success(data?.message || `Interview link sent to ${candidate.name}`);
-                fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
+                fetchCandidates(pagination.page, pageSize, jobId, resumeFilter, interviewFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
                 return;
             }
             toast.error(data?.error || "Failed to send interview link");
@@ -259,7 +259,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         }
     };
     const filteredCandidates = candidates.filter((candidate: any) => {
-        if (candidate.driveId !== driveId) return false;
+        if (candidate.jobId !== jobId) return false;
         if (scoreMin > 0 || scoreMax < 100) {
             const score = Number(candidate.score ?? candidate.aiScore ?? 0);
             if (score < scoreMin || score > scoreMax) return false;
@@ -306,7 +306,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
             if (res.ok) {
                 toast.success(data?.message || "Bulk action completed");
                 clearSelection();
-                fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
+                fetchCandidates(pagination.page, pageSize, jobId, resumeFilter, interviewFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
                 return;
             }
             toast.error(data?.error || "Failed to update selected candidates");
@@ -324,7 +324,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                 const res = await fetch(`/api/candidates/${deleteConfirm.candidateId}`, { method: "DELETE" });
                 if (res.ok) {
                     toast.success(`${deleteConfirm.candidateName || "Candidate"} deleted`);
-                    fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
+                    fetchCandidates(pagination.page, pageSize, jobId, resumeFilter, interviewFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
                 } else {
                     const data = await res.json().catch(() => null);
                     toast.error(data?.error || "Failed to delete candidate");
@@ -357,7 +357,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
             if (succeeded > 0) toast.success(`Interview link sent to ${succeeded} candidate(s)`);
             if (failed > 0) toast.error(`Failed to send to ${failed} candidate(s)`);
             clearSelection();
-            fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
+            fetchCandidates(pagination.page, pageSize, jobId, resumeFilter, interviewFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
         } catch {
             toast.error("Failed to send interview links");
         } finally {
@@ -405,7 +405,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                 if (succeeded > 0) toast.success(`Emails sent to ${shortlisted.length + rejected.length} candidate(s)`);
                 if (failed > 0) toast.error(`Failed to send to ${failed} candidate(s)`);
                 clearSelection();
-                fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
+                fetchCandidates(pagination.page, pageSize, jobId, resumeFilter, interviewFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
             }
         } catch {
             toast.error("Failed to send email");
@@ -437,7 +437,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         }
         setEmailConfirm({ mode: "bulk" });
     };
-    if (!isDriveViewReady) {
+    if (!isJobViewReady) {
         return (
             <div className="flex min-h-[40vh] items-center justify-center rounded-2xl border border-white/40 bg-white/60 backdrop-blur-xl shadow-[0_8px_24px_rgba(15,23,42,0.03)]">
                 <div className="flex flex-col items-center gap-1.5">
@@ -784,14 +784,14 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                             <span className="text-[12px] font-bold">Resume Report</span>
                                                         </div>
                                                     ) : (
-                                                        <Link href={`/admin/candidates/${candidate.id}?report=resume&back=${encodeURIComponent(`/admin/candidates/drive/${driveId}`)}`} className="flex items-center gap-1 px-3 py-0.5.5 rounded-xl border border-[#7C3AED]/30 bg-violet-50 text-[#7C3AED] hover:bg-[#7C3AED] hover:text-white transition-colors cursor-pointer group/btn">
+                                                        <Link href={`/admin/candidates/${candidate.id}?report=resume&back=${encodeURIComponent(`/admin/candidates/job/${jobId}`)}`} className="flex items-center gap-1 px-3 py-0.5.5 rounded-xl border border-[#7C3AED]/30 bg-violet-50 text-[#7C3AED] hover:bg-[#7C3AED] hover:text-white transition-colors cursor-pointer group/btn">
                                                             <svg className="h-3.5 w-3.5 opacity-70 group-hover/btn:opacity-100" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
                                                             <span className="text-[12px] font-bold">Resume Report</span>
                                                         </Link>
                                                     )}
 
                                                     {interviewReportUnlocked ? (
-                                                        <Link href={`/admin/candidates/${candidate.id}?back=${encodeURIComponent(`/admin/candidates/drive/${driveId}`)}`} className="flex items-center gap-1 px-3 py-0.5.5 rounded-xl border border-emerald-500/30 bg-emerald-50 text-emerald-600 hover:bg-emerald-500 hover:text-white transition-colors cursor-pointer group/btn">
+                                                        <Link href={`/admin/candidates/${candidate.id}?back=${encodeURIComponent(`/admin/candidates/job/${jobId}`)}`} className="flex items-center gap-1 px-3 py-0.5.5 rounded-xl border border-emerald-500/30 bg-emerald-50 text-emerald-600 hover:bg-emerald-500 hover:text-white transition-colors cursor-pointer group/btn">
                                                             <svg className="h-3.5 w-3.5 opacity-70 group-hover/btn:opacity-100" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                                                             <span className="text-[12px] font-bold">Interview Report</span>
                                                         </Link>
@@ -889,7 +889,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                     Showing <span className="text-gray-900 font-bold">{pagination.total > 0 ? (pagination.page - 1) * pageSize + 1 : 0}</span>–<span className="text-gray-900 font-bold">{Math.min(pagination.page * pageSize, pagination.total)}</span> of <span className="text-gray-900 font-bold">{pagination.total}</span>
                 </p>
                 <div className="flex items-center gap-1.5">
-                    <Select value={String(pageSize)} onValueChange={(v) => { const n = Number(v); setPageSize(n); clearSelection(); fetchCandidates(1, n, driveId, resumeFilter, interviewFilter, undefined, undefined, undefined, scoreSort); }}>
+                    <Select value={String(pageSize)} onValueChange={(v) => { const n = Number(v); setPageSize(n); clearSelection(); fetchCandidates(1, n, jobId, resumeFilter, interviewFilter, undefined, undefined, undefined, scoreSort); }}>
                         <SelectTrigger className="h-8 w-28 rounded-xl border border-gray-200 bg-white text-[13px] font-bold text-gray-600 shadow-sm hover:border-gray-300 transition-colors"><SelectValue /></SelectTrigger>
                         <SelectContent className="rounded-xl border-gray-100 shadow-lg">{[20, 50, 100, 250, 500, 1000].map(o => <SelectItem key={o} value={String(o)} className="rounded-lg font-semibold text-[13px]">{o} / page</SelectItem>)}</SelectContent>
                     </Select>

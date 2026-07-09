@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import type { DateRange } from "./date-filter";
 import { ErrorState } from "./error-state";
 interface FunnelData {
-    activeDrives: number;
+    activeJobs: number;
     totalCandidates: number;
     invited: number;
     interviewed: number;
@@ -98,7 +98,7 @@ export function HiringFunnel({ dateRange, initialData }: HiringFunnelProps) {
                     <h3 className="text-xl font-black text-gray-900 tracking-tight text-premium">Hiring Funnel</h3>
                     <p className="text-[12px] font-bold text-gray-400 mt-1 uppercase tracking-widest">
                         {data
-                            ? `${rangeLabel(dateRange)} · ${data.activeDrives} active jobs`
+                            ? `${rangeLabel(dateRange)} · ${data.activeJobs} active jobs`
                             : rangeLabel(dateRange)}
                     </p>
                 </div>

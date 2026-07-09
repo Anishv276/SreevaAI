@@ -5,9 +5,9 @@ import { isOrgRestrictedStatus } from "@/lib/interview-quota";
 export async function GET(req: NextRequest) {
     const session = await getSession();
     if (session && session.orgId) {
-        const org = await prisma.organization.findUnique({
+        const org = await prisma.organizationDetails.findUnique({
             where: { id: session.orgId },
-            select: { status: true }
+            select: { orgStatus: true }
         });
         if (!org) {
             // Org is deleted, session is invalid

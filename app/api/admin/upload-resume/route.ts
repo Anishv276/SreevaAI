@@ -15,7 +15,7 @@ function sanitizeFileName(name: string) {
 // Uploads a single PDF to R2 and returns the public URL.
 // Used by AddCandidateDrawer in interview-only mode.
 export async function POST(request: Request) {
-    let driveTitle: string | undefined;
+    let jobTitle: string | undefined;
     let orgName: string | undefined;
     try {
         const session = await getSession();
@@ -25,25 +25,25 @@ export async function POST(request: Request) {
 
         const formData = await request.formData();
         const file = formData.get("file") as File | null;
-        const driveId = formData.get("driveId") as string | null;
+        const jobId = formData.get("jobId") as string | null;
 
         if (!file) return NextResponse.json({ error: "No file" }, { status: 400 });
-        if (!driveId) return NextResponse.json({ error: "No driveId" }, { status: 400 });
+        if (!jobId) return NextResponse.json({ error: "No jobId" }, { status: 400 });
 
-        // Verify drive belongs to org
-        const drive = await prisma.drive.findUnique({
-            where: { id: driveId },
-            select: { title: true, orgId: true, organization: { select: { name: true, slug: true } } },
+        // Verify job belongs to org
+        const job = await prisma.job.findUnique({
+            where: { id: jobId },
+            select: { title: true, orgId: true, organization: { select: { name: true, urlSlug: true } } },
         });
-        if (!drive || drive.orgId !== session.orgId) {
-            return NextResponse.json({ error: "Drive not found" }, { status: 404 });
+        if (!job || job.orgId !== session.orgId) {
+            return NextResponse.json({ error: "Job not found" }, { status: 404 });
         }
-        driveTitle = drive.title;
-        orgName = drive.organization?.name;
+        jobTitle = job.title;
+        orgName = job.organization?.name;
 
-        const orgSlug = drive.organization?.slug || "org";
+        const orgSlug = job.organization?.urlSlug || "org";
         const safeName = sanitizeFileName(file.name);
-        const key = `${orgSlug}/${driveId}/${randomUUID()}-${safeName}`;
+        const key = `${orgSlug}/${jobId}/${randomUUID()}-${safeName}`;
 
         const buffer = Buffer.from(await file.arrayBuffer());
         const url = await putObject(RESUME_BUCKET, key, buffer, "application/pdf");
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
         console.error("[upload-resume] error:", err);
         await logResumeUploadError({
             orgName: orgName || "unknown",
-            driveName: driveTitle || "unknown",
+            jobName: jobTitle || "unknown",
             error: err instanceof Error ? err.message : String(err),
             reason: "Resume upload to storage failed",
         });

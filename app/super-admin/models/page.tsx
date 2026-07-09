@@ -355,10 +355,10 @@ export default function ModelsPage() {
                 </div>
               </Section>
 
-              {/* Voices — multi-select, stored as allowedVoices JSON, shown in drive picker */}
-              <Section icon={Users} title="Allowed Voices" subtitle={`Multi-select voices available for this org's drives. Selected: ${selectedVoiceIds.length}`}>
+              {/* Voices — multi-select, stored as allowedVoices JSON, shown in job picker */}
+              <Section icon={Users} title="Allowed Voices" subtitle={`Multi-select voices available for this org's jobs. Selected: ${selectedVoiceIds.length}`}>
                 <p className="text-xs text-gray-400 mb-3">
-                  Admins pick from these voices when creating a drive. The drive's selected voice is used during the interview.
+                  Admins pick from these voices when creating a job. The job's selected voice is used during the interview.
                 </p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
                   {voicesForProvider.map(v => {

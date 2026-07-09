@@ -33,7 +33,7 @@ async function main() {
     for (const legacy of legacySuperAdmins) {
         await prisma.superAdmin.delete({ where: { id: legacy.id } });
     }
-    const existingUser1 = await prisma.user.findFirst({
+    const existingUser1 = await prisma.organizationCredentials.findFirst({
         where: {
             email: {
                 equals: email1,
@@ -42,14 +42,14 @@ async function main() {
         },
     });
     const u1 = existingUser1
-        ? await prisma.user.update({
+        ? await prisma.organizationCredentials.update({
             where: { id: existingUser1.id },
-            data: { email: email1, password: hashedPassword, role: "ADMIN", orgId: orgId, name },
+            data: { email: email1, password: hashedPassword, platformRole: "ADMIN", organizationId: orgId, name },
         })
-        : await prisma.user.create({
-            data: { id: generateId("usr", name), email: email1, password: hashedPassword, role: "ADMIN", orgId: orgId, name },
+        : await prisma.organizationCredentials.create({
+            data: { id: generateId("usr", name), email: email1, password: hashedPassword, platformRole: "ADMIN", organizationId: orgId, name },
         });
-    const existingUser2 = await prisma.user.findFirst({
+    const existingUser2 = await prisma.organizationCredentials.findFirst({
         where: {
             email: {
                 equals: email2,
@@ -58,16 +58,16 @@ async function main() {
         },
     });
     const u2 = existingUser2
-        ? await prisma.user.update({
+        ? await prisma.organizationCredentials.update({
             where: { id: existingUser2.id },
-            data: { email: email2, password: hashedPassword, role: "ADMIN", orgId: orgId, name },
+            data: { email: email2, password: hashedPassword, platformRole: "ADMIN", organizationId: orgId, name },
         })
-        : await prisma.user.create({
-            data: { id: generateId("usr", name), email: email2, password: hashedPassword, role: "ADMIN", orgId: orgId, name },
+        : await prisma.organizationCredentials.create({
+            data: { id: generateId("usr", name), email: email2, password: hashedPassword, platformRole: "ADMIN", organizationId: orgId, name },
         });
     console.log(`\n✅ SUCCESS: Admin Accounts are Ready!`);
     console.log(`📧 Emails: ${u1.email}, ${u2.email}`);
-    console.log(`🔐 Role: ${u1.role}`);
+    console.log(`🔐 Role: ${u1.platformRole}`);
     console.log(`🏢 Organization ID: ${orgId}`);
     console.log(`\n👉 You can now log in at https://sreevaai.com/login\n`);
 }

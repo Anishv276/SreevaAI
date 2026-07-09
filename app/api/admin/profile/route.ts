@@ -7,7 +7,7 @@ export async function GET() {
         if (!session?.orgId || !session?.userId || !isAdminRole(session.role)) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
-        const user = await prisma.user.findUnique({
+        const user = await prisma.organizationCredentials.findUnique({
             where: { id: session.userId },
             select: { name: true, email: true }
         });
@@ -30,7 +30,7 @@ export async function PATCH(req: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
         const { name } = await req.json();
-        const updatedUser = await prisma.user.update({
+        const updatedUser = await prisma.organizationCredentials.update({
             where: { id: session.userId },
             data: { name: name || undefined },
             select: { name: true }

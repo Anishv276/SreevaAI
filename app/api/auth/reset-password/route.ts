@@ -23,17 +23,17 @@ export async function POST(request: Request) {
             }, { status: 429 });
         }
         // 1. Re-verify OTP for security in the final step (check both account types)
-        const user = await prisma.user.findFirst({
+        const user = await prisma.organizationCredentials.findFirst({
             where: {
                 email: {
                     equals: normalizedEmail,
                     mode: "insensitive",
                 },
             },
-            select: { 
-                id: true, 
-                resetOtp: true, 
-                resetOtpExpires: true
+            select: {
+                id: true,
+                passwordResetOtp: true,
+                passwordResetOtpExpiresAt: true
             }
         });
         const superAdmin = await prisma.superAdmin.findFirst({
@@ -43,22 +43,22 @@ export async function POST(request: Request) {
                     mode: "insensitive",
                 },
             },
-            select: { id: true, resetOtp: true, resetOtpExpires: true }
+            select: { id: true, passwordResetOtp: true, passwordResetOtpExpiresAt: true }
         });
         // 2. Hash New Password
         const hashedPassword = await bcrypt.hash(newPassword, 10);
         let isValidOtp = false;
         if (user) {
-            const updatedUser = await prisma.user.updateMany({
+            const updatedUser = await prisma.organizationCredentials.updateMany({
                 where: {
                     id: user.id,
-                    resetOtp: otp,
-                    resetOtpExpires: { gte: new Date() }
+                    passwordResetOtp: otp,
+                    passwordResetOtpExpiresAt: { gte: new Date() }
                 },
                 data: {
                     password: hashedPassword,
-                    resetOtp: null,
-                    resetOtpExpires: null
+                    passwordResetOtp: null,
+                    passwordResetOtpExpiresAt: null
                 }
             });
             if (updatedUser.count > 0) {
@@ -68,10 +68,10 @@ export async function POST(request: Request) {
         }
         if (!isValidOtp && superAdmin) {
             if (
-                superAdmin.resetOtp &&
-                superAdmin.resetOtp === otp &&
-                superAdmin.resetOtpExpires &&
-                superAdmin.resetOtpExpires >= new Date()
+                superAdmin.passwordResetOtp &&
+                superAdmin.passwordResetOtp === otp &&
+                superAdmin.passwordResetOtpExpiresAt &&
+                superAdmin.passwordResetOtpExpiresAt >= new Date()
             ) {
                 isValidOtp = true;
                 await invalidateUserSessions(superAdmin.id);
@@ -79,8 +79,8 @@ export async function POST(request: Request) {
                     where: { id: superAdmin.id },
                     data: {
                         password: hashedPassword,
-                        resetOtp: null,
-                        resetOtpExpires: null
+                        passwordResetOtp: null,
+                        passwordResetOtpExpiresAt: null
                     }
                 });
             }

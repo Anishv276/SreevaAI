@@ -28,21 +28,21 @@ export async function POST(request: Request) {
             },
             select: {
                 id: true,
-                resetOtp: true,
-                resetOtpExpires: true
+                passwordResetOtp: true,
+                passwordResetOtpExpiresAt: true
             }
         });
         if (superAdmin) {
-            if (!superAdmin.resetOtp || superAdmin.resetOtp !== otp) {
+            if (!superAdmin.passwordResetOtp || superAdmin.passwordResetOtp !== otp) {
                 return NextResponse.json({ error: "Invalid verification code" }, { status: 400 });
             }
-            const isExpired = superAdmin.resetOtpExpires && superAdmin.resetOtpExpires.getTime() < Date.now();
+            const isExpired = superAdmin.passwordResetOtpExpiresAt && superAdmin.passwordResetOtpExpiresAt.getTime() < Date.now();
             if (isExpired) {
                 return NextResponse.json({ error: "Code has expired. Request a new one." }, { status: 400 });
             }
             return NextResponse.json({ success: true, message: "Code verified." });
         }
-        const user = await prisma.user.findFirst({
+        const user = await prisma.organizationCredentials.findFirst({
             where: {
                 email: {
                     equals: normalizedEmail,
@@ -51,14 +51,14 @@ export async function POST(request: Request) {
             },
             select: {
                 id: true,
-                resetOtp: true,
-                resetOtpExpires: true
+                passwordResetOtp: true,
+                passwordResetOtpExpiresAt: true
             }
         });
-        if (!user || !user.resetOtp || user.resetOtp !== otp) {
+        if (!user || !user.passwordResetOtp || user.passwordResetOtp !== otp) {
             return NextResponse.json({ error: "Invalid verification code" }, { status: 400 });
         }
-        const isExpired = user.resetOtpExpires && user.resetOtpExpires.getTime() < Date.now();
+        const isExpired = user.passwordResetOtpExpiresAt && user.passwordResetOtpExpiresAt.getTime() < Date.now();
         if (isExpired) {
             return NextResponse.json({ error: "Code has expired. Request a new one." }, { status: 400 });
         }

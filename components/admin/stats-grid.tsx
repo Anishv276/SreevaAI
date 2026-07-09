@@ -9,7 +9,7 @@ import { motion } from "framer-motion";
 import type { DateRange } from "./date-filter";
 
 interface StatsData {
-    activeDrives: number;
+    activeJobs: number;
     totalCandidates: number;
     applicationsToday: number;
     appTrendDelta: number;
@@ -105,8 +105,8 @@ export function StatsGrid({ dateRange, initialData }: StatsGridProps) {
     const cards = [
         {
             label: "Active Jobs",
-            value: s.activeDrives,
-            sub: "All non-deleted drives",
+            value: s.activeJobs,
+            sub: "All non-deleted jobs",
             icon: Briefcase,
             iconStyle: { background: "#F3E8FF" },
             iconColor: "text-purple-600",

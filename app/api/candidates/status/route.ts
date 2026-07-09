@@ -23,7 +23,7 @@ export async function GET(request: Request) {
                 },
             },
             include: {
-                drive: {
+                job: {
                     select: {
                         id: true,
                         title: true,
@@ -71,7 +71,7 @@ export async function GET(request: Request) {
                     })(),
                     interviewLink: buildInterviewLink(appUrl, app.id, {
                         token: isInterviewTokenRequired() ? app.interview.accessToken : null,
-                        orgName: app.drive?.organization?.name || "Sreeva AI",
+                        orgName: app.job?.organization?.name || "Sreeva AI",
                     }),
                 }
                 : null;
@@ -80,7 +80,7 @@ export async function GET(request: Request) {
                 status: app.resumeStatus,
                 score: app.aiScore,
                 createdAt: app.createdAt,
-                drive: app.drive,
+                job: app.job,
                 interview: interviewStage,
             };
         });

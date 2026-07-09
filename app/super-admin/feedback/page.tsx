@@ -36,7 +36,7 @@ type InterviewFeedbackRow = {
         fullName: string;
         email: string;
         phone: string;
-        drive?: {
+        job?: {
             id: string;
             title: string;
             role: string | null;
@@ -103,10 +103,10 @@ function candidateEmail(row: InterviewFeedbackRow) {
     return row.application?.email?.trim() || "Unknown email";
 }
 function orgName(row: InterviewFeedbackRow) {
-    return row.application?.drive?.organization?.name?.trim() || "No organization";
+    return row.application?.job?.organization?.name?.trim() || "No organization";
 }
 function jobTitle(row: InterviewFeedbackRow) {
-    return row.application?.drive?.title?.trim() || "Interview";
+    return row.application?.job?.title?.trim() || "Interview";
 }
 export default function SuperAdminFeedbackPage() {
     const [feedbacks, setFeedbacks] = useState<InterviewFeedbackRow[]>([]);

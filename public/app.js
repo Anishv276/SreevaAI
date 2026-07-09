@@ -120,7 +120,7 @@
     entries.forEach((e) => {
       if (e.isIntersecting) {
         e.target.classList.add('is-visible');
-        // When data-words container becomes visible, drive its inline-styled spans too
+        // When data-words container becomes visible, job its inline-styled spans too
         if (e.target.hasAttribute('data-words')) {
           e.target.querySelectorAll('.rw > span').forEach((s) => {
             s.style.transform = 'translateY(0)';

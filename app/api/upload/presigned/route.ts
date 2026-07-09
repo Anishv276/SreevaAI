@@ -14,7 +14,7 @@ export async function POST(request: Request) {
                 { status: 400 }
             );
         }
-        const { fileName, fileType, fileSize, driveId, type } = result.data;
+        const { fileName, fileType, fileSize, jobId, type } = result.data;
         // -- AUTHORIZATION & QUOTA -------------------------
         const session = await getSession();
         const isJD = type === "JD";
@@ -31,15 +31,15 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: "Unauthorized: Admin access required for JD uploads" }, { status: 401 });
             }
         } else {
-            // For public uploads, verify the driveId exists and is active
-            if (!driveId) {
-                return NextResponse.json({ error: "driveId is required for resume uploads" }, { status: 400 });
+            // For public uploads, verify the jobId exists and is active
+            if (!jobId) {
+                return NextResponse.json({ error: "jobId is required for resume uploads" }, { status: 400 });
             }
-            const drive = await prisma.drive.findUnique({
-                where: { id: driveId },
+            const job = await prisma.job.findUnique({
+                where: { id: jobId },
                 select: { isDeleted: true }
             });
-            if (!drive || drive.isDeleted) {
+            if (!job || job.isDeleted) {
                 return NextResponse.json({ error: "Applications for this position are closed" }, { status: 403 });
             }
         }
@@ -48,20 +48,20 @@ export async function POST(request: Request) {
         const safeFileName = fileName.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
         // -- GENERATE KEY --
         let orgSlug = "unknown-org";
-        let driveTitle = "unknown-job";
+        let jobTitle = "unknown-job";
         if (session?.orgId) {
-            const org = await prisma.organization.findUnique({ where: { id: session.orgId }, select: { slug: true }});
-            if (org?.slug) orgSlug = org.slug;
+            const org = await prisma.organizationDetails.findUnique({ where: { id: session.orgId }, select: { urlSlug: true }});
+            if (org?.urlSlug) orgSlug = org.urlSlug;
         }
-        if (driveId) {
-            const driveData = await prisma.drive.findUnique({
-                where: { id: driveId },
-                select: { title: true, organization: { select: { slug: true } } }
+        if (jobId) {
+            const jobData = await prisma.job.findUnique({
+                where: { id: jobId },
+                select: { title: true, organization: { select: { urlSlug: true } } }
             });
-            if (driveData) {
-                driveTitle = driveData.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-                if (driveData.organization?.slug) {
-                    orgSlug = driveData.organization.slug;
+            if (jobData) {
+                jobTitle = jobData.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+                if (jobData.organization?.urlSlug) {
+                    orgSlug = jobData.organization.urlSlug;
                 }
             }
         }
@@ -71,7 +71,7 @@ export async function POST(request: Request) {
             : (process.env.R2_RESUMES_BUCKET || "resumes");
         const key = isJD
             ? `JDs/${orgSlug}/${uniqueId}_${safeFileName}`
-            : `resume/${orgSlug}/${driveTitle}/${uniqueId}_${safeFileName}`;
+            : `resume/${orgSlug}/${jobTitle}/${uniqueId}_${safeFileName}`;
         const uploadUrl = await getPresignedUploadUrl(bucket, key, fileType);
         // Pick PUBLIC DOMAIN based on TYPE
         let publicUrlBase = "";

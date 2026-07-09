@@ -29,21 +29,21 @@ interface ResumeCandidate {
 type SortKey = "aiScore" | "fullName" | "resumeStatus";
 type SortDir = "asc" | "desc";
 // -- Main export ---------------------------------------------------------------
-export function ResumeScreening({ driveId, driveName }: { driveId: string; driveName: string }) {
+export function ResumeScreening({ jobId, jobName }: { jobId: string; jobName: string }) {
     const router = useRouter();
     const [modalOpen, setModalOpen] = useState(false);
     const [candidates, setCandidates] = useState<ResumeCandidate[]>([]);
     const [loadingData, setLoadingData] = useState(true);
     const refresh = useCallback(async () => {
         try {
-            const res = await fetch(`/api/drives/${driveId}/resume-screening`);
+            const res = await fetch(`/api/jobs/${jobId}/resume-screening`);
             if (!res.ok) return;
             const data = await res.json();
             setCandidates(data.candidates || []);
         } catch { /* silent */ } finally {
             setLoadingData(false);
         }
-    }, [driveId]);
+    }, [jobId]);
     useEffect(() => { refresh(); }, [refresh]);
     // Auto-poll while any candidate is still in-flight
     useEffect(() => {
@@ -75,7 +75,7 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
                 </div>
                 <div className="flex items-center gap-3">
                     {candidates.length > 0 && (
-                        <Link href={`/admin/candidates/drive/${encodeURIComponent(driveId)}`}>
+                        <Link href={`/admin/candidates/job/${encodeURIComponent(jobId)}`}>
                             <Button className="h-10 px-5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold flex items-center gap-2 shadow-sm">
                                 View Candidates
                                 <ArrowRight className="h-4 w-4" />
@@ -130,12 +130,12 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
                 <UploadModal
                     open={modalOpen}
                     onClose={() => setModalOpen(false)}
-                    driveId={driveId}
-                    driveName={driveName}
+                    jobId={jobId}
+                    jobName={jobName}
                     onComplete={() => {
                         setModalOpen(false);
                         refresh();
-                        router.push(`/admin/candidates/drive/${encodeURIComponent(driveId)}`);
+                        router.push(`/admin/candidates/job/${encodeURIComponent(jobId)}`);
                     }}
                 />
             )}
@@ -161,10 +161,10 @@ function EmptyState({ onUpload }: { onUpload: () => void }) {
 }
 // -- Upload modal --------------------------------------------------------------
 function UploadModal({
-    open, onClose, driveId, driveName, onComplete,
+    open, onClose, jobId, jobName, onComplete,
 }: {
     open: boolean; onClose: () => void;
-    driveId: string; driveName: string;
+    jobId: string; jobName: string;
     onComplete: () => void;
 }) {
     const [files, setFiles] = useState<File[]>([]);
@@ -198,7 +198,7 @@ function UploadModal({
         setFiles(prev => [...prev, ...dropped]);
     };
     const loadSummaryForIds = async (ids: string[]) => {
-        const res = await fetch(`/api/drives/${driveId}/resume-screening`);
+        const res = await fetch(`/api/jobs/${jobId}/resume-screening`);
         if (!res.ok) throw new Error("Failed to load screening summary");
         const data = await res.json();
         const idSet = new Set(ids);
@@ -245,7 +245,7 @@ function UploadModal({
         try {
             const fd = new FormData();
             files.forEach(f => fd.append("files", f));
-            const res = await fetch(`/api/drives/${driveId}/resume-screening`, { method: "POST", body: fd });
+            const res = await fetch(`/api/jobs/${jobId}/resume-screening`, { method: "POST", body: fd });
             if (!res.ok) throw new Error((await res.json()).error || "Upload failed");
             const data = await res.json();
             const uploadedIds: string[] = data.candidateIds || [];
@@ -256,7 +256,7 @@ function UploadModal({
             // Poll candidate statuses until all are in a terminal state
             pollRef.current = setInterval(async () => {
                 try {
-                    const pollRes = await fetch(`/api/drives/${driveId}/resume-screening`);
+                    const pollRes = await fetch(`/api/jobs/${jobId}/resume-screening`);
                     if (!pollRes.ok) return;
                     const pollData = await pollRes.json();
                     const idSet = new Set(uploadedIds);
@@ -292,7 +292,7 @@ function UploadModal({
                             phase === "summary" ? "Screening Complete" :
                             "Upload Resumes"}
                     </DialogTitle>
-                    <p className="text-sm text-gray-500">{driveName}</p>
+                    <p className="text-sm text-gray-500">{jobName}</p>
                 </DialogHeader>
                 {/* IDLE / UPLOADING */}
                 {(phase === "idle" || phase === "uploading") && (

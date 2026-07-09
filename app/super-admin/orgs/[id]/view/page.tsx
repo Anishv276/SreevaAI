@@ -114,15 +114,15 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
     const router = useRouter();
     const searchParams = useSearchParams();
     const tab = searchParams.get("tab");
-    const [view, setView] = useState<"drives" | "candidates">("candidates");
+    const [view, setView] = useState<"jobs" | "candidates">("candidates");
     // Sync tab from URL to state
     useEffect(() => {
-        if (tab === "drives" || tab === "candidates") {
-            setView(tab as "drives" | "candidates");
+        if (tab === "jobs" || tab === "candidates") {
+            setView(tab as "jobs" | "candidates");
         }
     }, [tab]);
     const [org, setOrg] = useState<OrgDetail | null>(null);
-    const [drives, setDrives] = useState<Job[]>([]);
+    const [jobs, setJobs] = useState<Job[]>([]);
     const [candidates, setCandidates] = useState<Candidate[]>([]);
     const [loading, setLoading] = useState(true);
     const [candidatesLoading, setCandidatesLoading] = useState(false);
@@ -196,24 +196,24 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
     const [limit] = useState(10);
     const [searchInput, setSearchInput] = useState("");
     const [search, setSearch] = useState("");
-    // 1. Initial load (Org + Drives)
+    // 1. Initial load (Org + Jobs)
     useEffect(() => {
         const loadBaseData = async () => {
             try {
-                const [orgRes, drivesRes] = await Promise.all([
+                const [orgRes, jobsRes] = await Promise.all([
                     fetch(`/api/super-admin/orgs/${id}`),
-                    fetch(`/api/drives?orgId=${id}`)
+                    fetch(`/api/jobs?orgId=${id}`)
                 ]);
                 if (!orgRes.ok) {
                     setError("Failed to load organization data. Please try again.");
                     return;
                 }
-                const [orgData, drivesData] = await Promise.all([
+                const [orgData, jobsData] = await Promise.all([
                     orgRes.json(),
-                    drivesRes.json()
+                    jobsRes.json()
                 ]);
                 setOrg(orgData);
-                setDrives(drivesData.drives || []);
+                setJobs(jobsData.jobs || []);
             } catch {
                 setError("Network error. Could not connect to the server.");
             } finally {
@@ -325,14 +325,14 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                             Candidates
                         </button>
                         <button
-                            onClick={() => setView("drives")}
+                            onClick={() => setView("jobs")}
                             className={`flex items-center gap-3 px-8 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${
-                                view === "drives" 
+                                view === "jobs" 
                                 ? "bg-white text-gray-900 shadow-md shadow-gray-200/50" 
                                 : "text-gray-400 hover:text-gray-600 hover:bg-white/50"
                             }`}
                         >
-                            <Briefcase className={`h-4 w-4 ${view === "drives" ? "text-[#7C3AED]" : "text-gray-300"}`} />
+                            <Briefcase className={`h-4 w-4 ${view === "jobs" ? "text-[#7C3AED]" : "text-gray-300"}`} />
                             Active Jobs
                         </button>
                     </div>
@@ -351,23 +351,23 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                         </a>
                     </p>
                 </div>
-                {view === "drives" && (
+                {view === "jobs" && (
                     <div className="space-y-6">
-                         {drives.length === 0 ? (
+                         {jobs.length === 0 ? (
                             <div className="py-32 text-center bg-gray-50/50 rounded-[3rem] border border-dashed border-gray-200">
                                 <Briefcase className="h-12 w-12 text-gray-200 mx-auto mb-4" />
-                                <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px]">No active recruitment drives detected.</p>
+                                <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px]">No active recruitment jobs detected.</p>
                             </div>
                         ) : (
                             <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-                                {drives.map((drive) => (
-                                    <div key={drive.id} className="relative group">
+                                {jobs.map((job) => (
+                                    <div key={job.id} className="relative group">
                                         <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
-                                            <h3 className="font-bold text-gray-900">{drive.title}</h3>
-                                            <p className="text-sm text-gray-500">{(drive as any).location || 'Remote'}</p>
+                                            <h3 className="font-bold text-gray-900">{job.title}</h3>
+                                            <p className="text-sm text-gray-500">{(job as any).location || 'Remote'}</p>
                                         </div>
                                         <div className="absolute top-4 right-4 text-[9px] font-black uppercase tracking-widest px-3 py-1 bg-white/90 backdrop-blur border rounded-full text-gray-900 shadow-sm opacity-60">
-                                            {(drive as any).status}
+                                            {(job as any).status}
                                         </div>
                                     </div>
                                 ))}

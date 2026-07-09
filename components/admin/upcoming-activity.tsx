@@ -8,7 +8,7 @@ interface NeedsActionData {
     upcomingActivity: {
         reportsReadyForReview: number;
         candidatesYetToStart: number;
-        drivesExpiringSoon: number;
+        jobsExpiringSoon: number;
         invitesSentLast24h: number;
     };
 }
@@ -75,8 +75,8 @@ export function UpcomingActivity({ initialData }: UpcomingActivityProps = {}) {
             text: "text-green-500",
         },
         {
-            label: "Drives expiring in 3 days",
-            value: data.upcomingActivity.drivesExpiringSoon,
+            label: "Jobs expiring in 3 days",
+            value: data.upcomingActivity.jobsExpiringSoon,
             icon: Clock,
             bg: "bg-purple-50",
             text: "text-purple-500",

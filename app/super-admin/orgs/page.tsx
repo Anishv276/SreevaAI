@@ -62,7 +62,7 @@ interface Org {
     status: string;
     usageMetrics?: Record<string, unknown> | null;
     adminCount: number;
-    driveCount: number;
+    jobCount: number;
     candidateCount: number;
     // AI Config (Setup)
     voiceId?: string;
@@ -75,7 +75,7 @@ interface Org {
     interviewCount?: number;
     _count?: {
         users: number;
-        drives: number;
+        jobs: number;
     };
 }
 type BillingFeatureKey = "interview" | "resumeExtraction" | "jdExtraction" | "resumeReport" | "interviewReport" | "interviewBrief" | "interviewLLMGeneration";
@@ -507,7 +507,7 @@ export default function OrgsPage() {
                                             {org.adminCount ?? org._count?.users ?? 0}
                                         </td>
                                         <td className="px-4 py-4 text-center font-bold text-gray-700 text-[11px] tabular-nums">
-                                            {org.driveCount ?? org._count?.drives ?? 0}
+                                            {org.jobCount ?? org._count?.jobs ?? 0}
                                         </td>
                                         <td className="px-4 py-4 text-center font-bold text-violet-500 text-[11px] tabular-nums">
                                             {org.candidateCount || 0}
@@ -650,7 +650,7 @@ export default function OrgsPage() {
                 onClose={() => setIsDeleteModalOpen(false)}
                 onConfirm={confirmDelete}
                 title="Delete Organization"
-                description={`Are you sure you want to terminate ${orgToDelete?.name}? This will permanently remove all data, recruitment drives, and candidates associated with this portal. This action is irreversible.`}
+                description={`Are you sure you want to terminate ${orgToDelete?.name}? This will permanently remove all data, recruitment jobs, and candidates associated with this portal. This action is irreversible.`}
                 confirmText="Confirm Deletion"
                 isLoading={isDeleting}
             />
@@ -970,7 +970,7 @@ export default function OrgsPage() {
                                                     <div className="grid grid-cols-2 sm:grid-cols-2 gap-8 text-right">
                                                         <div className="space-y-1.5">
                                                             <div className="text-xs font-medium text-gray-400 uppercase tracking-wider">Active Jobs</div>
-                                                            <div className="text-[28px] font-bold text-gray-900 tabular-nums">{(metricsOrg as any).driveCount || 0}</div>
+                                                            <div className="text-[28px] font-bold text-gray-900 tabular-nums">{(metricsOrg as any).jobCount || 0}</div>
                                                         </div>
                                                         <div className="space-y-1.5">
                                                             <div className="text-xs font-medium text-gray-400 uppercase tracking-wider">Total Sessions</div>
@@ -1185,7 +1185,7 @@ export default function OrgsPage() {
                                                             <tr key={row.id} className="hover:bg-gray-50/70">
                                                                 <td className="px-6 py-4">
                                                                     <div className="font-bold text-gray-900">{row.candidate}</div>
-                                                                    <div className="text-[11px] font-medium text-gray-500">{row.drive}</div>
+                                                                    <div className="text-[11px] font-medium text-gray-500">{row.job}</div>
                                                                 </td>
                                                                 <td className="px-6 py-4 text-center text-sm font-bold text-gray-900">{row.duration}</td>
                                                                 <td className="px-6 py-4 text-right text-sm font-bold text-gray-900">{fmt(row.llmCost)}</td>

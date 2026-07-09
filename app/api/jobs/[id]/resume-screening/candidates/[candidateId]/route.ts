@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { authorizeDriveAccess } from "@/lib/drive-access";
+import { authorizeJobAccess } from "@/lib/job-access";
 export async function PATCH(
     request: Request,
     { params }: { params: Promise<{ id: string; candidateId: string }> }
 ) {
     try {
-        const { id: driveId, candidateId } = await params;
-        const access = await authorizeDriveAccess(driveId);
+        const { id: jobId, candidateId } = await params;
+        const access = await authorizeJobAccess(jobId);
         if (!access.ok) {
             return NextResponse.json({ error: access.error }, { status: access.status });
         }
@@ -21,8 +21,8 @@ export async function PATCH(
         if (!candidate) {
             return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
         }
-        if (candidate.driveId !== driveId) {
-            return NextResponse.json({ error: "Candidate not in this drive" }, { status: 403 });
+        if (candidate.jobId !== jobId) {
+            return NextResponse.json({ error: "Candidate not in this job" }, { status: 403 });
         }
         const updated = await prisma.application.update({
             where: { id: candidateId },
@@ -39,8 +39,8 @@ export async function DELETE(
     { params }: { params: Promise<{ id: string; candidateId: string }> }
 ) {
     try {
-        const { id: driveId, candidateId } = await params;
-        const access = await authorizeDriveAccess(driveId);
+        const { id: jobId, candidateId } = await params;
+        const access = await authorizeJobAccess(jobId);
         if (!access.ok) {
             return NextResponse.json({ error: access.error }, { status: access.status });
         }
@@ -50,8 +50,8 @@ export async function DELETE(
         if (!candidate) {
             return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
         }
-        if (candidate.driveId !== driveId) {
-            return NextResponse.json({ error: "Candidate not in this drive" }, { status: 403 });
+        if (candidate.jobId !== jobId) {
+            return NextResponse.json({ error: "Candidate not in this job" }, { status: 403 });
         }
         await prisma.application.update({
             where: { id: candidateId },

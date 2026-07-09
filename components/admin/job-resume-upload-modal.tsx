@@ -7,11 +7,11 @@ import { toast } from "@/components/ui/toast-custom";
 import { AlertTriangle, CheckCircle2, FileText, Loader2, Lock, Minus, Plus, UploadCloud } from "lucide-react";
 import { getInterviewActionBlockedMessage, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { useAdminOrg } from "@/context/admin-org-context";
-interface DriveResumeUploadModalProps {
+interface JobResumeUploadModalProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    driveId: string;
-    driveName: string;
+    jobId: string;
+    jobName: string;
     mode?: "ats" | "interview-only";
     onUploaded?: () => void;
 }
@@ -20,7 +20,7 @@ function fmt(bytes: number) {
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
-export function DriveResumeUploadModal({ open, onOpenChange, driveId, driveName, mode = "ats", onUploaded }: DriveResumeUploadModalProps) {
+export function JobResumeUploadModal({ open, onOpenChange, jobId, jobName, mode = "ats", onUploaded }: JobResumeUploadModalProps) {
     const [files, setFiles] = useState<File[]>([]);
     const [dragging, setDragging] = useState(false);
     const [uploading, setUploading] = useState(false);
@@ -48,7 +48,7 @@ export function DriveResumeUploadModal({ open, onOpenChange, driveId, driveName,
         try {
             const fd = new FormData();
             files.forEach(f => fd.append("files", f));
-            const res = await fetch(`/api/drives/${driveId}/resume-screening`, { method: "POST", body: fd });
+            const res = await fetch(`/api/jobs/${jobId}/resume-screening`, { method: "POST", body: fd });
             if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Upload failed");
             setDone(true);
             toast.success(mode === "interview-only"
@@ -70,7 +70,7 @@ export function DriveResumeUploadModal({ open, onOpenChange, driveId, driveName,
                 {/* Header */}
                 <div className="px-6 py-4 border-b border-zinc-100">
                     <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Upload Resumes</p>
-                    <h2 className="mt-0.5 text-[15px] font-semibold text-zinc-800 truncate max-w-[340px]">{driveName}</h2>
+                    <h2 className="mt-0.5 text-[15px] font-semibold text-zinc-800 truncate max-w-[340px]">{jobName}</h2>
                 </div>
                 {/* Body */}
                 <div className="overflow-y-auto px-6 py-5 space-y-3">

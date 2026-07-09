@@ -29,7 +29,7 @@ interface Candidate {
   id: string;
   name: string;
   role: string;
-  driveId: string;
+  jobId: string;
   score: number | null;
   resumeUrl: string;
 }
@@ -202,7 +202,7 @@ export default function SchedulePage() {
       <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-8 gap-4 px-1">
         <div>
           <h1 className="text-[28px] font-bold text-gray-900 tracking-tight leading-tight">Calendar</h1>
-          <p className="text-[14px] text-gray-500 mt-1">Track all AI interviews across your drives.</p>
+          <p className="text-[14px] text-gray-500 mt-1">Track all AI interviews across your jobs.</p>
         </div>
         
         <div className="flex items-center gap-4">
@@ -223,9 +223,9 @@ export default function SchedulePage() {
             </button>
           </div>
 
-          <Link href="/admin/create-drive">
+          <Link href="/admin/create-job">
             <Button className="h-10 px-4 rounded-xl bg-violet-600 hover:bg-violet-700 text-white shadow-sm flex items-center gap-2 font-bold text-[13px] transition-colors border-0">
-               <Plus className="h-4 w-4" /> New Drive
+               <Plus className="h-4 w-4" /> New Job
             </Button>
           </Link>
         </div>
@@ -335,7 +335,7 @@ export default function SchedulePage() {
                                         <ChevronRight className="h-4 w-4 text-gray-400 absolute right-0 top-0 opacity-0 group-hover:opacity-100 transition-opacity" />
                                         <h3 className="text-[14px] font-bold text-gray-900 pr-5 truncate">{event.candidate.name}</h3>
                                         <p className="text-gray-500 font-medium text-[12px] mt-0.5 truncate">{event.candidate.role}</p>
-                                        <p className="text-gray-400 font-medium text-[11px] mt-0.5 truncate">Drive: {event.candidate.driveId}</p>
+                                        <p className="text-gray-400 font-medium text-[11px] mt-0.5 truncate">Job: {event.candidate.jobId}</p>
                                         
                                         <div className="mt-2">
                                             {(event.status || '').toLowerCase() === 'scheduled' && <span className="px-2 py-0.5 bg-blue-50 text-blue-600 text-[10px] font-bold rounded-md">Scheduled</span>}

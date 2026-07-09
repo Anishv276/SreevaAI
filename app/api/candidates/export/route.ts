@@ -6,7 +6,7 @@ export async function GET(request: Request) {
         const session = await getSession();
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
         const { searchParams } = new URL(request.url);
-        const driveId = searchParams.get("driveId");
+        const jobId = searchParams.get("jobId");
         // -- TENANT ISOLATION: only a SUPER_ADMIN may export another org via the
         // query string. A regular admin is locked to their own session org -- 
         // otherwise ?orgId=<victim_org> would dump every other tenant's candidate
@@ -21,11 +21,11 @@ export async function GET(request: Request) {
         // Fetch all candidates for the export
         const candidates = await prisma.application.findMany({
             where: {
-                driveId: driveId || undefined,
-                drive: { orgId }
+                jobId: jobId || undefined,
+                job: { orgId }
             },
             include: {
-                drive: {
+                job: {
                     select: { title: true }
                 }
             },
@@ -49,7 +49,7 @@ export async function GET(request: Request) {
             csvCell(c.fullName),
             csvCell(c.email),
             csvCell(c.phone),
-            csvCell(c.drive?.title || "Unknown"),
+            csvCell(c.job?.title || "Unknown"),
             c.aiScore || 0,
             csvCell(c.resumeStatus || "pending"),
             csvCell(c.interviewStatus || "pending")

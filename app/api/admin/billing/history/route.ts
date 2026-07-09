@@ -26,7 +26,7 @@ export async function GET(request: Request) {
     const interviews = await prisma.interview.findMany({
       where: {
         status: { not: "PENDING" },
-        application: { drive: { orgId } },
+        application: { job: { orgId } },
       },
       select: {
         id: true,
@@ -38,7 +38,7 @@ export async function GET(request: Request) {
         application: {
           select: {
             fullName: true,
-            drive: { select: { title: true, role: true } },
+            job: { select: { title: true, role: true } },
           },
         },
       },
@@ -61,7 +61,7 @@ export async function GET(request: Request) {
         return {
           id: row.id,
           candidate: row.application?.fullName || "Unknown Candidate",
-          role: row.application?.drive?.role || row.application?.drive?.title || "Unknown Role",
+          role: row.application?.job?.role || row.application?.job?.title || "Unknown Role",
           interviews: 1,
           creditsUsed,
           status: normalizeStatus(row.status),

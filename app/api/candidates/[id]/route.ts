@@ -17,11 +17,11 @@ export async function GET(
         // -- TENANT ISOLATION: enforce org ownership in the DB query itself.
         // Non-SUPER_ADMINs are scoped to their own org; a SUPER_ADMIN sees any.
         // Doing this in the WHERE clause (not a post-fetch JS check) closes the
-        // null-orgId bypass where an orphaned drive made the check short-circuit.
+        // null-orgId bypass where an orphaned job made the check short-circuit.
         const orgScope =
             session.role === "SUPER_ADMIN"
                 ? { id }
-                : { id, drive: { orgId: session.orgId ?? "__none__" } };
+                : { id, job: { orgId: session.orgId ?? "__none__" } };
         const candidate = await prisma.application.findFirst({
             where: orgScope,
             select: {
@@ -39,7 +39,7 @@ export async function GET(
                 interviewStatus: true,
                 createdAt: true,
                 updatedAt: true,
-                drive: {
+                job: {
                     select: {
                         title: true,
                         orgId: true,
@@ -95,7 +95,7 @@ export async function GET(
             ...candidate,
             interview,
             formattedDate: new Date(candidate.createdAt).toLocaleDateString(),
-            driveTitle: candidate.drive?.title || "Role N/A"
+            jobTitle: candidate.job?.title || "Role N/A"
         }, {
             headers: {
                 // PII (email, phone, resume, scores, transcript) must not be
@@ -127,7 +127,7 @@ export async function DELETE(
         const candidate = await prisma.application.findFirst({
             where: {
                 id,
-                drive: { orgId }
+                job: { orgId }
             },
             select: {
                 id: true,
@@ -206,7 +206,7 @@ export async function PATCH(
         const body = parsed.data;
         // -- SECURITY: Verify ownership ---------------------
         const candidate = await prisma.application.findFirst({
-            where: { id, drive: { orgId } }
+            where: { id, job: { orgId } }
         });
         if (!candidate) {
             return NextResponse.json({ error: "Candidate not found or unauthorized" }, { status: 404 });
@@ -233,7 +233,7 @@ export async function PATCH(
         const updated = await prisma.application.update({
             where: { id },
             data: dataToUpdate,
-            include: { drive: { select: { title: true, orgId: true } } },
+            include: { job: { select: { title: true, orgId: true } } },
         });
         if (isShortlist || isRejected) {
             const actionLabel = isShortlist

@@ -26,21 +26,21 @@ function buildSearchClause(query: string): Prisma.InterviewWhereInput {
             },
             {
                 application: {
-                    drive: {
+                    job: {
                         title: { contains: query, mode: "insensitive" },
                     },
                 },
             },
             {
                 application: {
-                    drive: {
+                    job: {
                         role: { contains: query, mode: "insensitive" },
                     },
                 },
             },
             {
                 application: {
-                    drive: {
+                    job: {
                         organization: {
                             name: { contains: query, mode: "insensitive" },
                         },
@@ -49,9 +49,9 @@ function buildSearchClause(query: string): Prisma.InterviewWhereInput {
             },
             {
                 application: {
-                    drive: {
+                    job: {
                         organization: {
-                            slug: { contains: query, mode: "insensitive" },
+                            urlSlug: { contains: query, mode: "insensitive" },
                         },
                     },
                 },
@@ -124,7 +124,7 @@ export async function GET(request: Request) {
                             fullName: true,
                             email: true,
                             phone: true,
-                            drive: {
+                            job: {
                                 select: {
                                     id: true,
                                     title: true,
@@ -133,8 +133,8 @@ export async function GET(request: Request) {
                                         select: {
                                             id: true,
                                             name: true,
-                                            slug: true,
-                                            plan: true,
+                                            urlSlug: true,
+                                            billingPlan: true,
                                         },
                                     },
                                 },

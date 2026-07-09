@@ -35,9 +35,9 @@ export async function GET(request: Request) {
                 if (closed) return;
                 try {
                     // A SUPER_ADMIN (no single org) gets a heartbeat-only stream;
-                    // everyone else is scoped strictly to their own org's drives.
+                    // everyone else is scoped strictly to their own org's jobs.
                     if (!sessionOrgId) return;
-                    const orgScope = { drive: { orgId: sessionOrgId } };
+                    const orgScope = { job: { orgId: sessionOrgId } };
                     // Check for NEW applications
                     const newApps = await prisma.application.findMany({
                         where: { ...orgScope, createdAt: { gt: lastCheck } },

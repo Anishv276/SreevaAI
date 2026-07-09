@@ -83,7 +83,7 @@ export async function GET(req: NextRequest) {
                 where: {
                     status: "COMPLETED",
                     completedAt: { gte: start },
-                    application: { drive: { orgId } },
+                    application: { job: { orgId } },
                 },
                 select: {
                     id: true,
@@ -94,7 +94,7 @@ export async function GET(req: NextRequest) {
         } catch {
             // integritySignals column may not exist yet - return zeros
             const total = await prisma.interview.count({
-                where: { status: "COMPLETED", completedAt: { gte: start }, application: { drive: { orgId } } },
+                where: { status: "COMPLETED", completedAt: { gte: start }, application: { job: { orgId } } },
             });
             return NextResponse.json({
                 total,

@@ -13,8 +13,8 @@ import { toast } from "@/components/ui/toast-custom";
 interface Props {
     open: boolean;
     onClose: () => void;
-    driveId: string;
-    driveName: string;
+    jobId: string;
+    jobName: string;
     /** mode: "ats" uses resume-screening upload; "interview-only" creates candidate + sends invite */
     mode: "ats" | "interview-only";
     onDone?: () => void;
@@ -26,7 +26,7 @@ function fmt(bytes: number) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function AddCandidateDrawer({ open, onClose, driveId, driveName, mode, onDone }: Props) {
+export function AddCandidateDrawer({ open, onClose, jobId, jobName, mode, onDone }: Props) {
     const [fullName, setFullName] = useState("");
     const [email, setEmail] = useState("");
     const [phone, setPhone] = useState("");
@@ -75,7 +75,7 @@ export function AddCandidateDrawer({ open, onClose, driveId, driveName, mode, on
                 // then enqueue screening. Admin manually sends invite after shortlisting.
                 const fd = new FormData();
                 fd.append("file", resumeFile!);
-                fd.append("driveId", driveId);
+                fd.append("jobId", jobId);
                 fd.append("fullName", fullName.trim());
                 fd.append("email", email.trim());
                 fd.append("phone", phone.trim());
@@ -90,7 +90,7 @@ export function AddCandidateDrawer({ open, onClose, driveId, driveName, mode, on
                 if (resumeFile) {
                     const fd = new FormData();
                     fd.append("file", resumeFile);
-                    fd.append("driveId", driveId);
+                    fd.append("jobId", jobId);
                     const upRes = await fetch(`/api/admin/upload-resume`, { method: "POST", body: fd });
                     if (upRes.ok) {
                         const upData = await upRes.json();
@@ -101,7 +101,7 @@ export function AddCandidateDrawer({ open, onClose, driveId, driveName, mode, on
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                        driveId,
+                        jobId,
                         candidates: [{ fullName: fullName.trim(), email: email.trim(), phone: phone.trim(), resumeUrl }],
                     }),
                 });
@@ -152,7 +152,7 @@ export function AddCandidateDrawer({ open, onClose, driveId, driveName, mode, on
                                 <p className="text-[10px] font-black uppercase tracking-[0.22em] text-gray-400">
                                     {isAts ? "Add Candidate" : "Add & Invite"}
                                 </p>
-                                <h2 className="text-[16px] font-bold text-gray-900 mt-0.5 truncate max-w-[260px]">{driveName}</h2>
+                                <h2 className="text-[16px] font-bold text-gray-900 mt-0.5 truncate max-w-[260px]">{jobName}</h2>
                             </div>
                             <button
                                 onClick={onClose}

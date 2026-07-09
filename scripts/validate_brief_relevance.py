@@ -41,7 +41,7 @@ SELECT
     d."interviewQuestions",
     o."llmInterviewBrief"
 FROM "Application" a
-JOIN "Drive" d ON a."driveId" = d.id
+JOIN "Job" d ON a."jobId" = d.id
 LEFT JOIN "Organization" o ON d."orgId" = o.id
 WHERE a."fullName" ILIKE $1
 ORDER BY a."createdAt" DESC

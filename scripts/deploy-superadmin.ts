@@ -56,7 +56,7 @@ async function main() {
         });
     }
     // 2. Sync User record
-    const existingUserOld = await prisma.user.findFirst({
+    const existingUserOld = await prisma.organizationCredentials.findFirst({
         where: {
             email: {
                 equals: oldEmail,
@@ -64,7 +64,7 @@ async function main() {
             },
         },
     });
-    const existingUserNew = await prisma.user.findFirst({
+    const existingUserNew = await prisma.organizationCredentials.findFirst({
         where: {
             email: {
                 equals: newEmail,
@@ -74,26 +74,26 @@ async function main() {
     });
     if (existingUserOld) {
         if (existingUserNew && existingUserOld.id !== existingUserNew.id) {
-            await prisma.user.delete({ where: { id: existingUserNew.id } });
+            await prisma.organizationCredentials.delete({ where: { id: existingUserNew.id } });
         }
-        await prisma.user.update({
+        await prisma.organizationCredentials.update({
             where: { id: existingUserOld.id },
             data: {
                 email: newEmail,
                 name: name,
                 password: hashedPassword,
-                role: "SUPER_ADMIN"
+                platformRole: "SUPER_ADMIN"
             }
         });
     } else {
-        await prisma.user.upsert({
+        await prisma.organizationCredentials.upsert({
             where: { email: newEmail },
-            update: { password: hashedPassword, role: "SUPER_ADMIN", name },
+            update: { password: hashedPassword, platformRole: "SUPER_ADMIN", name },
             create: {
                 id: generateId("usr", name),
                 email: newEmail,
                 password: hashedPassword,
-                role: "SUPER_ADMIN",
+                platformRole: "SUPER_ADMIN",
                 name
             },
         });

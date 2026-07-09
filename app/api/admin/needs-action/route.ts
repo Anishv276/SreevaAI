@@ -14,7 +14,7 @@ export async function GET() {
         const awaitingReview = await prisma.application.findMany({
             where: {
                 isDeleted: false,
-                drive: { orgId, isDeleted: false },
+                job: { orgId, isDeleted: false },
                 interview: { status: "COMPLETED", isDeleted: false },
                 resumeStatus: { notIn: ["SHORTLISTED", "shortlisted", "REJECTED", "rejected"] },
             },
@@ -23,7 +23,7 @@ export async function GET() {
                 fullName: true,
                 aiScore: true,
                 updatedAt: true,
-                drive: { select: { title: true, role: true } },
+                job: { select: { title: true, role: true } },
                 interview: { select: { completedAt: true } },
             },
             orderBy: { updatedAt: "asc" },
@@ -31,7 +31,7 @@ export async function GET() {
         const inviteNotSent = await prisma.application.findMany({
             where: {
                 isDeleted: false,
-                drive: { orgId, isDeleted: false },
+                job: { orgId, isDeleted: false },
                 OR: [
                     { interview: null },
                     { interview: { inviteSentAt: null, status: "PENDING", isDeleted: false } },
@@ -42,26 +42,26 @@ export async function GET() {
                 id: true,
                 fullName: true,
                 createdAt: true,
-                drive: { select: { title: true, role: true } },
+                job: { select: { title: true, role: true } },
             },
             orderBy: { createdAt: "asc" },
         });
         const shortlistedNoDecision = await prisma.application.findMany({
             where: {
                 isDeleted: false,
-                drive: { orgId, isDeleted: false },
+                job: { orgId, isDeleted: false },
                 resumeStatus: { in: ["SHORTLISTED", "shortlisted"] },
             },
             select: {
                 id: true,
                 fullName: true,
                 updatedAt: true,
-                drive: { select: { title: true, role: true } },
+                job: { select: { title: true, role: true } },
             },
             orderBy: { updatedAt: "asc" },
         });
 
-        const drivesExpiringSoon = await prisma.drive.count({
+        const jobsExpiringSoon = await prisma.job.count({
             where: {
                 orgId,
                 isDeleted: false,
@@ -74,7 +74,7 @@ export async function GET() {
         
         const candidatesYetToStart = await prisma.interview.count({
             where: {
-                application: { drive: { orgId } },
+                application: { job: { orgId } },
                 isDeleted: false,
                 status: "PENDING",
                 inviteSentAt: { not: null },
@@ -83,7 +83,7 @@ export async function GET() {
 
         const invitesSentLast24h = await prisma.interview.count({
             where: {
-                application: { drive: { orgId } },
+                application: { job: { orgId } },
                 isDeleted: false,
                 inviteSentAt: {
                     gte: new Date(Date.now() - 24 * 60 * 60 * 1000),
@@ -95,29 +95,29 @@ export async function GET() {
             awaitingReview: awaitingReview.map((a) => ({
                 id: a.id,
                 name: a.fullName,
-                role: a.drive.role || a.drive.title,
-                driveTitle: a.drive.title,
+                role: a.job.role || a.job.title,
+                jobTitle: a.job.title,
                 score: a.aiScore,
                 daysWaiting: daysSince(a.interview?.completedAt ?? a.updatedAt),
             })),
             inviteNotSent: inviteNotSent.map((a) => ({
                 id: a.id,
                 name: a.fullName,
-                role: a.drive.role || a.drive.title,
-                driveTitle: a.drive.title,
+                role: a.job.role || a.job.title,
+                jobTitle: a.job.title,
                 daysWaiting: daysSince(a.createdAt),
             })),
             shortlistedNoDecision: shortlistedNoDecision.map((a) => ({
                 id: a.id,
                 name: a.fullName,
-                role: a.drive.role || a.drive.title,
-                driveTitle: a.drive.title,
+                role: a.job.role || a.job.title,
+                jobTitle: a.job.title,
                 daysWaiting: daysSince(a.updatedAt),
             })),
             upcomingActivity: {
                 reportsReadyForReview: awaitingReview.length, // now full count, no take() cap
                 candidatesYetToStart,
-                drivesExpiringSoon,
+                jobsExpiringSoon,
                 invitesSentLast24h,
             }
         }, {

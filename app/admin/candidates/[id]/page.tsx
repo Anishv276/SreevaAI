@@ -498,7 +498,7 @@ const groupedProctoringSignals = rawProctoringEvents.reduce((acc: any[], ev: any
                 createdAt: candidate?.createdAt,
                 location: candidate?.location || candidate?.city || "—",
                 resumeUrl: candidate?.resumeUrl || null,
-                drive: { title: candidate?.drive?.title || candidate?.driveTitle || "Role N/A" },
+                job: { title: candidate?.job?.title || candidate?.jobTitle || "Role N/A" },
                 experienceYears,
             },
             mounted,

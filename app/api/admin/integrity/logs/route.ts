@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
                 status: "COMPLETED",
                 completedAt: { gte: startTime },
                 application: {
-                    drive: { orgId }
+                    job: { orgId }
                 }
             },
             select: {
@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
                     select: {
                         fullName: true,
                         email: true,
-                        drive: {
+                        job: {
                             select: {
                                 title: true
                             }
@@ -74,7 +74,7 @@ export async function GET(req: NextRequest) {
                 id: iv.id,
                 candidateName: iv.application.fullName,
                 candidateEmail: iv.application.email,
-                role: iv.application.drive?.title || "N/A",
+                role: iv.application.job?.title || "N/A",
                 startedAt: iv.startedAt,
                 completedAt: iv.completedAt,
                 snapshots: iv.snapshots,

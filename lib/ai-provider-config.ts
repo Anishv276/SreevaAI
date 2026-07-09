@@ -1,7 +1,7 @@
 import { DEFAULT_ORG_AI_CONFIG } from "@/lib/ai-models-config";
 
-// Drive-level config only carries voiceId (inherits everything else from org).
-export function normalizeDriveAiConfig(args: { current?: Record<string, unknown> | null; next?: Record<string, unknown> | null } | Record<string, unknown>): Record<string, unknown> {
+// Job-level config only carries voiceId (inherits everything else from org).
+export function normalizeJobAiConfig(args: { current?: Record<string, unknown> | null; next?: Record<string, unknown> | null } | Record<string, unknown>): Record<string, unknown> {
     const fields = ("next" in args || "current" in args)
         ? ({ ...(args as any).current, ...(args as any).next } as Record<string, unknown>)
         : args as Record<string, unknown>;
