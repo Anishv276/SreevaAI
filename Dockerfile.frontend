@@ -56,7 +56,9 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     pydantic \
     fastapi \
     uvicorn \
-    python-multipart
+    python-multipart \
+    asyncpg \
+    typing_extensions
 
 # Set to production
 ENV NODE_ENV=production
