@@ -6,7 +6,9 @@ Updates aiScore and aiReport in the DB.
 """
 import json, os, sys
 from dotenv import load_dotenv; load_dotenv()
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _ROOT)
+sys.path.insert(0, os.path.join(_ROOT, "livekit-python-agent"))  # billing/billing.py lives here
 
 import psycopg2
 from openai import OpenAI
