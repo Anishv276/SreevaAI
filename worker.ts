@@ -1832,8 +1832,12 @@ if (isQueueEnabled("jd-extraction")) {
       connection: redisConnection,
       prefix: BULL_PREFIX,
       concurrency: 10, // global cap raised -- per-org cap (ORG_CONCURRENCY.jdExtraction) does the real limiting
-      removeOnComplete: { count: 10 },
-      removeOnFail: { count: 25 },
+      // Must match the producer's removeOnComplete/removeOnFail in lib/jd-extraction.ts --
+      // the worker's settings win at cleanup time, so a mismatch here let jobs get swept
+      // by count (as few as 11 jobs later) well before the frontend's status poll ever
+      // read them, leaving the UI stuck on "processing" forever.
+      removeOnComplete: { age: 300 },
+      removeOnFail: { age: 300 },
     }
   ));
   jdExtractionWorker.on("failed", (job, err) => {

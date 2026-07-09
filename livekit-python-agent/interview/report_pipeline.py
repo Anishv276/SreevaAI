@@ -2156,4 +2156,3 @@ async def generate_interview_summary(
             )
         except Exception:
             pass
-
