@@ -738,6 +738,13 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             setRemainingSeconds(dur);
             setTimerExpired(false);
         }
+        // Re-assert fullscreen here: the request made back in "launching" can be silently
+        // dropped by a mic/camera permission prompt or device-track mount on a fresh
+        // browser profile. Without this, the exit-listener attached below initializes
+        // wasFullscreenRef to an already-false state and never fires a real exit event,
+        // while the UI still behaves as if fullscreen is required -- looks like an
+        // instant, unexplained bounce back to hardware check.
+        void requestFullscreenMode();
         // Grace period: don't flag fullscreen exits during first 10 seconds of interview
         // (browser startup, LiveKit connection, audio initialization may cause spurious events)
         // Fullscreen request takes time, greeting audio plays, room connection stabilizes
@@ -790,7 +797,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             cancelled = true;
             window.clearTimeout(stabilizeTimer);
         };
-    }, [id, interviewToken, phase, resetToHardwareCheck]);
+    }, [id, interviewToken, phase, resetToHardwareCheck, requestFullscreenMode]);
     // Hard timeout: if agent never becomes ready within 1.5 minutes (90s), show a popup and return to check.
     useEffect(() => {
         if (phase !== "launching") return;
