@@ -178,7 +178,7 @@ async def get_interview_context(app_id: str) -> dict:
            COALESCE(d."voiceId", o."voiceId") AS "voiceId",
            COALESCE(d."aiName", 'Ishitha') AS "aiName", o.name AS "orgName",
            o."proctoringSignals",
-           o."sttModel", o."ttsProvider", o."ttsModel",
+           o."sttModel", o."ttsProvider", o."ttsModel", o."ttsSpeed",
            o."llmInterviewLive", o."llmInterviewEval", o."llmInterviewBrief", o."llmInterviewReport",
            i.status AS "interviewStatus",
            i."interviewBrief"
@@ -220,6 +220,7 @@ async def get_interview_context(app_id: str) -> dict:
                 "sttModel":             row["sttModel"],
                 "ttsProvider":          row["ttsProvider"],
                 "ttsModel":             row["ttsModel"],
+                "ttsSpeed":             row["ttsSpeed"],
                 "llmInterviewLive":     row["llmInterviewLive"],
                 "llmInterviewEval":     row["llmInterviewEval"],
                 "llmInterviewBrief":    row["llmInterviewBrief"],

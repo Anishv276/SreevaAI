@@ -215,6 +215,33 @@ export async function sendInterviewCompletedEmail({
         return { success: false, error: (error as Error)?.message || "Failed to send email" };
     }
 }
+// --- 3b. Interview Completed (candidate notification) ------------------------
+export async function sendCandidateInterviewCompletedEmail({
+    email, fullName, jobTitle, orgName,
+}: {
+    email: string;
+    fullName: string;
+    jobTitle: string;
+    orgName: string;
+}): Promise<MailResult> {
+    const subject = `Thanks for interviewing — ${jobTitle} at ${orgName}`;
+    const html = wrapper(`
+        ${header("Interview Completed", `Hi ${fullName},`)}
+        <tr><td style="padding:32px 36px 0;">
+          <p style="margin:0;font-size:15px;color:#404040;line-height:1.75;">
+            Thank you for completing your AI interview for the <strong style="color:#111;">${jobTitle}</strong> role at <strong style="color:#111;">${orgName}</strong>.
+          </p>
+          ${noteBox(`Our hiring team will review your interview and reach out to you shortly with next steps.`)}
+        </td></tr>
+        ${footerRow(`Sent by ${orgName} via Sreeva AI · ${email}`)}
+    `);
+    try {
+        await sendEmail({ to: email, subject, html, type: "interview" });
+        return { success: true };
+    } catch (error) {
+        return { success: false, error: (error as Error)?.message || "Failed to send email" };
+    }
+}
 // --- 4. Org Welcome ----------------------------------------------------------
 export async function sendOrgWelcomeEmail({
     email, orgName, tempPassword,

@@ -30,6 +30,7 @@ export async function GET(req: NextRequest) {
         sttModel: true,
         ttsProvider: true,
         ttsModel: true,
+        ttsSpeed: true,
         voiceId: true,
         allowedVoices: true,
         llmResumeExtraction: true,
@@ -86,15 +87,16 @@ export async function PATCH(req: NextRequest) {
   if (fields.ttsProvider && !["ELEVENLABS", "CARTESIA", "SARVAM"].includes(fields.ttsProvider)) errors.push(`Invalid ttsProvider: ${fields.ttsProvider}`);
   if (fields.ttsModel && !ALLOWED_TTS_IDS.has(fields.ttsModel)) errors.push(`Invalid ttsModel: ${fields.ttsModel}`);
   if (fields.voiceId && !ALLOWED_VOICE_IDS.has(fields.voiceId)) errors.push(`Invalid voiceId: ${fields.voiceId}`);
+  if (fields.ttsSpeed !== undefined && (typeof fields.ttsSpeed !== "number" || fields.ttsSpeed < 0.5 || fields.ttsSpeed > 2.0)) errors.push(`Invalid ttsSpeed: ${fields.ttsSpeed} (must be 0.5-2.0)`);
   for (const llmField of ["llmResumeExtraction","llmJdExtraction","llmResumeReport","llmInterviewLive","llmInterviewEval","llmInterviewBrief","llmInterviewReport"] as const) {
     if (fields[llmField] && !ALLOWED_LLM_IDS.has(fields[llmField])) errors.push(`Invalid ${llmField}: ${fields[llmField]}`);
   }
   if (errors.length) return NextResponse.json({ error: errors.join("; ") }, { status: 400 });
 
   // Only update the fields that were sent
-  const updateData: Record<string, string | string[]> = {};
+  const updateData: Record<string, string | string[] | number> = {};
   const allowedFields = [
-    "sttModel","ttsProvider","ttsModel","voiceId","allowedVoices",
+    "sttModel","ttsProvider","ttsModel","ttsSpeed","voiceId","allowedVoices",
     "llmResumeExtraction","llmJdExtraction","llmResumeReport",
     "llmInterviewLive","llmInterviewEval","llmInterviewBrief","llmInterviewReport",
   ];
@@ -106,7 +108,7 @@ export async function PATCH(req: NextRequest) {
     where: { id: orgId },
     data: updateData,
     select: {
-      id: true, sttModel: true, ttsProvider: true, ttsModel: true, voiceId: true, allowedVoices: true,
+      id: true, sttModel: true, ttsProvider: true, ttsModel: true, ttsSpeed: true, voiceId: true, allowedVoices: true,
       llmResumeExtraction: true, llmJdExtraction: true, llmResumeReport: true,
       llmInterviewLive: true, llmInterviewEval: true, llmInterviewBrief: true, llmInterviewReport: true,
     },

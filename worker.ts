@@ -1322,49 +1322,34 @@ if (isQueueEnabled("interview-finalization")) {
           );
         }
         console.log(`[SUCCESS] Interview finalization persisted for ${applicationId}`);
-        // -- 1b. Notify org admins that the interview is complete --------------
+        // -- 1b. Notify candidate that the interview is complete --------------
         if (job.data?.interviewStatus === "COMPLETED") {
           try {
             const appForNotify = await prisma.application.findUnique({
               where: { id: applicationId },
               select: {
                 fullName: true,
+                email: true,
                 drive: {
                   select: {
                     title: true,
-                    orgId: true,
                     organization: { select: { name: true } },
                   },
                 },
-                interview: { select: { completedAt: true } },
               },
             });
-            const notifyOrgId = appForNotify?.drive?.orgId;
-            if (notifyOrgId) {
-              const admins = await prisma.user.findMany({
-                where: { orgId: notifyOrgId },
-                select: { email: true, name: true },
+            if (appForNotify?.email) {
+              const { sendCandidateInterviewCompletedEmail } = await import('./lib/mail');
+              await sendCandidateInterviewCompletedEmail({
+                email: appForNotify.email,
+                fullName: appForNotify.fullName || "Candidate",
+                jobTitle: appForNotify?.drive?.title || "Unknown Role",
+                orgName: appForNotify?.drive?.organization?.name || "Sreeva AI",
               });
-              const { sendInterviewCompletedEmail } = await import('./lib/mail');
-              const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://sreevaai.com';
-              const reportLink = `${appUrl}/admin/candidates/${applicationId}`;
-              await Promise.allSettled(
-                admins.map(admin =>
-                  sendInterviewCompletedEmail({
-                    adminEmail: admin.email,
-                    candidateName: appForNotify?.fullName || "Candidate",
-                    jobTitle: appForNotify?.drive?.title || "Unknown Role",
-                    orgName: appForNotify?.drive?.organization?.name || "Sreeva AI",
-                    driveTitle: appForNotify?.drive?.title,
-                    completedAt: appForNotify?.interview?.completedAt ?? undefined,
-                    reportLink,
-                  })
-                )
-              );
-              console.log(`[MAIL] Interview completed notifications sent to ${admins.length} admin(s) for ${applicationId}`);
+              console.log(`[MAIL] Interview completed notification sent to candidate for ${applicationId}`);
             }
           } catch (notifyError) {
-            console.warn(`[MAIL] Failed to send interview completed notifications for ${applicationId}:`, notifyError);
+            console.warn(`[MAIL] Failed to send interview completed notification for ${applicationId}:`, notifyError);
           }
         }
         return { success: true };

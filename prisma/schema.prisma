@@ -22,6 +22,7 @@ model Organization {
   sttModel               String   @default("flux-general-en")
   ttsProvider            String   @default("ELEVENLABS")
   ttsModel               String   @default("eleven_turbo_v2_5")
+  ttsSpeed               Float    @default(1.0)
   voiceId                String   @default("EXAVITQu4vr4xnSDxMaL")
   allowedVoices          String[] @default([])
   llmResumeExtraction    String   @default("gpt-5.4-mini")

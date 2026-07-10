@@ -68,6 +68,7 @@ def build_cartesia_tts(
     language: str = "en",
     model: str = _CARTESIA_DEFAULT_MODEL,
     voice_id: str = _CARTESIA_DEFAULT_VOICE,
+    speed: float | None = None,
     extra_kwargs: dict[str, Any] | None = None,
 ):
     api_key = os.getenv("CARTESIA_API_KEY")
@@ -78,7 +79,7 @@ def build_cartesia_tts(
         "voice":    voice_id,
         "language": language,
         "api_key":  api_key,
-        "speed":    _PROVIDER_DEFAULTS["cartesia_speed"],
+        "speed":    speed if speed is not None else _PROVIDER_DEFAULTS["cartesia_speed"],
     }
     if extra_kwargs:
         tts_kwargs.update(extra_kwargs)
@@ -87,6 +88,7 @@ def build_sarvam_tts(
     language: str = "en-IN",
     model: str = "bulbul:v3",
     voice_id: str = "priya",
+    speed: float | None = None,
     dict_id: str | None = None,
 ):
     api_key = os.getenv("SARVAM_API_KEY")
@@ -124,7 +126,7 @@ def build_sarvam_tts(
         "model":                model,
         "speaker":              voice_id,
         "api_key":              api_key,
-        "pace":                 d["sarvam_pace"],
+        "pace":                 speed if speed is not None else d["sarvam_pace"],
         "speech_sample_rate":   d["sarvam_v2_sample_rate"] if is_v2 else d["sarvam_v3_sample_rate"],
         "output_audio_bitrate": d["sarvam_output_bitrate"],
         "output_audio_codec":   d["sarvam_output_codec"],
@@ -160,6 +162,7 @@ def build_elevenlabs_tts(
     language: str = "en",
     model: str = _ELEVENLABS_DEFAULT_MODEL,
     voice_id: str = "",
+    speed: float | None = None,
     pronunciation_dict_locators: list | None = None,
 ):
     if elevenlabs is None:
@@ -187,7 +190,7 @@ def build_elevenlabs_tts(
         use_speaker_boost=True,
         # 0.95 -- very slightly below 1.0 gives a calmer, more considered
         # interviewer pace. Turbo is already fast; 0.95 keeps it natural.
-        speed=0.95,
+        speed=speed if speed is not None else 0.95,
     )
     logger.info(
         "[ELEVENLABS_TTS] model=%s voice=%s language=%s api_key_len=%d",

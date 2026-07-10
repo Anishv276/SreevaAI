@@ -56,10 +56,14 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 # --- Test Event Logger (for /test page debugging) ------------------------------
+_TEST_EVENT_LOG_URL = os.environ.get("TEST_EVENT_LOG_URL", "").strip()
+
 async def log_test_event(app_id: str, event_type: str, message: str, data: dict = None) -> None:
-    """Send event to /api/test/events for live debugging on /test page."""
-    # Always log for test sessions (check if app_id looks like a test app)
-    if not app_id:
+    """Send event to /api/test/events for live debugging on /test page.
+    No-op unless TEST_EVENT_LOG_URL is set -- prod agents don't run a local
+    Next.js app, so this used to fire (and fail) on every interview event.
+    """
+    if not app_id or not _TEST_EVENT_LOG_URL:
         return
     try:
         import aiohttp
@@ -73,7 +77,7 @@ async def log_test_event(app_id: str, event_type: str, message: str, data: dict 
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    "http://localhost:3000/api/test/events",
+                    _TEST_EVENT_LOG_URL,
                     json=payload,
                     timeout=aiohttp.ClientTimeout(total=1)
                 ) as resp:
@@ -82,7 +86,7 @@ async def log_test_event(app_id: str, event_type: str, message: str, data: dict 
             # Fallback to sync HTTP
             payload_json = json.dumps(payload).encode("utf-8")
             req = urllib.request.Request(
-                "http://localhost:3000/api/test/events",
+                _TEST_EVENT_LOG_URL,
                 data=payload_json,
                 headers={"Content-Type": "application/json"},
                 method="POST"
@@ -1267,6 +1271,7 @@ class InterviewContext(BaseModel):
     sttModel: Optional[str] = None
     ttsProvider: Optional[str] = None
     ttsModel: Optional[str] = None
+    ttsSpeed: Optional[float] = None
     llmInterviewLive: Optional[str] = None
     llmInterviewEval: Optional[str] = None
     llmInterviewBrief: Optional[str] = None
@@ -1533,6 +1538,7 @@ async def entrypoint(ctx: JobContext):
     # All values come from org DB (set via Super Admin → AI Models). Schema defaults ensure non-null.
     org_tts_provider: str = str(ctx_data.ttsProvider).strip().upper()
     org_tts_model: str   = str(ctx_data.ttsModel).strip()
+    org_tts_speed: float | None = ctx_data.ttsSpeed
     voice_id: str        = str(ctx_data.voiceId).strip()
     interview_llm_model: str         = str(ctx_data.llmInterviewLive).strip()
     interview_llm_temperature: float = INTERVIEW_TEMPERATURE
@@ -1828,6 +1834,7 @@ async def entrypoint(ctx: JobContext):
             language=_TTS_LANGUAGE_CODE,
             model=org_tts_model,
             voice_id=voice_id,
+            **({"speed": org_tts_speed} if org_tts_speed else {}),
             **({"dict_id": _sarvam_dict_id} if _sarvam_dict_id else {}),
             **({"pronunciation_dict_locators": _elevenlabs_pronunciation_locators} if _elevenlabs_pronunciation_locators else {}),
         )
