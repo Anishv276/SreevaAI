@@ -387,11 +387,6 @@ export async function DELETE(
             await tx.$executeRaw`UPDATE "User" SET "isDeleted" = true, "email" = 'del_' || ${timestamp} || '_' || "email" WHERE "orgId" = ${id}`;
             // 3. Soft Delete Drives
             await tx.$executeRaw`UPDATE "Drive" SET "isDeleted" = true WHERE "orgId" = ${id}`;
-            // 4. Soft Delete Resume Candidates
-            await tx.$executeRaw`
-                UPDATE "ResumeCandidate" SET "isDeleted" = true 
-                WHERE "driveId" IN (SELECT "id" FROM "Drive" WHERE "orgId" = ${id})
-            `;
             // 6. Soft Delete Applications
             await tx.$executeRaw`
                 UPDATE "Application" SET "isDeleted" = true 
