@@ -256,10 +256,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const [isInitiallyLocked, setIsInitiallyLocked] = useState(false);
     // scheduledAt from API -- used for the slot countdown gate
     const [scheduledAt, setScheduledAt] = useState<Date | null>(null);
-    // Seconds until button unlocks (2 min before slot)
+    // Seconds until button unlocks (exactly at slot time -- matches server gate)
     const [slotCountdownSecs, setSlotCountdownSecs] = useState<number | null>(null);
-    // Button unlocks 2 min before slot; waiting room opens 5 min before (handled by server)
-    const BUTTON_UNLOCK_BEFORE_MS = 2 * 60 * 1000;
     useEffect(() => {
         let active = true;
         (async () => {
@@ -275,7 +273,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         // (gated) so the candidate can prep, but Begin stays locked until slot.
                         const slot = new Date(data.scheduledAt);
                         setScheduledAt(slot);
-                        setSlotCountdownSecs(Math.ceil((slot.getTime() - BUTTON_UNLOCK_BEFORE_MS - Date.now()) / 1000));
+                        setSlotCountdownSecs(Math.ceil((slot.getTime() - Date.now()) / 1000));
                         setPhase("check");
                     } else {
                         const titleMap: Record<string, string> = {
@@ -302,12 +300,12 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         return () => { active = false; };
     }, [id, interviewToken]);
 
-    // Countdown tick -- counts down to (slot - 2 min); when <= 0, button unlocks
+    // Countdown tick -- counts down to slot time exactly; when <= 0, button unlocks
     useEffect(() => {
         if (!scheduledAt || slotCountdownSecs === null) return;
         if (slotCountdownSecs <= 0) return; // already unlocked
         const interval = setInterval(() => {
-            const secsLeft = Math.ceil((scheduledAt.getTime() - BUTTON_UNLOCK_BEFORE_MS - Date.now()) / 1000);
+            const secsLeft = Math.ceil((scheduledAt.getTime() - Date.now()) / 1000);
             setSlotCountdownSecs(secsLeft);
             if (secsLeft <= 0) clearInterval(interval);
         }, 1000);

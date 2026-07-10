@@ -350,7 +350,9 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\('interview/agent_runtime.py', encoding='utf-8'\\).read\\(\\)\\); print\\('agent_runtime.py OK'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('interview/agent_scoring.py', encoding='utf-8'\\).read\\(\\)\\); print\\('agent_scoring.py OK'\\)\")",
       "Bash(npx prisma *)",
-      "Bash(tee /tmp/migrate_out.txt)"
+      "Bash(tee /tmp/migrate_out.txt)",
+      "Skill(artifact-design)",
+      "Skill(artifact-design:*)"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",
