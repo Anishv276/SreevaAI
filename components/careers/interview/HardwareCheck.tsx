@@ -587,7 +587,10 @@ export function HardwareCheck({
                     </h1>
                     <p className="text-sm text-gray-400 mt-0.5">Hi {candidateName} - let&apos;s make sure everything is set up before we begin.</p>
                 </div>
-                <div className="flex-shrink-0">
+                <div className="flex-shrink-0 flex flex-col items-end gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                        Proctored Session &bull; Support Available
+                    </span>
                     <div className="bg-emerald-50 border border-emerald-100 rounded-full px-4 py-2 flex items-center gap-2 text-xs font-semibold text-emerald-700">
                         <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                         Live &amp; Ready to Begin
@@ -864,59 +867,48 @@ export function HardwareCheck({
                             </p>
                         </div>
                     </div>
-                    {/* Consent Box */}
-                    <div
-                        className="bg-white rounded-2xl p-4 transition-colors duration-300"
-                        style={{ border: `1.5px solid ${consentChecked ? "#A7F3D0" : "#FECACA"}`, boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}
-                    >
-                        <div className="flex items-center justify-between mb-2.5">
-                            <h3 className="text-sm font-semibold text-gray-900">Consent</h3>
-                            {consentChecked ? (
-                                <span className="flex items-center gap-1 text-xs font-semibold text-emerald-600">
-                                    <CheckCircle2 className="w-3.5 h-3.5" /> Agreed
-                                </span>
-                            ) : (
-                                <span className="text-xs font-semibold text-red-500">Required</span>
+                    {/* Begin CTA (Moved to Right Column) */}
+                    <div className="flex flex-col items-center mt-1">
+                        <button
+                            onClick={handleBeginInterview}
+                            disabled={beginDisabled}
+                            className={cn(
+                                "btn-shimmer inline-flex items-center justify-center gap-2 h-[52px] w-full rounded-2xl text-sm font-semibold transition-all tabular-nums",
+                                !isSlotLocked && !beginDisabled
+                                    ? "text-white shadow-[0_4px_14px_rgba(124,58,237,0.3)]"
+                                    : "bg-white text-gray-400 border-[1.5px] border-[#E9E7FF]"
                             )}
-                        </div>
-                        <label className="group flex items-start gap-2.5 cursor-pointer select-none">
-                            <input
-                                type="checkbox"
-                                checked={consentChecked}
-                                onChange={(e) => setConsentChecked(e.target.checked)}
-                                className="h-4 w-4 mt-0.5 rounded border-gray-300 text-violet-600 focus:ring-violet-500 cursor-pointer flex-shrink-0"
-                            />
-                            <span className="text-xs text-gray-600 leading-relaxed group-hover:text-gray-800 transition-colors">
-                                I agree and consent to capture dynamic photos during this interview session to verify my profile and ensure integrity.
-                            </span>
-                        </label>
+                            style={!isSlotLocked && !beginDisabled ? { background: "linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%)" } : {}}
+                        >
+                            {isStarting || snapshotUploading ? (
+                                <><Loader2 className="w-4 h-4 animate-spin" /> Securing...</>
+                            ) : isSlotLocked && slotCountdownSecs !== null ? (
+                                <>Interview opens in {String(Math.floor(slotCountdownSecs / 60)).padStart(2, "0")}:{String(slotCountdownSecs % 60).padStart(2, "0")}</>
+                            ) : (
+                                <><Zap className="w-4 h-4" /> Begin Interview</>
+                            )}
+                        </button>
                     </div>
                 </div>
-                {/* Begin CTA -- own row, spans both columns, bottom of the whole layout */}
-                <div className="md:col-span-2 flex flex-col items-center gap-1.5 mt-1">
-                    <button
-                        onClick={handleBeginInterview}
-                        disabled={beginDisabled}
-                        className={cn(
-                            "btn-shimmer inline-flex items-center justify-center gap-2 h-12 w-full rounded-xl text-sm font-medium transition-all tabular-nums",
-                            !isSlotLocked && !beginDisabled
-                                ? "text-white"
-                                : "bg-white text-gray-400"
-                        )}
-                        style={
-                            !isSlotLocked && !beginDisabled
-                                ? { background: "linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%)", boxShadow: "0 4px 14px rgba(124,58,237,0.3)" }
-                                : { border: "1.5px solid #E9E7FF" }
-                        }
+
+                {/* Consent Box (Moved to Bottom, Centered) */}
+                <div className="md:col-span-2 flex justify-center mt-4">
+                    <label 
+                        className="group flex items-center justify-center gap-3 cursor-pointer select-none py-2.5 px-5 rounded-full transition-colors duration-300"
+                        style={{ backgroundColor: consentChecked ? "#F0FDF4" : "#FEF2F2", border: `1px solid ${consentChecked ? "#A7F3D0" : "#FECACA"}` }}
                     >
-                        {isStarting || snapshotUploading ? (
-                            <><Loader2 className="w-4 h-4 animate-spin" /> Securing...</>
-                        ) : isSlotLocked && slotCountdownSecs !== null ? (
-                            <>Interview opens in {String(Math.floor(slotCountdownSecs / 60)).padStart(2, "0")}:{String(slotCountdownSecs % 60).padStart(2, "0")}</>
-                        ) : (
-                            <><Zap className="w-4 h-4" /> Begin Interview</>
-                        )}
-                    </button>
+                        <input
+                            type="checkbox"
+                            checked={consentChecked}
+                            onChange={(e) => setConsentChecked(e.target.checked)}
+                            className="h-4 w-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500 cursor-pointer flex-shrink-0"
+                        />
+                        <span className="text-xs font-medium text-gray-700 group-hover:text-gray-900 transition-colors flex items-center gap-2">
+                            I agree and consent to capture dynamic photos during this interview session to verify my profile and ensure integrity.
+                            {!consentChecked && <span className="text-[10px] font-bold text-red-500 uppercase tracking-wider bg-red-100 px-2 py-0.5 rounded-full ml-1">Required</span>}
+                            {consentChecked && <CheckCircle2 className="w-4 h-4 text-emerald-500 ml-1" />}
+                        </span>
+                    </label>
                 </div>
             </div>
             {/* Terms & Policy Footer */}
