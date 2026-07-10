@@ -259,30 +259,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     // Seconds until button unlocks (exactly at slot time -- matches server gate)
     const [slotCountdownSecs, setSlotCountdownSecs] = useState<number | null>(null);
 
-    // DEV OVERRIDE: Skip hardware check and simulate launching transition
-    useEffect(() => {
-        if (process.env.NODE_ENV === "development" && window.location.search.includes("dev=true")) {
-            setToken("dev-dummy-token");
-            setServerUrl("ws://localhost:7880"); // Dummy URL just to satisfy the check
-            
-            // Start in launching phase
-            setPhase("launching");
-            
-            // Mock the required session data
-            sessionDurationRef.current = 1800;
-            setRemainingSeconds(1800);
-            setInterviewRoleLabel("UI Design Review");
-            setCandidateDisplayName("Developer");
-
-            // Simulate agent ready after a short delay so the user sees the launching UI
-            setTimeout(() => {
-                setIsAgentReady(true);
-            }, 2500);
-        }
-    }, []);
     useEffect(() => {
         let active = true;
-        if (process.env.NODE_ENV === "development" && window.location.search.includes("dev=true")) return;
         (async () => {
             try {
                 const url = new URL(`/api/interview/${id}/token`, window.location.href);
