@@ -258,11 +258,12 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
             await tx.$executeRaw`UPDATE "Drive" SET "isDeleted" = true WHERE "id" = ${driveId}`;
             // 4. Soft Delete Applications
             await tx.$executeRaw`UPDATE "Application" SET "isDeleted" = true WHERE "driveId" = ${driveId}`;
-            // 5. Soft Delete Interviews (rename applicationId and accessToken)
+            // 5. Soft Delete Interviews (rename accessToken -- applicationId is a
+            // real FK into Application.id and must NOT be renamed, or the UPDATE
+            // violates Interview_applicationId_fkey since Application.id is untouched)
             await tx.$executeRaw`
-                UPDATE "Interview" 
-                SET "isDeleted" = true, 
-                    "applicationId" = 'del_' || ${timestamp} || '_' || "applicationId", 
+                UPDATE "Interview"
+                SET "isDeleted" = true,
                     "accessToken" = 'del_' || ${timestamp} || '_' || "accessToken"
                 WHERE "applicationId" IN (SELECT "id" FROM "Application" WHERE "driveId" = ${driveId})
             `;
