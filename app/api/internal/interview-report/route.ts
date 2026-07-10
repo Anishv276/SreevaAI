@@ -36,12 +36,20 @@ export async function POST(request: Request) {
         // jobId: appId -- BullMQ silently no-ops .add() if a job with this ID already
         // exists, so a genuinely NEW interview reusing an old test appId (or a retry
         // after the queue was cleared) would enqueue nothing and nobody would know.
-        // Only skip when the prior job is still in-flight (waiting/active/delayed) --
-        // a finished one (completed/failed) must not block a fresh, real re-run.
+        // Skip when the prior job is still in-flight (waiting/active/delayed), OR when
+        // it completed within the last 2 minutes -- LiveKit occasionally recycles the
+        // agent job right after room teardown, causing entrypoint() to run twice and
+        // POST here twice for the SAME interview a few seconds apart (seen as 14 LLM
+        // calls instead of 7). A finished job older than 2 minutes is treated as a
+        // real re-run and allowed through, matching this queue's own removeOnComplete
+        // retention (see lib/queue.ts).
+        const DUPLICATE_WINDOW_MS = 2 * 60 * 1000;
         const existing = await interviewReportQueue.getJob(appId);
         if (existing) {
             const state = await existing.getState();
-            if (state === "completed" || state === "failed") {
+            const recentlyCompleted = state === "completed" && !!existing.finishedOn
+                && Date.now() - existing.finishedOn < DUPLICATE_WINDOW_MS;
+            if ((state === "completed" || state === "failed") && !recentlyCompleted) {
                 await existing.remove();
             } else {
                 console.warn(`[INTERNAL_INTERVIEW_REPORT_POST] appId=${appId} already ${state} in queue -- skipping duplicate enqueue`);

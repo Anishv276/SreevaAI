@@ -352,7 +352,18 @@
       "Bash(npx prisma *)",
       "Bash(tee /tmp/migrate_out.txt)",
       "Skill(artifact-design)",
-      "Skill(artifact-design:*)"
+      "Skill(artifact-design:*)",
+      "Bash(grep \"\\\\.py$\")",
+      "Bash(grep -n \"Interview history\\\\|Recent interview\\\\|interviewDuration\\\\|durationSec\\\\|Duration</\\\\|>Duration<\" \"app/super-admin/orgs/page.tsx\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('billing/billing.py', encoding='utf-8'\\).read\\(\\)\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('interview/report_worker.py', encoding='utf-8'\\).read\\(\\)\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('interview/agent_scoring.py', encoding='utf-8'\\).read\\(\\)\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('interview/eval_pipeline.py', encoding='utf-8'\\).read\\(\\)\\)\")",
+      "Bash(cd \"livekit-python-agent\" && grep -rn \"generate_brief\\\\|interview_brief\\\\.\" --include=\"*.py\" --include=\"*.ts\" ../lib ../app . 2>/dev/null | grep -v \"\\\\.pyc\" | head -40)",
+      "Read(//c/Users/vamsi/OneDrive/Documents/**)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('interview/generate_brief.py', encoding='utf-8'\\).read\\(\\)\\)\")",
+      "Bash(grep -rn \"DIRECT_URL\" --include=\"*.env*\" --include=\"docker-compose*.yml\" aws-deployment/)",
+      "Bash(grep -n \"DIRECT_URL\" .env.example)"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",

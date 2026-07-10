@@ -1037,7 +1037,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         metadata: { fingerprint },
                     }],
                 }),
-            }).catch(() => {});
+            }).catch(() => { });
         };
         send();
         fingerprintIntervalRef.current = window.setInterval(send, 120_000);
@@ -1164,7 +1164,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             errorMessage={joinError}
                             applicationId={id}
                             interviewToken={interviewToken}
-            title={`${organizationName ? `${organizationName} - ` : ""}${interviewRoleLabel} Interview Check`}
+                            title={`${organizationName ? `${organizationName} - ` : ""}${interviewRoleLabel} Interview Check`}
                             slotCountdownSecs={slotCountdownSecs}
                         />
                     </motion.div>
@@ -1178,7 +1178,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         className="flex-1 min-h-screen w-full flex items-center justify-center bg-[#FAFAFC] z-[120] absolute inset-0"
                     >
                         <div className="flex flex-col items-center gap-8 text-center px-6">
-                            
+
                             {/* Minimalist Breathing AI Core */}
                             <div className="relative h-24 w-24 rounded-full bg-white border border-violet-100 flex items-center justify-center shadow-sm">
                                 <div className="relative flex items-center justify-center h-12 w-12">
@@ -1202,7 +1202,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                     />
                                 </div>
                             </div>
-                            
+
                             {/* Professional Typography */}
                             <div className="space-y-2">
                                 <h3 className="text-2xl font-semibold text-gray-900 tracking-tight">
@@ -1238,22 +1238,22 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     </motion.div>
                 )}
                 {launchRecoveryMessage && (
-                                <motion.div
-                                    initial={{ opacity: 0, y: 12, scale: 0.98 }}
-                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                    className="fixed inset-0 z-[200] flex items-center justify-center bg-black/55 backdrop-blur-sm"
-                                >
-                                    <div className="w-[min(92vw,520px)] rounded-[2rem] bg-white p-8 shadow-2xl border border-black/5 text-center">
-                                        <p className="text-[10px] font-black uppercase tracking-[0.4em] text-violet-500 mb-3">Hold on</p>
-                                        <h3 className="text-2xl font-black text-gray-900 tracking-tight">
-                                            {launchRecoveryMessage}
-                                        </h3>
-                                        <p className="mt-4 text-sm font-medium text-gray-500">
-                                            {returnCountdown !== null ? `We'll return you to the hardware check screen in ${returnCountdown}s...` : "We'll return you to the hardware check screen in a moment."}
-                                        </p>
-                                    </div>
-                                </motion.div>
-                            )}
+                    <motion.div
+                        initial={{ opacity: 0, y: 12, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        className="fixed inset-0 z-[200] flex items-center justify-center bg-black/55 backdrop-blur-sm"
+                    >
+                        <div className="w-[min(92vw,520px)] rounded-[2rem] bg-white p-8 shadow-2xl border border-black/5 text-center">
+                            <p className="text-[10px] font-black uppercase tracking-[0.4em] text-violet-500 mb-3">Hold on</p>
+                            <h3 className="text-2xl font-black text-gray-900 tracking-tight">
+                                {launchRecoveryMessage}
+                            </h3>
+                            <p className="mt-4 text-sm font-medium text-gray-500">
+                                {returnCountdown !== null ? `We'll return you to the hardware check screen in ${returnCountdown}s...` : "We'll return you to the hardware check screen in a moment."}
+                            </p>
+                        </div>
+                    </motion.div>
+                )}
 
                 {phase === "finalizing" && (
                     <motion.div
@@ -2146,14 +2146,14 @@ function InterviewRoomContent({
         <div className="flex-1 flex flex-col h-full w-full relative bg-gradient-to-br from-indigo-50 via-white to-fuchsia-50 text-zinc-900 overflow-hidden">
             {/* Soft Background Blobs (Optional, the gradient does most of the work) */}
             <div className="absolute top-0 left-0 w-full h-full bg-white/40 pointer-events-none backdrop-blur-3xl" />
-            
+
             {/* Top Navigation Bar */}
             <div className="absolute top-0 left-0 right-0 z-[60] flex items-center justify-between px-8 py-6 pointer-events-none">
                 <div className="flex items-center gap-1.5 pointer-events-auto">
                     <img src="/sreevaailogo2.png" alt="SreevaAI" className="h-8 object-contain drop-shadow-sm" />
                     <p className="text-xl font-bold text-zinc-800 tracking-tight">SreevaAI</p>
                 </div>
-                
+
                 {/* Time */}
                 <div className="flex items-center gap-4 pointer-events-auto">
                     <p className="text-sm font-medium text-zinc-700 tabular-nums ml-4">10:35 AM</p>
@@ -2185,7 +2185,7 @@ function InterviewRoomContent({
             {/* AI Avatar Area */}
             <div className="flex-1 flex flex-col items-center justify-center relative -mt-4">
                 <div className="relative w-[16rem] h-[16rem] flex items-center justify-center group shrink-0" style={{ transform: 'translateZ(0)' }}>
-                    
+
                     {/* Minimalist Breathing Rings (Replaces Blob) */}
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                         {isAiSpeaking && (
@@ -2262,7 +2262,7 @@ function InterviewRoomContent({
                         </div>
                         <span className="text-[10px] font-medium text-zinc-600">Mic</span>
                     </button>
-                    
+
                     <button
                         onClick={toggleCamera}
                         disabled={cameraTogglePending}
