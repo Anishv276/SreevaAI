@@ -125,17 +125,6 @@ function CandidateStatsRow() {
 
     return (
         <div className="flex flex-wrap items-center gap-1">
-            {/* Total */}
-            <div className="flex flex-col justify-between p-3 rounded-xl bg-violet-50/50 border border-violet-100 flex-1 min-w-[110px]">
-                <div className="flex items-start gap-1">
-                    <div className="mt-0.5"><svg className="h-4 w-4 text-violet-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg></div>
-                    <div className="pr-2">
-                        <p className="text-xl font-black text-gray-900 leading-none mb-1">{statsTotal}</p>
-                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Total</p>
-                    </div>
-                </div>
-            </div>
-
             {/* Shortlisted */}
             <div className="flex flex-col justify-between p-3 rounded-xl bg-emerald-50/30 border border-emerald-100 flex-1 min-w-[110px] relative">
                 <div className="flex items-start gap-1">
@@ -160,13 +149,13 @@ function CandidateStatsRow() {
                 <div className="absolute top-3 right-3 text-[10px] font-bold text-gray-400">{getPct(stats.interviewRunning + stats.interviewCompleted)}%</div>
             </div>
 
-            {/* Ready */}
+            {/* Scheduled */}
             <div className="flex flex-col justify-between p-3 rounded-xl bg-amber-50/30 border border-amber-100 flex-1 min-w-[110px] relative">
                 <div className="flex items-start gap-1">
                     <div className="mt-0.5"><svg className="h-4 w-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
                     <div className="pr-6">
                         <p className="text-xl font-black text-gray-900 leading-none mb-1">{stats.interviewPending}</p>
-                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Ready</p>
+                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Scheduled</p>
                     </div>
                 </div>
                 <div className="absolute top-3 right-3 text-[10px] font-bold text-gray-400">{getPct(stats.interviewPending)}%</div>
@@ -601,7 +590,7 @@ export default function CandidatesPage() {
                                         </TableCell>
                                         <TableCell className="py-0.5">
                                             <div className="flex items-center gap-1.5">
-                                                <Avatar className="h-5 w-5 border-2 border-white shadow-sm ring-1 ring-gray-100">
+                                                <Avatar className="h-9 w-9 border-2 border-white shadow-sm ring-1 ring-gray-100">
                                                     <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${displayName}`} />
                                                     <AvatarFallback>{displayName.substring(0, 2).toUpperCase()}</AvatarFallback>
                                                 </Avatar>

@@ -99,14 +99,23 @@ export async function POST(req: Request) {
     // -- AUTHENTICATION --------------------------------
     const interview = await prisma.interview.findUnique({
       where: { applicationId },
-      select: { accessToken: true, completedAt: true }
+      select: { accessToken: true, completedAt: true, interviewDuration: true, startedAt: true }
     });
     if (requireInterviewToken && (!interview || interview.accessToken !== interviewToken)) {
       return NextResponse.json({ error: "Unauthorized: Invalid finalization token" }, { status: 401 });
     }
     const transcriptRaw = transcript;
     const finalTranscript = transcriptRaw?.trim();
-    const finalDuration = typeof duration === 'number' ? duration : (duration ? parseInt(String(duration)) : null);
+    // ponytail: the agent runtime (agent_persistence.update_interview_status) is the
+    // authoritative writer of interviewDuration -- it already applies the
+    // time_expired -> full time_limit cap and real-elapsed otherwise. Client-sent
+    // `duration` is untrusted (can be stale/inflated) and must never overwrite an
+    // already-persisted interviewDuration. Only used as a last-resort fallback when
+    // the agent hasn't written one yet (e.g. legacy/non-agent finalize callers).
+    const clientDuration = typeof duration === 'number' ? duration : (duration ? parseInt(String(duration)) : null);
+    const finalDuration = interview?.interviewDuration != null
+      ? interview.interviewDuration
+      : (clientDuration ?? (interview?.startedAt ? Math.round((Date.now() - new Date(interview.startedAt).getTime()) / 1000) : null));
     let recordingUrlForPersist = recordingUrl;
     let recordingSettingsForOrg: { recordingEnabled: boolean; recordingRetentionDays: number | null } | null = null;
     try {
@@ -158,21 +167,12 @@ export async function POST(req: Request) {
       where: { applicationId },
       select: { completedAt: true },
     });
-    // Duration: use client-sent value, else compute from startedAt
-    let resolvedDuration = finalDuration;
-    if ((resolvedDuration === null || isNaN(resolvedDuration as number))) {
-      const startedAtRows = await prisma.$queryRaw<Array<{ startedAt: Date | null }>>`
-        SELECT "startedAt" FROM "Interview" WHERE "applicationId" = ${applicationId} LIMIT 1
-      `;
-      const startedAt = startedAtRows?.[0]?.startedAt;
-      if (startedAt) {
-        resolvedDuration = Math.round((Date.now() - new Date(startedAt).getTime()) / 1000);
-      }
-    }
-    if (resolvedDuration !== null && !isNaN(resolvedDuration as number)) {
+    // Only write if the agent hasn't already persisted the authoritative value --
+    // never overwrite an existing interviewDuration with the client-sent one.
+    if (interview?.interviewDuration == null && finalDuration !== null && !isNaN(finalDuration as number)) {
       await prisma.$executeRawUnsafe(
         `UPDATE "Interview" SET "interviewDuration" = $1, "updatedAt" = NOW() WHERE "applicationId" = $2`,
-        resolvedDuration,
+        finalDuration,
         applicationId
       );
     }
@@ -216,9 +216,9 @@ export async function POST(req: Request) {
         if (orgId) {
           await deductInterviewQuotaForApplication({
             applicationId,
-            durationSeconds: Number.isFinite(Number(resolvedDuration)) ? Number(resolvedDuration) : null,
+            durationSeconds: Number.isFinite(Number(finalDuration)) ? Number(finalDuration) : null,
           });
-          console.log(`[FINALIZE] Billing finalized for ${applicationId} org=${orgId} dur=${resolvedDuration}s`);
+          console.log(`[FINALIZE] Billing finalized for ${applicationId} org=${orgId} dur=${finalDuration}s`);
         }
       } catch (creditError) {
         console.error("[FINALIZE] Billing deduction failed:", creditError);

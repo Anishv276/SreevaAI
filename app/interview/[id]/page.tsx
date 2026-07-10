@@ -2359,8 +2359,34 @@ function VideoTrack({ trackRef }: { trackRef: TrackReference }) {
 function TimeoutThankYouView({ candidateName }: { candidateName: string }) {
     return (
         <div className="w-full max-w-xl mx-auto px-6 text-center">
-            <div className="w-24 h-24 bg-gradient-to-br from-violet-500 to-violet-700 rounded-[2.5rem] flex items-center justify-center mx-auto mb-10 shadow-[0_20px_40px_rgba(124,58,237,0.3)] rotate-3">
-                <CheckCircle2 className="w-12 h-12 text-white" />
+            <div className="relative w-24 h-24 mx-auto mb-10 flex items-center justify-center">
+                <motion.div
+                    animate={{
+                        scale: [1, 1.2, 1],
+                        opacity: [0.5, 0.8, 0.5],
+                    }}
+                    transition={{
+                        duration: 2,
+                        repeat: Infinity,
+                        ease: "easeInOut",
+                    }}
+                    className="absolute inset-0 bg-violet-500/20 rounded-full"
+                />
+                <motion.div
+                    animate={{
+                        scale: [1, 1.5, 1],
+                        opacity: [0.3, 0, 0.3],
+                    }}
+                    transition={{
+                        duration: 2.5,
+                        repeat: Infinity,
+                        ease: "easeInOut",
+                    }}
+                    className="absolute inset-0 bg-violet-400/30 rounded-full"
+                />
+                <div className="relative z-10 w-16 h-16 bg-gradient-to-br from-violet-500 to-violet-700 rounded-full flex items-center justify-center shadow-[0_10px_20px_rgba(124,58,237,0.4)]">
+                    <Sparkles className="w-8 h-8 text-white animate-pulse" />
+                </div>
             </div>
             <h2 className="text-5xl font-black text-gray-900 uppercase italic tracking-tighter mb-6">Thank You</h2>
             <p className="text-sm font-bold text-gray-500 uppercase tracking-[0.2em] leading-relaxed mb-4 max-w-sm mx-auto">
