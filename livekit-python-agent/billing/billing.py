@@ -618,7 +618,12 @@ class BucketMerger:
             dur      = float(row.get("sessionDuration", 0) or 0)
             cost     = CostCalculator.openai(model, input_t, cached_t, output_t)
             session_cost += cost
-            mb = bucket.byModel.setdefault(model_key, ModelBilling(provider=provider, model=model))
+            # Rebuild the key from normalized provider/model instead of trusting the
+            # incoming model_key's casing -- upstream builders disagree on case
+            # ("OPENAI:x" from UsageSummarizer vs "openai:x" from PendingBuffer),
+            # which used to split one model's usage into two byModel entries.
+            norm_key = f"{provider.lower()}:{model.lower()}"
+            mb = bucket.byModel.setdefault(norm_key, ModelBilling(provider=provider, model=model))
             mb.runs              += 1
             mb.inputTokens       += input_t
             mb.cachedInputTokens += cached_t
@@ -1197,6 +1202,11 @@ class BillingRepository:
                     logger.warning("[BILLING] deduct_quota: no orgId for app=%s", app_id)
                     return
                 dur = float(duration_seconds or 0) or float(row["interviewDuration"] or 0) or float(row["recordingDurationSec"] or 0)
+                if dur <= 0:
+                    # Don't lock the billedAt guard on an unknown duration -- let a
+                    # later call (once interviewDuration/recording is persisted) bill correctly.
+                    logger.info("[BILLING] deduct_quota: duration unknown, deferring for app=%s", app_id)
+                    return
                 marked = await conn.fetch(
                     """UPDATE "Interview"
                        SET "billingSnapshot" = jsonb_set(
@@ -1216,18 +1226,12 @@ class BillingRepository:
                     'UPDATE "Organization" SET "interviewQuotaUsed" = COALESCE("interviewQuotaUsed", 0) + 1, "updatedAt" = NOW() WHERE id = $1',
                     org_id,
                 )
-                if dur > 0:
-                    credits = round((dur / 60) * 100) / 100
-                    if credits > 0:
-                        await conn.execute(
-                            'UPDATE "Organization" SET "creditsUsed" = COALESCE("creditsUsed", 0) + $1, "updatedAt" = NOW() WHERE id = $2',
-                            credits, org_id,
-                        )
-                        logger.info("[BILLING] Deducted 1 quota + %.2f credits: app=%s org=%s dur=%.0fs", credits, app_id, org_id, dur)
-                    else:
-                        logger.info("[BILLING] Deducted 1 quota (no credits â€” dur=%.0fs): app=%s org=%s", dur, app_id, org_id)
-                else:
-                    logger.warning("[BILLING] Deducted 1 quota but duration unknown: app=%s org=%s", app_id, org_id)
+                credits = round((dur / 60) * 100) / 100
+                await conn.execute(
+                    'UPDATE "Organization" SET "creditsUsed" = COALESCE("creditsUsed", 0) + $1, "updatedAt" = NOW() WHERE id = $2',
+                    credits, org_id,
+                )
+                logger.info("[BILLING] Deducted 1 quota + %.2f credits: app=%s org=%s dur=%.0fs", credits, app_id, org_id, dur)
         except Exception as e:
             logger.error("[BILLING] deduct_quota failed for app=%s: %s", app_id, e, exc_info=True)
             raise

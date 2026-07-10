@@ -59,6 +59,7 @@ from billing.billing import (
     flush_billing as flush_pending_manual_billing,
     record_manual_usage as persist_org_manual_billing_usage,
     save_interview_billing as persist_interview_billing_snapshot,
+    CostCalculator,
 )
 
 
@@ -159,81 +160,158 @@ async def _run(payload: dict) -> None:
     eval_usages = usage.get("evalUsages") or []
     brief_usages = usage.get("briefUsages") or []
     llmgen_usages = usage.get("llmgenUsages") or []
-    for u in eval_usages:
-        await persist_org_manual_billing_usage(org_id, "interview", u)
-    for u in brief_usages:
-        await persist_org_manual_billing_usage(org_id, "interviewBrief", u)
-    for u in llmgen_usages:
-        await persist_org_manual_billing_usage(org_id, "interviewLLMGeneration", u)
-
     billing = payload.get("billing") or {}
-    try:
-        await persist_interview_billing_snapshot(
-            app_id,
-            _namespace_usage(billing.get("sessionUsage")),
-            org_id=org_id,
-            candidate_name=candidate_name,
-            job_title=job_title,
-            duration_seconds=billing.get("durationSeconds"),
-            tts_provider=billing.get("ttsProvider"),
-            tts_model=billing.get("ttsModel"),
-            stt_provider=billing.get("sttProvider", "DEEPGRAM"),
-            stt_model=billing.get("sttModel"),
-            plugin_tts_characters=billing.get("ttsCharacters", 0),
-            plugin_tts_audio_seconds=billing.get("ttsAudioSeconds", 0.0),
-            plugin_stt_audio_seconds=billing.get("sttAudioSeconds", 0.0),
-        )
-    except Exception as e:
-        logger.error(f"[USAGE] Failed to persist interview billing snapshot for {app_id}: {e}")
-    try:
-        await flush_pending_manual_billing(org_id)
-    except Exception as e:
-        logger.error(f"[USAGE] flush_pending_manual_billing failed for {app_id}: {e}")
+
+    # Test sessions must NEVER write to Organization.usageMetrics or
+    # Interview.billingSnapshot -- those represent real org spend. Everything
+    # for a test session (eval, brief, llmgen, TTS, STT) is computed with the
+    # same CostCalculator rate tables as production and written only to
+    # Interview.testBillingMetrics below.
+    if not is_test:
+        for u in eval_usages:
+            await persist_org_manual_billing_usage(org_id, "interview", u)
+        for u in brief_usages:
+            await persist_org_manual_billing_usage(org_id, "interviewBrief", u)
+        for u in llmgen_usages:
+            await persist_org_manual_billing_usage(org_id, "interviewLLMGeneration", u)
+
+        try:
+            await persist_interview_billing_snapshot(
+                app_id,
+                _namespace_usage(billing.get("sessionUsage")),
+                org_id=org_id,
+                candidate_name=candidate_name,
+                job_title=job_title,
+                duration_seconds=billing.get("durationSeconds"),
+                tts_provider=billing.get("ttsProvider"),
+                tts_model=billing.get("ttsModel"),
+                stt_provider=billing.get("sttProvider", "DEEPGRAM"),
+                stt_model=billing.get("sttModel"),
+                plugin_tts_characters=billing.get("ttsCharacters", 0),
+                plugin_tts_audio_seconds=billing.get("ttsAudioSeconds", 0.0),
+                plugin_stt_audio_seconds=billing.get("sttAudioSeconds", 0.0),
+            )
+        except Exception as e:
+            logger.error(f"[USAGE] Failed to persist interview billing snapshot for {app_id}: {e}")
+        try:
+            await flush_pending_manual_billing(org_id)
+        except Exception as e:
+            logger.error(f"[USAGE] flush_pending_manual_billing failed for {app_id}: {e}")
 
     if is_test:
         try:
             pool = await DatabasePool.get()
-            billable_tts_characters = billing.get("ttsCharacters", 0) or 0
-            plugin_stt_audio_seconds = billing.get("sttAudioSeconds", 0.0) or 0.0
+            billable_tts_characters = int(billing.get("ttsCharacters", 0) or 0)
+            plugin_stt_audio_seconds = float(billing.get("sttAudioSeconds", 0.0) or 0.0)
             usage_ns = _namespace_usage(billing.get("sessionUsage"))
-            # LLM tokens come from THREE sources, not just the realtime conversation:
-            # the live session usage (sessionUsage) + eval + brief + llmgen usages.
-            # Using only sessionUsage made testBillingMetrics.llmCost show 0 whenever
-            # the live turns used a $0-billed path -- fold in all of them.
-            _session_in = getattr(usage_ns, "input_tokens", 0) or 0
-            _session_out = getattr(usage_ns, "output_tokens", 0) or 0
-            _extra_usages = [*eval_usages, *brief_usages, *llmgen_usages]
-            llm_in = _session_in + sum(u.get("inputTokens", 0) or 0 for u in _extra_usages)
-            llm_out = _session_out + sum(u.get("outputTokens", 0) or 0 for u in _extra_usages)
-            # rough cost estimate (GPT-4o pricing, update if model changes)
-            llm_cost = round((llm_in * 2.5 + llm_out * 10) / 1_000_000, 6)
-            tts_cost = round(billable_tts_characters * 0.000015, 6)
-            stt_cost = round(plugin_stt_audio_seconds * 0.0043 / 60, 6)
+            tts_provider = str(billing.get("ttsProvider") or "").strip()
+            tts_model = str(billing.get("ttsModel") or "").strip()
+            stt_provider = str(billing.get("sttProvider") or "DEEPGRAM").strip()
+            stt_model = str(billing.get("sttModel") or "").strip()
+
+            # LLM tokens/cost come from FOUR sources: the live realtime session
+            # usage (sessionUsage, e.g. move-on/question turns billed via the
+            # LLM plugin) + eval + brief + llmgen usages. Each is costed with
+            # its OWN model's real rate via CostCalculator -- no hardcoded
+            # single-model guess, so this matches production exactly.
+            def _cost_and_tokens(model: str, input_t: int, cached_t: int, output_t: int) -> tuple[float, int, int]:
+                if not model or (not input_t and not output_t):
+                    return 0.0, int(input_t or 0), int(output_t or 0)
+                try:
+                    cost = CostCalculator.openai(model, input_t, cached_t, output_t)
+                except ValueError:
+                    cost = 0.0
+                return cost, int(input_t or 0), int(output_t or 0)
+
+            # Session usage carries one entry per (type, provider, model) in
+            # model_usage -- sum cost per LLM entry individually since a
+            # session can in principle span more than one model.
+            session_cost, _session_in, _session_out = 0.0, 0, 0
+            for _item in (getattr(usage_ns, "model_usage", None) or []):
+                if getattr(_item, "type", "") != "llm":
+                    continue
+                _c, _i, _o = _cost_and_tokens(
+                    str(getattr(_item, "model", "") or ""),
+                    int(getattr(_item, "input_tokens", 0) or 0),
+                    int(getattr(_item, "input_cached_tokens", 0) or 0),
+                    int(getattr(_item, "output_tokens", 0) or 0),
+                )
+                session_cost += _c
+                _session_in += _i
+                _session_out += _o
+
+            def _sum_usage_cost(usages: list[dict]) -> tuple[float, int, int]:
+                total_cost, total_in, total_out = 0.0, 0, 0
+                for u in usages:
+                    c, i, o = _cost_and_tokens(
+                        str(u.get("model", "") or ""),
+                        int(u.get("inputTokens", 0) or 0),
+                        int(u.get("cachedInputTokens", 0) or 0),
+                        int(u.get("outputTokens", 0) or 0),
+                    )
+                    total_cost += c
+                    total_in += i
+                    total_out += o
+                return total_cost, total_in, total_out
+
+            eval_cost, eval_in, eval_out = _sum_usage_cost(eval_usages)
+            brief_cost, brief_in, brief_out = _sum_usage_cost(brief_usages)
+            llmgen_cost, llmgen_in, llmgen_out = _sum_usage_cost(llmgen_usages)
+
+            llm_cost = round(session_cost + eval_cost + brief_cost + llmgen_cost, 6)
+            llm_in = _session_in + eval_in + brief_in + llmgen_in
+            llm_out = _session_out + eval_out + brief_out + llmgen_out
+
+            try:
+                tts_cost = round(
+                    CostCalculator.tts(tts_provider, tts_model, billable_tts_characters), 6
+                ) if billable_tts_characters and tts_provider and tts_model else 0.0
+            except ValueError:
+                tts_cost = 0.0
+            try:
+                stt_cost = round(
+                    CostCalculator.stt(stt_provider, stt_model, plugin_stt_audio_seconds), 6
+                ) if plugin_stt_audio_seconds and stt_model else 0.0
+            except ValueError:
+                stt_cost = 0.0
+
+            # eval_usages now has one entry per real LLM call (agent_scoring.py's
+            # evaluate_answer returns a list: scoring + signal + any fallback
+            # classification calls), so len() already equals real API calls made.
+            evaluation_runs = len(eval_usages)
+
             async with pool.acquire() as conn:
                 await conn.execute(
                     """UPDATE "Interview" SET "testBillingMetrics" = $1::jsonb, "updatedAt" = NOW()
                        WHERE "applicationId" = $2""",
                     json.dumps({
                         "skipReport": False,
+                        "costSource": "exact",
                         "llmCost": llm_cost,
                         "ttsCost": tts_cost,
                         "sttCost": stt_cost,
                         "llmInputTokens": int(llm_in),
                         "llmOutputTokens": int(llm_out),
-                        "ttsChars": int(billable_tts_characters),
-                        "sttSeconds": round(float(plugin_stt_audio_seconds), 1),
-                        "ttsProvider": billing.get("ttsProvider"),
-                        "sttProvider": "deepgram",
+                        "ttsChars": billable_tts_characters,
+                        "sttSeconds": round(plugin_stt_audio_seconds, 1),
+                        "ttsProvider": tts_provider or None,
+                        "ttsModel": tts_model or None,
+                        "sttProvider": stt_provider.lower(),
+                        "sttModel": stt_model or None,
                         "llmProvider": "openai",
-                        "evaluationRuns": len(eval_usages),
+                        "evaluationRuns": evaluation_runs,
                         "briefGenerations": len(brief_usages),
                         "llmGenerations": len(llmgen_usages),
-                        "evalInputTokens": sum(u.get("inputTokens", 0) for u in eval_usages),
-                        "evalOutputTokens": sum(u.get("outputTokens", 0) for u in eval_usages),
-                        "briefInputTokens": sum(u.get("inputTokens", 0) for u in brief_usages),
-                        "briefOutputTokens": sum(u.get("outputTokens", 0) for u in brief_usages),
-                        "llmgenInputTokens": sum(u.get("inputTokens", 0) for u in llmgen_usages),
-                        "llmgenOutputTokens": sum(u.get("outputTokens", 0) for u in llmgen_usages),
+                        "evalInputTokens": eval_in,
+                        "evalOutputTokens": eval_out,
+                        "evalCostUsd": round(eval_cost, 6),
+                        "briefInputTokens": brief_in,
+                        "briefOutputTokens": brief_out,
+                        "briefCostUsd": round(brief_cost, 6),
+                        "llmgenInputTokens": llmgen_in,
+                        "llmgenOutputTokens": llmgen_out,
+                        "llmgenCostUsd": round(llmgen_cost, 6),
+                        "sessionLlmCostUsd": round(session_cost, 6),
                     }),
                     app_id,
                 )

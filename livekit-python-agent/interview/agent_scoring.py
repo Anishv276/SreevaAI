@@ -344,7 +344,7 @@ async def _classify_signal_from_answer(
     client: Any,
     llm_model: str,
     signals_already_fired: list | None = None,
-) -> tuple[str, str | None]:
+) -> tuple[str, str | None, dict | None]:
     """
     Fallback: compare the answer against every content-level signal definition
     and return (signal, signal_reason). Called only when the main eval LLM
@@ -371,6 +371,7 @@ async def _classify_signal_from_answer(
         "signal MUST be exactly one of the signal names listed above. Nothing else."
     )
     _user = f"QUESTION: {last_question}\n\nANSWER: {candidate_answer}"
+    _usage: dict | None = None
     try:
         resp = await asyncio.wait_for(
             client.chat.completions.create(
@@ -385,6 +386,10 @@ async def _classify_signal_from_answer(
             ),
             timeout=5.0,
         )
+        # Capture usage immediately after the call succeeds -- it was billed
+        # regardless of whether the response body parses cleanly below.
+        from billing.billing import extract_usage as _extract_usage  # noqa: PLC0415
+        _usage = _extract_usage(resp, llm_model) if resp else None
         raw = resp.choices[0].message.content or ""
         result = json.loads(raw)
         chosen = str(result.get("signal", "")).strip()
@@ -392,9 +397,9 @@ async def _classify_signal_from_answer(
         if not reason and chosen in SIGNAL_DEFINITIONS:
             reason = SIGNAL_DEFINITIONS[chosen]["trigger"]
         if chosen in _remaining:
-            return chosen, reason
+            return chosen, reason, _usage
         if chosen in SIGNAL_DEFINITIONS:
-            return chosen, reason
+            return chosen, reason, _usage
     except Exception as exc:
         logger.warning("[EVAL] _classify_signal_from_answer failed (%s) — rotating fallback", exc)
     # Deterministic rotation across banned/unfired signals -- never always the same one.
@@ -404,9 +409,9 @@ async def _classify_signal_from_answer(
     ]
     for name in _rotation_order:
         if name in _remaining:
-            return name, SIGNAL_DEFINITIONS[name]["trigger"]
+            return name, SIGNAL_DEFINITIONS[name]["trigger"], _usage
     _fallback = _rotation_order[len(_fired) % len(_rotation_order)]
-    return _fallback, SIGNAL_DEFINITIONS[_fallback]["trigger"]
+    return _fallback, SIGNAL_DEFINITIONS[_fallback]["trigger"], _usage
 
 
 async def _call_scoring(
@@ -780,18 +785,10 @@ async def evaluate_answer(
             )
         )
 
-        _eval_llm_usage = {
-            "model": llm_model,
-            "inputTokens": (
-                _scoring_usage.get("inputTokens", 0) + _signal_usage.get("inputTokens", 0)
-            ),
-            "outputTokens": (
-                _scoring_usage.get("outputTokens", 0) + _signal_usage.get("outputTokens", 0)
-            ),
-            "cachedInputTokens": (
-                _scoring_usage.get("cachedInputTokens", 0) + _signal_usage.get("cachedInputTokens", 0)
-            ),
-        }
+        # One usage entry PER real LLM call made -- never merged -- so
+        # downstream "runs" counts (billing.py, report_worker.py testBillingMetrics)
+        # reflect actual API calls billed, not conversational turns.
+        _eval_llm_usages: list[dict] = [_scoring_usage, _signal_usage]
 
         data = scoring_data
 
@@ -850,13 +847,15 @@ async def evaluate_answer(
         # If signal is still None, compare the answer against all content-level signal
         # definitions and pick the best match -- never fall back to the default probe.
         if signal is None and not zero_scores and not cap_scores_at_5:
-            signal, signal_reason = await _classify_signal_from_answer(
+            signal, signal_reason, _fallback_usage = await _classify_signal_from_answer(
                 candidate_answer=candidate_answer,
                 last_question=last_question,
                 client=client,
                 llm_model=llm_model,
                 signals_already_fired=signals_already_fired,
             )
+            if _fallback_usage:
+                _eval_llm_usages.append(_fallback_usage)
             logger.info("[EVAL] signal was None — best-match classification selected %r", signal)
 
         # signal_reason comes from the dedicated signal call (already extracted)
@@ -877,13 +876,15 @@ async def evaluate_answer(
         if signal in _CONTENT and signal in _fired_content:
             _remaining = _CONTENT - _fired_content
             if _remaining:
-                _reroll, _reroll_reason = await _classify_signal_from_answer(
+                _reroll, _reroll_reason, _reroll_usage = await _classify_signal_from_answer(
                     candidate_answer=candidate_answer,
                     last_question=last_question,
                     client=client,
                     llm_model=llm_model,
                     signals_already_fired=list(_fired_content),
                 )
+                if _reroll_usage:
+                    _eval_llm_usages.append(_reroll_usage)
                 if _reroll and _reroll != signal:
                     logger.info(
                         "[EVAL] variety-enforcement: LLM picked banned %r on topic — rerolled to %r",
@@ -928,7 +929,7 @@ async def evaluate_answer(
             "signal": signal,
             "signal_reason": signal_reason,
             "reason": reason,
-            "_llm_usage": _eval_llm_usage,
+            "_llm_usage": _eval_llm_usages,
         }
 
     except (asyncio.TimeoutError, Exception) as e:
