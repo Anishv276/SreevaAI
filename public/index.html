@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
@@ -47,7 +47,7 @@
 <!-- Fonts -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
 <link rel="stylesheet" href="/styles.css?v=2" />
 
 <!-- JSON-LD Structured Data -->
@@ -284,25 +284,269 @@
 
   <main id="top" itemscope itemtype="https://schema.org/WebPage">
 
-    <!-- ========== HERO ========== -->
-    <section class="hero" data-section-anchor="hero" aria-label="Hero — Sreeva AI adaptive interview platform">
-      <div class="hero-bg">
-        <div class="hero-blob" id="heroBlob"></div>
-        <div class="hero-grid-bg" aria-hidden="true"></div>
-      </div>
-      <div class="shell hero-shell">
-        <div class="hero-meta">
-          <span class="eyebrow"><span class="eyebrow-dot"></span> Adaptive AI Interviews</span>
+    <!-- ========== HERO (Cluely Style) ========== -->
+    <style>
+      .cluely-hero {
+        width: 100%;
+        padding: 100px 24px 80px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        gap: 64px;
+        background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg) 100%);
+      }
+      .cluely-hero-content {
+        max-width: 800px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 24px;
+      }
+      .cluely-headline {
+        font-family: var(--sans);
+        font-size: clamp(3rem, 5vw, 4.5rem);
+        font-weight: 800;
+        letter-spacing: -0.04em;
+        line-height: 1.1;
+        color: var(--ink);
+        margin: 0;
+      }
+      .cluely-body {
+        font-family: var(--sans);
+        font-size: 1.25rem;
+        font-weight: 400;
+        color: var(--muted);
+        max-width: 600px;
+        margin: 0;
+      }
+      .cluely-cta-container {
+        display: flex;
+        gap: 24px;
+        margin-top: 16px;
+        align-items: center;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+      .cluely-btn {
+        position: relative;
+        background-color: var(--ink);
+        color: #ffffff;
+        padding: 16px 32px;
+        border-radius: 999px;
+        font-size: 1rem;
+        font-weight: 600;
+        text-decoration: none;
+        overflow: hidden;
+        border: none;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+      .cluely-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px rgba(10, 10, 11, 0.15);
+      }
+      .cluely-btn::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 50%;
+        height: 100%;
+        background: linear-gradient(to right, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.2) 50%, rgba(255, 255, 255, 0) 100%);
+        transform: skewX(-20deg);
+        animation: cluely-shimmer 3s infinite;
+      }
+      @keyframes cluely-shimmer {
+        0% { left: -100%; }
+        20% { left: 200%; }
+        100% { left: 200%; }
+      }
+      .cluely-proof {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--muted);
+      }
+      .cluely-avatars { display: flex; align-items: center; }
+      .cluely-avatar {
+        width: 36px; height: 36px; border-radius: 50%;
+        border: 2px solid var(--bg-card); margin-left: -12px;
+        background-color: #e2e8f0; object-fit: cover;
+      }
+      .cluely-avatar:first-child { margin-left: 0; }
+      
+      .cluely-sig-container {
+        width: 100%;
+        max-width: 900px;
+        position: relative;
+        margin-top: 24px;
+        border-radius: 24px;
+        padding: 64px 40px;
+        background: linear-gradient(135deg, var(--primary) 0%, #3b82f6 100%);
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+      .cluely-mock-window {
+        position: relative;
+        z-index: 1;
+        width: 100%;
+        max-width: 600px;
+        background: rgba(20, 20, 25, 0.75);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px;
+        overflow: hidden;
+        box-shadow: 0 30px 60px rgba(0,0,0,0.4);
+      }
+      .cluely-window-header {
+        height: 32px;
+        background: rgba(255, 255, 255, 0.05);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        display: flex;
+        align-items: center;
+        padding: 0 12px;
+        gap: 8px;
+      }
+      .cluely-dot { width: 10px; height: 10px; border-radius: 50%; }
+      .cluely-dot-red { background-color: #ff5f56; }
+      .cluely-dot-yellow { background-color: #ffbd2e; }
+      .cluely-dot-green { background-color: #27c93f; }
+      
+      .cluely-window-body {
+        padding: 24px;
+        color: #ffffff;
+        text-align: left;
+        font-family: var(--sans);
+      }
+      .cluely-ui-context {
+        font-size: 0.875rem; color: rgba(255, 255, 255, 0.6);
+        margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
+      }
+      .cluely-ui-icon {
+        width: 16px; height: 16px; border-radius: 4px;
+        background: #ec4899; display: inline-block;
+      }
+      .cluely-ui-prompt {
+        font-size: 1.125rem; font-weight: 500;
+        margin-bottom: 16px; line-height: 1.4; color: #ffffff;
+      }
+      .cluely-ui-suggestion {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 8px; padding: 16px;
+        font-size: 0.95rem; color: rgba(255, 255, 255, 0.9);
+        line-height: 1.5; margin-bottom: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+      }
+      .cluely-ui-footer {
+        display: flex; justify-content: space-between; align-items: center;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        padding-top: 16px; margin-top: 8px;
+      }
+      .cluely-shortcut {
+        background: rgba(255, 255, 255, 0.15);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 4px 8px; border-radius: 6px;
+        font-size: 0.75rem; font-weight: 600; letter-spacing: 1px;
+        color: #ffffff; display: flex; align-items: center; gap: 4px;
+      }
+      .cluely-bento {
+        display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;
+        width: 100%; max-width: 900px; margin-top: 32px;
+      }
+      .cluely-stat-card {
+        background: var(--bg-card); border: 1px solid var(--line);
+        border-radius: 20px; padding: 32px 24px; text-align: center;
+        transition: transform 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02);
+      }
+      .cluely-stat-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 24px rgba(0, 0, 0, 0.06);
+      }
+      .cluely-stat-number {
+        font-family: var(--sans);
+        font-size: 2.5rem; font-weight: 700; letter-spacing: -0.02em;
+        color: var(--ink); margin-bottom: 8px; line-height: 1;
+      }
+      .cluely-stat-label { font-size: 0.875rem; color: var(--muted); font-weight: 500; font-family: var(--sans); }
+      @media (max-width: 768px) {
+        .cluely-headline { font-size: 2.5rem; }
+        .cluely-bento { grid-template-columns: 1fr; }
+        .cluely-sig-container { padding: 40px 16px; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .cluely-btn::after { animation: none; }
+        .cluely-stat-card:hover, .cluely-btn:hover { transform: none; }
+      }
+    </style>
+
+    <section class="cluely-hero" data-section-anchor="hero">
+      <div class="cluely-hero-content">
+        <h1 class="cluely-headline">#1 Adaptive AI Interviewer</h1>
+        <p class="cluely-body">Sreeva runs your first-round interviews end to end — adaptive questions, real follow-ups, and an integrity score in one report.</p>
+        
+        <div class="cluely-cta-container">
+          <a href="https://cal.com/vamsivk/30min" class="cluely-btn">Book a Demo</a>
+          <div class="cluely-proof">
+            <div class="cluely-avatars">
+              <img src="https://i.pravatar.cc/100?img=12" alt="User" class="cluely-avatar">
+              <img src="https://i.pravatar.cc/100?img=32" alt="User" class="cluely-avatar">
+              <img src="https://i.pravatar.cc/100?img=47" alt="User" class="cluely-avatar">
+              <img src="https://i.pravatar.cc/100?img=68" alt="User" class="cluely-avatar">
+            </div>
+            <span>Trusted by top hiring teams</span>
+          </div>
         </div>
+      </div>
 
-        <h1 class="hero-title" data-words>
-          <span>Your</span> <span>AI</span> <span>interviewer</span> <span>is</span> <span>already</span> <span class="rfx"><span style="color: #7C3AED;">waiting.</span></span>
-        </h1>
+      <div class="cluely-sig-container">
+        <div class="cluely-mock-window">
+          <div class="cluely-window-header">
+            <div class="cluely-dot cluely-dot-red"></div>
+            <div class="cluely-dot cluely-dot-yellow"></div>
+            <div class="cluely-dot cluely-dot-green"></div>
+          </div>
+          <div class="cluely-window-body">
+            <div class="cluely-ui-context">
+              <span class="cluely-ui-icon"></span>
+              Live Interview / Technical Probe
+            </div>
+            <div class="cluely-ui-prompt">
+              "We rebuilt our checkout flow. Reduced drop-off by around 30%."
+            </div>
+            <div class="cluely-ui-suggestion">
+              Adaptive follow-up generated: "What was specifically yours in that rebuild — what would not have shipped without you? Walk me through the hardest state problem you hit."
+            </div>
+            <div class="cluely-ui-footer">
+              <span style="font-size: 0.875rem; color: rgba(255, 255, 255, 0.6);">Sreeva AI Engine</span>
+              <div class="cluely-shortcut">⌘ ↵ Ask</div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-        <p class="hero-subline lede" data-reveal data-delay="1">
-          Sreeva runs your first-round interviews end to end — adaptive questions, real follow-ups, and a hire decision waiting for you in 20 minutes.
-        </p>
-
+      <div class="cluely-bento">
+        <div class="cluely-stat-card">
+          <div class="cluely-stat-number">&lt; 60s</div>
+          <div class="cluely-stat-label">Report generation time</div>
+        </div>
+        <div class="cluely-stat-card">
+          <div class="cluely-stat-number">100%</div>
+          <div class="cluely-stat-label">Adaptive questions</div>
+        </div>
+        <div class="cluely-stat-card">
+          <div class="cluely-stat-number">12+</div>
+          <div class="cluely-stat-label">Integrity signals tracked</div>
+        </div>
       </div>
     </section>
 
