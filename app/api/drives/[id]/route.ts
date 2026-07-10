@@ -256,8 +256,6 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
             const timestamp = Date.now().toString();
             // 1. Soft Delete Drive
             await tx.$executeRaw`UPDATE "Drive" SET "isDeleted" = true WHERE "id" = ${driveId}`;
-            // 2. Soft Delete Resume Candidates
-            await tx.$executeRaw`UPDATE "ResumeCandidate" SET "isDeleted" = true WHERE "driveId" = ${driveId}`;
             // 4. Soft Delete Applications
             await tx.$executeRaw`UPDATE "Application" SET "isDeleted" = true WHERE "driveId" = ${driveId}`;
             // 5. Soft Delete Interviews (rename applicationId and accessToken)
