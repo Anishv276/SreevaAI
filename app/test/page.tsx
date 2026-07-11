@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import {
     Building2, Briefcase, Users, Play, StopCircle,
-    Loader2, AlertCircle, Settings2,
+    Loader2, AlertCircle,
     ToggleLeft, ToggleRight, LogOut, ShieldAlert
 } from "lucide-react";
 import { toast } from "@/components/ui/toast-custom";
@@ -24,8 +24,6 @@ import { FaceProctoring } from "@/components/careers/interview/FaceProctoring";
 import { HardwareHeartbeat } from "@/components/careers/interview/HardwareHeartbeat";
 import "@livekit/components-styles";
 
-const TEST_KEY = process.env.NEXT_PUBLIC_TEST_KEY || "1285";
-
 // --- Types -------------------------------------------------------------------
 type Org = { id: string; name: string; slug: string; status: string };
 type Job = { id: string; title: string; role: string | null; status: string; _count: { applications: number } };
@@ -35,78 +33,6 @@ type Candidate = {
     interview: { status: string; isTest: boolean; completedAt: string | null } | null;
 };
 type TranscriptLine = { speaker: "AI" | "Human"; text: string; ts: number };
-
-// --- Verification modal -------------------------------------------------------
-function KeyVerification({ onVerified }: { onVerified: () => void }) {
-    const [inputKey, setInputKey] = useState("");
-    const [error, setError] = useState(false);
-    const [locked, setLocked] = useState(false);
-
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (inputKey === TEST_KEY) {
-            onVerified();
-        } else {
-            setError(true);
-            setInputKey("");
-            setLocked(true);
-            setTimeout(() => setLocked(false), 2000);
-        }
-    };
-
-    return (
-        <div className="min-h-screen flex items-center justify-center p-4" style={{ background: "linear-gradient(180deg,#fff 0%,#FAFAFC 45%,#F5F3FF 100%)" }}>
-            <div className="w-full max-w-sm bg-white rounded-2xl overflow-hidden animate-in zoom-in-95 duration-200"
-                style={{ border: "1px solid #E9E7FF", boxShadow: "0 25px 60px rgba(124,58,237,0.12)" }}>
-                <div className="px-6 py-8">
-                    <div className="flex justify-center mb-6">
-                        <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
-                            style={{ background: "linear-gradient(135deg,#8B5CF6,#3B82F6)" }}>
-                            <Settings2 className="w-7 h-7 text-white" />
-                        </div>
-                    </div>
-                    <h1 className="text-xl font-semibold text-gray-900 text-center mb-2">Developer Sandbox</h1>
-                    <p className="text-sm text-gray-400 text-center mb-6">Enter the access key to begin testing</p>
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                        <div>
-                            <input
-                                type="password"
-                                value={inputKey}
-                                onChange={(e) => { setInputKey(e.target.value); setError(false); }}
-                                disabled={locked}
-                                placeholder="Enter test key"
-                                autoFocus
-                                className="w-full h-11 px-4 rounded-xl text-sm outline-none transition-all"
-                                style={{
-                                    border: error ? "1px solid #FCA5A5" : "1px solid #E9E7FF",
-                                    background: error ? "#FEF2F2" : "#F9FAFB",
-                                }}
-                            />
-                        </div>
-                        {error && (
-                            <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 px-3 py-2.5 rounded-xl border border-red-200">
-                                <AlertCircle className="w-4 h-4 flex-shrink-0" /> Invalid key.
-                            </div>
-                        )}
-                        <button type="submit" disabled={locked || !inputKey.trim()}
-                            className="w-full btn-shimmer h-11 rounded-xl text-sm font-medium text-white disabled:opacity-50 transition-all"
-                            style={{ background: "linear-gradient(135deg,#8B5CF6,#3B82F6)", boxShadow: "0 4px 14px rgba(124,58,237,0.3)" }}>
-                            Verify Access
-                        </button>
-                    </form>
-                    <div className="mt-6 pt-6 border-t border-[#E9E7FF]">
-                        <button
-                            onClick={() => window.location.href = "/"}
-                            className="w-full h-10 rounded-xl text-sm font-semibold text-violet-600 bg-violet-50 border border-violet-200 hover:bg-violet-100 transition-all"
-                        >
-                            Back to Home
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-}
 
 // --- Live Transcript Hook ----------------------------------------------------
 function useLiveTranscript() {
@@ -466,7 +392,7 @@ function TestPageContent() {
 
     useEffect(() => {
         let cancelled = false;
-        fetch(`/api/test/orgs?key=${TEST_KEY}`)
+        fetch(`/api/test/orgs`)
             .then(r => r.json())
             .then(d => {
                 if (!cancelled) {
@@ -486,7 +412,7 @@ function TestPageContent() {
     useEffect(() => {
         if (!selectedOrg) { setJobs([]); setSelectedJob(null); return; }
         setLoadingJobs(true);
-        fetch(`/api/test/jobs?key=${TEST_KEY}&orgId=${selectedOrg.id}`).then(r => r.json()).then(d => {
+        fetch(`/api/test/jobs?orgId=${selectedOrg.id}`).then(r => r.json()).then(d => {
             setJobs(d.jobs || []); setLoadingJobs(false);
         }).catch(() => setLoadingJobs(false));
     }, [selectedOrg]);
@@ -494,7 +420,7 @@ function TestPageContent() {
     useEffect(() => {
         if (!selectedJob) { setCandidates([]); setSelectedCandidate(null); return; }
         setLoadingCandidates(true);
-        fetch(`/api/test/candidates?key=${TEST_KEY}&jobId=${selectedJob.id}`).then(r => r.json()).then(d => {
+        fetch(`/api/test/candidates?jobId=${selectedJob.id}`).then(r => r.json()).then(d => {
             setCandidates(d.candidates || []); setLoadingCandidates(false);
         }).catch(() => setLoadingCandidates(false));
     }, [selectedJob]);
@@ -545,7 +471,6 @@ function TestPageContent() {
                 body: JSON.stringify({
                     applicationId: selectedCandidate.id,
                     skipReport: !enableReport,
-                    key: TEST_KEY
                 }),
             });
             const data = await res.json();
@@ -1131,11 +1056,6 @@ export default function TestPage() {
 }
 
 function TestPageWrapper() {
-    const [verified, setVerified] = useState(false);
-
-    if (!verified) {
-        return <KeyVerification onVerified={() => setVerified(true)} />;
-    }
-
+    // Access is enforced server-side by app/test/layout.tsx (SUPER_ADMIN session required).
     return <TestPageContent />;
 }

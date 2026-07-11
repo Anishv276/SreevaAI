@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
     } catch (error: unknown) {
         console.error("Score distribution error:", error);
         return NextResponse.json(
-            { error: error instanceof Error ? error.message : "Failed to load score distribution" },
+            { error: "Failed to load score distribution" },
             { status: 500 }
         );
     }

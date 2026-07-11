@@ -42,11 +42,30 @@ function hasBillableUsage(usage: BillingUsage) {
   );
 }
 
+// Only the env vars billing.py actually reads (DB connection + optional cost
+// overrides) plus what the interpreter itself needs to run -- not the full
+// parent environment, which holds every other secret (JWT_SECRET, API keys
+// for providers this subprocess never talks to, etc).
+const BILLING_ENV_ALLOWLIST = [
+  "PATH", "PYTHONPATH", "PYTHONHOME", "HOME", "TEMP", "TMP",
+  "DATABASE_URL", "DIRECT_URL",
+  "BILLING_INR_PER_USD", "CARTESIA_TTS_USD_PER_MILLION_CHARS", "ELEVENLABS_TTS_USD_PER_MILLION_CHARS",
+];
+
+function billingSubprocessEnv(): NodeJS.ProcessEnv {
+  const env = { NODE_ENV: process.env.NODE_ENV } as NodeJS.ProcessEnv;
+  for (const key of BILLING_ENV_ALLOWLIST) {
+    const value = process.env[key];
+    if (value !== undefined) env[key] = value;
+  }
+  return env;
+}
+
 function runBillingCommand(command: string, payload: Record<string, unknown>) {
   return new Promise<void>((resolve, reject) => {
     const child = spawn(getPythonExecutable(), ["-m", "billing.billing", command], {
       cwd: BILLING_CWD,
-      env: process.env,
+      env: billingSubprocessEnv(),
       stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";

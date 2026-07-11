@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSession, isSuperAdminRole } from "@/lib/auth";
-
-const TEST_KEY = process.env.TEST_PAGE_KEY || "1285";
+import { isTestAccessAuthorized } from "@/lib/test-key";
 
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
-        if (searchParams.get("key") !== TEST_KEY) {
+        if (!(await isTestAccessAuthorized(searchParams.get("key")))) {
             return NextResponse.json({ error: "Invalid test key" }, { status: 403 });
         }
 

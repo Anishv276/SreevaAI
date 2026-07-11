@@ -2,30 +2,17 @@ import { NextResponse } from "next/server";
 import { getSession, isAdminRole } from "@/lib/auth";
 import { isSuperAdminRole } from "@/lib/auth";
 import { getOrgBillingStatus } from "@/lib/credits";
-function getRequestedOrgId(request: Request) {
-    const url = new URL(request.url);
-    const explicitOrgId = url.searchParams.get("orgId")?.trim() || "";
-    if (explicitOrgId) {
-        return explicitOrgId;
-    }
-    const referer = request.headers.get("referer") || "";
-    if (!referer) {
-        return "";
-    }
-    try {
-        return new URL(referer).searchParams.get("orgId")?.trim() || "";
-    } catch {
-        return "";
-    }
-}
 export async function GET(request: Request) {
     try {
         const session = await getSession();
         if (!session || (!isAdminRole(session.role) && !isSuperAdminRole(session.role))) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
+        // Only an explicit query param -- the Referer header is client-controlled
+        // and easily spoofed/stripped, so it's not a trustworthy source for
+        // deciding which org's data a super-admin gets to view.
         const { searchParams } = new URL(request.url);
-        const requestedOrgId = searchParams.get("orgId")?.trim() || getRequestedOrgId(request) || null;
+        const requestedOrgId = searchParams.get("orgId")?.trim() || null;
         const orgId = isSuperAdminRole(session.role) ? (requestedOrgId || session.orgId) : session.orgId;
         if (!orgId) {
             return NextResponse.json({ error: "Organization required" }, { status: 400 });

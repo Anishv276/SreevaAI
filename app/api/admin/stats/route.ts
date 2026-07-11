@@ -140,7 +140,7 @@ export async function GET(req: NextRequest) {
     } catch (error: unknown) {
         console.error("Dashboard stats error:", error);
         return NextResponse.json(
-            { error: error instanceof Error ? error.message : "Failed to fetch stats" },
+            { error: "Failed to fetch stats" },
             { status: 500 }
         );
     }

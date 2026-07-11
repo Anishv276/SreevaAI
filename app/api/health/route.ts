@@ -17,7 +17,9 @@ export async function GET() {
         return NextResponse.json({
             status: "DOWN",
             timestamp: new Date().toISOString(),
-            error: error.message || "Unknown error connecting to database"
+            services: {
+                database: "DISCONNECTED",
+            },
         }, { status: 503 });
     }
 }

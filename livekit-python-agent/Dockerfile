@@ -13,6 +13,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Run as a non-root user -- code execution inside the container should not
+# equal root on the container.
+RUN groupadd --system --gid 1001 agent \
+    && useradd --system --uid 1001 --gid agent agent \
+    && chown -R agent:agent /app
+USER agent
+
 # Pre-download LiveKit models
 RUN python -m livekit.agents download-files
 

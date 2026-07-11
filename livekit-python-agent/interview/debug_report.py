@@ -9,8 +9,8 @@ Env vars (set in .env — see .env.example for instructions):
   SLACK_BOT_TOKEN     — xoxb-... Bot User OAuth Token (needs files:write scope)
   SLACK_DEBUG_CHANNEL — Channel ID (e.g. C01234ABCDE) where PDFs are posted
 
-Fallback: If the env vars are not set, shared team defaults are used so every
-toolkit member automatically gets debug PDFs without extra per-machine setup.
+Both env vars are required — there is no fallback. If either is missing,
+debug PDF posting is skipped with a logged error.
 """
 from __future__ import annotations
 
@@ -33,16 +33,8 @@ from reportlab.platypus import (
 
 logger = logging.getLogger("interview-agent")
 
-# ---------------------------------------------------------------------------
-# Shared team fallbacks -- same pattern as slack_error_logger.py.
-# These ensure every teammate gets debug PDFs without individual .env setup.
-# Override in your .env (see .env.example) if you need a different channel.
-# ---------------------------------------------------------------------------
-_FALLBACK_BOT_TOKEN = "xoxb-11101596499317-11476936267733-spYXNpaxgbwNi9EVrqPK4DzE"
-_FALLBACK_DEBUG_CHANNEL = "C0BDNLYGD2B"
-
-SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "").strip() or _FALLBACK_BOT_TOKEN
-SLACK_DEBUG_CHANNEL = os.environ.get("SLACK_DEBUG_CHANNEL", "").strip() or _FALLBACK_DEBUG_CHANNEL
+SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "").strip()
+SLACK_DEBUG_CHANNEL = os.environ.get("SLACK_DEBUG_CHANNEL", "").strip()
 
 
 def _styles() -> dict:
@@ -212,19 +204,18 @@ async def post_pdf_to_slack(pdf_bytes: bytes, filename: str, title: str) -> None
     No-op with a clear warning if either env var is missing.
     """
     # Re-read env at call time so tokens set after module import are picked up.
-    # Fall back to the shared team defaults if the env var is absent.
-    bot_token = os.environ.get("SLACK_BOT_TOKEN", "").strip() or _FALLBACK_BOT_TOKEN
-    channel_id = os.environ.get("SLACK_DEBUG_CHANNEL", "").strip() or _FALLBACK_DEBUG_CHANNEL
+    bot_token = os.environ.get("SLACK_BOT_TOKEN", "").strip()
+    channel_id = os.environ.get("SLACK_DEBUG_CHANNEL", "").strip()
 
     if not bot_token:
         logger.error(
-            "[DEBUG_REPORT] SLACK_BOT_TOKEN is not set and fallback is missing — "
+            "[DEBUG_REPORT] SLACK_BOT_TOKEN is not set — "
             "PDF will NOT be sent. See .env.example for setup instructions."
         )
         return
     if not channel_id:
         logger.error(
-            "[DEBUG_REPORT] SLACK_DEBUG_CHANNEL is not set and fallback is missing — "
+            "[DEBUG_REPORT] SLACK_DEBUG_CHANNEL is not set — "
             "PDF will NOT be sent. See .env.example for setup instructions."
         )
         return

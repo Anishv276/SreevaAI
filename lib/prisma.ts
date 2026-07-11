@@ -1,5 +1,13 @@
 import { Prisma, PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
+import { readFileSync } from 'fs'
+import { join } from 'path'
+
+// Supabase's Postgres endpoints present a cert chain rooted at Supabase's own
+// CA (not a public CA), so Node's default trust store can't verify it. Pin
+// that root explicitly instead of disabling verification.
+const SUPABASE_CA = readFileSync(join(process.cwd(), 'certs', 'supabase-root-ca.pem'), 'utf8')
+
 function createPrismaClient() {
     // Supabase recommends using the direct/session connection for persistent
     // app servers and reserving the transaction pooler for transient/serverless
@@ -11,7 +19,11 @@ function createPrismaClient() {
     }
     const connectionUrl = new URL(databaseUrl)
     connectionUrl.searchParams.set('uselibpqcompat', 'true')
-    connectionUrl.searchParams.set('sslmode', 'require')
+    // sslmode is intentionally NOT set here -- pg-connection-string treats it as
+    // an alias that overrides the explicit `ssl` option below with a bare
+    // `rejectUnauthorized: true` (no CA), which then fails to verify Supabase's
+    // self-signed root. TLS is still enforced via the `ssl` option itself.
+    connectionUrl.searchParams.delete('sslmode')
     // Move pool tuning out of the URL so we can control Prisma's pool directly.
     connectionUrl.searchParams.delete('connect_timeout')
     connectionUrl.searchParams.delete('connection_limit')
@@ -22,7 +34,7 @@ function createPrismaClient() {
         min: 1,
         idleTimeoutMillis: 60000,
         allowExitOnIdle: false,
-        ssl: { rejectUnauthorized: false }, // Supabase uses self-signed cert in chain
+        ssl: { rejectUnauthorized: true, ca: SUPABASE_CA },
     })
     const baseClient = new PrismaClient({
         adapter,

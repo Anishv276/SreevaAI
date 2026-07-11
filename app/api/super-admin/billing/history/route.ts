@@ -22,6 +22,9 @@ export async function GET(request: Request) {
         if (!orgId) {
             return NextResponse.json({ error: "orgId required" }, { status: 400 });
         }
+        if (session.role !== "SUPER_ADMIN" && orgId !== session.orgId) {
+            return NextResponse.json({ error: "Access Denied: Ownership required" }, { status: 403 });
+        }
 
         const where: any = {
             application: {

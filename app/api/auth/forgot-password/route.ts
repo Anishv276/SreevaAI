@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { sendOtpEmail } from "@/lib/mail";
 import { isRateLimited } from "@/lib/rate-limit";
 import { normalizeEmail } from "@/lib/email";
+import { hashOtp } from "@/lib/otp";
 export async function POST(request: Request) {
     try {
         const { email } = await request.json();
@@ -42,15 +43,16 @@ export async function POST(request: Request) {
         // 6-digit code predictable/brute-forceable.
         const otp = randomInt(100000, 1000000).toString();
         const expires = new Date(Date.now() + 10 * 60 * 1000);
+        const otpHash = hashOtp(otp);
         if (superAdminRecord) {
             await prisma.superAdmin.update({
                 where: { id: superAdminRecord.id },
-                data: { passwordResetOtp: otp, passwordResetOtpExpiresAt: expires }
+                data: { passwordResetOtp: otpHash, passwordResetOtpExpiresAt: expires }
             });
         } else if (userRecord) {
             await prisma.organizationCredentials.update({
                 where: { id: userRecord.id },
-                data: { passwordResetOtp: otp, passwordResetOtpExpiresAt: expires }
+                data: { passwordResetOtp: otpHash, passwordResetOtpExpiresAt: expires }
             });
         }
         const name = superAdminRecord?.name || userRecord?.name || "Admin";

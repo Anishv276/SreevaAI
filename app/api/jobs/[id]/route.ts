@@ -25,6 +25,8 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
+        const session = await getSession();
+        if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
         const { id } = await params;
         const job = await prisma.job.findFirst({
             where: {
@@ -61,6 +63,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         });
         if (!job) {
             return NextResponse.json({ error: "Job not found" }, { status: 404 });
+        }
+        if (session.role !== "SUPER_ADMIN" && job.organizationId !== session.orgId) {
+            return NextResponse.json({ error: "Access Denied: Ownership required to view job" }, { status: 403 });
         }
         if (job.organization && isOrgRestrictedStatus(job.organization.orgStatus)) {
             return NextResponse.json({ error: "This organization is currently suspended. Access is restricted." }, { status: 403 });

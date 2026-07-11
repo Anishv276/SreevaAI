@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizeEmail } from "@/lib/email";
 import { isRateLimited } from "@/lib/rate-limit";
+import { verifyOtp } from "@/lib/otp";
 export async function POST(request: Request) {
     try {
         const { email, otp } = await request.json();
@@ -33,7 +34,7 @@ export async function POST(request: Request) {
             }
         });
         if (superAdmin) {
-            if (!superAdmin.passwordResetOtp || superAdmin.passwordResetOtp !== otp) {
+            if (!verifyOtp(otp, superAdmin.passwordResetOtp)) {
                 return NextResponse.json({ error: "Invalid verification code" }, { status: 400 });
             }
             const isExpired = superAdmin.passwordResetOtpExpiresAt && superAdmin.passwordResetOtpExpiresAt.getTime() < Date.now();
@@ -55,7 +56,7 @@ export async function POST(request: Request) {
                 passwordResetOtpExpiresAt: true
             }
         });
-        if (!user || !user.passwordResetOtp || user.passwordResetOtp !== otp) {
+        if (!user || !verifyOtp(otp, user.passwordResetOtp)) {
             return NextResponse.json({ error: "Invalid verification code" }, { status: 400 });
         }
         const isExpired = user.passwordResetOtpExpiresAt && user.passwordResetOtpExpiresAt.getTime() < Date.now();

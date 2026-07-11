@@ -73,7 +73,7 @@ export async function GET(req: Request) {
     } catch (error: unknown) {
         console.error("Top candidates error:", error);
         return NextResponse.json(
-            { error: error instanceof Error ? error.message : "Failed to fetch top candidates" },
+            { error: "Failed to fetch top candidates" },
             { status: 500 }
         );
     }

@@ -83,7 +83,7 @@ export async function GET(req: Request) {
     } catch (error: unknown) {
         console.error("Schedule API error:", error);
         return NextResponse.json(
-            { error: error instanceof Error ? error.message : "Failed to fetch schedule" },
+            { error: "Failed to fetch schedule" },
             { status: 500 }
         );
     }

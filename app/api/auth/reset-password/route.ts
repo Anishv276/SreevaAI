@@ -5,6 +5,7 @@ import { isRateLimited } from "@/lib/rate-limit";
 import { invalidateUserSessions } from "@/lib/auth";
 import { normalizeEmail } from "@/lib/email";
 import { validatePasswordStrength } from "@/lib/validation";
+import { verifyOtp } from "@/lib/otp";
 export async function POST(request: Request) {
     try {
         const { email, otp, newPassword } = await request.json();
@@ -48,11 +49,14 @@ export async function POST(request: Request) {
         // 2. Hash New Password
         const hashedPassword = await bcrypt.hash(newPassword, 10);
         let isValidOtp = false;
-        if (user) {
+        if (user && verifyOtp(otp, user.passwordResetOtp) && user.passwordResetOtpExpiresAt && user.passwordResetOtpExpiresAt >= new Date()) {
+            // Re-check the OTP hash in the where clause too, so a concurrent
+            // otp-send request that changes the hash mid-request can't race
+            // this update into applying a stale/already-superseded code.
             const updatedUser = await prisma.organizationCredentials.updateMany({
                 where: {
                     id: user.id,
-                    passwordResetOtp: otp,
+                    passwordResetOtp: user.passwordResetOtp,
                     passwordResetOtpExpiresAt: { gte: new Date() }
                 },
                 data: {
@@ -66,23 +70,22 @@ export async function POST(request: Request) {
                 await invalidateUserSessions(user.id);
             }
         }
-        if (!isValidOtp && superAdmin) {
-            if (
-                superAdmin.passwordResetOtp &&
-                superAdmin.passwordResetOtp === otp &&
-                superAdmin.passwordResetOtpExpiresAt &&
-                superAdmin.passwordResetOtpExpiresAt >= new Date()
-            ) {
+        if (!isValidOtp && superAdmin && verifyOtp(otp, superAdmin.passwordResetOtp) && superAdmin.passwordResetOtpExpiresAt && superAdmin.passwordResetOtpExpiresAt >= new Date()) {
+            const updatedAdmin = await prisma.superAdmin.updateMany({
+                where: {
+                    id: superAdmin.id,
+                    passwordResetOtp: superAdmin.passwordResetOtp,
+                    passwordResetOtpExpiresAt: { gte: new Date() }
+                },
+                data: {
+                    password: hashedPassword,
+                    passwordResetOtp: null,
+                    passwordResetOtpExpiresAt: null
+                }
+            });
+            if (updatedAdmin.count > 0) {
                 isValidOtp = true;
                 await invalidateUserSessions(superAdmin.id);
-                await prisma.superAdmin.update({
-                    where: { id: superAdmin.id },
-                    data: {
-                        password: hashedPassword,
-                        passwordResetOtp: null,
-                        passwordResetOtpExpiresAt: null
-                    }
-                });
             }
         }
         if (!isValidOtp) {

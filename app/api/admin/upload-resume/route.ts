@@ -4,6 +4,7 @@ import { putObject } from "@/lib/s3";
 import { getSession, isAdminRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logResumeUploadError } from "@/lib/slack-error-logger";
+import { validatePdfUpload } from "@/lib/file-validation";
 
 const RESUME_BUCKET = process.env.R2_RESUMES_BUCKET || "resumes";
 
@@ -41,11 +42,16 @@ export async function POST(request: Request) {
         jobTitle = job.title;
         orgName = job.organization?.name;
 
+        const buffer = Buffer.from(await file.arrayBuffer());
+        const validationError = validatePdfUpload(file, buffer);
+        if (validationError) {
+            return NextResponse.json({ error: validationError }, { status: 400 });
+        }
+
         const orgSlug = job.organization?.urlSlug || "org";
         const safeName = sanitizeFileName(file.name);
         const key = `${orgSlug}/${jobId}/${randomUUID()}-${safeName}`;
 
-        const buffer = Buffer.from(await file.arrayBuffer());
         const url = await putObject(RESUME_BUCKET, key, buffer, "application/pdf");
 
         return NextResponse.json({ url });

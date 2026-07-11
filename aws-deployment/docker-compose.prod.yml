@@ -18,17 +18,50 @@
 
 services:
   # ---------------------------------------------------------------------------
+  # Docker API proxy — Traefik talks to this instead of the real socket.
+  # Exposes only the read-only, container-listing calls Traefik's Docker
+  # provider needs (CONTAINERS=1); everything else (secrets/env inspection,
+  # exec, image build, volume/network admin) is refused. A compromised
+  # Traefik container can no longer read other containers' env vars or spin
+  # up new (e.g. privileged) containers via the daemon.
+  # ---------------------------------------------------------------------------
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.4.2
+    container_name: docker-socket-proxy
+    restart: always
+    environment:
+      CONTAINERS: 1
+      POST: 0
+      SERVICES: 0
+      TASKS: 0
+      NETWORKS: 0
+      VOLUMES: 0
+      IMAGES: 0
+      INFO: 0
+      EXEC: 0
+      BUILD: 0
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks:
+      - docker-proxy
+    mem_limit: 64m
+    cpus: 0.25
+    pids_limit: 50
+
+  # ---------------------------------------------------------------------------
   # Reverse proxy + automatic TLS for www/apex (lk subdomain no longer used)
   # ---------------------------------------------------------------------------
   traefik:
-    # NOTE: older Traefik (<=v3.1) hard-codes Docker API v1.24, which modern
-    # Docker daemons reject. `latest` ships a Docker client that negotiates a
-    # supported version. (Pin to a specific recent v3.x tag once verified.)
-    image: traefik:latest
+    # v3.7.7 ships a Docker client that negotiates a supported API version
+    # against modern daemons (older <=v3.1 hard-coded v1.24 and broke). Pinned
+    # instead of :latest so an upstream release can't silently change what
+    # ships to prod -- bump deliberately when needed.
+    image: traefik:v3.7.7
     container_name: traefik
     restart: always
     command:
       - "--providers.docker=true"
+      - "--providers.docker.endpoint=tcp://socket-proxy:2375"
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
@@ -37,14 +70,32 @@ services:
       - "--certificatesresolvers.mytlschallenge.acme.tlschallenge=true"
       - "--certificatesresolvers.mytlschallenge.acme.email=${ACME_EMAIL}"
       - "--certificatesresolvers.mytlschallenge.acme.storage=/letsencrypt/acme.json"
+    labels:
+      # Security response headers, applied to every router that opts in via
+      # "traefik.http.routers.<name>.middlewares=security-headers@docker".
+      - "traefik.enable=true"
+      - "traefik.http.middlewares.security-headers.headers.stsSeconds=31536000"
+      - "traefik.http.middlewares.security-headers.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.security-headers.headers.stsPreload=true"
+      - "traefik.http.middlewares.security-headers.headers.forceSTSHeader=true"
+      - "traefik.http.middlewares.security-headers.headers.frameDeny=true"
+      - "traefik.http.middlewares.security-headers.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.security-headers.headers.referrerPolicy=strict-origin-when-cross-origin"
+      - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.Permissions-Policy=camera=(self), microphone=(self), geolocation=(), interest-cohort=()"
+      - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.Content-Security-Policy=default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' wss: https:; frame-ancestors 'none'"
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock:ro"
       - "letsencrypt:/letsencrypt"
+    depends_on:
+      - socket-proxy
     networks:
       - web
+      - docker-proxy
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 100
 
   # ---------------------------------------------------------------------------
   # Redis — BullMQ queues (LiveKit/egress no longer use this; they're on Cloud)
@@ -53,11 +104,16 @@ services:
     image: redis:7-alpine
     container_name: redis
     restart: always
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction", "--requirepass", "${REDIS_PASSWORD}"]
+    env_file:
+      - .env
     volumes:
       - redis-data:/data
     networks:
       - web
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 100
 
   # ---------------------------------------------------------------------------
   # Next.js app + API
@@ -78,7 +134,7 @@ services:
       NODE_ENV: production
       LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL}        # server-side token minting + egress API
       NEXT_PUBLIC_LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL}
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
     depends_on:
       - redis
     networks:
@@ -89,7 +145,11 @@ services:
       - "traefik.http.routers.hr-app.entrypoints=websecure"
       - "traefik.http.routers.hr-app.tls=true"
       - "traefik.http.routers.hr-app.tls.certresolver=mytlschallenge"
+      - "traefik.http.routers.hr-app.middlewares=security-headers@docker"
       - "traefik.http.services.hr-app.loadbalancer.server.port=3000"
+    mem_limit: 2g
+    cpus: 1.5
+    pids_limit: 512
 
   # ---------------------------------------------------------------------------
   # Background worker — all BullMQ queues
@@ -111,7 +171,7 @@ services:
       NODE_ENV: production
       LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL}
       NEXT_PUBLIC_LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL}
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       WORKER_QUEUES: "resume-processing,invitation-delivery-queue,interview-start,interview-finalization,interview-snapshots,interview-recording,recording-retention-cleanup,jd-upload,jd-extraction,brief-generation,backup-queue,interview-report"
       EXTRACT_SERVICE_PORT: "8100"
     depends_on:
@@ -119,12 +179,20 @@ services:
       - frontend
     networks:
       - web
+    mem_limit: 2g
+    cpus: 1.5
+    pids_limit: 512
 
 
 
 networks:
   web:
     driver: bridge
+  # Internal-only: carries traffic between traefik and socket-proxy so the
+  # real docker.sock is reachable from exactly one container.
+  docker-proxy:
+    driver: bridge
+    internal: true
 
 volumes:
   redis-data:

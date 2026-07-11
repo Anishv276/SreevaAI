@@ -14,7 +14,9 @@ import datetime
 import decimal
 import json
 import os
+import ssl
 import time
+from pathlib import Path
 from typing import ClassVar, Optional
 import asyncpg
 from typing_extensions import TypedDict
@@ -28,6 +30,17 @@ from interview.agent_runtime_support import (
     logger,
     set_db_pool,
 )
+
+# Supabase's Postgres endpoints present a cert chain rooted at Supabase's own
+# CA (not a public CA), so the default trust store can't verify it. Pin that
+# root explicitly instead of disabling verification (ssl=False).
+_SUPABASE_CA_PATH = Path(__file__).resolve().parent.parent / "certs" / "supabase-root-ca.pem"
+_SSL_CONTEXT = ssl.create_default_context(cafile=str(_SUPABASE_CA_PATH))
+# Supabase's intermediate cert omits the keyUsage extension, which Python's
+# strict X.509 checking (on by default since 3.13) rejects even though the
+# chain and hostname are otherwise valid. CA pinning + hostname verification
+# still apply; only the extra strict-mode extension check is relaxed.
+_SSL_CONTEXT.verify_flags &= ~ssl.VERIFY_X509_STRICT
 
 # ===============================================================================
 # LAYER 1 -- DatabasePool singleton
@@ -72,7 +85,7 @@ class DatabasePool:
             await conn.execute("SET statement_timeout = '30s'")
         return await asyncpg.create_pool(
             cls.normalize_dsn(DATABASE_URL),
-            ssl=False,
+            ssl=_SSL_CONTEXT,
             statement_cache_size=0,
             min_size=1,
             max_size=5,

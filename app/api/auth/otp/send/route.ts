@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { isRateLimited } from "@/lib/rate-limit";
 import { sendPasswordChangeOtpEmail } from "@/lib/mail";
 import { normalizeEmail } from "@/lib/email";
+import { hashOtp } from "@/lib/otp";
 export async function POST() {
     try {
         const session = await getSession();
@@ -34,15 +35,16 @@ export async function POST() {
         // CSPRNG -- see forgot-password route; Math.random() is not secure.
         const otp = randomInt(100000, 1000000).toString();
         const expires = new Date(Date.now() + 10 * 60 * 1000);
+        const otpHash = hashOtp(otp);
         if (isSuperAdmin) {
             await prisma.superAdmin.update({
                 where: { id: session.userId },
-                data: { passwordResetOtp: otp, passwordResetOtpExpiresAt: expires }
+                data: { passwordResetOtp: otpHash, passwordResetOtpExpiresAt: expires }
             });
         } else {
             await prisma.organizationCredentials.update({
                 where: { id: session.userId },
-                data: { passwordResetOtp: otp, passwordResetOtpExpiresAt: expires }
+                data: { passwordResetOtp: otpHash, passwordResetOtpExpiresAt: expires }
             });
         }
         try {

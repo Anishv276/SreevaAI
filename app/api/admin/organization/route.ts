@@ -3,16 +3,11 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
 function getRequestedOrgId(request: Request) {
+    // Only an explicit query param -- the Referer header is client-controlled
+    // and easily spoofed/stripped, so it's not a trustworthy source for
+    // deciding which org's data a super-admin gets to view.
     const url = new URL(request.url);
-    const explicitOrgId = url.searchParams.get("orgId")?.trim() || "";
-    if (explicitOrgId) return explicitOrgId;
-    const referer = request.headers.get("referer") || "";
-    if (!referer) return "";
-    try {
-        return new URL(referer).searchParams.get("orgId")?.trim() || "";
-    } catch {
-        return "";
-    }
+    return url.searchParams.get("orgId")?.trim() || "";
 }
 export async function GET(request: Request) {
     try {

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getSession } from "@/lib/auth";
 /**
  * GET /api/super-admin/exchange-rate
  * Returns live USD → INR rate from Frankfurter (free, no API key).
@@ -6,6 +7,8 @@ import { NextResponse } from "next/server";
  * Caches for 1 hour via Cache-Control header.
  */
 export async function GET() {
+    const session = await getSession();
+    if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
     try {
         // Primary: Frankfurter -- free, no key, CORS-safe, daily updates
         const res = await fetch("https://api.frankfurter.app/latest?from=USD&to=INR", {

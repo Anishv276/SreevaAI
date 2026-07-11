@@ -26,6 +26,7 @@ import asyncio
 import json
 import logging
 import os
+import ssl
 import sys
 import time
 from pathlib import Path
@@ -427,10 +428,20 @@ def _normalize_dsn(conn_str: str) -> str:
     return urlunparse(parsed._replace(query=urlencode(query)))
 
 
+# Supabase's Postgres endpoints present a cert chain rooted at Supabase's own
+# CA (not a public CA), so the default trust store can't verify it. Pin that
+# root explicitly instead of disabling verification (ssl=False).
+_SUPABASE_CA_PATH = Path(__file__).resolve().parent.parent / "certs" / "supabase-root-ca.pem"
+_SSL_CONTEXT = ssl.create_default_context(cafile=str(_SUPABASE_CA_PATH))
+# See agent_persistence.py -- Supabase's intermediate cert lacks a keyUsage
+# extension that Python's strict X.509 mode (default since 3.13) requires.
+_SSL_CONTEXT.verify_flags &= ~ssl.VERIFY_X509_STRICT
+
+
 async def _create_pool(database_url: str) -> asyncpg.Pool:
     return await asyncpg.create_pool(
         _normalize_dsn(database_url),
-        ssl=False,
+        ssl=_SSL_CONTEXT,
         statement_cache_size=0,
         min_size=1,
         max_size=2,

@@ -40,19 +40,19 @@ export const createCandidateSchema = z.object({
       (val) => /^\+?[1-9]\d{6,14}$/.test(val),
       "Please enter a valid international phone number (e.g. +919876543210 or +1 555-000-0000)"
     ),
-  resumeFileUrl: z.string().optional(), // Relaxed for mocks/internal paths
-  resumeRawText: z.string().optional(),
+  resumeFileUrl: z.string().max(2000).optional(), // Relaxed for mocks/internal paths
+  resumeRawText: z.string().max(50000).optional(),
   structuredResume: z.any().optional(),
-  portfolio: z.string().optional(), // Relaxed
-  currentCompany: z.string().optional(),
-  experience: z.coerce.string().optional(),
+  portfolio: z.string().max(2000).optional(), // Relaxed
+  currentCompany: z.string().max(200).optional(),
+  experience: z.coerce.string().max(200).optional(),
   experienceYears: z.coerce.number().optional(),
-  ctc: z.coerce.string().optional(),
-  currentCtc: z.coerce.string().optional(),
-  expectedCtc: z.coerce.string().optional(),
-  noticePeriod: z.coerce.string().optional(),
-  coverLetter: z.coerce.string().optional(),
-}).catchall(z.any());
+  ctc: z.coerce.string().max(100).optional(),
+  currentCtc: z.coerce.string().max(100).optional(),
+  expectedCtc: z.coerce.string().max(100).optional(),
+  noticePeriod: z.coerce.string().max(100).optional(),
+  coverLetter: z.coerce.string().max(10000).optional(),
+});
 export const bulkDeleteCandidatesSchema = z.object({
   ids: z.array(z.string().min(1)).min(1, "At least one ID required"),
 });

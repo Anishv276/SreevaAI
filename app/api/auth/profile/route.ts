@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession, invalidateUserSessions } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 import { validatePasswordStrength } from "@/lib/validation";
+import { verifyOtp } from "@/lib/otp";
 export async function GET() {
     try {
         const session = await getSession();
@@ -51,7 +52,7 @@ export async function PATCH(request: Request) {
             if (session.role === "SUPER_ADMIN") {
                 currentUser = await prisma.superAdmin.findUnique({ where: { id: session.userId } });
                 // Verify Super Admin OTP
-                if (!currentUser || currentUser.passwordResetOtp !== otp || (currentUser.passwordResetOtpExpiresAt && currentUser.passwordResetOtpExpiresAt < new Date())) {
+                if (!currentUser || !verifyOtp(otp, currentUser.passwordResetOtp) || (currentUser.passwordResetOtpExpiresAt && currentUser.passwordResetOtpExpiresAt < new Date())) {
                     return NextResponse.json({ error: "Invalid or expired security code" }, { status: 400 });
                 }
                 await prisma.superAdmin.update({
@@ -61,7 +62,7 @@ export async function PATCH(request: Request) {
             } else {
                 currentUser = await prisma.organizationCredentials.findUnique({ where: { id: session.userId } });
                 // Verify regular Admin/User OTP
-                if (!currentUser || currentUser.passwordResetOtp !== otp || (currentUser.passwordResetOtpExpiresAt && currentUser.passwordResetOtpExpiresAt < new Date())) {
+                if (!currentUser || !verifyOtp(otp, currentUser.passwordResetOtp) || (currentUser.passwordResetOtpExpiresAt && currentUser.passwordResetOtpExpiresAt < new Date())) {
                     return NextResponse.json({ error: "Invalid or expired security code" }, { status: 400 });
                 }
                 // Clear OTP for User

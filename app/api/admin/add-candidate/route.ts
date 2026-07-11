@@ -5,6 +5,7 @@ import { generateId } from "@/lib/ids";
 import { putObject } from "@/lib/s3";
 import { randomUUID } from "crypto";
 import { resumeQueue } from "@/lib/queue";
+import { validatePdfUpload } from "@/lib/file-validation";
 
 const RESUME_BUCKET = process.env.R2_RESUMES_BUCKET || "resumes";
 
@@ -45,11 +46,16 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Job not found" }, { status: 404 });
         }
 
+        const buffer = Buffer.from(await file.arrayBuffer());
+        const validationError = validatePdfUpload(file, buffer);
+        if (validationError) {
+            return NextResponse.json({ error: validationError }, { status: 400 });
+        }
+
         // Upload PDF to R2
         const orgSlug = job.organization?.urlSlug || orgId;
         const safeName = sanitizeFileName(file.name);
         const key = `resume/${orgSlug}/${jobId}/${Date.now()}-${randomUUID().slice(0, 8)}-${safeName}`;
-        const buffer = Buffer.from(await file.arrayBuffer());
         const resumeUrl = await putObject(RESUME_BUCKET, key, buffer, "application/pdf");
 
         // Create Application with the form-provided metadata preserved

@@ -10,11 +10,13 @@ Same extraction/scoring logic as pipeline.py -- Pipeline class is reused as-is.
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
+import os
 import tempfile
 from pathlib import Path
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import Depends, FastAPI, UploadFile, File, Form, Header, HTTPException
 from fastapi.concurrency import run_in_threadpool
 
 from extraction_resume_JD_score_report.pipeline import Pipeline
@@ -23,6 +25,15 @@ app = FastAPI()
 pipeline = Pipeline()
 
 REQUEST_TIMEOUT_S = 180
+
+# This service binds 0.0.0.0:8100 with no network-level restriction, so it
+# must authenticate its own callers -- fail closed if the key isn't set.
+_EXTRACT_SERVICE_API_KEY = os.environ.get("EXTRACT_SERVICE_API_KEY", "")
+
+
+def _require_api_key(x_api_key: str | None = Header(default=None)) -> None:
+    if not _EXTRACT_SERVICE_API_KEY or not x_api_key or not hmac.compare_digest(x_api_key, _EXTRACT_SERVICE_API_KEY):
+        raise HTTPException(status_code=401, detail="invalid or missing API key")
 
 
 def _write_temp(data: bytes, filename: str) -> str:
@@ -35,7 +46,7 @@ def _write_temp(data: bytes, filename: str) -> str:
     return path
 
 
-@app.post("/extract/resume")
+@app.post("/extract/resume", dependencies=[Depends(_require_api_key)])
 async def extract_resume(file: UploadFile = File(...), model: str = Form(...)):
     data = await file.read()
     path = await run_in_threadpool(_write_temp, data, file.filename or "resume.pdf")
@@ -53,7 +64,7 @@ async def extract_resume(file: UploadFile = File(...), model: str = Form(...)):
     return result
 
 
-@app.post("/extract/jd")
+@app.post("/extract/jd", dependencies=[Depends(_require_api_key)])
 async def extract_jd(file: UploadFile = File(...), model: str = Form(...)):
     data = await file.read()
     path = await run_in_threadpool(_write_temp, data, file.filename or "jd.pdf")
@@ -71,7 +82,7 @@ async def extract_jd(file: UploadFile = File(...), model: str = Form(...)):
     return result
 
 
-@app.post("/extract/resume-and-score")
+@app.post("/extract/resume-and-score", dependencies=[Depends(_require_api_key)])
 async def extract_resume_and_score(
     file: UploadFile = File(...),
     extract_model: str = Form(...),

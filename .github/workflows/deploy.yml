@@ -61,6 +61,13 @@ jobs:
 
             echo "==> Container status"
             docker compose -f aws-deployment/docker-compose.prod.yml ps
+
+      - name: Notify Slack on deploy failure
+        if: failure()
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            -d "{\"text\": \":rotating_light: Deploy to EC2 failed on \`main\` (${{ github.sha }}). See: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+            "${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}"
         continue-on-error: true
 
 # -----------------------------------------------------------------------------

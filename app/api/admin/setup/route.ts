@@ -57,6 +57,6 @@ export async function POST(req: Request) {
         return response;
     } catch (error: any) {
         console.error("[ONBOARDING_API_ERROR]", error);
-        return NextResponse.json({ error: error.message || "Onboarding failed." }, { status: 500 });
+        return NextResponse.json({ error: "Onboarding failed." }, { status: 500 });
     }
 }

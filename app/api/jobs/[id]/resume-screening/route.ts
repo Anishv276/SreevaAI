@@ -8,6 +8,7 @@ import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
 import { authorizeJobAccess } from "@/lib/job-access";
 import { resumeQueue } from "@/lib/queue";
+import { validatePdfUpload } from "@/lib/file-validation";
 
 const RESUME_BUCKET = process.env.R2_RESUMES_BUCKET || "resumes";
 
@@ -109,9 +110,15 @@ export async function POST(
       const fileName = file.name || `resume_${index + 1}.pdf`;
       try {
         const buffer = Buffer.from(await file.arrayBuffer());
+        const validationError = validatePdfUpload(file, buffer);
+        if (validationError) {
+          uploadFailures.push(fileName);
+          console.error(`[RESUME-UPLOAD] Rejected ${fileName}: ${validationError}`);
+          continue;
+        }
         const safeName = sanitizeFileName(fileName);
         const key = `resume/${orgSlug}/${safeJobTitle}/${Date.now()}_${index}_${safeName}`;
-        const uploadedUrl = await putObject(RESUME_BUCKET, key, buffer, file.type || "application/pdf");
+        const uploadedUrl = await putObject(RESUME_BUCKET, key, buffer, "application/pdf");
         const applicationId = `${generateId("app", guessNameFromFile(fileName))}-${randomUUID().slice(0, 8)}`;
         prepared.push({
           applicationId,

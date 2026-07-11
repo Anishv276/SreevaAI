@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isTestAccessAuthorized } from "@/lib/test-key";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,11 @@ const eventStore = new Map<string, Array<{
 
 export async function POST(request: Request) {
     try {
+        const { searchParams } = new URL(request.url);
+        if (!(await isTestAccessAuthorized(searchParams.get("key")))) {
+            return NextResponse.json({ error: "Invalid test key" }, { status: 403 });
+        }
+
         const { applicationId, event, message, data } = await request.json();
 
         if (!applicationId || !event || !message) {
@@ -46,6 +52,10 @@ export async function POST(request: Request) {
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
+        if (!(await isTestAccessAuthorized(searchParams.get("key")))) {
+            return NextResponse.json({ error: "Invalid test key" }, { status: 403 });
+        }
+
         const applicationId = searchParams.get("applicationId");
 
         if (!applicationId) {
@@ -65,6 +75,10 @@ export async function GET(request: Request) {
 export async function DELETE(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
+        if (!(await isTestAccessAuthorized(searchParams.get("key")))) {
+            return NextResponse.json({ error: "Invalid test key" }, { status: 403 });
+        }
+
         const applicationId = searchParams.get("applicationId");
 
         if (applicationId) {

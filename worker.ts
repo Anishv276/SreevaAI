@@ -59,6 +59,7 @@ console.log(`[Worker] BullMQ prefix="${BULL_PREFIX}"`);
 // replaces per-job `spawn(python, extract_pdf.py)` -- one warm process holding the
 // openai/pdfplumber imports instead of re-booting Python for every resume.
 const EXTRACT_SERVICE_URL = process.env.EXTRACT_SERVICE_URL || "http://127.0.0.1:8100";
+const EXTRACT_SERVICE_API_KEY = process.env.EXTRACT_SERVICE_API_KEY || "";
 
 const pythonCmd = getPythonExecutable();
 
@@ -114,6 +115,7 @@ async function callExtractService(path: string, form: FormData, timeoutMs: numbe
     const res = await fetch(`${EXTRACT_SERVICE_URL}${path}`, {
       method: "POST",
       body: form,
+      headers: EXTRACT_SERVICE_API_KEY ? { "x-api-key": EXTRACT_SERVICE_API_KEY } : undefined,
       signal: controller.signal,
     });
     const body = await res.json().catch(() => null);

@@ -59,6 +59,16 @@ model SuperAdmin {
   isDeleted                 Boolean   @default(false)
 }
 
+// Singleton row (id always "singleton") holding platform-wide settings
+// that aren't tied to a specific org or admin, e.g. the /test sandbox access key.
+model AppSettings {
+  id                        String    @id @default("singleton")
+  testAccessKey             String?
+  testAccessKeyOtp          String?
+  testAccessKeyOtpExpiresAt DateTime?
+  updatedAt                 DateTime  @updatedAt
+}
+
 model OrganizationCredentials {
   id                        String               @id
   email                     String               @unique

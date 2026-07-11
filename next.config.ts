@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
+// Fail closed: if ALLOWED_ORIGINS isn't set, allow no extra origins rather
+// than falling back to a specific (stale, dev-only) ngrok hostname.
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
-  : ['geophagous-delicately-augustus.ngrok-free.app'];
+  : [];
 const nextConfig: NextConfig = {
   async rewrites() {
     return [{ source: "/", destination: "/index.html" }];

@@ -97,13 +97,13 @@ In `.env`:
 
 ```env
 # Slack error alerting webhook
-SLACK_ERROR_WEBHOOK_URL=https://hooks.slack.com/services/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
+SLACK_ERROR_WEBHOOK_URL=https://hooks.slack.com/services/your-workspace-id/your-bot-id/your-token
 
 # Channel to receive alerts
 SLACK_ERROR_CHANNEL=C0B5PS0ESHJ
 
 # Bot token for file uploads
-SLACK_BOT_TOKEN=xoxb-11101596499317-11476936267733-spYXNpaxgbwNi9EVrqPK4DzE
+SLACK_BOT_TOKEN=xoxb-your-token-here
 ```
 
 ---

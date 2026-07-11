@@ -161,7 +161,7 @@ export async function GET(req: Request) {
     } catch (error: unknown) {
         console.error("Activity feed error:", error);
         return NextResponse.json(
-            { error: error instanceof Error ? error.message : "Failed to fetch activity feed" },
+            { error: "Failed to fetch activity feed" },
             { status: 500 }
         );
     }

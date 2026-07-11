@@ -1,17 +1,15 @@
 import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSession, isSuperAdminRole } from "@/lib/auth";
 import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/job-limits";
 import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
-
-const TEST_KEY = process.env.TEST_PAGE_KEY || process.env.NEXT_PUBLIC_TEST_KEY || "1285";
+import { isTestAccessAuthorized } from "@/lib/test-key";
 
 export async function POST(request: Request) {
     try {
         const { applicationId, skipReport = false, key } = await request.json();
 
-        if (key !== TEST_KEY) {
+        if (!(await isTestAccessAuthorized(key))) {
             return NextResponse.json({ error: "Invalid test key" }, { status: 403 });
         }
 

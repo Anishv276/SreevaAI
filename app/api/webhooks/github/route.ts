@@ -323,7 +323,9 @@ function buildCreateDeleteBlocks(
 // --- Signature Verification ---------------------------------------------------
 
 function verifySignature(body: string, signature: string | null, secret: string): boolean {
-  if (!signature || !secret) return !secret; // if no secret configured, skip check
+  // Fail closed: no secret configured or no signature header means the
+  // request cannot be verified, so it must be rejected -- never accepted.
+  if (!signature || !secret) return false;
   const expected = `sha256=${crypto.createHmac("sha256", secret).update(body).digest("hex")}`;
   try {
     return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
