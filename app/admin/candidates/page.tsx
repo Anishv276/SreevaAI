@@ -212,6 +212,7 @@ export default function CandidatesPage() {
     const [deleteConfirm, setDeleteConfirm] = useState<{
         mode: "single" | "bulk"; candidateId?: string; candidateName?: string;
     } | null>(null);
+    const [resendConfirm, setResendConfirm] = useState<{ id: string; name: string } | null>(null);
     const searchParams = useSearchParams();
     const router = useRouter();
     const jobIdParam = searchParams.get("jobId");
@@ -361,12 +362,20 @@ export default function CandidatesPage() {
         } catch { toast.error("Failed to delete candidate"); }
         finally { setIsBulkLoading(false); setDeleteConfirm(null); }
     };
+    // Bulk SEND: only targets candidates who have NOT yet received the link
     const handleBulkSendInterviewLink = async () => {
         if (!selectedCount || isBulkLoading) return;
         if (isInterviewActionBlocked) { toast.error(interviewActionBlockedMessage); return; }
+        const unsentIds = filteredCandidates
+            .filter((c: any) => selectedIds.has(c.id) && !c.inviteSentAt)
+            .map((c: any) => c.id);
+        if (unsentIds.length === 0) {
+            toast.error("All selected candidates have already received the invite link.");
+            return;
+        }
         setIsBulkLoading(true);
         try {
-            const results = await Promise.all(Array.from(selectedIds).map(id => fetch(`/api/candidates/${id}/send-interview-link`, { method: "POST" })));
+            const results = await Promise.all(unsentIds.map((id: string) => fetch(`/api/candidates/${id}/send-interview-link`, { method: "POST" })));
             const failed = results.filter(r => !r.ok).length;
             const succeeded = results.length - failed;
             if (succeeded > 0) toast.success(`Schedule link sent to ${succeeded} candidate(s)`);
@@ -374,6 +383,41 @@ export default function CandidatesPage() {
             clearSelection(); refetch();
         } catch { toast.error("Failed to send interview links"); }
         finally { setIsBulkLoading(false); }
+    };
+    // Bulk RESEND: only targets candidates who HAVE already received the link
+    const handleBulkResendInterviewLink = async () => {
+        if (!selectedCount || isBulkLoading) return;
+        if (isInterviewActionBlocked) { toast.error(interviewActionBlockedMessage); return; }
+        const sentIds = filteredCandidates
+            .filter((c: any) => selectedIds.has(c.id) && !!c.inviteSentAt)
+            .map((c: any) => c.id);
+        if (sentIds.length === 0) {
+            toast.error("No selected candidates have been sent the link yet.");
+            return;
+        }
+        setIsBulkLoading(true);
+        try {
+            const results = await Promise.all(sentIds.map((id: string) => fetch(`/api/candidates/${id}/send-interview-link`, { method: "POST" })));
+            const failed = results.filter(r => !r.ok).length;
+            const succeeded = results.length - failed;
+            if (succeeded > 0) toast.success(`Schedule link resent to ${succeeded} candidate(s)`);
+            if (failed > 0) toast.error(`Failed to resend to ${failed} candidate(s)`);
+            clearSelection(); refetch();
+        } catch { toast.error("Failed to resend interview links"); }
+        finally { setIsBulkLoading(false); }
+    };
+    // Single RESEND confirmed via Yes/No dialog
+    const handleResendConfirmed = async () => {
+        if (!resendConfirm) return;
+        if (isInterviewActionBlocked) { toast.error(interviewActionBlockedMessage); setResendConfirm(null); return; }
+        try {
+            setSendingInterviewLinkId(resendConfirm.id);
+            const res = await fetch(`/api/candidates/${resendConfirm.id}/send-interview-link`, { method: "POST" });
+            const data = await res.json().catch(() => null);
+            if (res.ok) { toast.success(data?.message || `Schedule link resent to ${resendConfirm.name}`); refetch(); }
+            else toast.error(data?.error || "Failed to resend interview link");
+        } catch { toast.error("Failed to resend interview link"); }
+        finally { setSendingInterviewLinkId(null); setResendConfirm(null); }
     };
     const openSendEmailConfirm = (candidate: { id: string; name: string; resumeStatus?: string }) => {
         if (isSuspended) { toast.error(interviewActionBlockedMessage); return; }
@@ -501,16 +545,24 @@ export default function CandidatesPage() {
                         selectedCount === 0 ? "bg-gray-100 text-gray-400 border-gray-200" : isSuspended ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed" : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100")}>
                     {isSuspended ? <Lock className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />} Send Schedule Link
                 </button>
-                
-                <div className="w-px h-5 bg-gray-200 mx-1 hidden sm:block" />
-                
+                {/* Bulk Send (first-time, only unsent) */}
                 <button
                     onClick={isInterviewActionBlocked ? undefined : handleBulkSendInterviewLink}
                     disabled={selectedCount === 0 || isBulkLoading}
-                    title={isInterviewActionBlocked ? interviewActionBlockedMessage : undefined}
+                    title={isInterviewActionBlocked ? interviewActionBlockedMessage : "Sends only to candidates who haven't received the link yet"}
                     className={cn("h-8 px-3.5 rounded-lg border font-semibold text-xs flex items-center gap-1.5 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
                         selectedCount === 0 ? "bg-gray-100 text-gray-400 border-gray-200" : isInterviewActionBlocked ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed" : "bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100")}>
-                    {isInterviewActionBlocked ? <Lock className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} Resend Schedule Link
+                    {isInterviewActionBlocked ? <Lock className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />} Bulk Send Link
+                </button>
+                <div className="w-px h-5 bg-gray-200 mx-1 hidden sm:block" />
+                {/* Bulk Resend (only already-sent candidates) */}
+                <button
+                    onClick={isInterviewActionBlocked ? undefined : handleBulkResendInterviewLink}
+                    disabled={selectedCount === 0 || isBulkLoading}
+                    title={isInterviewActionBlocked ? interviewActionBlockedMessage : "Resends only to candidates who already received the link"}
+                    className={cn("h-8 px-3.5 rounded-lg border font-semibold text-xs flex items-center gap-1.5 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+                        selectedCount === 0 ? "bg-gray-100 text-gray-400 border-gray-200" : isInterviewActionBlocked ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed" : "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100")}>
+                    {isInterviewActionBlocked ? <Lock className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} Bulk Resend Link
                 </button>
 
                 <div className="flex-1 min-w-[20px]" />
@@ -577,7 +629,8 @@ export default function CandidatesPage() {
                                 const interviewReportUnlocked = interviewStage === "completed" || interviewStage === "finished";
                                 const resumeScore = Number(candidate.score ?? candidate.aiScore ?? 0);
                                 const interviewScore = interviewScoresById[candidate.id] ?? (interviewReportUnlocked ? 0 : null);
-                                const canResendInterview = interviewStage === "pending" || interviewStage === "in progress" || interviewStage === "completed" || interviewStage === "finished" || mainStatus === "shortlisted";
+                                // True if the invite email has already been sent at least once
+                                const hasSentInvite = !!candidate.inviteSentAt;
                                 return (
                                     <TableRow key={candidate.id}
                                         onClick={() => toggleSelection(candidate.id)}
@@ -698,35 +751,36 @@ export default function CandidatesPage() {
                                                         className="rounded-xl px-3 py-2.5 text-[14px] font-bold text-rose-600 cursor-pointer hover:bg-rose-50 focus:bg-rose-50 focus:text-rose-700 mb-1">
                                                         <UserX className="h-4 w-4 mr-3 shrink-0" /> Reject
                                                     </DropdownMenuItem>
-                                                    {/* Send Email */}
-                                                    <DropdownMenuItem
-                                                        onClick={() => !isSuspended && openSendEmailConfirm({ id: candidate.id, name: displayName, resumeStatus: candidate.status || candidate.resumeStatus })}
-                                                        className={cn("rounded-xl px-3 py-2.5 text-[14px] font-bold cursor-pointer transition-colors mb-3",
-                                                            isSuspended ? "text-gray-400 focus:bg-transparent" : "text-blue-600 focus:text-blue-700 focus:bg-blue-50")}
-                                                        title={isSuspended ? interviewActionBlockedMessage : undefined}>
-                                                        {isSuspended ? <Lock className="h-4 w-4 mr-3 shrink-0" /> : <Mail className="h-4 w-4 mr-3 shrink-0" />}
-                                                        Send Schedule Link
-                                                    </DropdownMenuItem>
-                                                    
-                                                    {/* Manage */}
-                                                    <DropdownMenuLabel className="px-2 py-0.5.5 text-[11px] font-black uppercase tracking-[0.1em] text-gray-400">Manage</DropdownMenuLabel>
-                                                    {/* Resend Interview Link */}
-                                                    <DropdownMenuItem
-                                                        onClick={() => {
-                                                            if (isInterviewActionBlocked) { toast.error(interviewActionBlockedMessage); return; }
-                                                            handleSendInterviewLink({ id: candidate.id, name: displayName });
-                                                        }}
-                                                        disabled={sendingInterviewLinkId === candidate.id || !canResendInterview}
-                                                        className={cn("rounded-xl px-3 py-2.5 text-[14px] font-bold cursor-pointer transition-colors mb-1",
-                                                            sendingInterviewLinkId === candidate.id ? "text-gray-400 opacity-70" :
-                                                                isInterviewActionBlocked ? "text-gray-400" :
-                                                                    canResendInterview ? "text-blue-600 focus:text-blue-700 focus:bg-blue-50" : "text-gray-400 opacity-70")}
-                                                        title={isInterviewActionBlocked ? interviewActionBlockedMessage : undefined}>
-                                                        {isInterviewActionBlocked
-                                                            ? <Lock className="h-4 w-4 mr-3 shrink-0" />
-                                                            : <RefreshCw className={cn("h-4 w-4 mr-3 shrink-0", sendingInterviewLinkId === candidate.id && "animate-spin")} />}
-                                                        {sendingInterviewLinkId === candidate.id ? "Sending..." : "Resend Schedule Link"}
-                                                    </DropdownMenuItem>
+                                                    {/* Interview link actions: mutually exclusive based on whether invite was already sent */}
+                                                    {!hasSentInvite ? (
+                                                        // --- FIRST TIME SEND ---
+                                                        <DropdownMenuItem
+                                                            onClick={() => {
+                                                                if (isInterviewActionBlocked) { toast.error(interviewActionBlockedMessage); return; }
+                                                                handleSendInterviewLink({ id: candidate.id, name: displayName });
+                                                            }}
+                                                            disabled={sendingInterviewLinkId === candidate.id}
+                                                            className={cn("rounded-xl px-3 py-2.5 text-[14px] font-bold cursor-pointer transition-colors mb-3",
+                                                                isInterviewActionBlocked ? "text-gray-400 focus:bg-transparent" : "text-violet-600 focus:text-violet-700 focus:bg-violet-50")}
+                                                            title={isInterviewActionBlocked ? interviewActionBlockedMessage : "Send the interview schedule link for the first time"}>
+                                                            {isInterviewActionBlocked ? <Lock className="h-4 w-4 mr-3 shrink-0" /> : <Send className={cn("h-4 w-4 mr-3 shrink-0", sendingInterviewLinkId === candidate.id && "animate-pulse")} />}
+                                                            {sendingInterviewLinkId === candidate.id ? "Sending..." : "Send Schedule Link"}
+                                                        </DropdownMenuItem>
+                                                    ) : (
+                                                        // --- RESEND (already sent) → requires confirmation ---
+                                                        <DropdownMenuItem
+                                                            onClick={() => {
+                                                                if (isInterviewActionBlocked) { toast.error(interviewActionBlockedMessage); return; }
+                                                                setResendConfirm({ id: candidate.id, name: displayName });
+                                                            }}
+                                                            disabled={sendingInterviewLinkId === candidate.id}
+                                                            className={cn("rounded-xl px-3 py-2.5 text-[14px] font-bold cursor-pointer transition-colors mb-3",
+                                                                isInterviewActionBlocked ? "text-gray-400 focus:bg-transparent" : "text-amber-600 focus:text-amber-700 focus:bg-amber-50")}
+                                                            title={isInterviewActionBlocked ? interviewActionBlockedMessage : "Resend the schedule link (candidate already received one)"}>
+                                                            {isInterviewActionBlocked ? <Lock className="h-4 w-4 mr-3 shrink-0" /> : <RefreshCw className={cn("h-4 w-4 mr-3 shrink-0", sendingInterviewLinkId === candidate.id && "animate-spin")} />}
+                                                            {sendingInterviewLinkId === candidate.id ? "Sending..." : "Resend Schedule Link"}
+                                                        </DropdownMenuItem>
+                                                    )}
                                                     <DropdownMenuItem
                                                         onClick={() => setDeleteConfirm({ mode: "single", candidateId: candidate.id, candidateName: displayName })}
                                                         className="rounded-xl px-3 py-2.5 text-[14px] font-bold cursor-pointer text-gray-600 focus:text-gray-900 focus:bg-gray-50">
@@ -782,6 +836,26 @@ export default function CandidatesPage() {
                 onConfirm={handleSendEmailConfirmed} isBulkLoading={isBulkLoading}
                 filteredCandidates={filteredCandidates} selectedIds={selectedIds}
             />
+            {/* Resend Confirmation Modal */}
+            {resendConfirm && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
+                        <div className="px-6 pt-6 pb-4">
+                            <h2 className="text-lg font-black text-gray-900 tracking-tight">Resend Schedule Link?</h2>
+                            <p className="mt-2 text-sm text-gray-600">
+                                <span className="font-bold">{resendConfirm.name}</span> has already received the schedule link. Are you sure you want to send it again?
+                            </p>
+                        </div>
+                        <div className="flex items-center justify-end gap-1.5 px-6 py-4 bg-gray-50/50 border-t border-gray-100">
+                            <button onClick={() => setResendConfirm(null)} className="h-10 px-5 rounded-2xl font-bold text-gray-500 hover:bg-gray-100 transition-colors cursor-pointer">No, Cancel</button>
+                            <button onClick={handleResendConfirmed} disabled={sendingInterviewLinkId === resendConfirm.id}
+                                className="h-10 px-6 rounded-2xl bg-amber-500 text-white font-bold hover:bg-amber-600 transition-colors disabled:opacity-60 cursor-pointer">
+                                {sendingInterviewLinkId === resendConfirm.id ? "Sending..." : "Yes, Resend"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             {deleteConfirm && (() => {
                 const isBulk = deleteConfirm.mode === "bulk";
                 return (

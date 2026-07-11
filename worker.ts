@@ -1952,7 +1952,7 @@ if (isQueueEnabled("brief-generation")) {
         const t0 = Date.now();
 
         const result = await runPythonJson(
-          ["interview/generate_brief.py", applicationId],
+          ["livekit-python-agent/interview/generate_brief.py", applicationId],
           180_000, // 3-minute timeout: LLM ~40s + DB fetch + retry headroom
         );
 
@@ -2009,7 +2009,7 @@ if (isQueueEnabled("interview-report")) {
 
       return runWithOrgSlot("interview-report", job, token, orgId, ORG_CONCURRENCY.interviewReport, async () => {
         const result = await runPythonJsonWithStdin(
-          ["interview/report_worker.py"],
+          ["livekit-python-agent/interview/report_worker.py"],
           JSON.stringify(job.data),
           340_000, // 340s: just above report_pipeline's own 300s+60s (report+summary) budget
         );
