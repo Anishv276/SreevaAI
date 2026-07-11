@@ -44,7 +44,10 @@ export async function GET(request: Request) {
         const total = await prisma.organizationDetails.count({ where: whereClause });
         const totalPages = Math.ceil(total / limit);
         // -- Phase 2: Paginated Org Data (Unified SQL) --------------
-        const sqlSearch = search ? `%${search}%` : "%";
+        // Escape ILIKE wildcards in user input so a search term containing
+        // % or _ is matched literally instead of acting as a pattern.
+        const escapedSearch = search.replace(/[\\%_]/g, (c) => `\\${c}`);
+        const sqlSearch = search ? `%${escapedSearch}%` : "%";
         // We use queryRaw for complex subcounts
         const orgs = (await prisma.$queryRaw`
             SELECT

@@ -218,8 +218,6 @@ export async function POST(request: Request) {
         console.error("Error creating job:", error);
         return NextResponse.json({
             error: "Failed to create job",
-            details: error.message,
-            code: error.code
         }, { status: 500 });
     }
 }

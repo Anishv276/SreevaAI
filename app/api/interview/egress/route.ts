@@ -432,7 +432,6 @@ export async function POST(req: Request) {
                 }).catch(() => {});
                 return NextResponse.json({
                     error: "Failed to start LiveKit egress",
-                    details: message,
                 }, { status: 500 });
             }
         }
@@ -538,12 +537,10 @@ export async function POST(req: Request) {
             }).catch(() => {});
             return NextResponse.json({
                 error: "Failed to stop LiveKit egress",
-                details: message,
             }, { status: 500 });
         }
     } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error || "Unknown error");
         console.error("[INTERVIEW_EGRESS_API_ERROR]:", error);
-        return NextResponse.json({ error: "Failed to process egress request", details: message }, { status: 500 });
+        return NextResponse.json({ error: "Failed to process egress request" }, { status: 500 });
     }
 }

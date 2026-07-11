@@ -35,7 +35,7 @@ function isPublic(pathname: string): boolean {
 const AUTHED_RATE_LIMIT = 300;
 const AUTHED_RATE_WINDOW_S = 60;
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
     const { pathname } = request.nextUrl;
 
     if (!pathname.startsWith("/api/") || isPublic(pathname)) {
@@ -55,9 +55,9 @@ export async function middleware(request: NextRequest) {
     return refreshSessionCookie(request, NextResponse.next());
 }
 
+// Proxy always runs on the Node.js runtime (unlike the old Middleware
+// convention, which defaulted to Edge) -- no runtime override needed here.
+// getSession() -> lib/redis.ts uses ioredis (raw TCP), which only Node.js supports.
 export const config = {
     matcher: ["/api/:path*"],
-    // getSession() -> lib/redis.ts uses ioredis (raw TCP), which the Edge
-    // runtime can't run -- requires the Node.js middleware runtime (Next 15.5+).
-    runtime: "nodejs",
 };

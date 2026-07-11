@@ -227,7 +227,7 @@ export async function POST(
     });
   } catch (err) {
     console.error("[RESUME-SCREENING] POST error:", err);
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    return NextResponse.json({ error: "Failed to process resume upload" }, { status: 500 });
   }
 }
 
@@ -267,6 +267,6 @@ export async function GET(
     );
   } catch (err) {
     console.error("[RESUME-SCREENING] GET error:", err);
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch candidates" }, { status: 500 });
   }
 }

@@ -107,7 +107,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         console.error("[GET_JOB_ERROR]:", error);
         return NextResponse.json({
             error: "Failed to fetch job",
-            details: error.message
         }, { status: 500 });
     }
 }
@@ -233,8 +232,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         });
         return NextResponse.json({
             error: "Failed to update job",
-            details: error.message,
-            code: error.code
         }, { status: 500 });
     }
 }

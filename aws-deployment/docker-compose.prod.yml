@@ -82,7 +82,13 @@ services:
       - "traefik.http.middlewares.security-headers.headers.contentTypeNosniff=true"
       - "traefik.http.middlewares.security-headers.headers.referrerPolicy=strict-origin-when-cross-origin"
       - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.Permissions-Policy=camera=(self), microphone=(self), geolocation=(), interest-cohort=()"
-      - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.Content-Security-Policy=default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' wss: https:; frame-ancestors 'none'"
+      # 'unsafe-eval' dropped -- not needed by Next.js's own runtime output.
+      # 'unsafe-inline' on script-src is kept: Next.js emits inline hydration
+      # data/bootstrap scripts without a nonce by default, and removing this
+      # without wiring up per-request CSP nonces (next.config headers +
+      # middleware) would break page load. Tightening further requires that
+      # nonce work, not just deleting the token here.
+      - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.Content-Security-Policy=default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' wss: https:; frame-ancestors 'none'"
     ports:
       - "80:80"
       - "443:443"
@@ -101,7 +107,7 @@ services:
   # Redis — BullMQ queues (LiveKit/egress no longer use this; they're on Cloud)
   # ---------------------------------------------------------------------------
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.7-alpine3.21
     container_name: redis
     restart: always
     command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction", "--requirepass", "${REDIS_PASSWORD}"]

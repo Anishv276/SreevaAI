@@ -366,9 +366,12 @@ export async function POST(req: NextRequest) {
 
     console.log(`[GitHub Webhook] Event: ${event}, Delivery: ${deliveryId}`);
 
-    // Verify webhook secret if configured
+    // Always verify -- verifySignature itself fails closed (rejects) when no
+    // secret is configured. Do not shortcut that call based on `secret` being
+    // truthy here, or an unconfigured secret silently skips verification
+    // entirely instead of rejecting.
     const secret = process.env.GITHUB_WEBHOOK_SECRET || "";
-    if (secret && !verifySignature(rawBody, signature, secret)) {
+    if (!verifySignature(rawBody, signature, secret)) {
       console.warn("[GitHub Webhook] Signature verification failed");
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }

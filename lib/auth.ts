@@ -28,8 +28,13 @@ export function isSuperAdminRole(role: string | null | undefined): boolean {
 export function isAdminRole(role: string | null | undefined): boolean {
     return normalizeRole(role) === "ADMIN";
 }
-const SESSION_DURATION = "12h";
-const SESSION_DURATION_MS = 12 * 60 * 60 * 1000; // 12 hours
+// Idle timeout: the token expires 1h after it was last issued, but every
+// authenticated request re-issues it (see refreshSessionCookie below) once it's
+// within the refresh window of expiring -- so an actively-used session never
+// hits this ceiling, while an idle one (no requests for 1h) genuinely expires.
+const SESSION_DURATION = "1h";
+const SESSION_DURATION_MS = 60 * 60 * 1000; // 1 hour
+const SESSION_REFRESH_WINDOW_MS = 15 * 60 * 1000; // re-issue when <15min remain
 export async function createSession(user: SessionUser): Promise<string> {
     return await new SignJWT({ ...user })
         .setProtectedHeader({ alg: "HS256" })
@@ -124,8 +129,8 @@ export async function refreshSessionCookie(request: NextRequest, response: NextR
     const expSeconds = Number(tokenPayload.exp || 0);
     if (expSeconds > 0) {
         const remainingMs = expSeconds * 1000 - Date.now();
-        // Re-issue when less than 30 min left on the 2h token -- sliding window
-        if (remainingMs > 30 * 60 * 1000) {
+        // Re-issue only when close to expiring -- sliding window
+        if (remainingMs > SESSION_REFRESH_WINDOW_MS) {
             return response;
         }
     }

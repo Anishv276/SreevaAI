@@ -272,7 +272,7 @@ function CameraDisplay() {
 }
 
 // --- Interview Room ----------------------------------------------------------
-function InterviewRoom({ applicationId, onUpdate, timerStartedAtRef, enableCamera }: { applicationId: string; onUpdate: (state: any) => void; timerStartedAtRef: React.MutableRefObject<number | null>; enableCamera: boolean }) {
+function InterviewRoom({ applicationId, onUpdate, timerStartedAtRef, enableCamera, testKey }: { applicationId: string; onUpdate: (state: any) => void; timerStartedAtRef: React.MutableRefObject<number | null>; enableCamera: boolean; testKey: string }) {
     const connectionState = useConnectionState();
     const lines = useLiveTranscript();
     // timerStartedAtRef is owned by the parent (SimulationTestPage), which stays
@@ -309,7 +309,7 @@ function InterviewRoom({ applicationId, onUpdate, timerStartedAtRef, enableCamer
     useEffect(() => {
         const interval = setInterval(async () => {
             try {
-                const res = await fetch(`/api/test/events?applicationId=${applicationId}`, { cache: "no-store" });
+                const res = await fetch(`/api/test/events?applicationId=${applicationId}&key=${encodeURIComponent(testKey)}`, { cache: "no-store" });
                 if (res.ok) {
                     const data = await res.json();
                     setEvents(data.events || []);
@@ -332,7 +332,7 @@ function InterviewRoom({ applicationId, onUpdate, timerStartedAtRef, enableCamer
 }
 
 // --- Main page ---------------------------------------------------------------
-function TestPageContent() {
+function TestPageContent({ testKey }: { testKey: string }) {
     const { logout } = useAuth();
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
     const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -392,7 +392,7 @@ function TestPageContent() {
 
     useEffect(() => {
         let cancelled = false;
-        fetch(`/api/test/orgs`)
+        fetch(`/api/test/orgs?key=${encodeURIComponent(testKey)}`)
             .then(r => r.json())
             .then(d => {
                 if (!cancelled) {
@@ -412,7 +412,7 @@ function TestPageContent() {
     useEffect(() => {
         if (!selectedOrg) { setJobs([]); setSelectedJob(null); return; }
         setLoadingJobs(true);
-        fetch(`/api/test/jobs?orgId=${selectedOrg.id}`).then(r => r.json()).then(d => {
+        fetch(`/api/test/jobs?orgId=${selectedOrg.id}&key=${encodeURIComponent(testKey)}`).then(r => r.json()).then(d => {
             setJobs(d.jobs || []); setLoadingJobs(false);
         }).catch(() => setLoadingJobs(false));
     }, [selectedOrg]);
@@ -420,7 +420,7 @@ function TestPageContent() {
     useEffect(() => {
         if (!selectedJob) { setCandidates([]); setSelectedCandidate(null); return; }
         setLoadingCandidates(true);
-        fetch(`/api/test/candidates?jobId=${selectedJob.id}`).then(r => r.json()).then(d => {
+        fetch(`/api/test/candidates?jobId=${selectedJob.id}&key=${encodeURIComponent(testKey)}`).then(r => r.json()).then(d => {
             setCandidates(d.candidates || []); setLoadingCandidates(false);
         }).catch(() => setLoadingCandidates(false));
     }, [selectedJob]);
@@ -464,13 +464,14 @@ function TestPageContent() {
 
         try {
             // Clear backend events for this candidate
-            await fetch(`/api/test/events?applicationId=${selectedCandidate.id}`, { method: "DELETE" });
+            await fetch(`/api/test/events?applicationId=${selectedCandidate.id}&key=${encodeURIComponent(testKey)}`, { method: "DELETE" });
             const res = await fetch("/api/test/token", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     applicationId: selectedCandidate.id,
                     skipReport: !enableReport,
+                    key: testKey,
                 }),
             });
             const data = await res.json();
@@ -1019,7 +1020,7 @@ function TestPageContent() {
                             </div>
                         )}
                     </div>
-                    <InterviewRoom applicationId={selectedCandidate?.id || ""} onUpdate={handleUpdate} timerStartedAtRef={timerStartedAtRef} enableCamera={enableCamera} />
+                    <InterviewRoom applicationId={selectedCandidate?.id || ""} onUpdate={handleUpdate} timerStartedAtRef={timerStartedAtRef} enableCamera={enableCamera} testKey={testKey} />
                 </LiveKitRoom>
             )}
 
@@ -1055,7 +1056,101 @@ export default function TestPage() {
     );
 }
 
+// --- Key verification gate ----------------------------------------------------
+// The key is never compared client-side -- it's POSTed to the server, which
+// checks it against the DB-stored value (or an active SUPER_ADMIN session).
+// See app/api/test/verify-key/route.ts and lib/test-key.ts.
+function KeyGate({ onVerified }: { onVerified: (key: string) => void }) {
+    const [inputKey, setInputKey] = useState("");
+    const [error, setError] = useState(false);
+    const [checking, setChecking] = useState(false);
+    const [locked, setLocked] = useState(false);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setChecking(true);
+        setError(false);
+        try {
+            const res = await fetch("/api/test/verify-key", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ key: inputKey }),
+            });
+            if (res.ok) {
+                onVerified(inputKey);
+                return;
+            }
+            setError(true);
+            setInputKey("");
+            setLocked(true);
+            setTimeout(() => setLocked(false), 2000);
+        } catch {
+            setError(true);
+        } finally {
+            setChecking(false);
+        }
+    };
+
+    return (
+        <div className="min-h-screen flex items-center justify-center p-4" style={{ background: "linear-gradient(180deg,#fff 0%,#FAFAFC 45%,#F5F3FF 100%)" }}>
+            <div className="w-full max-w-sm bg-white rounded-2xl overflow-hidden animate-in zoom-in-95 duration-200"
+                style={{ border: "1px solid #E9E7FF", boxShadow: "0 25px 60px rgba(124,58,237,0.12)" }}>
+                <div className="px-6 py-8">
+                    <div className="flex justify-center mb-6">
+                        <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
+                            style={{ background: "linear-gradient(135deg,#8B5CF6,#3B82F6)" }}>
+                            <ShieldAlert className="w-7 h-7 text-white" />
+                        </div>
+                    </div>
+                    <h1 className="text-xl font-semibold text-gray-900 text-center mb-2">Developer Sandbox</h1>
+                    <p className="text-sm text-gray-400 text-center mb-6">Enter the access key to begin testing</p>
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <div>
+                            <input
+                                type="password"
+                                value={inputKey}
+                                onChange={(e) => { setInputKey(e.target.value); setError(false); }}
+                                disabled={locked || checking}
+                                placeholder="Enter test key"
+                                autoFocus
+                                className="w-full h-11 px-4 rounded-xl text-sm outline-none transition-all"
+                                style={{
+                                    border: error ? "1px solid #FCA5A5" : "1px solid #E9E7FF",
+                                    background: error ? "#FEF2F2" : "#F9FAFB",
+                                }}
+                            />
+                        </div>
+                        {error && (
+                            <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 px-3 py-2.5 rounded-xl border border-red-200">
+                                <AlertCircle className="w-4 h-4 flex-shrink-0" /> Invalid key.
+                            </div>
+                        )}
+                        <button type="submit" disabled={locked || checking || !inputKey.trim()}
+                            className="w-full btn-shimmer h-11 rounded-xl text-sm font-medium text-white disabled:opacity-50 transition-all"
+                            style={{ background: "linear-gradient(135deg,#8B5CF6,#3B82F6)", boxShadow: "0 4px 14px rgba(124,58,237,0.3)" }}>
+                            {checking ? "Verifying..." : "Verify Access"}
+                        </button>
+                    </form>
+                    <div className="mt-6 pt-6 border-t border-[#E9E7FF]">
+                        <button
+                            onClick={() => window.location.href = "/"}
+                            className="w-full h-10 rounded-xl text-sm font-semibold text-violet-600 bg-violet-50 border border-violet-200 hover:bg-violet-100 transition-all"
+                        >
+                            Back to Home
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function TestPageWrapper() {
-    // Access is enforced server-side by app/test/layout.tsx (SUPER_ADMIN session required).
-    return <TestPageContent />;
+    const [verifiedKey, setVerifiedKey] = useState<string | null>(null);
+
+    if (verifiedKey === null) {
+        return <KeyGate onVerified={setVerifiedKey} />;
+    }
+
+    return <TestPageContent testKey={verifiedKey} />;
 }
