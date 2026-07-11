@@ -45,6 +45,7 @@ if str(_repo_root) not in sys.path:
 
 from interview.band_classifier import classify_band
 from interview.interview_brief import InterviewBrief, generate_interview_brief
+from billing.billing import record_manual_usage, flush_billing
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -70,6 +71,7 @@ class ApplicationRow(BaseModel):
     title: Optional[str] = None
     extractedDetails: Any = None
     interviewQuestions: Any = None
+    orgId: Optional[str] = None
     llmInterviewBrief: Optional[str] = None
 
     @model_validator(mode="after")
@@ -274,6 +276,11 @@ class BriefPipeline:
             "[NODE:generate_llm_brief] started | model=%s | candidate=%s | role=%s",
             llm_model, row.fullName, row.job_title,
         )
+        # Real candidates' brief LLM calls happen here (slot-booking time), NOT
+        # in agent_runtime.py (that path is test-session-only -- see module
+        # docstring). Without this sink, real-candidate brief cost was never
+        # recorded anywhere in Organization.usageMetrics.billing.interviewBrief.
+        _brief_usages: list[dict] = []
         t0 = time.perf_counter()
         brief = await generate_interview_brief(
             candidate_name=row.fullName,
@@ -284,7 +291,23 @@ class BriefPipeline:
             custom_questions=row.custom_questions,
             openai_client=self._openai,
             llm_model=llm_model,
+            usage_sink=_brief_usages.append,
         )
+        if row.orgId:
+            try:
+                for u in _brief_usages:
+                    await record_manual_usage(row.orgId, "interviewBrief", u)
+                await flush_billing(row.orgId)
+            except Exception as bill_err:
+                logger.error(
+                    "[BILLING] Failed to record interviewBrief usage for app=%s org=%s: %s",
+                    row.applicationId, row.orgId, bill_err,
+                )
+        else:
+            logger.warning(
+                "[BILLING] No orgId for application=%s -- interviewBrief cost not recorded",
+                row.applicationId,
+            )
         elapsed = round(time.perf_counter() - t0, 1)
         logger.info(
             "[NODE:generate_llm_brief] done | elapsed=%.1fs | band=%s | anchor=%r | topics=%d",

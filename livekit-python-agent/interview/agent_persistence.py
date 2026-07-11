@@ -220,6 +220,7 @@ async def get_interview_context(app_id: str) -> dict:
                 "sttModel":             row["sttModel"],
                 "ttsProvider":          row["ttsProvider"],
                 "ttsModel":             row["ttsModel"],
+                "ttsSpeed":             row["ttsSpeed"],
                 "llmInterviewLive":     row["llmInterviewLive"],
                 "llmInterviewEval":     row["llmInterviewEval"],
                 "llmInterviewBrief":    row["llmInterviewBrief"],
