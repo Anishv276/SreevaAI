@@ -13,8 +13,8 @@ import { FaceProctoring } from "@/components/careers/interview/FaceProctoring";
 import { HardwareHeartbeat } from "@/components/careers/interview/HardwareHeartbeat";
 import { ConnectionProctoring } from "@/components/careers/interview/ConnectionProctoring";
 import { CandidateRatingForm } from "@/components/careers/interview/CandidateRatingForm";
-import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/job-limits";
-import { useSearchParams, useRouter } from "next/navigation";
+import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/drive-limits";
+import { useSearchParams } from "next/navigation";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { BASIC_PLAN_SIGNALS, normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import {
@@ -195,28 +195,9 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     });
     const SHOW_BACKGROUND_PROCTORING_ALERTS = false;
     const SHOW_TAB_FULLSCREEN_ALERTS = true;
-    const router = useRouter();
     const searchParams = useSearchParams();
-    const urlToken = searchParams.get("token") || "";
-    const cookieTokenKey = `interview_token_${id}`;
-    const [storedToken, setStoredToken] = useState<string>("");
-    useEffect(() => {
-        if (urlToken) {
-            try { document.cookie = `${cookieTokenKey}=${encodeURIComponent(urlToken)}; path=/; max-age=${60 * 60 * 6}; SameSite=Lax`; } catch { }
-            setStoredToken(urlToken);
-            const url = new URL(window.location.href);
-            url.searchParams.delete("token");
-            router.replace(url.pathname + url.search, { scroll: false });
-        } else {
-            try {
-                const match = document.cookie.match(new RegExp(`(?:^|; )${cookieTokenKey}=([^;]*)`));
-                if (match) setStoredToken(decodeURIComponent(match[1]));
-            } catch { }
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [urlToken]);
-    const interviewToken = storedToken;
-    const [organizationName, setOrganizationName] = useState("");
+    const interviewToken = searchParams.get("token") || "";
+    const organizationName = searchParams.get("orgName")?.trim() || "";
     const requireInterviewToken = isInterviewTokenRequired();
     const isTabSwitchEnabled = Boolean(proctoringSignals.tab_switch);
     const isFullscreenExitEnabled = Boolean(proctoringSignals.fullscreen_exit);
@@ -275,10 +256,9 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const [isInitiallyLocked, setIsInitiallyLocked] = useState(false);
     // scheduledAt from API -- used for the slot countdown gate
     const [scheduledAt, setScheduledAt] = useState<Date | null>(null);
-    // Seconds until button unlocks (2 min before slot)
+    // Seconds until button unlocks (exactly at slot time -- matches server gate)
     const [slotCountdownSecs, setSlotCountdownSecs] = useState<number | null>(null);
-    // Button unlocks 2 min before slot; waiting room opens 5 min before (handled by server)
-    const BUTTON_UNLOCK_BEFORE_MS = 2 * 60 * 1000;
+
     useEffect(() => {
         let active = true;
         (async () => {
@@ -288,21 +268,22 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 const res = await fetch(url.toString(), { cache: "no-store" });
                 const data = await res.json();
                 if (!active) return;
-                if (data.orgName) setOrganizationName(data.orgName);
                 if (!res.ok && data.error) {
                     if (data.code === "TOO_EARLY" && data.scheduledAt) {
-                        // Waiting room opened -- show hardware check but gate the Begin button
+                        // Not open yet -- no waiting room before slot time. Show hardware check
+                        // (gated) so the candidate can prep, but Begin stays locked until slot.
                         const slot = new Date(data.scheduledAt);
                         setScheduledAt(slot);
-                        setSlotCountdownSecs(Math.ceil((slot.getTime() - BUTTON_UNLOCK_BEFORE_MS - Date.now()) / 1000));
+                        setSlotCountdownSecs(Math.ceil((slot.getTime() - Date.now()) / 1000));
                         setPhase("check");
                     } else {
                         const titleMap: Record<string, string> = {
-                            JOB_CLOSED: "Job Posting Expired",
+                            DRIVE_CLOSED: "Job Posting Expired",
                             LINK_EXPIRED: "Link Expired",
                             SLOT_EXPIRED: "Slot Expired",
                             NOT_SCHEDULED: "Not Scheduled",
                             INTERVIEW_COMPLETED: "Interview Completed",
+                            INTERVIEW_FAILED: "Interview Ended",
                             INTERVIEW_IN_PROGRESS: "Interview In Progress",
                         };
                         setBlockedAccessTitle(titleMap[data.code] || "Access Restricted");
@@ -320,12 +301,12 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         return () => { active = false; };
     }, [id, interviewToken]);
 
-    // Countdown tick -- counts down to (slot - 2 min); when <= 0, button unlocks
+    // Countdown tick -- counts down to slot time exactly; when <= 0, button unlocks
     useEffect(() => {
         if (!scheduledAt || slotCountdownSecs === null) return;
         if (slotCountdownSecs <= 0) return; // already unlocked
         const interval = setInterval(() => {
-            const secsLeft = Math.ceil((scheduledAt.getTime() - BUTTON_UNLOCK_BEFORE_MS - Date.now()) / 1000);
+            const secsLeft = Math.ceil((scheduledAt.getTime() - Date.now()) / 1000);
             setSlotCountdownSecs(secsLeft);
             if (secsLeft <= 0) clearInterval(interval);
         }, 1000);
@@ -564,7 +545,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 const errorCode = String(data?.code || "").toUpperCase();
                 const isInProgress = errorCode === "INTERVIEW_IN_PROGRESS" || /in progress/i.test(apiError);
                 const isCompleted = errorCode === "INTERVIEW_COMPLETED";
-                const isJobClosed = errorCode === "JOB_CLOSED";
+                const isFailed = errorCode === "INTERVIEW_FAILED";
+                const isDriveClosed = errorCode === "DRIVE_CLOSED";
                 const isSlotExpired = errorCode === "SLOT_EXPIRED";
                 const isTooEarly = errorCode === "TOO_EARLY";
                 const isLinkExpired = errorCode === "LINK_EXPIRED";
@@ -582,7 +564,14 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         message: apiError,
                     };
                 }
-                if (isJobClosed) {
+                if (isFailed) {
+                    return {
+                        ok: false,
+                        title: "Interview ended",
+                        message: apiError,
+                    };
+                }
+                if (isDriveClosed) {
                     return {
                         ok: false,
                         title: "Job posting expired",
@@ -748,6 +737,13 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             setRemainingSeconds(dur);
             setTimerExpired(false);
         }
+        // Re-assert fullscreen here: the request made back in "launching" can be silently
+        // dropped by a mic/camera permission prompt or device-track mount on a fresh
+        // browser profile. Without this, the exit-listener attached below initializes
+        // wasFullscreenRef to an already-false state and never fires a real exit event,
+        // while the UI still behaves as if fullscreen is required -- looks like an
+        // instant, unexplained bounce back to hardware check.
+        void requestFullscreenMode();
         // Grace period: don't flag fullscreen exits during first 10 seconds of interview
         // (browser startup, LiveKit connection, audio initialization may cause spurious events)
         // Fullscreen request takes time, greeting audio plays, room connection stabilizes
@@ -773,7 +769,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 if (res.ok) return;
                 const errorCode = String(data?.code || "").toUpperCase();
                 const errorMessage = String(data?.error || data?.message || "Unable to record interview start.");
-                if (res.status === 401 || res.status === 403 || errorCode === "LINK_EXPIRED" || errorCode === "JOB_CLOSED") {
+                if (res.status === 401 || res.status === 403 || errorCode === "LINK_EXPIRED" || errorCode === "DRIVE_CLOSED") {
                     await resetToHardwareCheck(errorMessage);
                     return;
                 }
@@ -800,7 +796,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             cancelled = true;
             window.clearTimeout(stabilizeTimer);
         };
-    }, [id, interviewToken, phase, resetToHardwareCheck]);
+    }, [id, interviewToken, phase, resetToHardwareCheck, requestFullscreenMode]);
     // Hard timeout: if agent never becomes ready within 1.5 minutes (90s), show a popup and return to check.
     useEffect(() => {
         if (phase !== "launching") return;
@@ -843,7 +839,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 setPhase("launching");
                 const durationSeconds = sessionDurationRef.current;
                 if (typeof durationSeconds !== "number" || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
-                    throw new Error("Interview duration is not configured for this job.");
+                    throw new Error("Interview duration is not configured for this drive.");
                 }
                 await requestFullscreenMode();
                 if (lkRoomRef.current) {
@@ -1041,7 +1037,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         metadata: { fingerprint },
                     }],
                 }),
-            }).catch(() => {});
+            }).catch(() => { });
         };
         send();
         fingerprintIntervalRef.current = window.setInterval(send, 120_000);
@@ -1157,6 +1153,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         transition={{ duration: 0.8 }}
                         className="flex-1 w-full bg-white z-50 absolute inset-0 overflow-y-auto"
                     >
+
                         <HardwareCheck
                             onComplete={handleHardwareComplete}
                             onRetry={() => {
@@ -1178,64 +1175,86 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="flex-1 min-h-screen w-full flex items-center justify-center bg-[#0e0e10] z-[120] absolute inset-0"
+                        className="flex-1 min-h-screen w-full flex items-center justify-center bg-[#FAFAFC] z-[120] absolute inset-0"
                     >
                         <div className="flex flex-col items-center gap-8 text-center px-6">
-                            <div className="relative h-32 w-32" style={{ transform: 'translateZ(0)' }}>
-                                <div className="absolute inset-0 rounded-full border-2 border-violet-500/10" />
-                                <div className="absolute inset-2 rounded-full border-2 border-violet-500/20" />
-                                <div className="relative h-full w-full rounded-full border-2 border-violet-500/40 bg-zinc-900/90 flex items-center justify-center shadow-[0_0_60px_rgba(124,58,237,0.1)]">
-                                    <Sparkles className="h-10 w-10 text-violet-500" />
+
+                            {/* Minimalist Breathing AI Core */}
+                            <div className="relative h-24 w-24 rounded-full bg-white border border-violet-100 flex items-center justify-center shadow-sm">
+                                <div className="relative flex items-center justify-center h-12 w-12">
+                                    {/* Ripple 1 */}
+                                    <motion.div
+                                        className="absolute inset-0 rounded-full bg-violet-500/20"
+                                        animate={{ scale: [1, 2.5], opacity: [1, 0] }}
+                                        transition={{ duration: 2.5, repeat: Infinity, ease: "easeOut" }}
+                                    />
+                                    {/* Ripple 2 */}
+                                    <motion.div
+                                        className="absolute inset-0 rounded-full bg-violet-500/20"
+                                        animate={{ scale: [1, 2.5], opacity: [1, 0] }}
+                                        transition={{ duration: 2.5, repeat: Infinity, ease: "easeOut", delay: 1.25 }}
+                                    />
+                                    {/* Solid Core */}
+                                    <motion.div
+                                        className="relative h-6 w-6 bg-violet-600 rounded-full shadow-[0_0_20px_rgba(124,58,237,0.4)]"
+                                        animate={{ scale: [1, 1.2, 1] }}
+                                        transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
+                                    />
                                 </div>
                             </div>
-                            <div className="space-y-3">
-                                <h3 className="text-2xl font-black text-white uppercase tracking-tight">
-                                    {isAgentReady ? "Your Interviewer is Ready" : "Setting Up Interview Room"}
+
+                            {/* Professional Typography */}
+                            <div className="space-y-2">
+                                <h3 className="text-2xl font-semibold text-gray-900 tracking-tight">
+                                    {isAgentReady ? "Interviewer is Ready" : "Preparing Interview Room"}
                                 </h3>
-                                <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-[0.25em] max-w-[300px]">
+                                <p className="text-sm text-gray-500 max-w-[320px] mx-auto">
                                     {isAgentReady
-                                        ? `Agent ready in ${agentReadyLatencyMs ?? 0}ms. Starting interview...`
-                                        : "Please wait — connecting your AI interviewer."}
+                                        ? "Starting your session now..."
+                                        : "Please wait a moment while we securely connect your AI interviewer."}
                                 </p>
                             </div>
-                            <div className="flex items-center gap-2">
+
+                            {/* Horizontal Pill Checklist */}
+                            <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
                                 {([
-                                    { label: "Mic & Camera", done: true },
-                                    { label: "Room Link", done: !!token },
-                                    { label: "AI Agent", done: isAgentReady },
+                                    { label: "Camera & Microphone", done: true },
+                                    { label: "Secure Connection", done: !!token },
+                                    { label: "AI Interviewer", done: isAgentReady },
                                 ]).map((step, i, arr) => (
                                     <div key={step.label} className="flex items-center gap-2">
-                                        <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border transition-all ${step.done
-                                            ? "bg-green-500/10 border-green-500/30 text-green-400"
-                                            : "bg-zinc-800 border-zinc-700 text-zinc-500"
+                                        <div className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold border transition-all ${step.done
+                                            ? "bg-emerald-50 border-emerald-100 text-emerald-700"
+                                            : "bg-white border-gray-200 text-gray-500 shadow-sm"
                                             }`}>
-                                            {step.done ? <CheckCircle2 className="w-3 h-3" /> : <Loader2 className="w-3 h-3 animate-spin" />}
+                                            {step.done ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Loader2 className="w-4 h-4 animate-spin" />}
                                             {step.label}
                                         </div>
-                                        {i < arr.length - 1 && <div className="w-4 h-px bg-zinc-700" />}
+                                        {i < arr.length - 1 && <div className="hidden sm:block w-6 h-[1.5px] bg-gray-200 rounded-full" />}
                                     </div>
                                 ))}
                             </div>
-                            {launchRecoveryMessage && (
-                                <motion.div
-                                    initial={{ opacity: 0, y: 12, scale: 0.98 }}
-                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                    className="fixed inset-0 z-[200] flex items-center justify-center bg-black/55 backdrop-blur-sm"
-                                >
-                                    <div className="w-[min(92vw,520px)] rounded-[2rem] bg-white p-8 shadow-2xl border border-black/5 text-center">
-                                        <p className="text-[10px] font-black uppercase tracking-[0.4em] text-violet-500 mb-3">Hold on</p>
-                                        <h3 className="text-2xl font-black text-gray-900 tracking-tight">
-                                            {launchRecoveryMessage}
-                                        </h3>
-                                        <p className="mt-4 text-sm font-medium text-gray-500">
-                                            {returnCountdown !== null ? `We'll return you to the hardware check screen in ${returnCountdown}s...` : "We'll return you to the hardware check screen in a moment."}
-                                        </p>
-                                    </div>
-                                </motion.div>
-                            )}
                         </div>
                     </motion.div>
                 )}
+                {launchRecoveryMessage && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 12, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        className="fixed inset-0 z-[200] flex items-center justify-center bg-black/55 backdrop-blur-sm"
+                    >
+                        <div className="w-[min(92vw,520px)] rounded-[2rem] bg-white p-8 shadow-2xl border border-black/5 text-center">
+                            <p className="text-[10px] font-black uppercase tracking-[0.4em] text-violet-500 mb-3">Hold on</p>
+                            <h3 className="text-2xl font-black text-gray-900 tracking-tight">
+                                {launchRecoveryMessage}
+                            </h3>
+                            <p className="mt-4 text-sm font-medium text-gray-500">
+                                {returnCountdown !== null ? `We'll return you to the hardware check screen in ${returnCountdown}s...` : "We'll return you to the hardware check screen in a moment."}
+                            </p>
+                        </div>
+                    </motion.div>
+                )}
+
                 {phase === "finalizing" && (
                     <motion.div
                         key="finalizing"
@@ -1764,6 +1783,21 @@ function InterviewRoomContent({
             setMicTogglePending(false);
         }
     }, [localParticipant, micTogglePending, selectedMicId]);
+
+    const isCameraEnabled = localParticipant?.isCameraEnabled ?? false;
+    const [cameraTogglePending, setCameraTogglePending] = useState(false);
+    const toggleCamera = useCallback(async () => {
+        if (!localParticipant || cameraTogglePending) return;
+        const nextEnabled = !localParticipant.isCameraEnabled;
+        setCameraTogglePending(true);
+        try {
+            await localParticipant.setCameraEnabled(nextEnabled);
+        } catch (err) {
+            console.warn("[Camera] Failed to toggle camera:", err);
+        } finally {
+            setCameraTogglePending(false);
+        }
+    }, [localParticipant, cameraTogglePending]);
     useEffect(() => {
         if (!isInterviewActive || connectionState !== "connected" || !localParticipant) {
             didAutoEnableMicRef.current = false;
@@ -2109,291 +2143,157 @@ function InterviewRoomContent({
         void handleFinish(remoteForceFinishReason);
     }, [remoteForceFinish, remoteForceFinishReason, isInterviewActive, handleFinish]);
     return (
-        <div className="flex-1 flex flex-col h-full w-full relative bg-[#121214] text-white overflow-hidden">
-            {/* Ambient Background Glow */}
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,_rgba(124,58,237,0.04)_0%,_transparent_50%)] pointer-events-none" />
-            {/* Role Context - TOP LEFT */}
-            <div className="absolute top-10 left-10 z-[60]">
-                <div className="flex items-center gap-4 bg-zinc-900/90 px-6 py-4 rounded-[2rem] border border-white/5 shadow-2xl">
-                    <div className="w-10 h-10 rounded-full bg-violet-500/10 flex items-center justify-center border border-violet-500/30">
-                        <Sparkles className="w-5 h-5 text-violet-500" />
-                    </div>
-                    <div>
-                        <p className="text-[9px] font-black uppercase tracking-[0.3em] text-zinc-500">Live Interview</p>
-                        <p className="text-sm font-black text-white tracking-tight italic">{interviewRoleLabel}</p>
-                    </div>
+        <div className="flex-1 flex flex-col h-full w-full relative bg-gradient-to-br from-indigo-50 via-white to-fuchsia-50 text-zinc-900 overflow-hidden">
+            {/* Soft Background Blobs (Optional, the gradient does most of the work) */}
+            <div className="absolute top-0 left-0 w-full h-full bg-white/40 pointer-events-none backdrop-blur-3xl" />
+
+            {/* Top Navigation Bar */}
+            <div className="absolute top-0 left-0 right-0 z-[60] flex items-center justify-between px-8 py-6 pointer-events-none">
+                <div className="flex items-center gap-1.5 pointer-events-auto">
+                    <img src="/sreevaailogo2.png" alt="SreevaAI" className="h-8 object-contain drop-shadow-sm" />
+                    <p className="text-xl font-bold text-zinc-800 tracking-tight">SreevaAI</p>
+                </div>
+
+                {/* Time */}
+                <div className="flex items-center gap-4 pointer-events-auto">
+                    <p className="text-sm font-medium text-zinc-700 tabular-nums ml-4">10:35 AM</p>
                 </div>
             </div>
-            {/* Premium Timer - TOP MIDDLE */}
-            <div className="absolute top-10 left-1/2 -translate-x-1/2 z-[60]">
-                <div className="bg-zinc-900/95 px-10 py-4 rounded-[2rem] border border-white/5 shadow-[0_20px_60px_rgba(0,0,0,0.5)] flex flex-col items-center min-w-[200px]">
-                    <p className="text-[10px] font-black uppercase tracking-[0.4em] text-violet-500/80 mb-1">Session Protocol</p>
-                    <p className="text-4xl font-black text-white tabular-nums tracking-tight italic">
-                        {timeLabel}
-                    </p>
-                </div>
-            </div>
+
+            {/* Status Pill removed in favor of center voice UI */}
+
             {/* Candidate Video Feed - TOP RIGHT */}
-            <div className="absolute top-40 right-10 z-50 flex flex-col gap-3 items-end">
-                <div className="w-72 aspect-[4/3] bg-zinc-900 rounded-[2rem] p-1 shadow-[0_20px_60px_rgba(0,0,0,0.6)] group border border-white/10 ring-1 ring-white/5" style={{ transform: 'translateZ(0)' }}>
-                    <div className="w-full h-full rounded-[2rem] overflow-hidden bg-zinc-950 relative">
+            <div className="absolute top-24 right-10 z-50 pointer-events-auto flex flex-col items-end gap-3">
+                <div className="w-72 aspect-video rounded-3xl p-[3px] bg-gradient-to-b from-white/80 to-white/30 shadow-[0_12px_40px_rgba(0,0,0,0.12)] backdrop-blur-md">
+                    <div className="w-full h-full rounded-[22px] overflow-hidden bg-black relative">
                         {localCameraTrack ? (
-                            <div className="w-full h-full [&>video]:w-full [&>video]:h-full [&>video]:object-cover [&>canvas]:w-full [&>canvas]:h-full [&>canvas]:object-cover scale-x-[-1]">
+                            <div className="w-full h-full [&>video]:w-full [&>video]:h-full [&>video]:object-cover scale-x-[-1]">
                                 <VideoTrack trackRef={localCameraTrack} />
                             </div>
                         ) : (
-                            <div className="w-full h-full flex flex-col items-center justify-center gap-3 bg-zinc-900/50">
-                                <Camera className="w-8 h-8 text-zinc-800" />
+                            <div className="w-full h-full flex items-center justify-center bg-zinc-800">
+                                <Camera className="w-6 h-6 text-zinc-500" />
                             </div>
                         )}
-                        <div className="absolute top-4 left-4 flex items-center gap-2 px-3 py-1.5 bg-black/80 rounded-full border border-white/10">
-                            <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_20px_rgba(34,197,94,0.3)]" />
-                            <p className="text-[10px] font-black uppercase tracking-widest text-white drop-shadow-md">You (Live)</p>
-                        </div>
                     </div>
                 </div>
-                {/* Session Actions - beside camera */}
-                <div className="flex items-center gap-2 pr-4">
-                    <button
-                        onClick={() => setInstructionsDialogOpen(true)}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-900/90 border border-white/10 text-[10px] font-black uppercase tracking-widest text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all shadow-xl"
-                    >
-                        <MessageSquare className="w-3.5 h-3.5" />
-                        Guidelines
-                    </button>
-                    <button
-                        onClick={() => setSupportDialogOpen(true)}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-900/90 border border-white/10 text-[10px] font-black uppercase tracking-widest text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all shadow-xl"
-                    >
-                        <LifeBuoy className="w-3.5 h-3.5" />
-                        Contact
-                    </button>
+                <div className="px-5 py-2.5 bg-white/90 backdrop-blur-md border border-zinc-200/60 rounded-full shadow-sm mr-2 flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-violet-500" />
+                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600">{interviewRoleLabel || "Interviewing"}</p>
                 </div>
             </div>
             {/* AI Avatar Area */}
-            <div className="flex-1 flex flex-col items-center justify-center px-8 pt-20 pb-10 relative">
-                <motion.div
-                    animate={{
-                        scale: isAiSpeaking ? [1, 1.02, 1] : [1, 1.01, 1],
-                        borderColor: isAiSpeaking ? "rgba(249, 115, 34, 0.4)" : "rgba(249, 115, 34, 0.2)",
-                    }}
-                    transition={{
-                        duration: isAiSpeaking ? 1.5 : 4,
-                        repeat: Infinity,
-                        ease: "easeInOut"
-                    }}
-                    className="w-64 h-64 rounded-full border-2 flex items-center justify-center relative isolate group"
-                    style={{ transform: 'translateZ(0)' }}
-                >
-                    {/* Advanced Shader Aura Visualizer (Real-time Audio Reactive) */}
-                    <div className="absolute inset-0 rounded-full overflow-hidden pointer-events-none">
-                        <AuraVisualizer
-                            state={isAiSpeaking ? "speaking" : (isAiThinking ? "thinking" : "listening")}
-                            audioTrack={agentAudioTrack}
-                            size="full"
-                            className="absolute inset-0 z-0 opacity-80"
-                        />
-                    </div>
-                    {/* Image Container */}
-                    <div className="absolute inset-3 rounded-full overflow-hidden border-4 border-zinc-800/60 shadow-inner z-10">
-                        <img
-                            src="/avatars/jordan.png"
-                            alt="AI Interviewer"
-                            className={cn(
-                                "w-full h-full object-cover transition-all duration-700",
-                                isAiSpeaking ? "scale-110 contrast-[1.1] brightness-[1.05]" :
-                                    (isAiThinking ? "scale-105 contrast-[1.05] brightness-[1.02]" : "scale-100 grayscale-[0.2] brightness-90")
-                            )}
-                        />
-                        {/* Gradient Overlay for Depth */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60" />
-                    </div>
-                    <div className="absolute -bottom-16 flex flex-col items-center gap-2">
-                        <p className={cn(
-                            "text-[10px] font-black uppercase tracking-[0.5em] transition-all duration-500 text-center",
-                            isAiSpeaking ? "text-violet-500 translate-y-1" : (isAiThinking ? "text-orange-300" : "text-zinc-500")
-                        )}>
-                            {isAiSpeaking
-                                ? "Interviewer Speaking"
-                                : (isAiThinking
-                                    ? "Ishita is thinking..."
-                                    : (isAiListening ? "Interviewer Listening" : "Waiting for Interviewer..."))}
-                        </p>
+            <div className="flex-1 flex flex-col items-center justify-center relative -mt-4">
+                <div className="relative w-[16rem] h-[16rem] flex items-center justify-center group shrink-0" style={{ transform: 'translateZ(0)' }}>
+
+                    {/* Minimalist Breathing Rings (Replaces Blob) */}
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                         {isAiSpeaking && (
-                            <motion.div
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                className="flex items-center gap-1.5 px-3 py-1 bg-green-500/10 border border-green-500/20 rounded-full"
-                            >
-                                <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                                <span className="text-[8px] font-black uppercase tracking-widest text-green-500">Live Voice Stream</span>
-                            </motion.div>
+                            <>
+                                <motion.div className="absolute inset-0 rounded-full border-2 border-violet-500/20" animate={{ scale: [1, 1.4], opacity: [1, 0] }} transition={{ duration: 1.5, repeat: Infinity, ease: "easeOut" }} />
+                                <motion.div className="absolute inset-0 rounded-full border-2 border-violet-500/20" animate={{ scale: [1, 1.4], opacity: [1, 0] }} transition={{ duration: 1.5, repeat: Infinity, ease: "easeOut", delay: 0.75 }} />
+                            </>
+                        )}
+                        {isAiThinking && (
+                            <motion.div className="absolute inset-2 rounded-full border-[3px] border-amber-500/20 border-t-amber-500 animate-spin" transition={{ duration: 2, ease: "linear", repeat: Infinity }} />
                         )}
                     </div>
-                </motion.div>
-                {latestAiTranscript && (
-                    <div className="w-full max-w-[68rem] mt-16 md:mt-24 px-2 relative z-20">
-                        <AnimatePresence mode="wait">
-                            <motion.div
-                                key={latestAiTranscript.id}
-                                initial={{ opacity: 0, y: 16, scale: 0.98 }}
-                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                exit={{ opacity: 0, y: -12, scale: 0.98 }}
-                                transition={{ duration: 0.28, ease: "easeOut" }}
-                                className="w-full rounded-[1.75rem] border border-white/10 bg-[#2c2c2e]/95 px-12 py-6 shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
-                            >
-                                <div className="flex items-start gap-5 w-full">
-                                    <span className="text-[10px] font-black uppercase tracking-[0.35em] shrink-0 pt-1 text-white/90">
-                                        Ishitha
-                                    </span>
-                                    <p className={cn(
-                                        "text-[16px] md:text-[18px] font-medium text-white leading-[1.8] tracking-tight whitespace-normal break-words w-full",
-                                        !latestAiTranscript.isFinal && "text-white/75"
-                                    )}>
-                                        {latestAiTranscript.text}
-                                        {!latestAiTranscript.isFinal && <span className="inline-block ml-1 opacity-50">...</span>}
-                                    </p>
+
+                    {/* Voice Interface Center */}
+                    <div className="absolute inset-5 rounded-full z-20 shadow-[0_8px_40px_rgba(0,0,0,0.06)] bg-white flex flex-col items-center justify-center gap-4 border border-zinc-100 transition-all duration-500">
+                        <div className={cn(
+                            "w-16 h-16 rounded-full flex items-center justify-center transition-all duration-500",
+                            isAiSpeaking ? "bg-violet-50" : (isAiThinking ? "bg-amber-50" : "bg-zinc-50")
+                        )}>
+                            {isAiSpeaking ? (
+                                <div className="flex items-center justify-center gap-1.5">
+                                    {[0, 1, 2, 3].map((i) => (
+                                        <motion.div key={i} className="w-1.5 bg-violet-500 rounded-full" animate={{ height: ["12px", "28px", "12px"] }} transition={{ duration: 1, repeat: Infinity, delay: i * 0.15, ease: "easeInOut" }} />
+                                    ))}
                                 </div>
-                            </motion.div>
-                        </AnimatePresence>
+                            ) : (
+                                <Volume2 className={cn(
+                                    "w-7 h-7 transition-colors duration-500",
+                                    isAiThinking ? "text-amber-500" : "text-zinc-400"
+                                )} />
+                            )}
+                        </div>
+                        <div className="flex flex-col items-center gap-1">
+                            <span className="text-[15px] font-semibold tracking-wide text-zinc-900">
+                                {isAiSpeaking ? "Speaking" : (isAiThinking ? "Thinking" : "Listening")}
+                            </span>
+                            <span className="text-[13px] font-medium text-zinc-400 tabular-nums tracking-widest">{timeLabel}</span>
+                        </div>
                     </div>
-                )}
-                {false && (
-                    <div className="absolute right-[calc(50%+180px)] bottom-[20%] z-[65] w-[380px] pointer-events-none">
-                        <div
-                            className="flex flex-col-reverse justify-start gap-6 max-h-[60vh] overflow-hidden px-6 py-12"
-                            style={{
-                                maskImage: 'linear-gradient(to top, transparent 0%, transparent 5%, black 20%, black 70%, transparent 95%, transparent 100%)',
-                                WebkitMaskImage: 'linear-gradient(to top, transparent 0%, transparent 5%, black 20%, black 70%, transparent 95%, transparent 100%)'
-                            }}
+                </div>
+
+                <div className="mt-12 mb-20 w-full max-w-5xl px-8 text-center z-20 shrink-0">
+                    <AnimatePresence mode="wait">
+                        <motion.div
+                            key={latestAiTranscript?.id || "placeholder"}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            transition={{ duration: 0.3 }}
+                            className="w-full"
                         >
-                            <AnimatePresence mode="popLayout">
-                                {aiTranscriptGroups.slice(-5).reverse().map((group, idx) => {
-                                    const isGroupFinal = group.segments.every(s => s.isFinal);
-                                    // Only combine final segments + the single latest non-final chunk.
-                                    // This prevents partial words ("bu", "thr") from stacking visibly.
-                                    const finalSegs = group.segments.filter(s => s.isFinal);
-                                    const nonFinalSegs = group.segments.filter(s => !s.isFinal);
-                                    const latestNonFinal = nonFinalSegs.length > 0 ? nonFinalSegs[nonFinalSegs.length - 1] : null;
-                                    const displaySegs = latestNonFinal ? [...finalSegs, latestNonFinal] : finalSegs;
-                                    const combinedText = displaySegs.map(s => s.text.trim()).filter(Boolean).join(" ");
-                                    return (
-                                        <motion.div
-                                            key={group.id}
-                                            initial={{ opacity: 0, y: 40, scale: 0.95 }}
-                                            animate={{
-                                                opacity: Math.max(0.2, 1 - (idx * 0.15)),
-                                                y: 0,
-                                                scale: 1
-                                            }}
-                                            exit={{
-                                                opacity: 0,
-                                                y: -60,
-                                                scale: 0.9,
-                                                transition: { duration: 0.5 }
-                                            }}
-                                            transition={{
-                                                type: "spring",
-                                                stiffness: 150,
-                                                damping: 20
-                                            }}
-                                            className={cn(
-                                                "w-full filter drop-shadow-[0_4px_10px_rgba(0,0,0,0.3)]",
-                                                "pointer-events-auto"
-                                            )}
-                                        >
-                                            <div className="relative group/item">
-                                                {/* Minimalist Message Layout (No Cards) */}
-                                                <div className="flex flex-col gap-1">
-                                                    <div className="flex items-baseline gap-2">
-                                                        <span className={cn(
-                                                            "text-[10px] font-black uppercase tracking-[0.2em]",
-                                                            group.isCandidate ? "text-violet-500" : "text-indigo-400"
-                                                        )}>
-                                                            {group.isCandidate ? (candidateName || "Candidate") : "Ishitha"}
-                                                        </span>
-                                                        {!isGroupFinal && (
-                                                            <span className="text-[10px] text-zinc-600 animate-pulse">• • •</span>
-                                                        )}
-                                                    </div>
-                                                    <StreamingText
-                                                        text={combinedText}
-                                                        className={cn(
-                                                            "text-[15px] font-medium tracking-tight leading-relaxed text-zinc-200"
-                                                        )}
-                                                    />
-                                                </div>
-                                            </div>
-                                        </motion.div>
-                                    );
-                                })}
-                            </AnimatePresence>
-                        </div>
-                    </div>
-                )}
+                            <p className={cn(
+                                "whitespace-pre-line text-lg md:text-xl font-medium tracking-tight text-zinc-800 drop-shadow-sm",
+                                (!latestAiTranscript || !latestAiTranscript.isFinal) && "text-zinc-500"
+                            )}>
+                                {latestAiTranscript ? latestAiTranscript.text : "We are incredibly impressed by your extensive background in artificial intelligence and machine learning architectures, particularly your recent work optimizing large language models for edge devices. Could you walk us through a specific challenge you faced while balancing inference speed with accuracy during deployment, and detail the architectural compromises you had to make to achieve those strict latency requirements?"}
+                                {latestAiTranscript && !latestAiTranscript.isFinal && <span className="animate-pulse">...</span>}
+                            </p>
+                        </motion.div>
+                    </AnimatePresence>
+                </div>
             </div>
-            {/* Bottom Navigation & Premium Timer */}
-            <div className="min-h-[11rem] bg-zinc-900/80 p-8 grid grid-cols-3 items-center relative z-10">
-                {/* Left: Status */}
-                <div className="flex items-center gap-6">
-                    <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-2xl bg-violet-500/10 flex items-center justify-center border border-violet-500/20">
-                            <ShieldCheck className="w-6 h-6 text-violet-500" />
-                        </div>
-                        <div>
-                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Security</p>
-                            <p className="text-[11px] font-bold text-green-500 uppercase tracking-widest">Encrypted</p>
-                        </div>
-                    </div>
-                    {/* Microphone Toggle */}
+
+            {/* Sleek Floating Dock - BOTTOM CENTER */}
+            <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-[60] pointer-events-auto">
+                <div className="flex items-center gap-4 px-6 py-4 rounded-[2rem] bg-white/95 border border-zinc-200/50 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.06)]">
                     <button
                         onClick={toggleMic}
-                        disabled={micTogglePending || !localParticipant}
-                        className={cn(
-                            "group flex items-center gap-3 px-5 py-3 rounded-2xl border transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed",
-                            isMicEnabled
-                                ? "bg-zinc-800/40 border-white/5 hover:bg-zinc-800/60"
-                                : "bg-red-500/10 border-red-500/20 hover:bg-red-500/20"
-                        )}
+                        disabled={micTogglePending}
+                        className="flex flex-col items-center gap-2 transition-all group w-14"
                     >
-                        <div className={cn(
-                            "w-8 h-8 rounded-xl flex items-center justify-center transition-colors",
-                            isMicEnabled ? "bg-violet-500/10" : "bg-red-500/20"
-                        )}>
-                            {isMicEnabled
-                                ? <Mic className="w-4 h-4 text-violet-500" />
-                                : <MicOff className="w-4 h-4 text-red-500" />
-                            }
+                        <div className={cn("w-12 h-12 rounded-full flex items-center justify-center transition-all", isMicEnabled ? "bg-violet-100 group-hover:bg-violet-200" : "bg-red-50 group-hover:bg-red-100")}>
+                            {isMicEnabled ? <Mic className="w-5 h-5 text-violet-600" /> : <MicOff className="w-5 h-5 text-red-500" />}
                         </div>
-                        <div className="text-left">
-                            <p className="text-[8px] font-black uppercase tracking-[0.2em] text-zinc-500">Microphone</p>
-                            <p className={cn(
-                                "text-[10px] font-bold uppercase tracking-widest",
-                                isMicEnabled ? "text-white" : "text-red-500"
-                            )}>
-                                {micTogglePending ? "Toggling..." : (isMicEnabled ? "Active" : "Muted")}
-                            </p>
-                        </div>
+                        <span className="text-[10px] font-medium text-zinc-600">Mic</span>
                     </button>
-                </div>
-                {/* Middle: Transcript + End Interview Button */}
-                <div className="flex flex-col items-center gap-3">
-                    <Button
-                        variant="destructive"
-                        onClick={() => handleFinish("normal")}
-                        className="h-20 px-16 rounded-[2.5rem] bg-red-600 text-white hover:bg-black hover:text-white font-black uppercase tracking-[0.3em] text-[12px] transition-all shadow-[0_20px_50px_rgba(220,38,38,0.3)] active:scale-95 border-none group"
+
+                    <button
+                        onClick={toggleCamera}
+                        disabled={cameraTogglePending}
+                        className="flex flex-col items-center gap-2 transition-all group w-14"
                     >
-                        <span className="flex items-center gap-3">
-                            Finish Interview
-                            <LogOut className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                        </span>
-                    </Button>
-                </div>
-                <div className="flex justify-end pr-4">
-                    <div className="flex flex-col items-end">
-                        <p className="text-[9px] font-black uppercase tracking-[0.3em] text-zinc-600 mb-1">Session Mode</p>
-                        <p className="text-[11px] font-bold text-white uppercase tracking-widest">{aiParticipantTrack ? "Interviewer Active" : "Seeking Agent..."}</p>
-                    </div>
+                        <div className={cn("w-12 h-12 rounded-full flex items-center justify-center transition-all", isCameraEnabled ? "bg-violet-100 group-hover:bg-violet-200" : "bg-red-50 group-hover:bg-red-100")}>
+                            {isCameraEnabled ? <Video className="w-5 h-5 text-violet-600" /> : <VideoOff className="w-5 h-5 text-red-500" />}
+                        </div>
+                        <span className="text-[10px] font-medium text-zinc-600">Video</span>
+                    </button>
+
+                    <button onClick={() => setInstructionsDialogOpen(true)} className="flex flex-col items-center gap-2 transition-all group w-14">
+                        <div className="w-12 h-12 rounded-full flex items-center justify-center transition-all bg-zinc-100 group-hover:bg-zinc-200">
+                            <AlertCircle className="w-5 h-5 text-zinc-600" />
+                        </div>
+                        <span className="text-[10px] font-medium text-zinc-600">Guidelines</span>
+                    </button>
+
+                    <button onClick={() => setSupportDialogOpen(true)} className="flex flex-col items-center gap-2 transition-all group w-14">
+                        <div className="w-12 h-12 rounded-full flex items-center justify-center transition-all bg-zinc-100 group-hover:bg-zinc-200">
+                            <LifeBuoy className="w-5 h-5 text-zinc-600" />
+                        </div>
+                        <span className="text-[10px] font-medium text-zinc-600">Support</span>
+                    </button>
+
+                    <button onClick={() => handleFinish("normal")} className="flex flex-col items-center gap-2 transition-all group w-14 ml-2">
+                        <div className="w-12 h-12 rounded-[1.2rem] flex items-center justify-center transition-all bg-red-500 group-hover:bg-red-600 shadow-md">
+                            <PhoneOff className="w-5 h-5 text-white" />
+                        </div>
+                        <span className="text-[10px] font-medium text-zinc-600">End Call</span>
+                    </button>
                 </div>
             </div>
         </div>
@@ -2459,8 +2359,34 @@ function VideoTrack({ trackRef }: { trackRef: TrackReference }) {
 function TimeoutThankYouView({ candidateName }: { candidateName: string }) {
     return (
         <div className="w-full max-w-xl mx-auto px-6 text-center">
-            <div className="w-24 h-24 bg-gradient-to-br from-violet-500 to-violet-700 rounded-[2.5rem] flex items-center justify-center mx-auto mb-10 shadow-[0_20px_40px_rgba(124,58,237,0.3)] rotate-3">
-                <CheckCircle2 className="w-12 h-12 text-white" />
+            <div className="relative w-24 h-24 mx-auto mb-10 flex items-center justify-center">
+                <motion.div
+                    animate={{
+                        scale: [1, 1.2, 1],
+                        opacity: [0.5, 0.8, 0.5],
+                    }}
+                    transition={{
+                        duration: 2,
+                        repeat: Infinity,
+                        ease: "easeInOut",
+                    }}
+                    className="absolute inset-0 bg-violet-500/20 rounded-full"
+                />
+                <motion.div
+                    animate={{
+                        scale: [1, 1.5, 1],
+                        opacity: [0.3, 0, 0.3],
+                    }}
+                    transition={{
+                        duration: 2.5,
+                        repeat: Infinity,
+                        ease: "easeInOut",
+                    }}
+                    className="absolute inset-0 bg-violet-400/30 rounded-full"
+                />
+                <div className="relative z-10 w-16 h-16 bg-gradient-to-br from-violet-500 to-violet-700 rounded-full flex items-center justify-center shadow-[0_10px_20px_rgba(124,58,237,0.4)]">
+                    <Sparkles className="w-8 h-8 text-white animate-pulse" />
+                </div>
             </div>
             <h2 className="text-5xl font-black text-gray-900 uppercase italic tracking-tighter mb-6">Thank You</h2>
             <p className="text-sm font-bold text-gray-500 uppercase tracking-[0.2em] leading-relaxed mb-4 max-w-sm mx-auto">
