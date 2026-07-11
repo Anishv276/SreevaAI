@@ -95,6 +95,17 @@ export const interviewStartQueue = new Queue('interview-start', {
     removeOnFail:    { age: TWO_MIN },
   },
 });
+// 9b. Agent-connect timeout — delayed check that fails the interview if the
+// LiveKit agent never actually joins within LAUNCHING (see worker.ts).
+export const interviewLaunchTimeoutQueue = new Queue('interview-launch-timeout', {
+  connection: redisConnection,
+  prefix,
+  defaultJobOptions: {
+    attempts: 1,
+    removeOnComplete: { age: TWO_MIN },
+    removeOnFail:    { age: TWO_MIN },
+  },
+});
 // 10. Pre-generate interview brief at slot confirmation (real candidates only)
 export const briefGenerationQueue = new Queue('brief-generation', {
   connection: redisConnection,
