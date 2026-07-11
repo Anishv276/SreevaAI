@@ -348,7 +348,12 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\('interview/eval_pipeline.py'\\).read\\(\\)\\); print\\('eval_pipeline OK'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('interview/agent_runtime.py', encoding='utf-8'\\).read\\(\\)\\); print\\('agent_runtime OK'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('interview/agent_runtime.py', encoding='utf-8'\\).read\\(\\)\\); print\\('agent_runtime.py OK'\\)\")",
-      "Bash(python -c \"import ast; ast.parse\\(open\\('interview/agent_scoring.py', encoding='utf-8'\\).read\\(\\)\\); print\\('agent_scoring.py OK'\\)\")"
+      "Bash(python -c \"import ast; ast.parse\\(open\\('interview/agent_scoring.py', encoding='utf-8'\\).read\\(\\)\\); print\\('agent_scoring.py OK'\\)\")",
+      "Bash(cp \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\SreevaAI\\\\Logo_svg.png\" \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\\\\public\\\\sreevaai-logo.png\")",
+      "Bash(grep -n \"^\\\\s*\\\\.hero\\\\s*{$\\\\|^\\\\s*\\\\.hero-right\\\\s*{$\\\\|\\\\.hero\\\\s*{\" \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\\\\app\\\\\\(marketing\\)\\\\marketing.css\")",
+      "Bash(grep -n \"^a \\\\|^a{\\\\|^a,\\\\|^button {\\\\|^button{\\\\|^button,\" \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\\\\app\\\\globals.css\")",
+      "Bash(python3 -c ' *)",
+      "Bash(grep -n \"RoiCalculator\\\\|{/\\\\*  ========== ROI\\\\|{/\\\\*  ========== FAQ\" \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\\\\app\\\\\\(marketing\\)\\\\page.tsx\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",
@@ -361,7 +366,8 @@
       "c:\\Users\\vamsi\\OneDrive\\Documents\\SreevaAI\\app\\api\\super-admin\\orgs\\[id]",
       "C:\\Users\\vamsi\\OneDrive\\Documents\\SreevaAI\\app\\admin\\candidates\\drive\\[driveId]",
       "c:\\Users\\vamsi\\OneDrive\\Documents\\SreevaAI\\app\\api\\schedule",
-      "c:\\Users\\vamsi\\OneDrive\\Documents\\SreevaAI\\app\\schedule"
+      "c:\\Users\\vamsi\\OneDrive\\Documents\\SreevaAI\\app\\schedule",
+      "C:\\Users\\vamsi\\OneDrive\\Desktop\\SreevaAI"
     ]
   },
   "enabledPlugins": {

@@ -15,7 +15,7 @@
 .editorial-theme body {
   background: linear-gradient(180deg, #FFFFFF 0%, #FAFAFC 45%, #F5F3FF 100%);
   color: #111827;
-  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  font-family: var(--font-geist-sans);
 }
 
 .editorial-theme input,
@@ -24,7 +24,7 @@
   background-color: #FFFFFF;
   border-color: #E9E7FF;
   color: #111827;
-  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  font-family: var(--font-geist-sans);
 }
 
 .editorial-theme input::placeholder,
@@ -37,5 +37,5 @@
 .editorial-theme button,
 .editorial-theme .btn,
 .editorial-theme [class*="btn"] {
-  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  font-family: var(--font-geist-sans);
 }

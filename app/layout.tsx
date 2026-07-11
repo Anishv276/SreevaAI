@@ -19,9 +19,9 @@ export const metadata: Metadata = {
   authors: [{ name: "Sreeva AI Team" }],
   metadataBase: new URL("https://www.sreevaai.com"),
   icons: {
-    icon: "/sreevaailogo2.png",
-    shortcut: "/sreevaailogo2.png",
-    apple: "/sreevaailogo2.png",
+    icon: "/sreevaai-logo.png",
+    shortcut: "/sreevaai-logo.png",
+    apple: "/sreevaai-logo.png",
   },
   // No root canonical -- each page declares its own via page-level metadata
   openGraph: {
@@ -85,7 +85,7 @@ export default function RootLayout({
         <AuthProvider>
             <Suspense fallback={
               <div className="min-h-screen flex flex-col items-center justify-center bg-white" aria-label="Loading Sreeva AI">
-                <img src="/sreevaailogo2.png" alt="Sreeva AI" className="h-16 w-16 mb-4 animate-pulse" />
+                <img src="/sreevaai-logo.png" alt="Sreeva AI" className="h-16 w-16 mb-4 animate-pulse" />
                 <p className="text-2xl font-bold text-slate-900" aria-hidden="true">Sreeva AI</p>
                 <p className="text-slate-500 mt-2 animate-pulse">Setting up your AI-powered interview environment...</p>
               </div>
