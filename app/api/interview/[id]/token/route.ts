@@ -4,9 +4,13 @@ import { prisma } from "@/lib/prisma";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/job-limits";
 import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
+import { interviewLaunchTimeoutQueue } from "@/lib/queue";
 
 // Window is exactly [scheduledAt, scheduledAt + 5min] -- no pre-open, no waiting room before slot.
 const LATE_CLOSE_MS = 5 * 60 * 1000; // window closes 5 min after slot start
+// How long a candidate may sit in LAUNCHING before we give up on the agent ever
+// connecting and fail the interview server-side (see interview-launch-timeout worker).
+const LAUNCH_TIMEOUT_MS = 5 * 60 * 1000;
 
 async function resolveInterview(applicationId: string) {
     return prisma.application.findUnique({
@@ -48,7 +52,7 @@ function checkSchedulingGate(interview: { interviewScheduledAt: Date | null; int
     }
 
     if (interviewStatus === "FAILED") {
-        return { ok: false, code: "INTERVIEW_FAILED", error: "This interview session has ended. Please contact support@sreevaai.com to reschedule.", status: 409 };
+        return { ok: false, code: "INTERVIEW_FAILED", error: "We couldn't connect you to the interview due to a technical issue. Please contact your recruiter to reschedule.", status: 409 };
     }
 
     if (interviewStatus === "NO_SHOW") {
@@ -156,6 +160,14 @@ export async function POST(
                 where: { applicationId },
                 data: { interviewStatus: "LAUNCHING", interviewStartedAt: new Date() },
             }).catch(() => { });
+            // Server-side backstop: if the agent never actually joins and flips this
+            // to PROGRESS, this delayed job fails the interview so the candidate isn't
+            // stuck forever and a stale LAUNCHING row doesn't block future retries.
+            await interviewLaunchTimeoutQueue.add(
+                "check-launch-timeout",
+                { applicationId },
+                { delay: LAUNCH_TIMEOUT_MS, jobId: `launch-timeout-${applicationId}` }
+            ).catch((e) => { console.error("[TOKEN] Failed to enqueue launch timeout check:", e); });
         }
 
         // Best-effort agent warmup

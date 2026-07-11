@@ -278,12 +278,11 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         setPhase("check");
                     } else {
                         const titleMap: Record<string, string> = {
-                            DRIVE_CLOSED: "Job Posting Expired",
-                            LINK_EXPIRED: "Link Expired",
+                            JOB_CLOSED: "Job Posting Expired",
                             SLOT_EXPIRED: "Slot Expired",
                             NOT_SCHEDULED: "Not Scheduled",
                             INTERVIEW_COMPLETED: "Interview Completed",
-                            INTERVIEW_FAILED: "Interview Ended",
+                            INTERVIEW_FAILED: "Technical Issue",
                             INTERVIEW_IN_PROGRESS: "Interview In Progress",
                         };
                         setBlockedAccessTitle(titleMap[data.code] || "Access Restricted");
@@ -797,15 +796,20 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             window.clearTimeout(stabilizeTimer);
         };
     }, [id, interviewToken, phase, resetToHardwareCheck, requestFullscreenMode]);
-    // Hard timeout: if agent never becomes ready within 1.5 minutes (90s), show a popup and return to check.
+    // Hard timeout: if the agent never becomes ready within 5 minutes, the server-side
+    // interview-launch-timeout job has by now marked the interview FAILED -- surface the
+    // same "technical issue, contact your recruiter" screen instead of bouncing back to
+    // hardware check (retrying is pointless once the row is FAILED).
     useEffect(() => {
         if (phase !== "launching") return;
         if (launchTimeoutCheck >= 300 && !agentReadyCommittedRef.current) {
-            setJoinError("AI interviewer didn't respond in time. Please reload the website and try again.");
             connectionAttemptRef.current += 1;
-            void resetToHardwareCheck("AI interviewer didn't respond in time. Please reload the website and try again.");
+            setBlockedAccessTitle("Technical Issue");
+            setBlockedAccessMessage("We couldn't connect you to the interview due to a technical issue. Please contact your recruiter to reschedule.");
+            setIsInitiallyLocked(true);
+            setPhase("check");
         }
-    }, [launchTimeoutCheck, phase, resetToHardwareCheck]);
+    }, [launchTimeoutCheck, phase]);
     const handleHardwareComplete = async (devices?: { cameraId?: string; micId?: string }) => {
         if (devices) {
             setSelectedCameraId(devices.cameraId);

@@ -1186,6 +1186,55 @@ if (isQueueEnabled("interview-start")) {
   });
 }
 
+/**
+ * AGENT-CONNECT TIMEOUT WORKER
+ * Delayed job enqueued the instant an interview enters LAUNCHING (token/route.ts).
+ * If the LiveKit agent never actually joins and flips the row to PROGRESS/COMPLETED
+ * within the timeout, this fires and marks the interview FAILED so the candidate
+ * isn't stuck forever and the row doesn't permanently block retries.
+ */
+if (isQueueEnabled("interview-launch-timeout")) {
+  const launchTimeoutWorker = trackWorker("interview-launch-timeout", new Worker(
+    "interview-launch-timeout",
+    async (job) => {
+      if (job.name !== "check-launch-timeout") {
+        return { skipped: true, reason: "unsupported_job_name" };
+      }
+      const { applicationId } = job.data || {};
+      if (!applicationId) throw new Error("Missing applicationId in check-launch-timeout job");
+      const result = await prisma.interview.updateMany({
+        where: { applicationId, interviewStatus: "LAUNCHING" },
+        data: { interviewStatus: "FAILED" },
+      });
+      if (result.count > 0) {
+        console.warn(`[LAUNCH-TIMEOUT] App ${applicationId} never reached PROGRESS -- marked FAILED.`);
+        await prisma.application.update({
+          where: { id: applicationId },
+          data: { interviewPhaseStatus: "FAILED" },
+        }).catch(() => { });
+        return { failed: true, applicationId };
+      }
+      return { failed: false, applicationId };
+    },
+    {
+      connection: redisConnection,
+      prefix: BULL_PREFIX,
+      concurrency: 50,
+      lockDuration: 60 * 1000,
+      removeOnComplete: { age: 60 },
+      removeOnFail: { age: 60 },
+    }
+  ));
+  launchTimeoutWorker.on("failed", (job, err) => {
+    console.error(`[FATAL] Launch timeout check ${job?.id} failed: ${err.message}`);
+    logWorkerError({
+      error: err.message,
+      reason: "Interview launch-timeout check failed",
+      context: { jobId: job?.id, applicationId: job?.data?.applicationId },
+    });
+  });
+}
+
 if (isQueueEnabled("recording-retention-cleanup")) {
   setupRetentionCronJobs = async function setupRetentionCronJobs() {
     const retentionQueue = recordingRetentionQueue;
