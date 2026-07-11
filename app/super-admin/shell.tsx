@@ -117,7 +117,7 @@ export default function SuperAdminShell({ children }: { children: React.ReactNod
                 {/* Logo */}
                 <div className="px-5 h-16 flex items-center" style={{ borderBottom: "1px solid #F0EEF8" }}>
                     <div className="flex items-center gap-3">
-                        <img src="/sreevaailogo2.png" alt="Sreeva AI" className="w-8 h-8 object-contain rounded-md flex-shrink-0 shadow-sm" />
+                        <img src="/sreevaai-logo.png" alt="Sreeva AI" className="w-8 h-8 object-contain rounded-md flex-shrink-0 shadow-sm" />
                         <div>
                             <p className="text-[17px] font-bold text-gray-900 tracking-tight leading-none">
                                 Sreeva <span className="text-transparent bg-clip-text" style={{ backgroundImage: "linear-gradient(135deg, #8B5CF6, #3B82F6)" }}>AI</span>

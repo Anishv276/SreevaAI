@@ -107,7 +107,7 @@
     background: linear-gradient(180deg, #FFFFFF 0%, #FAFAFC 45%, #F5F3FF 100%);
     background-attachment: fixed;
     color: #111827;
-    font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+    font-family: var(--font-geist-sans);
     font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1, "cv01" 1;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -116,7 +116,15 @@
   }
 
   * {
-    font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+    font-family: var(--font-geist-sans);
+  }
+
+  a, button, [role="button"], [onclick], summary, label[for] {
+    cursor: pointer;
+  }
+
+  button:disabled, [role="button"][aria-disabled="true"] {
+    cursor: not-allowed;
   }
 
   input, textarea, select {
@@ -373,7 +381,7 @@
   font-weight: 400;
 }
 @utility font-display {
-  font-family: var(--font-geist-sans), "Geist Sans", system-ui, sans-serif;
+  font-family: var(--font-geist-sans);
 }
 
 /* ── Focus ring ──────────────────────────────────────── */
