@@ -13,7 +13,7 @@ import { FaceProctoring } from "@/components/careers/interview/FaceProctoring";
 import { HardwareHeartbeat } from "@/components/careers/interview/HardwareHeartbeat";
 import { ConnectionProctoring } from "@/components/careers/interview/ConnectionProctoring";
 import { CandidateRatingForm } from "@/components/careers/interview/CandidateRatingForm";
-import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/drive-limits";
+import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/job-limits";
 import { useSearchParams } from "next/navigation";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { BASIC_PLAN_SIGNALS, normalizeProctoringSignals } from "@/lib/proctoring-signals";

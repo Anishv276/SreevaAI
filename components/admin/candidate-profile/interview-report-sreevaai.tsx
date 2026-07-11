@@ -252,15 +252,24 @@ function buildIntegritySignals(
       details.push(`Risk: ${display.risk}`);
     }
     // latency_mismatch: per-question breakdown + inter-turn gaps, not a plain count.
+    // Show at most 3 turns to keep the tooltip readable.
     if (r.turns?.length) {
-      for (const t of r.turns) {
-        const qLabel = t.question ? `"${t.question}"` : `turn ${t.turn}`;
-        details.push(`- Took ${t.latency_sec}s to start answering ${qLabel}.`);
-        if (t.gap_before_sec !== null && t.gap_before_sec > 30) {
-          details.push(`- ${t.gap_before_sec}s gap before this turn — larger than expected between questions.`);
+      const SLOW_THRESHOLD = 8;
+      const slowTurns = r.turns.filter(t => t.latency_sec >= SLOW_THRESHOLD);
+
+      if (slowTurns.length > 0) {
+        for (const t of slowTurns.slice(0, 3)) {
+          const qLabel = t.question ? `"${t.question}"` : `turn ${t.turn}`;
+          details.push(`- Unusually slow response: ${t.latency_sec}s to start answering ${qLabel}.`);
         }
+        if (slowTurns.length > 3) {
+          details.push(`- ...and ${slowTurns.length - 3} more slow responses.`);
+        }
+      } else {
+        details.push(`- All ${r.turns.length} responses within normal range (average ${(r.turns.reduce((s, t) => s + t.latency_sec, 0) / r.turns.length).toFixed(1)}s).`);
       }
-    } else if (typeof r.score === "number") {
+    }
+    else if (typeof r.score === "number") {
       // Content-layer signals (answer_integrity) carry a score/reason/quotes
       // instead of a simple occurrence count -- surface those directly.
       details.push(`Score: ${r.score}/100`);
@@ -268,7 +277,8 @@ function buildIntegritySignals(
       if (r.quotes?.length) {
         for (const q of r.quotes) details.push(`Quote: "${q}"`);
       }
-    } else if (r.occurrences?.length) {
+    }
+    else if (r.occurrences?.length) {
       // Per-occurrence "during which question" context, attached by
       // report_pipeline.py's _attach_question_context.
       for (const occ of r.occurrences) {
@@ -288,7 +298,7 @@ function buildIntegritySignals(
     return {
       id: r.key,
       label: title,
-      badge: typeof r.score === "number" ? `${r.score}/100` : r.value,
+      badge: r.value,
       tone: r.bad ? ("rose" as IntelBadgeTone) : ("amber" as IntelBadgeTone),
       details,
     };
@@ -324,7 +334,7 @@ function buildTopStrengthsRisks(args: {
 }
 export function buildSreevaAIInterviewViewModel(i: {
   backHref?: string;
-  candidate: { fullName?: string; createdAt?: string; location?: string; interview?: any; assessment?: any; job?: { role?: string; title?: string } };
+  candidate: { fullName?: string; createdAt?: string; location?: string; interview?: any; assessment?: any; drive?: { role?: string; title?: string } };
   mounted: boolean;
   displayAvatar: string;
   interviewReportScores: Record<string, any>;
@@ -424,17 +434,9 @@ export function buildSreevaAIInterviewViewModel(i: {
     proctoringRows.push({ key: "clean", label: "Session telemetry", value: "No flags", bad: false });
   }
   // Grab integrity score from the raw report if available
-  const rawIntegrityScore = (() => {
-    // Access via isFallbackReport check
-    if (i.isFallbackReport) return 100;
-    const raw = (i as any).candidate?.interview?.aiSkillRatings;
-    if (!raw) return proctoringRows.some((r) => r.bad) ? 65 : 95;
-    try {
-      const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-      const n = Number(parsed?.integrity?.score);
-      return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : (proctoringRows.some((r) => r.bad) ? 65 : 95);
-    } catch { return 95; }
-  })();
+  const rawIntegrityScore = Number.isFinite(i.integrityScore)
+    ? Math.max(0, Math.min(100, i.integrityScore!))
+    : (proctoringRows.some((r) => r.bad) ? 65 : 95);
   const integritySignals = buildIntegritySignals(proctoringRows, rawIntegrityScore, behavAnalysis?.integrity_analysis?.narratives);
   // Skills -- sourced only from skillRatings DB column (agent_persistence.py)
   const skills = (i.interviewReportSkills || [])
@@ -1435,8 +1437,8 @@ export function InterviewReportSreevaAI({
                           <div className={cn(
                             "flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 transition-colors cursor-default",
                             row.tone === "rose" ? "border-rose-100 bg-rose-50/40 hover:bg-rose-50" :
-                            row.tone === "amber" ? "border-amber-100 bg-amber-50/40 hover:bg-amber-50" :
-                            "border-emerald-100 bg-emerald-50/40 hover:bg-emerald-50"
+                              row.tone === "amber" ? "border-amber-100 bg-amber-50/40 hover:bg-amber-50" :
+                                "border-emerald-100 bg-emerald-50/40 hover:bg-emerald-50"
                           )}>
                             <div className="flex items-center gap-2 min-w-0">
                               <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", row.tone === "rose" ? "bg-rose-500" : row.tone === "amber" ? "bg-amber-400" : "bg-emerald-500")} />
@@ -1448,7 +1450,7 @@ export function InterviewReportSreevaAI({
                           </div>
                           {/* Hover reveal: score + bullet-point reasoning behind this signal */}
                           {(row.details?.length ?? 0) > 0 && (
-                            <div className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden w-80 rounded-xl border border-gray-200 bg-white p-3 shadow-xl group-hover:block">
+                            <div className="pointer-events-auto absolute left-0 top-full z-20 hidden w-80 max-h-60 overflow-y-auto rounded-xl border border-gray-200 bg-white p-3 shadow-xl group-hover:block hover:block">
                               <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-gray-400">Why this was flagged</p>
                               <ul className="space-y-1">
                                 {row.details!.map((d, i) => (

@@ -1,4 +1,4 @@
-"""
+﻿"""
 report_pipeline.py
 ==================
 Self-contained post-interview report pipeline.
@@ -161,7 +161,7 @@ class IntegrityEngine:
         "microphone_disabled": -8.0,
         "identity_mismatch": -20.0,
         "connection_lost":   -12.0,
-        "answer_integrity":  -20.0,
+        "answer_integrity":  0.0,
         "session_fingerprint": -20.0,
     }
 
@@ -973,6 +973,14 @@ STEP 1 — Read the transcript fully. Form your opinions before outputting anyth
   Do NOT invent minor nitpicks just to fill the list. Some candidates genuinely have no real concerns, and
   some genuinely have several — base the count strictly on what the transcript actually shows, in either
   direction.
+
+CONTRADICTION RULE:
+  Do NOT list "admitted uncertainty", "was honest about not knowing", or any similar
+  phrasing as a strength when the same candidate also failed to demonstrate knowledge
+  of that topic. Being honest about a gap is not a differentiating strength — it is the
+  bare minimum. A strength must be a genuinely positive signal, not merely the absence
+  of dishonesty. If you flag a concern about topic X, you cannot also list "admitted
+  they didn't know X" as a strength. Choose one or the other.
 
 
 
