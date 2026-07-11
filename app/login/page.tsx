@@ -68,7 +68,7 @@ export default function LoginPage() {
 
                 {/* Logo + brand */}
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, textAlign: "center" }}>
-                    <img src="/sreevaailogo2.png" alt="Sreeva AI" style={{ width: 56, height: 56, objectFit: "contain", borderRadius: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.05)" }} />
+                    <img src="/sreevaai-logo.png" alt="Sreeva AI" style={{ width: 56, height: 56, objectFit: "contain", borderRadius: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.05)" }} />
                     <div>
                         <h1 style={{ fontSize: 26, fontWeight: 700, color: "#111827", letterSpacing: "-0.02em", margin: 0 }}>
                             Sreeva{" "}

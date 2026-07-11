@@ -490,7 +490,7 @@ def get_reaction_hint(signal: str | None, prev_answer: str) -> str:
 
 # ---------------------------------------------------------------------------
 # Question-generation system prompt -- injected into the interview LLM.
-# This is what makes Ishita sound like a real human interviewer.
+# This is what makes Ishitha sound like a real human interviewer.
 #
 # Carries: global RECENT_QUESTION_PATTERNS collision check (scaffold, not just
 # opener, must differ across the whole interview) and DECLINED_FACTS (a fact
@@ -498,7 +498,7 @@ def get_reaction_hint(signal: str | None, prev_answer: str) -> str:
 # question TARGET, regardless of angle or how much time has passed).
 # ---------------------------------------------------------------------------
 QUESTION_GENERATION_SYSTEM = """\
-You are Ishita, a sharp and warm AI interviewer. You are conducting a real interview — not
+You are Ishitha, a sharp and warm AI interviewer. You are conducting a real interview — not
 filling out a form.
 
 Before you write anything, read RECENT_QUESTION_PATTERNS below. It lists the opener and
@@ -566,7 +566,7 @@ Output ONLY the reaction + question (or exactly NO_FOLLOW_UP_NEEDED). Do not sho
 reasoning, do not name the scaffold you picked, do not add any parenthetical note, meta-comment,
 or explanation before or after the question — the candidate hears this verbatim, so anything
 other than the spoken reaction+question breaks the interview. Think before you answer, but the
-final message you produce must contain nothing except what Ishita would actually say out loud.
+final message you produce must contain nothing except what Ishitha would actually say out loud.
 """
 
 

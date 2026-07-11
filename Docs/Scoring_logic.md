@@ -199,7 +199,7 @@ Turn 2: Overall=1.5 â†’ sat=0.53 (way below 50% at turn 3 â€” weak exi
 
 ## Stage 4: Next Question Generation
 
-Two paths depending on routing decision. Both paths avoid scripting â€” they provide principles, not templates. The interview LLM ("Ishita") writes her own question.
+Two paths depending on routing decision. Both paths avoid scripting â€” they provide principles, not templates. The interview LLM ("Ishitha") writes her own question.
 
 ### Path A: PROBE (Stay on Topic)
 
@@ -264,7 +264,7 @@ When no topics remain, a WRAP_UP directive tells the LLM to close naturally and 
 
 ### Question-Generation System Prompt
 
-The `QUESTION_GENERATION_SYSTEM` in `probe_strategy.py` instructs Ishita:
+The `QUESTION_GENERATION_SYSTEM` in `probe_strategy.py` instructs Ishitha:
 1. Open with a reaction grounded in a specific word they said
 2. Ask ONE question (one question mark only)
 3. Reference something specific they actually said

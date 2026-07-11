@@ -216,7 +216,7 @@ export default function SchedulePage({ params }: PageProps) {
                     {/* Left: Details */}
                     <div className="p-8 md:w-72 flex-shrink-0">
                         <div className="mb-6">
-                            <img src="/sreevaailogo2.png" alt="Sreeva AI" className="h-8 object-contain" />
+                            <img src="/sreevaai-logo.png" alt="Sreeva AI" className="h-8 object-contain" />
                         </div>
                         <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">{info?.orgName}</p>
                         <h1 className="text-xl font-bold text-gray-900 mb-6 leading-snug">{info?.jobTitle}</h1>

@@ -819,7 +819,7 @@ function TestPageContent() {
             <div className="w-full flex items-center justify-between border-b bg-white/90 backdrop-blur-xl border-[#F0EEF8] shadow-sm z-[100] shrink-0 px-6 py-3 min-h-[64px]">
                 <div className="flex items-center gap-6">
                     <div className="flex items-center gap-3 pr-6 border-r border-[#F0EEF8]/80">
-                        <img src="/sreevaailogo2.png" alt="SreevaAI" className="w-8 h-8 object-contain rounded-lg" />
+                        <img src="/sreevaai-logo.png" alt="SreevaAI" className="w-8 h-8 object-contain rounded-lg" />
                         <div className="hidden sm:block">
                             <h1 className="text-[15px] font-bold text-gray-900 tracking-tight">SreevaAI</h1>
                             <p className="text-[11px] font-semibold text-violet-600 tracking-wider uppercase mt-0.5">Simulation</p>

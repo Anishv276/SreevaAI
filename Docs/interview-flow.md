@@ -15,7 +15,7 @@
         ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │ WARMUP (candidate joins, greetings, ~30-60s)                   │
-│  • Ishita greets candidate                                      │
+│  • Ishitha greets candidate                                      │
 │  • Candidate replies → fixed warmup text → readiness check     │
 │  • 20-min timer STARTS after greeting                          │
 └──────────────────────────────────────────────────────────────────┘
@@ -24,7 +24,7 @@
 ┌──────────────────────────────────────────────────────────────────┐
 │ MAIN INTERVIEW (up to 20 min, turn by turn)                    │
 │  • Turn loop: candidate speaks → STT cleanup → eval →         │
-│    directive → Ishita asks next question                       │
+│    directive → Ishitha asks next question                       │
 │  • Per-turn: response signal → content scoring + signal →      │
 │    saturation update → routing → probe or move-on             │
 │  • At T-10s: goodbye script, break loop                       │
@@ -138,8 +138,8 @@ Candidate Joins Room
         │
         ▼
 ┌──────────────────────────────┐
-│ Ishita delivers greeting     │
-│ "Hi {name}, I'm Ishita..."  │
+│ Ishitha delivers greeting     │
+│ "Hi {name}, I'm Ishitha..."  │
 │ 20-min timer STARTS here     │
 │ (session_start_time set)     │
 └──────────────────────────────┘
@@ -268,15 +268,15 @@ Candidate Joins Room
 │     [RECENT_CONTEXT])                                                  │
 │   • Add new directive as system message                                │
 │   • Set agent._directive_ready → LLM generates response                │
-│   • Ishita speaks the next question via TTS                            │
+│   • Ishitha speaks the next question via TTS                            │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### The LLM Gate (agent_runtime.py:934)
 
-The `InterviewAgent.llm_node` blocks on `_directive_ready.wait()` when eval is in flight (11s timeout). This ensures Ishita never speaks while the eval pipeline is running — she waits for the directive first.
+The `InterviewAgent.llm_node` blocks on `_directive_ready.wait()` when eval is in flight (11s timeout). This ensures Ishitha never speaks while the eval pipeline is running — she waits for the directive first.
 
-On MOVE_ON, all user+assistant messages are stripped from chat context before the directive is injected, so Ishita opens fresh on the new topic.
+On MOVE_ON, all user+assistant messages are stripped from chat context before the directive is injected, so Ishitha opens fresh on the new topic.
 
 ### Main Interview Loop (agent_runtime.py:4003-4186)
 
@@ -504,7 +504,7 @@ TIMELINE (20 min total):
 
 ```
 ┌──────┬──────────┬───────────┬──────────┬──────────┬────────────────────────────────────────────────────────┐
-│ Turn │ Time     │ Topic     │ Overall  │ Signal   │ Ishita Says                                              │
+│ Turn │ Time     │ Topic     │ Overall  │ Signal   │ Ishitha Says                                              │
 ├──────┼──────────┼───────────┼──────────┼──────────┼────────────────────────────────────────────────────────┤
 │  1   │ 0:30     │ Spring    │   3.1    │ tool_    │ "You mentioned Spring Boot — what did you actually       │
 │      │          │ Boot      │          │ named_   │ build with it?"                                          │
@@ -600,7 +600,7 @@ I'll simplify the walkthrough to avoid confusing saturation math — let me prov
 
 ```
 ╔══════╤════════╤═══════════════╤══════════╤══════════════════╤══════════════════════════════════════╗
-║ Turn │ Time   │ Topic         │ Overall  │ Signal           │ Ishita Says                         ║
+║ Turn │ Time   │ Topic         │ Overall  │ Signal           │ Ishitha Says                         ║
 ╠══════╪════════╪═══════════════╪══════════╪══════════════════╪══════════════════════════════════════╣
 ║  1   │ 0:30   │ Lead Gen      │   3.5    │ tool_named_not_  │ "You mentioned n8n — what did you   ║
 ║      │        │ Pipeline      │          │ used             │ actually build with it?"            ║

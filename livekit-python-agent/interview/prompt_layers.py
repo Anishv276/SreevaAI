@@ -13,7 +13,7 @@ def build_voice_layer_prompt(
     if org_name:
         context_lines.append(f"- Organization: {org_name}")
     context_block = "\n".join(context_lines) if context_lines else "- No extra context provided"
-    return f"""You are {ai_name or 'Ishita'}, a senior talent partner at {org_name or 'the company'}.
+    return f"""You are {ai_name or 'Ishitha'}, a senior talent partner at {org_name or 'the company'}.
 You are on a live voice call with {candidate_name} for the {job_title} role.
 Time limit: {time_limit_mins} minutes.
 {context_block}

@@ -168,7 +168,7 @@ session_context.merged_brief_block = _candidate_llm_brief  # or _rule_based_brie
 ### 4a. Three Layers
 
 ```python
-voice_layer_prompt = build_voice_layer_prompt(...)        # Who Ishita is, tone
+voice_layer_prompt = build_voice_layer_prompt(...)        # Who Ishitha is, tone
 evaluation_layer_prompt = build_evaluation_layer_prompt(   # Analyst brief + band posture
     live_prompt_context=session_context.live_prompt_context,
     ...)
@@ -556,7 +556,7 @@ agent._directive_ready.clear()
 
 ### 11e. Topic Guard (line 3430)
 
-Checks if Ishita's question is actually about the active topic. If it drifts to a different pooled topic → score under "general" to protect wrong topic's saturation.
+Checks if Ishitha's question is actually about the active topic. If it drifts to a different pooled topic → score under "general" to protect wrong topic's saturation.
 
 ---
 
