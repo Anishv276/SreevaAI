@@ -72,21 +72,21 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
         return selected.gender === "male" ? "Ishaan" : "Ishitha";
     };
 
-    const currentVoiceId = formData.voiceId || DEFAULT_VOICE_ID;
+    const currentVoiceId = formData.aiInterviewerVoiceId || DEFAULT_VOICE_ID;
 
     const getAvailableVoices = () => {
-        const whitelist: string[] = Array.isArray(formData.allowedVoices) ? formData.allowedVoices : [];
+        const whitelist: string[] = Array.isArray(formData.allowedVoiceIds) ? formData.allowedVoiceIds : [];
         return whitelist.length === 0 ? [] : voices.filter(v => whitelist.includes(v.id));
     };
 
     const handleVoiceChange = (voiceId: string) => {
-        updateFormData((prev: any) => ({ ...prev, voiceId, aiName: getAiNameForVoice(voiceId) }));
+        updateFormData((prev: any) => ({ ...prev, aiInterviewerVoiceId: voiceId, aiInterviewerName: getAiNameForVoice(voiceId) }));
     };
 
     const playSample = async (e?: ReactMouseEvent, overrideVoiceId?: string, overrideName?: string) => {
         if (e) { e.preventDefault(); e.stopPropagation(); }
         const voiceId = overrideVoiceId || currentVoiceId;
-        const aiName = overrideName || formData.aiName || "Ishitha";
+        const aiName = overrideName || formData.aiInterviewerName || "Ishitha";
         if (activeAudio && overrideVoiceId && overrideVoiceId === playingVoiceId) { stopCurrentPreview(); return; }
         if (activeAudio && !overrideVoiceId) { stopCurrentPreview(); return; }
         const transcript = `Hi, I'm ${aiName}, are you ready for the interview?`;
@@ -156,12 +156,12 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
     const addQuestion = (e?: ReactMouseEvent | ReactKeyboardEvent) => {
         if (e) { e.preventDefault(); e.stopPropagation(); }
         if (!newQuestion.trim()) return;
-        updateFormData((prev: any) => ({ ...prev, interviewQuestions: [...safeArray(prev.interviewQuestions), newQuestion.trim()] }));
+        updateFormData((prev: any) => ({ ...prev, aiGeneratedInterviewQuestions: [...safeArray(prev.aiGeneratedInterviewQuestions), newQuestion.trim()] }));
         setNewQuestion("");
     };
 
     const removeQuestion = (index: number) => {
-        updateFormData((prev: any) => ({ ...prev, interviewQuestions: safeArray(prev.interviewQuestions).filter((_: any, i: number) => i !== index) }));
+        updateFormData((prev: any) => ({ ...prev, aiGeneratedInterviewQuestions: safeArray(prev.aiGeneratedInterviewQuestions).filter((_: any, i: number) => i !== index) }));
     };
 
     const currentVoice = voices.find(v => v.id === currentVoiceId);
@@ -181,8 +181,8 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                         <div className="h-12 w-12 rounded-xl overflow-hidden flex items-center justify-center bg-violet-100"
                             style={{ border: "2px solid rgba(139,92,246,0.3)" }}>
                             <img
-                                src={formData.aiName === "Ishaan" ? "/avatars/ishaan.png" : "/avatars/ishitha.png"}
-                                alt={formData.aiName || "Ishitha"}
+                                src={formData.aiInterviewerName === "Ishaan" ? "/avatars/ishaan.png" : "/avatars/ishitha.png"}
+                                alt={formData.aiInterviewerName || "Ishitha"}
                                 className="w-full h-full object-cover"
                                 onError={(e) => { e.currentTarget.style.display = "none"; }}
                             />
@@ -190,7 +190,7 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                         <div className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-emerald-400 border-2 border-white" />
                     </div>
                     <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-900">{formData.aiName || "Ishitha"}</p>
+                        <p className="text-sm font-semibold text-gray-900">{formData.aiInterviewerName || "Ishitha"}</p>
                         <p className="text-xs text-gray-400">{currentVoice?.description || "AI Interviewer"}</p>
                     </div>
                     {/* Play button */}
@@ -321,9 +321,9 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                         <Plus className="w-4 h-4" />
                     </button>
                 </div>
-                {safeArray(formData.interviewQuestions).length > 0 && (
+                {safeArray(formData.aiGeneratedInterviewQuestions).length > 0 && (
                     <div className="space-y-2">
-                        {safeArray(formData.interviewQuestions).map((q: string, i: number) => (
+                        {safeArray(formData.aiGeneratedInterviewQuestions).map((q: string, i: number) => (
                             <div key={i} className="group flex items-start gap-3 px-3.5 py-2.5 rounded-xl bg-white transition-all hover:shadow-sm"
                                 style={{ border: "1px solid #E9E7FF" }}>
                                 <span className="mt-0.5 text-xs font-semibold text-[#7C3AED] bg-violet-50 h-5 w-5 rounded-lg flex items-center justify-center flex-shrink-0">{i + 1}</span>
@@ -339,7 +339,7 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                         ))}
                     </div>
                 )}
-                {safeArray(formData.interviewQuestions).length === 0 && (
+                {safeArray(formData.aiGeneratedInterviewQuestions).length === 0 && (
                     <p className="text-xs text-gray-400">No questions added yet. AI may suggest some based on the JD.</p>
                 )}
             </div>

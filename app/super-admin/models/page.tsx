@@ -20,9 +20,9 @@ const LLM_PIPELINE_FIELDS = [
 ] as const;
 
 type OrgSummary = {
-  id: string; name: string; slug: string;
-  sttModel: string; ttsProvider: string; ttsModel: string; ttsSpeed: number; voiceId: string;
-  allowedVoices: string[];
+  id: string; name: string; urlSlug: string;
+  sttModel: string; ttsProvider: string; ttsModel: string; ttsSpeed: number; defaultVoiceId: string;
+  allowedVoiceIds: string[];
   llmResumeExtraction: string; llmJdExtraction: string; llmResumeReport: string;
   llmInterviewLive: string; llmInterviewEval: string; llmInterviewBrief: string; llmInterviewReport: string;
 };
@@ -94,7 +94,7 @@ export default function ModelsPage() {
   const [search, setSearch] = useState("");
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
   const [config, setConfig] = useState<OrgConfig | null>(null);
-  const [dirty, setDirty] = useState<Partial<OrgConfig & { allowedVoices: string[]; ttsSpeed: number }>>({});
+  const [dirty, setDirty] = useState<Partial<OrgConfig & { allowedVoiceIds: string[]; ttsSpeed: number }>>({});
   const [saving, setSaving] = useState(false);
   const [selectableVoices, setSelectableVoices] = useState<typeof ALL_VOICES>(ALL_VOICES);
 
@@ -124,16 +124,16 @@ export default function ModelsPage() {
       const provider = value as TtsProvider;
       const firstModel = getTtsModelsForProvider(provider)[0]?.id;
       if (firstModel) {
-        setDirty(prev => ({ ...prev, ttsModel: firstModel, allowedVoices: [] }));
-        setConfig(prev => prev ? { ...prev, ttsModel: firstModel, allowedVoices: [] } : prev);
+        setDirty(prev => ({ ...prev, ttsModel: firstModel, allowedVoiceIds: [] }));
+        setConfig(prev => prev ? { ...prev, ttsModel: firstModel, allowedVoiceIds: [] } : prev);
       }
     }
   };
 
   const toggleVoice = (voiceId: string) => {
-    const current: string[] = config?.allowedVoices ?? [];
+    const current: string[] = config?.allowedVoiceIds ?? [];
     const next = current.includes(voiceId) ? current.filter(id => id !== voiceId) : [...current, voiceId];
-    patch("allowedVoices", next);
+    patch("allowedVoiceIds", next);
   };
 
   const save = async () => {
@@ -160,14 +160,14 @@ export default function ModelsPage() {
 
   const filteredOrgs = orgs.filter(o =>
     o.name.toLowerCase().includes(search.toLowerCase()) ||
-    o.slug.toLowerCase().includes(search.toLowerCase())
+    o.urlSlug.toLowerCase().includes(search.toLowerCase())
   );
 
   const hasDirty = Object.keys(dirty).length > 0;
   const currentTtsProvider = (config?.ttsProvider ?? "ELEVENLABS") as TtsProvider;
   const ttsModelsForProvider = getTtsModelsForProvider(currentTtsProvider);
   const voicesForProvider = selectableVoices.filter(v => v.provider === currentTtsProvider);
-  const selectedVoiceIds: string[] = config?.allowedVoices ?? [];
+  const selectedVoiceIds: string[] = config?.allowedVoiceIds ?? [];
 
   return (
     // Fixed height layout: left panel fixed, right panel scrolls
@@ -241,7 +241,7 @@ export default function ModelsPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className={`text-sm font-semibold truncate ${isActive ? "text-violet-700" : "text-gray-800"}`}>{org.name}</p>
-                      <p className="text-xs text-gray-400 truncate">{org.slug}</p>
+                      <p className="text-xs text-gray-400 truncate">{org.urlSlug}</p>
                     </div>
                     <ChevronRight className={`h-3.5 w-3.5 flex-shrink-0 ${isActive ? "text-violet-500" : "text-gray-300 group-hover:text-gray-500"}`} />
                   </button>

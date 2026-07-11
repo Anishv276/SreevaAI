@@ -57,21 +57,21 @@ import { ALL_VOICES } from "@/lib/constants/voices";
 interface Org {
     id: string;
     name: string;
-    slug: string;
-    plan: string;
+    urlSlug: string;
+    billingPlan: string;
     status: string;
-    usageMetrics?: Record<string, unknown> | null;
+    platformUsageMetrics?: Record<string, unknown> | null;
     adminCount: number;
     jobCount: number;
     candidateCount: number;
     // AI Config (Setup)
-    voiceId?: string;
-    allowedVoices?: string[];
+    defaultVoiceId?: string;
+    allowedVoiceIds?: string[];
     deepgramModel?: string;
-    creditsUsed?: number;
+    billingCreditsUsed?: number;
     interviewsCompleted?: number;
-    interviewQuotaTotal?: number;
-    interviewQuotaUsed?: number;
+    totalInterviewsAllowed?: number;
+    totalInterviewsUsed?: number;
     interviewCount?: number;
     _count?: {
         users: number;
@@ -258,7 +258,7 @@ export default function OrgsPage() {
         { key: "interviewLLMGeneration", label: "LLM - Interview Question Generation" },
     ];
     const getBillingFeature = (org: Org, key: BillingFeatureKey): BillingFeatureMetrics => {
-        const usage = (org.usageMetrics ?? {}) as Record<string, any>;
+        const usage = (org.platformUsageMetrics ?? {}) as Record<string, any>;
         const billing = usage.billing ? (usage.billing as Record<string, any>) : usage;
         return (billing[key] ?? {}) as BillingFeatureMetrics;
     };
@@ -295,16 +295,16 @@ export default function OrgsPage() {
         ))).filter(Boolean);
     };
     const getConfiguredTtsVoices = (org: Org) => {
-        const ids = Array.isArray(org.allowedVoices) && org.allowedVoices.length > 0
-            ? org.allowedVoices
-            : org.voiceId ? [org.voiceId] : [];
+        const ids = Array.isArray(org.allowedVoiceIds) && org.allowedVoiceIds.length > 0
+            ? org.allowedVoiceIds
+            : org.defaultVoiceId ? [org.defaultVoiceId] : [];
         return ids
             .map((id) => ALL_VOICES.find((v) => v.id === id))
             .filter(Boolean) as typeof ALL_VOICES;
     };
-    const getUsageSummary = (usageMetrics?: Record<string, unknown> | null) => {
-        if (!usageMetrics || typeof usageMetrics !== "object") return fmt(0);
-        const cost = getOrgTotalBillingCost({ usageMetrics } as any);
+    const getUsageSummary = (platformUsageMetrics?: Record<string, unknown> | null) => {
+        if (!platformUsageMetrics || typeof platformUsageMetrics !== "object") return fmt(0);
+        const cost = getOrgTotalBillingCost({ platformUsageMetrics } as any);
         return fmt(cost);
     };
     const fetchOrgs = async (currentPage = page, query = search, dateRange = timeFilter) => {
@@ -496,9 +496,9 @@ export default function OrgsPage() {
                                                 <div className="flex flex-col min-w-0">
                                                     <span className="text-gray-900 font-bold text-[12px] truncate">{cleanName(org.name)}</span>
                                                     <div className="flex items-center gap-1.5 mt-0.5">
-                                                        <span className="text-[10px] font-medium text-gray-400 truncate uppercase">{formatOrgPlan(org.plan) || "Starter"}</span>
+                                                        <span className="text-[10px] font-medium text-gray-400 truncate uppercase">{formatOrgPlan(org.billingPlan) || "Starter"}</span>
                                                         <span className="text-[10px] text-gray-300">•</span>
-                                                        <span className="text-[9px] text-gray-400 truncate">{org.slug}</span>
+                                                        <span className="text-[9px] text-gray-400 truncate">{org.urlSlug}</span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -513,13 +513,13 @@ export default function OrgsPage() {
                                             {org.candidateCount || 0}
                                         </td>
                                         <td className="px-4 py-4 text-center font-bold text-gray-500 text-[11px] tabular-nums">
-                                            {org.creditsUsed || 0}
+                                            {org.billingCreditsUsed || 0}
                                         </td>
                                         <td className="px-4 py-4 text-center font-bold text-emerald-600 text-[11px] tabular-nums">
-                                            {Math.max(0, (org.interviewQuotaTotal || 0) - (org.interviewQuotaUsed || 0))}
+                                            {Math.max(0, (org.totalInterviewsAllowed || 0) - (org.totalInterviewsUsed || 0))}
                                         </td>
                                         <td className="px-4 py-4 text-center font-bold text-blue-600 text-[11px] tabular-nums">
-                                            {org.interviewQuotaUsed || 0}
+                                            {org.totalInterviewsUsed || 0}
                                         </td>
                                         <td className="px-4 py-4 text-center">
                                             <DropdownMenu>
@@ -710,13 +710,13 @@ export default function OrgsPage() {
                                 <div className="flex items-center gap-5 mt-2">
                                     <div className="flex items-center gap-1.5">
                                         <span className="text-xs font-medium text-gray-400">Minutes Used:</span>
-                                        <span className="text-sm font-semibold text-gray-900 tabular-nums">{Number(metricsOrg.creditsUsed || 0).toFixed(2)} min</span>
+                                        <span className="text-sm font-semibold text-gray-900 tabular-nums">{Number(metricsOrg.billingCreditsUsed || 0).toFixed(2)} min</span>
                                     </div>
                                     <div className="w-px h-3" style={{ background: "#E9E7FF" }} />
                                     <div className="flex items-center gap-1.5">
                                         <span className="text-xs font-medium text-gray-400">Interview Balance:</span>
-                                        <span className="text-sm font-semibold text-emerald-600 tabular-nums">{Math.max(0, (metricsOrg.interviewQuotaTotal || 0) - (metricsOrg.interviewQuotaUsed || 0))}</span>
-                                        <span className="text-xs text-gray-300">/ {metricsOrg.interviewQuotaTotal || 0}</span>
+                                        <span className="text-sm font-semibold text-emerald-600 tabular-nums">{Math.max(0, (metricsOrg.totalInterviewsAllowed || 0) - (metricsOrg.totalInterviewsUsed || 0))}</span>
+                                        <span className="text-xs text-gray-300">/ {metricsOrg.totalInterviewsAllowed || 0}</span>
                                     </div>
                                 </div>
                             </div>

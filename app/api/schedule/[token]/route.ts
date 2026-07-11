@@ -49,7 +49,7 @@ export async function GET(
     if (interview.interviewScheduledAt) {
         return NextResponse.json({ error: "Slot already booked", alreadyBooked: true, scheduledAt: interview.interviewScheduledAt }, { status: 409 });
     }
-    if (["COMPLETED", "IN_PROGRESS"].includes(interview.interviewStatus)) {
+    if (["COMPLETED", "LAUNCHING", "PROGRESS"].includes(interview.interviewStatus)) {
         return NextResponse.json({ error: "Interview already started or completed" }, { status: 409 });
     }
 
@@ -158,7 +158,7 @@ export async function POST(
     // Book the slot
     await prisma.interview.update({
         where: { id: interview.id },
-        data: { interviewScheduledAt: slotDate, interviewTimezone: TIMEZONE },
+        data: { interviewScheduledAt: slotDate, interviewTimezone: TIMEZONE, interviewStatus: "SCHEDULED" },
     });
 
     // Enqueue background brief generation (slot flow only — NOT for test interviews)

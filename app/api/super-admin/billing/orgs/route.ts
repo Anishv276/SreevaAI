@@ -24,9 +24,9 @@ export async function GET() {
     return NextResponse.json({
         orgs: orgs.map((org) => ({
         ...org,
-        interviewQuotaTotal: Number(org.totalInterviewsAllowed || 0),
-        interviewQuotaUsed: Number(org.totalInterviewsUsed || 0),
-        creditsUsed: Number(org.billingCreditsUsed || 0),
+        totalInterviewsAllowed: Number(org.totalInterviewsAllowed || 0),
+        totalInterviewsUsed: Number(org.totalInterviewsUsed || 0),
+        billingCreditsUsed: Number(org.billingCreditsUsed || 0),
       })),
     });
   } catch (error) {

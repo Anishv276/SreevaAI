@@ -28,7 +28,7 @@ type OrgFormState = {
   plan: OrgPlanId;
   maxActiveJobs: string;
   maxConcurrentSlots: string;
-  interviewQuotaTotal: string;
+  totalInterviewsAllowed: string;
   recordingEnabled: boolean;
   recordingRetentionDays: string;
   proctoringSignals: ProctoringSignalToggles;
@@ -216,7 +216,7 @@ export default function NewOrgPage() {
     plan: DEFAULT_ORG_PLAN,
     maxActiveJobs: "Unlimited",
     maxConcurrentSlots: "5",
-    interviewQuotaTotal: "100",
+    totalInterviewsAllowed: "100",
     recordingEnabled: false,
     recordingRetentionDays: "",
     proctoringSignals: getProctoringSignalsForPlan(DEFAULT_ORG_PLAN),
@@ -284,7 +284,7 @@ export default function NewOrgPage() {
           adminPassword: form.adminPassword,
           maxActiveJobs: form.maxActiveJobs,
           maxConcurrentSlots: Number(form.maxConcurrentSlots || 5),
-          interviewQuotaTotal: Number(form.interviewQuotaTotal || 0),
+          totalInterviewsAllowed: Number(form.totalInterviewsAllowed || 0),
           recordingEnabled: form.recordingEnabled ? true : null,
           recordingRetentionDays: form.recordingEnabled ? Number(form.recordingRetentionDays) : null,
           proctoringSignals: form.proctoringSignals,
@@ -424,8 +424,8 @@ export default function NewOrgPage() {
             <TextInput
               label="Total Interviews Allocated"
               icon={Coins}
-              value={form.interviewQuotaTotal}
-              onChange={(value) => updateForm({ interviewQuotaTotal: value })}
+              value={form.totalInterviewsAllowed}
+              onChange={(value) => updateForm({ totalInterviewsAllowed: value })}
               placeholder="100"
               type="number"
             />

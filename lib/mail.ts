@@ -129,9 +129,6 @@ export async function sendInterviewInviteEmail({
         </td></tr>
         <tr><td style="padding:24px 36px 8px;text-align:center;">
           ${ctaButton(interviewLink, "Start AI Interview")}
-          <p style="margin:14px 0 0;font-size:12px;color:#b0b0b0;">Button not working? Copy this link:<br/>
-            <span style="color:#737373;word-break:break-all;">${interviewLink}</span>
-          </p>
         </td></tr>
         ${footerRow(`Sent by ${orgName} via Sreeva AI · ${email} · Results reviewed within 24–48 hours.`)}
     `);
@@ -408,9 +405,6 @@ export async function sendInterviewScheduledEmail({
         </td></tr>
         <tr><td style="padding:24px 36px 8px;text-align:center;">
           ${ctaButton(interviewLink, "Join Interview")}
-          <p style="margin:14px 0 0;font-size:12px;color:#b0b0b0;">Button not working? Copy this link:<br/>
-            <span style="color:#737373;word-break:break-all;">${interviewLink}</span>
-          </p>
         </td></tr>
         ${footerRow(`Sent by ${orgName} via Sreeva AI · ${email} · Results reviewed within 24–48 hours.`)}
     `);

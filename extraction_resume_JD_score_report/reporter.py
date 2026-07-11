@@ -9,7 +9,8 @@ What's new vs v1:
   score_result["grounding_warnings"].
 - Criteria breakdown passed to reporter so it can write criterion-level explanations
   (what drove the score up/down) rather than vague summaries.
-- decision_reason fallback is tighter: 4 sentences minimum, structured format.
+- decision_reason is a full multi-sentence paragraph walking through the score
+  breakdown, must-have coverage, and decisive factor -- no template fallback.
 """
 from __future__ import annotations
 
@@ -85,56 +86,6 @@ def _verify_grounding(report: dict, resume_data: dict) -> list[str]:
     return warnings
 
 
-def _is_weak_decision_reason(text: str) -> bool:
-    if not text or not text.strip():
-        return True
-    weak_markers = [
-        "ai screening analysis complete",
-        "report generation failed",
-        "decision note unavailable",
-        "re-scan to generate",
-    ]
-    if any(m in text.lower() for m in weak_markers):
-        return True
-    sentences = [s.strip() for s in re.split(r"[.!?]", text) if s.strip()]
-    return len(sentences) < 3
-
-
-def _decision_reason_fallback(score_result: dict, resume_data: dict) -> str:
-    status = score_result.get("status", "Borderline")
-    name = resume_data.get("full_name") or "This candidate"
-    matched = score_result.get("skill_matching", {}).get("matched_must", [])
-    missing = score_result.get("skill_matching", {}).get("missing_must", [])
-    cy = score_result.get("candidate_years")
-    jm = score_result.get("jd_min_years")
-    top = matched[0] if matched else "core role skills"
-    tail = f", {', '.join(matched[1:3])}" if len(matched) > 1 else ""
-    gap_text = ", ".join(missing[:2]) if missing else "must-have depth"
-    yr_text = f"{cy} years" if cy else "available experience"
-    req_text = f"{jm} years required" if jm else "the role requirement"
-
-    if status == "Shortlisted":
-        return (
-            f"{name} is shortlisted based on direct evidence for {top}{tail} in work history. "
-            f"The profile shows {yr_text} against {req_text}, with ownership signals supporting advancement. "
-            f"The primary risk to validate is {gap_text if missing else 'production-grade depth beyond listed skills'}. "
-            f"Advance to the technical round and probe architecture decisions, delivery scope, and measurable outcomes for {top}."
-        )
-    if status == "Rejected":
-        return (
-            f"{name} is rejected because the resume lacks direct evidence for critical requirements, especially {gap_text}. "
-            f"The profile shows {yr_text} versus {req_text}, and ownership evidence is below the bar for this role. "
-            f"The gap between listed skills and proven delivery outcomes is the decisive factor, despite partial positives in {top}. "
-            "Reconsider only if updated evidence shows clear production ownership, scope, and measurable impact for the missing requirements."
-        )
-    return (
-        f"{name} is borderline because strengths in {top} are offset by unresolved gaps in {gap_text}. "
-        f"The profile shows {yr_text} against {req_text}, and ownership depth is inconsistent across roles. "
-        f"The core concern is uneven evidence quality across must-have criteria. "
-        f"Use the next round as a decision gate to verify production depth and delivery ownership in {top}."
-    )
-
-
 def generate_report(
     jd_data: dict,
     resume_data: dict,
@@ -191,10 +142,6 @@ def generate_report(
     warnings = _verify_grounding(report, resume_data)
     score_result.setdefault("grounding_warnings", []).extend(warnings)
 
-    # Fallback for weak decision_reason
-    if _is_weak_decision_reason(report.get("decision_reason", "")):
-        report["decision_reason"] = _decision_reason_fallback(score_result, resume_data)
-
     # Patch missing fit_radar axes from score breakdown
     radar = report.get("fit_radar") or {}
     bd = score_result.get("breakdown", {})
@@ -210,6 +157,11 @@ def generate_report(
         radar["evidence_quality"] = min(100, round(bd.get("career_score", 0) / max(bd.get("career_max", 15), 1) * 100))
     report["fit_radar"] = radar
 
+    import os
+    import sys
+    _agent_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "livekit-python-agent")
+    if _agent_dir not in sys.path:
+        sys.path.insert(0, _agent_dir)  # billing/billing.py lives here (see commit 82e7fba)
     from billing.billing import extract_usage  # noqa: PLC0415
     usage = extract_usage(completion, report_model)
 

@@ -80,7 +80,7 @@ export async function POST(
     const safeJobTitle = job.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
 
     const billingStatus = await getOrgBillingStatus(job.organizationId);
-    if (billingStatus.interviewQuotaTotal > 0 && !billingStatus.hasSufficientInterviews) {
+    if (billingStatus.totalInterviewsAllowed > 0 && !billingStatus.hasSufficientInterviews) {
       return NextResponse.json(
         {
           error: getInterviewQuotaSupportMessage("interviews"),

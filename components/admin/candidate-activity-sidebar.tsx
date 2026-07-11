@@ -20,7 +20,7 @@ type CandidateDetails = {
     updatedAt?: string;
     aiReport?: unknown;
     interview?: {
-        inviteSentAt?: string | null;
+        inviteEmailSentAt?: string | null;
     } | null;
 };
 type Props = {
@@ -127,12 +127,12 @@ export function CandidateActivitySidebar({ open, candidateId, candidateName, bac
                 source: "system",
             });
         }
-        if (candidate.interview?.inviteSentAt) {
+        if (candidate.interview?.inviteEmailSentAt) {
             fallback.push({
                 type: "interview_invite_sent",
                 label: "Interview link sent",
-                details: `Invite sent at ${formatTimestamp(candidate.interview.inviteSentAt)}`,
-                timestamp: candidate.interview.inviteSentAt,
+                details: `Invite sent at ${formatTimestamp(candidate.interview.inviteEmailSentAt)}`,
+                timestamp: candidate.interview.inviteEmailSentAt,
                 source: "system",
             });
         }

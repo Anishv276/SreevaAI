@@ -1,5 +1,9 @@
 ﻿import { spawn } from "child_process";
+import path from "path";
 import { getPythonExecutable } from "./python-exec";
+
+// billing/billing.py lives under livekit-python-agent (see commit 82e7fba)
+const BILLING_CWD = path.join(process.cwd(), "livekit-python-agent");
 
 // chatbot removed: feature is no longer active
 export type BillingFeature =
@@ -41,7 +45,7 @@ function hasBillableUsage(usage: BillingUsage) {
 function runBillingCommand(command: string, payload: Record<string, unknown>) {
   return new Promise<void>((resolve, reject) => {
     const child = spawn(getPythonExecutable(), ["-m", "billing.billing", command], {
-      cwd: process.cwd(),
+      cwd: BILLING_CWD,
       env: process.env,
       stdio: ["pipe", "pipe", "pipe"],
     });

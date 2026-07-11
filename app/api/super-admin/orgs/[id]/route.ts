@@ -33,12 +33,12 @@ export async function GET(
             }
         });
         const billingRows = await prisma.$queryRaw<Array<{
-            interviewQuotaTotal: number | null;
-            interviewQuotaUsed: number | null;
-            creditsUsed: number | null;
+            totalInterviewsAllowed: number | null;
+            totalInterviewsUsed: number | null;
+            billingCreditsUsed: number | null;
         }>>(
             Prisma.sql`
-                SELECT "totalInterviewsAllowed" AS "interviewQuotaTotal", "totalInterviewsUsed" AS "interviewQuotaUsed", "billingCreditsUsed" AS "creditsUsed"
+                SELECT "totalInterviewsAllowed", "totalInterviewsUsed", "billingCreditsUsed"
                 FROM "OrganizationDetails"
                 WHERE id = ${id}
                 LIMIT 1
@@ -51,9 +51,9 @@ export async function GET(
         return NextResponse.json({
             ...org,
             status: String(effectiveStatus || org.orgStatus || "ACTIVE").toUpperCase(),
-            interviewQuotaTotal: billingRows[0]?.interviewQuotaTotal ?? 0,
-            interviewQuotaUsed: billingRows[0]?.interviewQuotaUsed ?? 0,
-            creditsUsed: billingRows[0]?.creditsUsed ?? 0,
+            totalInterviewsAllowed: billingRows[0]?.totalInterviewsAllowed ?? 0,
+            totalInterviewsUsed: billingRows[0]?.totalInterviewsUsed ?? 0,
+            billingCreditsUsed: billingRows[0]?.billingCreditsUsed ?? 0,
         });
     } catch (error) {
         console.error("Error fetching org:", error);
@@ -74,21 +74,21 @@ export async function PATCH(
         const rawBody = await request.text();
         const body = rawBody.trim() ? JSON.parse(rawBody) : {};
         const {
-            name, plan, status, slug, maxActiveJobs,
+            name, billingPlan, status, urlSlug, maxActiveJobs,
             recordingEnabled, recordingRetentionDays,
             proctoringSignals,
             adminEmail,
             adminPassword,
-            voiceId, allowedVoices,
-            usageMetrics,
-            interviewQuotaTotal,
+            defaultVoiceId, allowedVoiceIds,
+            platformUsageMetrics,
+            totalInterviewsAllowed,
             interviewQuotaTopUp,
             maxConcurrentSlots,
         } = body;
         const parsedInterviewQuotaTopUp =
             interviewQuotaTopUp !== undefined ? Math.max(0, Math.round(Number(interviewQuotaTopUp) || 0)) : undefined;
         const parsedInterviewQuotaTotal =
-            interviewQuotaTotal !== undefined ? Math.max(0, Math.round(Number(interviewQuotaTotal) || 0)) : undefined;
+            totalInterviewsAllowed !== undefined ? Math.max(0, Math.round(Number(totalInterviewsAllowed) || 0)) : undefined;
         const shouldApplyInterviewQuotaTopUp =
             parsedInterviewQuotaTopUp !== undefined && parsedInterviewQuotaTopUp > 0;
         const existingOrg = await prisma.organizationDetails.findUnique({
@@ -124,15 +124,15 @@ export async function PATCH(
                     ? ORG_STATUS_CONTROL_QUOTA
                     : undefined;
         // -- INPUT VALIDATION --------------------------------
-        if (plan && !isOrgPlan(plan)) {
+        if (billingPlan && !isOrgPlan(billingPlan)) {
             return NextResponse.json({ error: "Invalid organization plan" }, { status: 400 });
         }
         if (status && !["ACTIVE", "SUSPENDED", "PENDING", "DEACTIVATED", "CLOSED"].includes(status)) {
             return NextResponse.json({ error: "Invalid organization status" }, { status: 400 });
         }
-        if (usageMetrics) {
-            if (typeof usageMetrics !== "object" && typeof usageMetrics !== "string") {
-                return NextResponse.json({ error: "usageMetrics must be an object or JSON string" }, { status: 400 });
+        if (platformUsageMetrics) {
+            if (typeof platformUsageMetrics !== "object" && typeof platformUsageMetrics !== "string") {
+                return NextResponse.json({ error: "platformUsageMetrics must be an object or JSON string" }, { status: 400 });
             }
         }
         const currentInterviewQuotaTotal = Math.max(0, Math.round(Number(existingOrg.totalInterviewsAllowed || 0)));
@@ -144,16 +144,16 @@ export async function PATCH(
         const statusOnlyFieldsPresent =
             status !== undefined &&
             name === undefined &&
-            plan === undefined &&
-            slug === undefined &&
+            billingPlan === undefined &&
+            urlSlug === undefined &&
             maxActiveJobs === undefined &&
             recordingEnabled === undefined &&
             recordingRetentionDays === undefined &&
             proctoringSignals === undefined &&
             adminEmail === undefined &&
             adminPassword === undefined &&
-            voiceId === undefined &&
-            allowedVoices === undefined &&
+            defaultVoiceId === undefined &&
+            allowedVoiceIds === undefined &&
             interviewQuotaTopUp === undefined;
         const shouldSyncQuotaStatus = shouldUpdateInterviewQuotaTotal || shouldApplyInterviewQuotaTopUp;
         if (statusOnlyFieldsPresent && !shouldSyncQuotaStatus) {
@@ -171,11 +171,11 @@ export async function PATCH(
                 statusControl: nextStatusControl ?? currentStatusControl,
             });
         }
-        const normalizedPlan = plan !== undefined ? (normalizeOrgPlan(plan) || DEFAULT_ORG_PLAN) : null;
+        const normalizedPlan = billingPlan !== undefined ? (normalizeOrgPlan(billingPlan) || DEFAULT_ORG_PLAN) : null;
         // Build update - only write fields that were sent
         const updateData: Record<string, unknown> = {};
         if (name !== undefined) updateData.name = name;
-        if (plan !== undefined) updateData.billingPlan = normalizedPlan || plan;
+        if (billingPlan !== undefined) updateData.billingPlan = normalizedPlan || billingPlan;
         if (maxActiveJobs !== undefined && String(maxActiveJobs).trim() !== "") {
             updateData.maxActiveJobs = normalizeOrgLimitInput(maxActiveJobs);
         }
@@ -188,7 +188,7 @@ export async function PATCH(
         if (status !== undefined) {
             updateData.orgStatus = directStatus;
         }
-        if (slug !== undefined) updateData.urlSlug = slug;
+        if (urlSlug !== undefined) updateData.urlSlug = urlSlug;
         const currentRecordingRetentionDays = normalizeRecordingRetentionDays(existingOrg.recordingKeepForDays);
         const currentRecordingEnabled =
             existingOrg.isRecordingEnabled === true && currentRecordingRetentionDays !== null;
@@ -215,23 +215,23 @@ export async function PATCH(
         }
         Object.assign(
             updateData,
-            normalizeOrgAiConfig({ voiceId, allowedVoices })
+            normalizeOrgAiConfig({ defaultVoiceId, allowedVoiceIds })
         );
         // Usage metrics -- internal API cost tracking, untouched by billing
-        if (usageMetrics !== undefined) {
-            if (typeof usageMetrics === "string") {
-                const trimmed = usageMetrics.trim();
+        if (platformUsageMetrics !== undefined) {
+            if (typeof platformUsageMetrics === "string") {
+                const trimmed = platformUsageMetrics.trim();
                 if (!trimmed) {
                     updateData.platformUsageMetrics = {};
                 } else {
                     try {
                         updateData.platformUsageMetrics = JSON.parse(trimmed);
                     } catch {
-                        return NextResponse.json({ error: "usageMetrics must be valid JSON" }, { status: 400 });
+                        return NextResponse.json({ error: "platformUsageMetrics must be valid JSON" }, { status: 400 });
                     }
                 }
             } else {
-                updateData.platformUsageMetrics = usageMetrics ?? {};
+                updateData.platformUsageMetrics = platformUsageMetrics ?? {};
             }
         }
         // -- EMAIL CONFLICT CHECK ----------------------------
@@ -329,12 +329,12 @@ export async function PATCH(
                 }
             }
             const billingRows = await tx.$queryRaw<Array<{
-                interviewQuotaTotal: number | null;
-                interviewQuotaUsed: number | null;
-                creditsUsed: number | null;
+                totalInterviewsAllowed: number | null;
+                totalInterviewsUsed: number | null;
+                billingCreditsUsed: number | null;
             }>>(
                 Prisma.sql`
-                    SELECT "totalInterviewsAllowed" AS "interviewQuotaTotal", "totalInterviewsUsed" AS "interviewQuotaUsed", "billingCreditsUsed" AS "creditsUsed"
+                    SELECT "totalInterviewsAllowed", "totalInterviewsUsed", "billingCreditsUsed"
                     FROM "OrganizationDetails"
                     WHERE id = ${id}
                     LIMIT 1
@@ -342,9 +342,9 @@ export async function PATCH(
             );
             return {
                 ...org,
-                interviewQuotaTotal: billingRows[0]?.interviewQuotaTotal ?? 0,
-                interviewQuotaUsed: billingRows[0]?.interviewQuotaUsed ?? 0,
-                creditsUsed: billingRows[0]?.creditsUsed ?? 0,
+                totalInterviewsAllowed: billingRows[0]?.totalInterviewsAllowed ?? 0,
+                totalInterviewsUsed: billingRows[0]?.totalInterviewsUsed ?? 0,
+                billingCreditsUsed: billingRows[0]?.billingCreditsUsed ?? 0,
             };
         });
         const result: Record<string, unknown> = { ...updated };

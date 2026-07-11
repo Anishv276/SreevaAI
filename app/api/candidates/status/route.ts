@@ -44,26 +44,20 @@ export async function GET(request: Request) {
                         interviewStartedAt: true,
                         interviewCompletedAt: true,
                         durationInSeconds: true,
-                        inviteLinkStatus: true,
                     }
                 }
             },
             orderBy: { appliedAt: "desc" }
         });
         const formattedApplications = applications.map((app: any) => {
-            const effectiveLinkStatus = app.interview
-                ? (app.interview.inviteLinkStatus || "ACTIVE")
-                : null;
             const interviewStage = app.interview
                 ? {
-                    status: app.interview.interviewStatus,
-                    token: app.interview.candidateInviteToken,
-                    accessToken: app.interview.candidateInviteToken,
-                    expiresAt: app.interview.inviteLinkExpiresAt,
+                    interviewStatus: app.interview.interviewStatus,
+                    candidateInviteToken: app.interview.candidateInviteToken,
+                    inviteLinkExpiresAt: app.interview.inviteLinkExpiresAt,
                     mode: "DEADLINE",
-                    linkStatus: effectiveLinkStatus,
                     canStart: (() => {
-                        if (app.interview.interviewStatus !== "PENDING") return false;
+                        if (!["PENDING", "SCHEDULED"].includes(app.interview.interviewStatus)) return false;
                         const startedAtMs = app.interview.interviewStartedAt ? new Date(app.interview.interviewStartedAt).getTime() : null;
                         const nowMs = Date.now();
                         const withinRejoinWindow = startedAtMs === null || nowMs <= startedAtMs + 5 * 60 * 1000;
@@ -71,7 +65,6 @@ export async function GET(request: Request) {
                     })(),
                     interviewLink: buildInterviewLink(appUrl, app.id, {
                         token: isInterviewTokenRequired() ? app.interview.candidateInviteToken : null,
-                        orgName: app.job?.organization?.name || "Sreeva AI",
                     }),
                 }
                 : null;

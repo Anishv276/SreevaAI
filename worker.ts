@@ -187,7 +187,6 @@ async function processInterviewStartJob(job: any) {
       interviewStartedAt: true,
       interviewStatus: true,
       candidateInviteToken: true,
-      inviteLinkStatus: true,
     },
   });
   if (existingInterview?.interviewStartedAt) {
@@ -209,17 +208,15 @@ async function processInterviewStartJob(job: any) {
   await prisma.interview.upsert({
     where: { applicationId },
     update: {
-      interviewStatus: "IN_PROGRESS",
+      interviewStatus: "LAUNCHING",
       interviewStartedAt: startedAtCandidate,
-      inviteLinkStatus: "EXPIRED",
     },
     create: {
       id: generateId("int", applicationId),
       applicationId,
       candidateInviteToken: interviewAccessToken,
-      interviewStatus: "IN_PROGRESS",
+      interviewStatus: "LAUNCHING",
       interviewStartedAt: startedAtCandidate,
-      inviteLinkStatus: "EXPIRED",
     },
   });
   await prisma.application.update({
@@ -233,8 +230,7 @@ async function processInterviewStartJob(job: any) {
     success: true,
     applicationId,
     startedAt: startedAtCandidate.toISOString(),
-    linkStatus: "EXPIRED",
-    interviewStatus: "IN_PROGRESS",
+    interviewStatus: "LAUNCHING",
   };
 }
 async function processRecordingRetentionSweepJob(job: any) {
@@ -409,7 +405,7 @@ async function persistInterviewUpdateRaw(params: {
   await prisma.$executeRawUnsafe(
     `
     INSERT INTO "Interview" ("id", "applicationId", "candidateInviteToken", "interviewStatus", "fullTranscript", "sessionRecording", "interviewCompletedAt", "interviewCreatedAt", "interviewUpdatedAt")
-    VALUES ($6::text, $1::text, $7::text, COALESCE($2::text, 'IN_PROGRESS'), $4::text, COALESCE($8::jsonb, '{}'::jsonb), CASE WHEN $2::text = 'COMPLETED' THEN $5::timestamp ELSE NULL END, $5::timestamp, $5::timestamp)
+    VALUES ($6::text, $1::text, $7::text, COALESCE($2::text, 'PROGRESS'), $4::text, COALESCE($8::jsonb, '{}'::jsonb), CASE WHEN $2::text = 'COMPLETED' THEN $5::timestamp ELSE NULL END, $5::timestamp, $5::timestamp)
     ON CONFLICT ("applicationId")
     DO UPDATE SET
       "interviewStatus" = COALESCE($2::text, "Interview"."interviewStatus"),
@@ -1010,7 +1006,6 @@ if (isQueueEnabled("invitation-delivery-queue")) {
               interviewStartedAt: null,
               interviewCompletedAt: null,
               inviteLinkExpiresAt: jobDeadline,
-              inviteLinkStatus: "ACTIVE",
             },
             create: {
               id: generateId("int", application.candidateFullName || applicationId),
@@ -1019,7 +1014,6 @@ if (isQueueEnabled("invitation-delivery-queue")) {
               inviteEmailSentAt: now,
               interviewStatus: "PENDING",
               inviteLinkExpiresAt: jobDeadline,
-              inviteLinkStatus: "ACTIVE",
             },
           });
           scheduleLink = `${appUrl}/schedule/${interviewRecord.candidateInviteToken}`;
@@ -1098,6 +1092,12 @@ if (isQueueEnabled("invitation-delivery-queue")) {
       context: { jobId: job?.id, applicationId: job?.data?.applicationId },
     });
   });
+  invitationDeliveryWorker.on("active", (job) => {
+    console.log(`[invitation-delivery-queue] ▶ Started: id="${job.id}" action="${job.data?.action}" app="${job.data?.applicationId}"`);
+  });
+  invitationDeliveryWorker.on("completed", (job) => {
+    console.log(`[invitation-delivery-queue] ✓ Ended: id="${job.id}" action="${job.data?.action}" app="${job.data?.applicationId}"`);
+  });
 }
 if (isQueueEnabled("recording-retention-cleanup")) {
   const recordingRetentionWorker = trackWorker("recording-retention-cleanup", new Worker(
@@ -1132,6 +1132,12 @@ if (isQueueEnabled("recording-retention-cleanup")) {
       reason: "Recording retention cleanup job failed permanently",
       context: { jobId: job?.id, applicationId: job?.data?.applicationId },
     });
+  });
+  recordingRetentionWorker.on("active", (job) => {
+    console.log(`[recording-retention-cleanup] ▶ Started: id="${job.id}" name="${job.name}"`);
+  });
+  recordingRetentionWorker.on("completed", (job) => {
+    console.log(`[recording-retention-cleanup] ✓ Ended: id="${job.id}" name="${job.name}"`);
   });
 }
 /**
@@ -1169,6 +1175,12 @@ if (isQueueEnabled("interview-start")) {
       reason: "Interview start job failed permanently",
       context: { jobId: job?.id, applicationId: job?.data?.applicationId },
     });
+  });
+  interviewStartWorker.on("active", (job) => {
+    console.log(`[interview-start] ▶ Started: id="${job.id}" app="${job.data?.applicationId}"`);
+  });
+  interviewStartWorker.on("completed", (job) => {
+    console.log(`[interview-start] ✓ Ended: id="${job.id}" app="${job.data?.applicationId}"`);
   });
 }
 
@@ -1290,7 +1302,7 @@ if (isQueueEnabled("interview-finalization")) {
               id: generateId("int", appForId?.candidateFullName || applicationId),
               applicationId,
               candidateInviteToken: crypto.randomUUID(),
-              interviewStatus: job.data?.interviewStatus || "IN_PROGRESS",
+              interviewStatus: job.data?.interviewStatus || "PROGRESS",
               ...updateData,
             },
           });
@@ -1395,6 +1407,12 @@ if (isQueueEnabled("interview-finalization")) {
       reason: "Interview finalization job failed permanently",
       context: { jobId: job?.id, applicationId: job?.data?.applicationId },
     });
+  });
+  interviewFinalizationWorker.on("active", (job) => {
+    console.log(`[interview-finalization] ▶ Started: id="${job.id}" app="${job.data?.applicationId}"`);
+  });
+  interviewFinalizationWorker.on("completed", (job) => {
+    console.log(`[interview-finalization] ✓ Ended: id="${job.id}" app="${job.data?.applicationId}"`);
   });
 }
 /**
@@ -1613,6 +1631,12 @@ if (isQueueEnabled("interview-recording")) {
       phase: "recording_finalize",
     });
   });
+  interviewRecordingWorker.on("active", (job) => {
+    console.log(`[interview-recording] ▶ Started: id="${job.id}" app="${job.data?.applicationId}"`);
+  });
+  interviewRecordingWorker.on("completed", (job) => {
+    console.log(`[interview-recording] ✓ Ended: id="${job.id}" app="${job.data?.applicationId}"`);
+  });
 }
 /**
  * ðŸ“¸ INTERVIEW SNAPSHOT WORKER
@@ -1702,6 +1726,12 @@ if (isQueueEnabled("interview-snapshots")) {
       context: { jobId: job?.id, applicationId: job?.data?.applicationId },
     });
   });
+  interviewSnapshotWorker.on("active", (job) => {
+    console.log(`[interview-snapshots] ▶ Started: id="${job.id}" app="${job.data?.applicationId}"`);
+  });
+  interviewSnapshotWorker.on("completed", (job) => {
+    console.log(`[interview-snapshots] ✓ Ended: id="${job.id}" app="${job.data?.applicationId}"`);
+  });
 }
 /**
  * ðŸ“„ JD UPLOAD WORKER
@@ -1767,6 +1797,12 @@ if (isQueueEnabled("jd-upload")) {
         context: { jobId: job?.id },
       });
     }
+  });
+  jdUploadWorker.on("active", (job) => {
+    console.log(`[jd-upload] ▶ Started: id="${job.id}" key="${job.data?.key}"`);
+  });
+  jdUploadWorker.on("completed", (job) => {
+    console.log(`[jd-upload] ✓ Ended: id="${job.id}" key="${job.data?.key}"`);
   });
 }
 

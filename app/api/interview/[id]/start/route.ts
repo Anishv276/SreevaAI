@@ -33,7 +33,6 @@ export async function POST(
         inviteLinkExpiresAt: true,
         interviewStartedAt: true,
         interviewStatus: true,
-        inviteLinkStatus: true,
       },
     });
     if (!interview) {
@@ -42,7 +41,6 @@ export async function POST(
     if (requireInterviewToken && interview.candidateInviteToken !== interviewToken) {
       return NextResponse.json({ error: "Invalid interview token" }, { status: 401 });
     }
-    const startNow = Date.now();
     const interviewRecordStatus = String(interview.interviewStatus || "").toUpperCase();
     if (interviewRecordStatus === "COMPLETED" || interviewRecordStatus === "NO_SHOW") {
       return NextResponse.json({
@@ -51,23 +49,11 @@ export async function POST(
       }, { status: 409 });
     }
     if (interview.interviewStartedAt) {
-      if (interview.inviteLinkStatus === "EXPIRED") {
-        return NextResponse.json({
-          error: "Access Denied: Interview link has expired. Please contact support.",
-          code: "LINK_EXPIRED",
-        }, { status: 403 });
-      }
       return NextResponse.json({
         success: true,
         alreadyStarted: true,
         startedAt: interview.interviewStartedAt,
       });
-    }
-    if (interview.inviteLinkStatus === "EXPIRED") {
-      return NextResponse.json({
-        error: "Access Denied: Interview link has expired. Please contact support.",
-        code: "LINK_EXPIRED",
-      }, { status: 403 });
     }
     await interviewStartQueue.add(
       "mark-interview-started",

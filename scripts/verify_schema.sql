@@ -106,7 +106,6 @@ FROM (VALUES
   ('Interview', 'billingSnapshotAtCompletion'),
   ('Interview', 'proctoringEvents'),
   ('Interview', 'proctoringAnalysis'),
-  ('Interview', 'inviteLinkStatus'),
   ('Interview', 'perQuestionAnalysis'),
   ('Interview', 'aiScoreBreakdown'),
   ('Interview', 'aiInterviewSummary'),

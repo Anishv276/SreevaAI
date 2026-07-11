@@ -73,7 +73,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                                     {job.title}
                                 </h1>
                                 <p className="mt-3 max-w-2xl text-sm font-medium text-gray-500">
-                                    {job.role || "Job Description"}
+                                    {job.jobRole || "Job Description"}
                                 </p>
                             </div>
                         </div>

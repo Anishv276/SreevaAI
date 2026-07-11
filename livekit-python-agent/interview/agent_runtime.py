@@ -1418,7 +1418,7 @@ async def entrypoint(ctx: JobContext):
         await _fail_interview("context_parse_failed")
         return
     # GUARD: Prevent re-entry if interview is already completed
-    if ctx_data.interviewStatus and str(ctx_data.interviewStatus).strip().upper() in ("COMPLETED", "NO_SHOW", "ABANDONED", "FAILED"):
+    if ctx_data.interviewStatus and str(ctx_data.interviewStatus).strip().upper() in ("COMPLETED", "NO_SHOW", "FAILED"):
         logger.warning(
             f"[GUARD] Interview {app_id} is already {ctx_data.interviewStatus}. "
             f"Rejecting duplicate job dispatch. Exiting immediately."

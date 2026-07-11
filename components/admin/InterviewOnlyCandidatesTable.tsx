@@ -36,7 +36,11 @@ function interviewStatusKey(v?: string) {
 function interviewStatusLabel(v?: string) {
     const k = interviewStatusKey(v);
     if (k === "completed" || k === "finished") return "Completed";
-    if (k === "inprogress" || k === "in progress") return "In Progress";
+    if (k === "launching") return "Launching";
+    if (k === "progress" || k === "inprogress" || k === "in progress") return "In Progress";
+    if (k === "scheduled") return "Scheduled";
+    if (k === "no show" || k === "noshow") return "No Show";
+    if (k === "failed") return "Failed";
     if (k === "pending") return "Pending";
     return k.replace(/\b\w/g, c => c.toUpperCase()) || "Pending";
 }
@@ -282,7 +286,7 @@ export function InterviewOnlyCandidatesTable({ jobId, refreshKey }: { jobId: str
                             const statusLbl = interviewStatusLabel(candidate.interviewStatus);
                             const isDone = statusKey === "completed" || statusKey === "finished";
                             const isInProgress = statusKey === "in progress" || statusKey === "inprogress";
-                            const inviteSentAt = candidate.interview?.inviteSentAt || candidate.inviteSentAt;
+                            const inviteSentAt = candidate.interview?.inviteEmailSentAt || candidate.inviteSentAt;
                             const initials = displayName.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase();
 
                             return (

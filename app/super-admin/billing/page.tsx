@@ -11,8 +11,8 @@ type OrgSummary = {
   slug: string;
   plan: string;
   status: string;
-  interviewQuotaTotal: number;
-  interviewQuotaUsed: number;
+  totalInterviewsAllowed: number;
+  totalInterviewsUsed: number;
 };
 export default function SuperAdminBillingPage() {
   const [orgs, setOrgs] = React.useState<OrgSummary[]>([]);
@@ -69,7 +69,7 @@ export default function SuperAdminBillingPage() {
   const historyUrl = selectedOrgId
     ? `/api/super-admin/billing/history?orgId=${encodeURIComponent(selectedOrgId)}&`
     : "/api/super-admin/billing/history?";
-  const interviewRemaining = selectedOrg ? Math.max(0, selectedOrg.interviewQuotaTotal - selectedOrg.interviewQuotaUsed) : 0;
+  const interviewRemaining = selectedOrg ? Math.max(0, selectedOrg.totalInterviewsAllowed - selectedOrg.totalInterviewsUsed) : 0;
   return (
     <div className="space-y-6 pb-10 animate-in fade-in duration-500">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -124,7 +124,7 @@ export default function SuperAdminBillingPage() {
               <div className="space-y-1">
                 {filteredOrgs.map((org) => {
                   const isActive = org.id === selectedOrgId;
-                  const remainingInterviews = Math.max(0, org.interviewQuotaTotal - org.interviewQuotaUsed);
+                  const remainingInterviews = Math.max(0, org.totalInterviewsAllowed - org.totalInterviewsUsed);
                   return (
                     <button
                       key={org.id}

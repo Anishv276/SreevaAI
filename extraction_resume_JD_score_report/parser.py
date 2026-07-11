@@ -52,6 +52,9 @@ def _llm(client: OpenAI, system: str, user: str, model: str) -> tuple[dict, dict
     content = completion.choices[0].message.content
     if not content:
         raise ValueError(f"Empty response from {model}")
+    _agent_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "livekit-python-agent")
+    if _agent_dir not in sys.path:
+        sys.path.insert(0, _agent_dir)  # billing/billing.py lives here (see commit 82e7fba)
     from billing.billing import extract_usage  # noqa: PLC0415
     return json.loads(content), extract_usage(completion, model)
 

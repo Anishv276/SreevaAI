@@ -165,7 +165,7 @@ function ResumeRadarPlot({
                 dominantBaseline="middle"
                 fontSize="11"
                 fontWeight={isHov ? "700" : "500"}
-                style={{ fill: isHov ? "#0EA5E9" : "#6B7280", fontFamily: "var(--font-geist-sans, system-ui, sans-serif)" }}
+                style={{ fill: isHov ? "#0EA5E9" : "#6B7280", fontFamily: "var(--font-geist-sans)" }}
               >
                 {multiLine ? (
                   <>
@@ -664,26 +664,12 @@ export function buildSreevaAIResumeViewModel(i: {
     skillRows,
     careerLines,
     resumeUrl: c.resumeUrl || null,
-    reviewStrip: (() => {
-      // Use LLM-generated decision_reason as the primary note -- it's a recruiter narrative
-      // covering skills, experience, strengths, and gaps from the full report.
-      // Human layer summary is an internal technical scorecard string, not for display.
-      const aiReason = i.decisionReason
-        ? String(i.decisionReason)
-            .replace(/\[EV-[^\]]+\]/g, "")   // strip citation tags
-            .replace(/\s+/g, " ")
-            .trim()
-        : "";
-      if (aiReason.length > 10) return aiReason;
-      // Fallback: generate a minimal note from score data
-      const verdictWord = decisionStamp === "SHORTLISTED" ? "Shortlisted" : decisionStamp === "REJECTED" ? "Rejected" : "Borderline";
-      const skillM = i.skillMatching as any;
-      const matched = Array.isArray(skillM?.matched_must) ? skillM.matched_must : [];
-      const missing = Array.isArray(skillM?.missing_must) ? skillM.missing_must : [];
-      const matchStr = matched.length ? `Matched: ${matched.slice(0, 3).join(", ")}.` : "";
-      const missStr = missing.length ? ` Missing: ${missing.slice(0, 2).join(", ")}.` : "";
-      return `${verdictWord}.${matchStr ? " " + matchStr : ""}${missStr}`.trim();
-    })(),
+    reviewStrip: i.decisionReason
+      ? String(i.decisionReason)
+          .replace(/\[EV-[^\]]+\]/g, "")   // strip citation tags
+          .replace(/\s+/g, " ")
+          .trim()
+      : "",
   };
 }
 

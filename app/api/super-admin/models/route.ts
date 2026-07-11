@@ -30,6 +30,7 @@ export async function GET(req: NextRequest) {
         sttModel: true,
         ttsProvider: true,
         ttsModel: true,
+        ttsSpeed: true,
         defaultVoiceId: true,
         allowedVoiceIds: true,
         llmResumeExtraction: true,
@@ -42,14 +43,7 @@ export async function GET(req: NextRequest) {
       },
       orderBy: { name: "asc" },
     });
-    return NextResponse.json({
-      orgs: orgs.map(({ defaultVoiceId, allowedVoiceIds, urlSlug, ...rest }) => ({
-        ...rest,
-        slug: urlSlug,
-        voiceId: defaultVoiceId,
-        allowedVoices: allowedVoiceIds,
-      })),
-    });
+    return NextResponse.json({ orgs });
   }
 
   const org = await prisma.organizationDetails.findFirst({
@@ -61,6 +55,7 @@ export async function GET(req: NextRequest) {
       sttModel: true,
       ttsProvider: true,
       ttsModel: true,
+      ttsSpeed: true,
       defaultVoiceId: true,
       allowedVoiceIds: true,
       llmResumeExtraction: true,
@@ -73,10 +68,7 @@ export async function GET(req: NextRequest) {
     },
   });
   if (!org) return NextResponse.json({ error: "Org not found" }, { status: 404 });
-  const { defaultVoiceId, allowedVoiceIds, urlSlug, ...rest } = org;
-  return NextResponse.json({
-    org: { ...rest, slug: urlSlug, voiceId: defaultVoiceId, allowedVoices: allowedVoiceIds },
-  });
+  return NextResponse.json({ org });
 }
 
 // PATCH /api/super-admin/models -- update org's AI config
@@ -95,35 +87,32 @@ export async function PATCH(req: NextRequest) {
   if (fields.sttModel && !ALLOWED_STT_IDS.has(fields.sttModel)) errors.push(`Invalid sttModel: ${fields.sttModel}`);
   if (fields.ttsProvider && !["ELEVENLABS", "CARTESIA", "SARVAM"].includes(fields.ttsProvider)) errors.push(`Invalid ttsProvider: ${fields.ttsProvider}`);
   if (fields.ttsModel && !ALLOWED_TTS_IDS.has(fields.ttsModel)) errors.push(`Invalid ttsModel: ${fields.ttsModel}`);
-  if (fields.voiceId && !ALLOWED_VOICE_IDS.has(fields.voiceId)) errors.push(`Invalid voiceId: ${fields.voiceId}`);
+  if (fields.ttsSpeed !== undefined && (typeof fields.ttsSpeed !== "number" || fields.ttsSpeed < 0.5 || fields.ttsSpeed > 2.0)) errors.push(`Invalid ttsSpeed: ${fields.ttsSpeed}`);
+  if (fields.defaultVoiceId && !ALLOWED_VOICE_IDS.has(fields.defaultVoiceId)) errors.push(`Invalid defaultVoiceId: ${fields.defaultVoiceId}`);
   for (const llmField of ["llmResumeExtraction","llmJdExtraction","llmResumeReport","llmInterviewLive","llmInterviewEval","llmInterviewBrief","llmInterviewReport"] as const) {
     if (fields[llmField] && !ALLOWED_LLM_IDS.has(fields[llmField])) errors.push(`Invalid ${llmField}: ${fields[llmField]}`);
   }
   if (errors.length) return NextResponse.json({ error: errors.join("; ") }, { status: 400 });
 
-  // Only update the fields that were sent. Request/response wire contract keeps
-  // the old field names (voiceId/allowedVoices); map to the renamed DB columns here.
-  const updateData: Record<string, string | string[]> = {};
+  // Only update the fields that were sent.
+  const updateData: Record<string, string | string[] | number> = {};
   const allowedFields = [
-    "sttModel","ttsProvider","ttsModel",
+    "sttModel","ttsProvider","ttsModel","ttsSpeed","defaultVoiceId","allowedVoiceIds",
     "llmResumeExtraction","llmJdExtraction","llmResumeReport",
     "llmInterviewLive","llmInterviewEval","llmInterviewBrief","llmInterviewReport",
   ];
   for (const f of allowedFields) {
     if (fields[f] !== undefined) updateData[f] = fields[f];
   }
-  if (fields.voiceId !== undefined) updateData.defaultVoiceId = fields.voiceId;
-  if (fields.allowedVoices !== undefined) updateData.allowedVoiceIds = fields.allowedVoices;
 
   const updated = await prisma.organizationDetails.update({
     where: { id: orgId },
     data: updateData,
     select: {
-      id: true, sttModel: true, ttsProvider: true, ttsModel: true, defaultVoiceId: true, allowedVoiceIds: true,
+      id: true, sttModel: true, ttsProvider: true, ttsModel: true, ttsSpeed: true, defaultVoiceId: true, allowedVoiceIds: true,
       llmResumeExtraction: true, llmJdExtraction: true, llmResumeReport: true,
       llmInterviewLive: true, llmInterviewEval: true, llmInterviewBrief: true, llmInterviewReport: true,
     },
   });
-  const { defaultVoiceId, allowedVoiceIds, ...rest } = updated;
-  return NextResponse.json({ org: { ...rest, voiceId: defaultVoiceId, allowedVoices: allowedVoiceIds } });
+  return NextResponse.json({ org: updated });
 }

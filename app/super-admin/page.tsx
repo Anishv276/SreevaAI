@@ -13,8 +13,8 @@ interface Org {
     slug: string;
     plan: string;
     status: string;
-    interviewQuotaTotal?: number;
-    interviewQuotaUsed?: number;
+    totalInterviewsAllowed?: number;
+    totalInterviewsUsed?: number;
 }
 interface ChartStats {
     orgCreditStats: { name: string; creditsUsed: number }[];
@@ -36,8 +36,8 @@ interface DashboardStats extends ChartStats {
     recentActivity: { type: "ORG" | "JOB" | "CANDIDATE" | "INTERVIEW"; detail: string; org: string; at: string }[];
 }
 function getStatusBadge(org: Org) {
-    const quotaTotal = Number(org.interviewQuotaTotal || 0);
-    const quotaUsed = Number(org.interviewQuotaUsed || 0);
+    const quotaTotal = Number(org.totalInterviewsAllowed || 0);
+    const quotaUsed = Number(org.totalInterviewsUsed || 0);
     const isQuotaExhausted = quotaTotal > 0 && quotaUsed >= quotaTotal;
     if (org.status === "ACTIVE") {
         return { label: "Active", dot: "bg-emerald-500 animate-pulse", cls: "bg-emerald-50 text-emerald-600 border-emerald-100" };

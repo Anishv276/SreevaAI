@@ -45,7 +45,11 @@ function formatCandidateStatusLabel(value?: string) {
     if (normalized === "scoring") return "Scoring";
     if (normalized === "processing") return "Extracting";
     if (normalized === "failed") return "Failed";
-    if (normalized === "inprogress" || normalized === "in progress") return "In Progress";
+    if (normalized === "pending") return "Pending";
+    if (normalized === "scheduled") return "Scheduled";
+    if (normalized === "launching") return "Launching";
+    if (normalized === "progress" || normalized === "inprogress" || normalized === "in progress") return "In Progress";
+    if (normalized === "no show" || normalized === "noshow") return "No Show";
     if (normalized === "finished" || normalized === "completed") return "Completed";
     if (normalized === "shortlisted") return "Shortlisted";
     if (normalized === "rejected") return "Rejected";
@@ -185,18 +189,18 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
         const { startDate, endDate } = getDateRange();
         void fetchCandidates(1, pageSize, jobId, resumeFilter, interviewFilter, startDate, endDate, undefined, scoreSort);
     }, [pageSize]);
+    const hasPendingCandidate = candidates.some((c: any) => {
+        const s = String(c.resumeStatus || c.status || "").toLowerCase();
+        return s === "extracting" || s === "scoring" || s === "waiting" || s === "processing" || s === "starting";
+    });
     useEffect(() => {
-        const hasPending = candidates.some((c: any) => {
-            const s = String(c.resumeStatus || c.status || "").toLowerCase();
-            return s === "extracting" || s === "scoring" || s === "waiting" || s === "processing" || s === "starting";
-        });
-        if (!hasPending) return;
+        if (!hasPendingCandidate) return;
         const timer = setInterval(() => {
             const { startDate, endDate } = getDateRange();
             void fetchCandidates(pagination.page, pageSize, jobId, resumeFilter, interviewFilter, startDate, endDate, undefined, scoreSort, { background: true, force: true });
         }, 3000);
         return () => clearInterval(timer);
-    }, [candidates, pagination.page, pageSize, jobId, resumeFilter, interviewFilter, scoreSort]);
+    }, [hasPendingCandidate, pagination.page, pageSize, jobId, resumeFilter, interviewFilter, scoreSort]);
     const handlePageChange = (newPage: number) => {
         if (newPage < 1 || newPage > pagination.totalPages) return;
         let startDate: string | undefined;
@@ -642,9 +646,13 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
                                     const stageLabel = stageLabelRaw === "extracting" ? "Extracting" : stageLabelRaw === "scoring" ? "Scoring" : stageLabelRaw === "finalizing" ? "Finalizing" : isWaiting ? "Waiting" : isProcessing ? "Processing" : "";
                                     const canResendInterview =
                                         interviewStatusKey === "pending" ||
+                                        interviewStatusKey === "scheduled" ||
+                                        interviewStatusKey === "launching" ||
+                                        interviewStatusKey === "progress" ||
                                         interviewStatusKey === "in progress" ||
                                         interviewStatusKey === "completed" ||
                                         interviewStatusKey === "finished" ||
+                                        interviewStatusKey === "no show" ||
                                         statusKey === "shortlisted";
                                     return (
                                         <TableRow
@@ -742,27 +750,34 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
                                                     <div className="flex items-center gap-1">
                                                         <div className={cn("h-2 w-2 rounded-full shrink-0",
                                                             interviewStatusKey === "completed" || interviewStatusKey === "finished" ? "bg-emerald-500" :
-                                                            interviewStatusKey === "in progress" || interviewStatusKey === "inprogress" ? "bg-blue-500" :
-                                                            interviewStatusKey === "pending" && candidate.inviteSentAt ? "bg-amber-500" : "bg-gray-300"
+                                                            interviewStatusKey === "launching" || interviewStatusKey === "progress" || interviewStatusKey === "in progress" || interviewStatusKey === "inprogress" ? "bg-blue-500" :
+                                                            interviewStatusKey === "scheduled" ? "bg-amber-500" :
+                                                            interviewStatusKey === "no show" || interviewStatusKey === "noshow" ? "bg-orange-500" :
+                                                            interviewStatusKey === "failed" ? "bg-red-500" : "bg-gray-300"
                                                         )} />
                                                         <span className={cn("text-[13px] font-bold",
                                                             interviewStatusKey === "completed" || interviewStatusKey === "finished" ? "text-emerald-700" :
-                                                            interviewStatusKey === "in progress" || interviewStatusKey === "inprogress" ? "text-blue-700" :
-                                                            interviewStatusKey === "pending" && candidate.inviteSentAt ? "text-amber-700" : "text-gray-500"
+                                                            interviewStatusKey === "launching" || interviewStatusKey === "progress" || interviewStatusKey === "in progress" || interviewStatusKey === "inprogress" ? "text-blue-700" :
+                                                            interviewStatusKey === "scheduled" ? "text-amber-700" :
+                                                            interviewStatusKey === "no show" || interviewStatusKey === "noshow" ? "text-orange-700" :
+                                                            interviewStatusKey === "failed" ? "text-red-700" : "text-gray-500"
                                                         )}>
                                                             {interviewStatusKey === "completed" || interviewStatusKey === "finished" ? "Completed" :
-                                                             interviewStatusKey === "in progress" || interviewStatusKey === "inprogress" ? "In Progress" :
-                                                             interviewStatusKey === "pending" && candidate.inviteSentAt ? "Scheduled" : "Not Scheduled"}
+                                                             interviewStatusKey === "launching" ? "Launching" :
+                                                             interviewStatusKey === "progress" || interviewStatusKey === "in progress" || interviewStatusKey === "inprogress" ? "In Progress" :
+                                                             interviewStatusKey === "scheduled" ? "Scheduled" :
+                                                             interviewStatusKey === "no show" || interviewStatusKey === "noshow" ? "No Show" :
+                                                             interviewStatusKey === "failed" ? "Failed" : "Not Scheduled"}
                                                         </span>
                                                     </div>
                                                     {(interviewStatusKey === "completed" || interviewStatusKey === "finished") && (
                                                         <span className="text-[11px] font-semibold text-gray-400 ml-[16px]">
-                                                            {candidate.interview?.completedAt
-                                                                ? new Date(candidate.interview.completedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })
+                                                            {candidate.interview?.interviewCompletedAt
+                                                                ? new Date(candidate.interview.interviewCompletedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })
                                                                 : "Today"}
                                                         </span>
                                                     )}
-                                                    {candidate.interview?.isTest && (
+                                                    {candidate.interview?.isTestSession && (
                                                         <span className="ml-[16px] text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full" style={{ background: "#FEF3C7", color: "#B45309" }}>
                                                             TEST
                                                         </span>

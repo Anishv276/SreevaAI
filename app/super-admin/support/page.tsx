@@ -21,12 +21,12 @@ import {
 import { toast } from "@/components/ui/toast-custom";
 type SupportTicket = {
     id: string;
-    name: string;
-    email: string;
-    issueAbout: string;
-    status: "OPEN" | "RESOLVED" | "CLOSED" | string;
-    createdAt: string;
-    resolvedAt?: string | null;
+    reporterName: string;
+    reporterEmail: string;
+    issueDescription: string;
+    ticketStatus: "OPEN" | "RESOLVED" | "CLOSED" | string;
+    ticketCreatedAt: string;
+    ticketResolvedAt?: string | null;
     interviewId?: string | null;
     applicationId?: string | null;
     interview?: {
@@ -56,7 +56,7 @@ export default function SuperAdminSupportPage() {
     const [viewTicket, setViewTicket] = useState<SupportTicket | null>(null);
     const handleUpdateStatus = async (id: string, newStatus: string) => {
         const ticket = tickets.find(t => t.id === id);
-        if (!ticket || ticket.status === newStatus) return;
+        if (!ticket || ticket.ticketStatus === newStatus) return;
         setUpdatingStatus(id);
         try {
             const res = await fetch("/api/super-admin/support-tickets", {
@@ -65,7 +65,7 @@ export default function SuperAdminSupportPage() {
                 body: JSON.stringify({ id, status: newStatus }),
             });
             if (res.ok) {
-                setTickets(prev => prev.map(t => t.id === id ? { ...t, status: newStatus } : t));
+                setTickets(prev => prev.map(t => t.id === id ? { ...t, ticketStatus: newStatus } : t));
                 toast.success(`Ticket status updated to ${newStatus}`);
                 // Refresh stats
                 void fetchTickets(page, search, status);
@@ -114,9 +114,9 @@ export default function SuperAdminSupportPage() {
         CLOSED: "bg-gray-50 text-gray-600 border-gray-200",
     }[ticketStatus] || "bg-gray-50 text-gray-500 border-gray-100");
     const candidateName = (ticket: SupportTicket) =>
-        ticket.interview?.application?.fullName?.trim() || ticket.name || "Unknown candidate";
+        ticket.interview?.application?.fullName?.trim() || ticket.reporterName || "Unknown candidate";
     const candidateEmail = (ticket: SupportTicket) =>
-        ticket.interview?.application?.email?.trim() || ticket.email || "Unknown email";
+        ticket.interview?.application?.email?.trim() || ticket.reporterEmail || "Unknown email";
     const orgName = (ticket: SupportTicket) =>
         ticket.interview?.application?.job?.organization?.name?.trim() || "No organization";
     const orgSlug = (ticket: SupportTicket) =>
@@ -250,7 +250,7 @@ export default function SuperAdminSupportPage() {
                                             <td className="px-4 py-4">
                                                 <div className="flex items-center gap-2 group/issue min-w-[150px]">
                                                     <p className="text-[11px] text-gray-600 line-clamp-1">
-                                                        {ticket.issueAbout}
+                                                        {ticket.issueDescription}
                                                     </p>
                                                     <button 
                                                         onClick={() => setViewTicket(ticket)}
@@ -263,10 +263,10 @@ export default function SuperAdminSupportPage() {
                                             <td className="px-4 py-4 text-center">
                                                 <div className="flex flex-col items-center min-w-[90px]">
                                                     <span className="text-[10px] font-bold text-gray-700 tabular-nums">
-                                                        {new Date(ticket.createdAt).toLocaleDateString()}
+                                                        {new Date(ticket.ticketCreatedAt).toLocaleDateString()}
                                                     </span>
                                                     <span className="text-[9px] text-gray-400 font-medium tabular-nums">
-                                                        {new Date(ticket.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                        {new Date(ticket.ticketCreatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                     </span>
                                                 </div>
                                             </td>
@@ -277,13 +277,13 @@ export default function SuperAdminSupportPage() {
                                                             disabled={updatingStatus === ticket.id}
                                                             className={cn(
                                                                 "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase border shadow-sm transition-all hover:bg-white active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed",
-                                                                (ticket.status || "OPEN") === "OPEN" ? "bg-amber-50 border-amber-200 text-amber-700" :
-                                                                (ticket.status || "OPEN") === "RESOLVED" ? "bg-emerald-50 border-emerald-200 text-emerald-700" :
+                                                                (ticket.ticketStatus || "OPEN") === "OPEN" ? "bg-amber-50 border-amber-200 text-amber-700" :
+                                                                (ticket.ticketStatus || "OPEN") === "RESOLVED" ? "bg-emerald-50 border-emerald-200 text-emerald-700" :
                                                                 "bg-gray-50 border-gray-200 text-gray-600"
                                                             )}
                                                         >
-                                                            <div className={cn("h-1.5 w-1.5 rounded-full", ticket.status === 'OPEN' ? "bg-amber-500" : ticket.status === 'RESOLVED' ? "bg-emerald-500" : "bg-gray-400")} />
-                                                            {ticket.status}
+                                                            <div className={cn("h-1.5 w-1.5 rounded-full", ticket.ticketStatus === 'OPEN' ? "bg-amber-500" : ticket.ticketStatus === 'RESOLVED' ? "bg-emerald-500" : "bg-gray-400")} />
+                                                            {ticket.ticketStatus}
                                                             <ChevronDown className="h-3 w-3 opacity-50" />
                                                         </button>
                                                     </DropdownMenuTrigger>
@@ -293,7 +293,7 @@ export default function SuperAdminSupportPage() {
                                                                 key={s}
                                                                 className={cn(
                                                                     "flex cursor-pointer items-center justify-between rounded-lg px-2.5 py-2 text-[10px] font-bold",
-                                                                    ticket.status === s ? "bg-violet-50 text-violet-600" : "text-gray-700 hover:bg-gray-50"
+                                                                    ticket.ticketStatus === s ? "bg-violet-50 text-violet-600" : "text-gray-700 hover:bg-gray-50"
                                                                 )}
                                                                 onClick={() => handleUpdateStatus(ticket.id, s)}
                                                             >
@@ -301,7 +301,7 @@ export default function SuperAdminSupportPage() {
                                                                     <div className={cn("h-1.5 w-1.5 rounded-full", s === 'OPEN' ? "bg-amber-500" : s === 'RESOLVED' ? "bg-emerald-500" : "bg-gray-400")} />
                                                                     {s}
                                                                 </div>
-                                                                {ticket.status === s && <Check className="h-3.5 w-3.5" />}
+                                                                {ticket.ticketStatus === s && <Check className="h-3.5 w-3.5" />}
                                                             </DropdownMenuItem>
                                                         ))}
                                                     </DropdownMenuContent>
@@ -343,7 +343,7 @@ export default function SuperAdminSupportPage() {
                 </DialogHeader>
                 <div className="rounded-2xl bg-gray-50/50 border border-gray-100 p-6">
                         <p className="text-[15px] text-gray-700 leading-relaxed whitespace-pre-wrap font-medium">
-                            {viewTicket?.issueAbout}
+                            {viewTicket?.issueDescription}
                         </p>
                     </div>
                     <div className="mt-6 flex justify-end">

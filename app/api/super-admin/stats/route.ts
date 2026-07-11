@@ -5,8 +5,8 @@ import { getSession } from "@/lib/auth";
 type OrgStatusRow = {
     status: string;
     statusControl: string | null;
-    interviewQuotaTotal: number | null;
-    interviewQuotaUsed: number | null;
+    totalInterviewsAllowed: number | null;
+    totalInterviewsUsed: number | null;
 };
 type CreditRow = { name: string; creditsUsed: number };
 type InterviewRow = { name: string; count: number };
@@ -60,7 +60,7 @@ export async function GET() {
             `,
             prisma.$queryRaw<Array<OrgStatusRow>>`
                 SELECT "orgStatus" AS status, "quotaControlMode" AS "statusControl",
-                       "totalInterviewsAllowed" AS "interviewQuotaTotal", "totalInterviewsUsed" AS "interviewQuotaUsed"
+                       "totalInterviewsAllowed", "totalInterviewsUsed"
                 FROM "OrganizationDetails"
                 WHERE "isDeleted" = false
             `,
@@ -190,8 +190,8 @@ export async function GET() {
                 suspendedOrgs++;
                 continue;
             }
-            const total = Math.max(0, Number(org.interviewQuotaTotal || 0));
-            const used = Math.max(0, Number(org.interviewQuotaUsed || 0));
+            const total = Math.max(0, Number(org.totalInterviewsAllowed || 0));
+            const used = Math.max(0, Number(org.totalInterviewsUsed || 0));
             if (total > 0 && used >= total) {
                 suspendedOrgs++;
                 continue;

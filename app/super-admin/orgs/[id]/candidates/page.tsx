@@ -36,7 +36,7 @@ interface Candidate {
     jobId: string;
     jobTitle: string | null;
     jobRole: string | null;
-    interview: { status: string; completedAt: string | null; inviteSentAt: string | null } | null;
+    interview: { interviewStatus: string; interviewCompletedAt: string | null; inviteEmailSentAt: string | null } | null;
 }
 interface Job { id: string; title: string; role: string | null; }
 interface Pagination { total: number; page: number; limit: number; totalPages: number; }
@@ -55,7 +55,11 @@ function normalizeStatusKey(v?: string | null) {
 function formatStatusLabel(v?: string | null) {
     const n = normalizeStatusKey(v);
     if (!n) return "Pending";
-    if (n === "inprogress" || n === "in progress") return "In Progress";
+    if (n === "scheduled") return "Scheduled";
+    if (n === "launching") return "Launching";
+    if (n === "progress" || n === "inprogress" || n === "in progress") return "In Progress";
+    if (n === "no show" || n === "noshow") return "No Show";
+    if (n === "failed") return "Failed";
     if (n === "finished" || n === "completed") return "Completed";
     if (n === "shortlisted") return "Shortlisted";
     if (n === "rejected") return "Rejected";
@@ -351,8 +355,8 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
                                 const displayName    = c.fullName || "Unknown";
                                 const mainStatus     = normalizeStatusKey(c.resumeStatus) || "pending";
                                 const mainStatusLabel = formatStatusLabel(c.resumeStatus);
-                                const interviewStage = normalizeStatusKey(c.interview?.status ?? c.interviewStatus) || "pending";
-                                const interviewLabel = formatStatusLabel(c.interview?.status ?? c.interviewStatus);
+                                const interviewStage = normalizeStatusKey(c.interview?.interviewStatus ?? c.interviewStatus) || "pending";
+                                const interviewLabel = formatStatusLabel(c.interview?.interviewStatus ?? c.interviewStatus);
                                 const interviewDone  = interviewStage === "completed" || interviewStage === "finished";
                                 const resumeScore    = Number(c.aiScore ?? 0);
 
@@ -405,15 +409,17 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
                                                 <Badge variant="secondary" className={cn(
                                                     "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm pointer-events-none",
                                                     interviewDone                    ? "bg-emerald-50 text-emerald-700" :
-                                                    interviewStage === "in progress" ? "bg-blue-50 text-blue-700" :
-                                                    interviewStage === "pending"     ? "bg-violet-50 text-gray-500" :
+                                                    interviewStage === "launching" || interviewStage === "progress" || interviewStage === "in progress" ? "bg-blue-50 text-blue-700" :
+                                                    interviewStage === "no show"    ? "bg-orange-50 text-orange-700" :
+                                                    interviewStage === "failed"     ? "bg-red-50 text-red-700" :
+                                                    interviewStage === "pending"    ? "bg-violet-50 text-gray-500" :
                                                                                        "bg-amber-50 text-amber-700"
                                                 )}>
                                                     {interviewLabel}
                                                 </Badge>
-                                                {c.interview?.completedAt && (
+                                                {c.interview?.interviewCompletedAt && (
                                                     <span className="text-[10px] text-gray-400 font-medium">
-                                                        {new Date(c.interview.completedAt).toLocaleDateString()}
+                                                        {new Date(c.interview.interviewCompletedAt).toLocaleDateString()}
                                                     </span>
                                                 )}
                                             </div>

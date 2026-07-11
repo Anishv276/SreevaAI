@@ -44,7 +44,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         }
         if (!isSuperAdmin && session.orgId) {
             const billingStatus = await getOrgBillingStatus(session.orgId);
-            if (billingStatus.interviewQuotaTotal > 0 && !billingStatus.hasSufficientInterviews) {
+            if (billingStatus.totalInterviewsAllowed > 0 && !billingStatus.hasSufficientInterviews) {
                 return NextResponse.json(
                     {
                         error: getInterviewQuotaSupportMessage("interviews"),
@@ -77,7 +77,6 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
                 interviewStartedAt: null,
                 interviewCompletedAt: null,
                 inviteLinkExpiresAt: jobDeadline,
-                inviteLinkStatus: "ACTIVE",
                 isTestSession: false,
                 aiInterviewBrief: Prisma.JsonNull,
             },
@@ -87,7 +86,6 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
                 inviteEmailSentAt: new Date(),
                 interviewStatus: "PENDING",
                 inviteLinkExpiresAt: jobDeadline,
-                inviteLinkStatus: "ACTIVE",
                 isTestSession: false,
             },
         });

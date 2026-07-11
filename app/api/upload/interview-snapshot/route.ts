@@ -22,7 +22,7 @@ export async function POST(request: Request) {
             if (!interview || interview.candidateInviteToken !== interviewToken) {
                 return NextResponse.json({ error: "Unauthorized: Invalid session token" }, { status: 401 });
             }
-            if (interview.interviewStatus !== "IN_PROGRESS" && interview.interviewStatus !== "PENDING") {
+            if (!["PENDING", "SCHEDULED", "LAUNCHING", "PROGRESS"].includes(interview.interviewStatus)) {
                 return NextResponse.json({ error: "Unauthorized: Interview is not in an active state" }, { status: 403 });
             }
         }

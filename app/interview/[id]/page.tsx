@@ -14,7 +14,7 @@ import { HardwareHeartbeat } from "@/components/careers/interview/HardwareHeartb
 import { ConnectionProctoring } from "@/components/careers/interview/ConnectionProctoring";
 import { CandidateRatingForm } from "@/components/careers/interview/CandidateRatingForm";
 import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/job-limits";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { BASIC_PLAN_SIGNALS, normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import {
@@ -195,9 +195,28 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     });
     const SHOW_BACKGROUND_PROCTORING_ALERTS = false;
     const SHOW_TAB_FULLSCREEN_ALERTS = true;
+    const router = useRouter();
     const searchParams = useSearchParams();
-    const interviewToken = searchParams.get("token") || "";
-    const organizationName = searchParams.get("orgName")?.trim() || "";
+    const urlToken = searchParams.get("token") || "";
+    const cookieTokenKey = `interview_token_${id}`;
+    const [storedToken, setStoredToken] = useState<string>("");
+    useEffect(() => {
+        if (urlToken) {
+            try { document.cookie = `${cookieTokenKey}=${encodeURIComponent(urlToken)}; path=/; max-age=${60 * 60 * 6}; SameSite=Lax`; } catch { }
+            setStoredToken(urlToken);
+            const url = new URL(window.location.href);
+            url.searchParams.delete("token");
+            router.replace(url.pathname + url.search, { scroll: false });
+        } else {
+            try {
+                const match = document.cookie.match(new RegExp(`(?:^|; )${cookieTokenKey}=([^;]*)`));
+                if (match) setStoredToken(decodeURIComponent(match[1]));
+            } catch { }
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [urlToken]);
+    const interviewToken = storedToken;
+    const [organizationName, setOrganizationName] = useState("");
     const requireInterviewToken = isInterviewTokenRequired();
     const isTabSwitchEnabled = Boolean(proctoringSignals.tab_switch);
     const isFullscreenExitEnabled = Boolean(proctoringSignals.fullscreen_exit);
@@ -269,6 +288,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 const res = await fetch(url.toString(), { cache: "no-store" });
                 const data = await res.json();
                 if (!active) return;
+                if (data.orgName) setOrganizationName(data.orgName);
                 if (!res.ok && data.error) {
                     if (data.code === "TOO_EARLY" && data.scheduledAt) {
                         // Waiting room opened -- show hardware check but gate the Begin button
@@ -1137,26 +1157,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         transition={{ duration: 0.8 }}
                         className="flex-1 w-full bg-white z-50 absolute inset-0 overflow-y-auto"
                     >
-                        <div className="mx-auto w-full max-w-5xl px-4 pt-8 pb-4">
-                            <div className="space-y-6">
-                                <div className="flex flex-col gap-2">
-                                    <h2 className="text-2xl font-black text-gray-900 tracking-tight">System Check</h2>
-                                    <div className="flex flex-wrap gap-4">
-                                        {[
-                                            "Proctored Session",
-                                            "Quiet Environment",
-                                            "Support Available"
-                                        ].map((text, i) => (
-                                            <div key={text} className="flex items-center gap-2">
-                                                <div className="w-1.5 h-1.5 rounded-full bg-violet-500" />
-                                                <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">{text}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                                <div className="h-px w-full bg-gray-100" />
-                            </div>
-                        </div>
                         <HardwareCheck
                             onComplete={handleHardwareComplete}
                             onRetry={() => {

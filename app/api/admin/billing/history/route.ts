@@ -6,8 +6,10 @@ function normalizeStatus(value?: string | null) {
   const v = String(value || "").trim().toLowerCase().replace(/[_\s]+/g, "-");
   if (v === "completed" || v === "finished") return "completed";
   if (v === "no-show" || v === "noshow") return "no-show";
-  if (v === "abandoned") return "abandoned";
-  if (v === "in-progress" || v === "inprogress") return "in-progress";
+  if (v === "failed") return "failed";
+  if (v === "launching") return "launching";
+  if (v === "progress" || v === "in-progress" || v === "inprogress") return "progress";
+  if (v === "scheduled") return "scheduled";
   if (v === "pending") return "pending";
   return "completed";
 }
@@ -25,7 +27,7 @@ export async function GET(request: Request) {
     }
     const interviews = await prisma.interview.findMany({
       where: {
-        interviewStatus: { not: "PENDING" },
+        interviewStatus: { notIn: ["PENDING", "SCHEDULED"] },
         application: { job: { organizationId: orgId } },
       },
       select: {

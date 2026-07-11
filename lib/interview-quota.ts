@@ -17,10 +17,10 @@ export function isOrgRestrictedStatus(status?: string | null) {
   return normalized === "SUSPENDED" || normalized === "CLOSED";
 }
 export function isInterviewQuotaLocked(status?: {
-  interviewQuotaTotal?: number | null;
+  totalInterviewsAllowed?: number | null;
   hasSufficientInterviews?: boolean | null;
 }) {
-  const total = Number(status?.interviewQuotaTotal ?? 0);
+  const total = Number(status?.totalInterviewsAllowed ?? 0);
   const hasSufficient = Boolean(status?.hasSufficientInterviews ?? true);
   return total > 0 && !hasSufficient;
 }

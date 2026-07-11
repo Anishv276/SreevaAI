@@ -648,7 +648,7 @@ export function buildSreevaAIInterviewViewModel(i: {
     return bullets.slice(0, 4);
   })();
   // a"a" Timestamps a"a"
-  const doneAt = c.interview?.completedAt || c.interview?.endedAt;
+  const doneAt = c.interview?.interviewCompletedAt || c.interview?.endedAt;
   const interviewedOn = doneAt
     ? new Date(doneAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
     : c.createdAt && i.mounted
@@ -962,7 +962,7 @@ export function EvaluationScoresCard({
                 fontWeight={isHov ? "700" : "500"}
                 style={{
                   fill: isHov ? "#0EA5E9" : "#6B7280",
-                  fontFamily: "var(--font-geist-sans, system-ui, sans-serif)",
+                  fontFamily: "var(--font-geist-sans)",
                 }}
               >
                 {multiLine ? (

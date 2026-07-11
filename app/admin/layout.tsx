@@ -73,14 +73,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                 initialData={{
                     status: orgData.status,
                     name: orgData.name,
-                    plan: orgData.plan,
-                    voiceId: orgData.voiceId,
-                    allowedVoices: orgData.allowedVoices,
+                    billingPlan: orgData.billingPlan,
+                    defaultVoiceId: orgData.defaultVoiceId,
+                    allowedVoiceIds: orgData.allowedVoiceIds,
                     sttModel: orgData.sttModel,
-                    interviewQuotaTotal: orgData.interviewQuotaTotal != null ? Number(orgData.interviewQuotaTotal) : undefined,
-                    interviewQuotaUsed: orgData.interviewQuotaUsed != null ? Number(orgData.interviewQuotaUsed) : undefined,
-                    interviewQuotaRemaining: orgData.interviewQuotaTotal != null
-                        ? Math.max(0, Number(orgData.interviewQuotaTotal) - Number(orgData.interviewQuotaUsed || 0))
+                    totalInterviewsAllowed: orgData.totalInterviewsAllowed != null ? Number(orgData.totalInterviewsAllowed) : undefined,
+                    totalInterviewsUsed: orgData.totalInterviewsUsed != null ? Number(orgData.totalInterviewsUsed) : undefined,
+                    interviewQuotaRemaining: orgData.totalInterviewsAllowed != null
+                        ? Math.max(0, Number(orgData.totalInterviewsAllowed) - Number(orgData.totalInterviewsUsed || 0))
                         : undefined,
                     maxActiveJobs: orgData.maxActiveJobs ?? undefined,
                     activeJobCount: orgData.activeJobCount ?? undefined,

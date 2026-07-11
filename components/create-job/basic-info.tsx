@@ -369,11 +369,11 @@ export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoPr
                     <PremiumInput
                         label="Job Role"
                         icon={Layers}
-                        id="role"
-                        value={formData.role || ""}
-                        onChange={(e) => handleChange("role", e.target.value)}
-                        onBlur={() => handleBlur("role")}
-                        error={getError("role")}
+                        id="jobRole"
+                        value={formData.jobRole || ""}
+                        onChange={(e) => handleChange("jobRole", e.target.value)}
+                        onBlur={() => handleBlur("jobRole")}
+                        error={getError("jobRole")}
                         placeholder="e.g. Backend Engineer"
                         required
                     />

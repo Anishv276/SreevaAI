@@ -37,16 +37,16 @@ function CreateJobForm() {
   const isEditAction = searchParams.get("mode") === "edit";
   const { addJob, jobs, updateJob, organization } = useJobs();
   const adminOrg = useAdminOrg();
-  const fallbackVoiceId = adminOrg?.voiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc";
-  const adminAllowedVoices = adminOrg?.allowedVoices;
+  const fallbackVoiceId = adminOrg?.defaultVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc";
+  const adminAllowedVoices = adminOrg?.allowedVoiceIds;
   const fallbackAllowedVoices = useMemo(() => adminAllowedVoices ?? [], [adminAllowedVoices]);
 
   const [formData, setFormData] = useState<any>({
-    title: "", role: "", deadline: "",
-    interviewQuestions: [],
-    screeningThreshold: 60, screeningCriteria: {} as ScreeningCriteria,
-    voiceId: fallbackVoiceId, allowedVoices: fallbackAllowedVoices,
-    aiName: "Ishitha", extractedDetails: null, interviewMode: "ats",
+    title: "", jobRole: "", applicationDeadline: "",
+    aiGeneratedInterviewQuestions: [],
+    resumeScreeningThreshold: 60, resumeScreeningCriteria: {} as ScreeningCriteria,
+    aiInterviewerVoiceId: fallbackVoiceId, allowedVoiceIds: fallbackAllowedVoices,
+    aiInterviewerName: "Ishitha", jdExtractedDetails: null, interviewMode: "ats",
   });
   const [published, setPublished] = useState(false);
   const [publishedJobId, setPublishedJobId] = useState<string | null>(null);
@@ -92,7 +92,7 @@ function CreateJobForm() {
   }, [formData.jdPreviewUrl]);
 
   useEffect(() => {
-  }, [formData.voiceId]);
+  }, [formData.aiInterviewerVoiceId]);
 
   useEffect(() => {
     if (isEditMode && hasInitialLoadedRef.current !== jobId) {
@@ -106,21 +106,21 @@ function CreateJobForm() {
           setFormData((prev: any) => ({
             ...prev,
             title: job.title,
-            role: (job as any).role || job.title,
-            deadline: formatDateForInput((job as any).deadline || null),
-            interviewQuestions: typeof (job as any).interviewQuestions === "string"
-              ? JSON.parse((job as any).interviewQuestions)
-              : (job as any).interviewQuestions || [],
+            jobRole: (job as any).jobRole || job.title,
+            applicationDeadline: formatDateForInput((job as any).applicationDeadline || null),
+            aiGeneratedInterviewQuestions: typeof (job as any).aiGeneratedInterviewQuestions === "string"
+              ? JSON.parse((job as any).aiGeneratedInterviewQuestions)
+              : (job as any).aiGeneratedInterviewQuestions || [],
             ...(() => {
-              const parsed = parseJobScreeningSettings((job as any).screeningCriteria, Number((job as any).screeningThreshold ?? 60));
-              return { screeningThreshold: parsed.threshold, screeningCriteria: parsed.criteria };
+              const parsed = parseJobScreeningSettings((job as any).resumeScreeningCriteria, Number((job as any).resumeScreeningThreshold ?? 60));
+              return { resumeScreeningThreshold: parsed.threshold, resumeScreeningCriteria: parsed.criteria };
             })(),
             jdFileName: (job as any).jdFileName || "",
             jdPreviewUrl: (job as any).jdPreviewUrl || "",
-            extractedDetails: (job as any).extractedDetails || null,
-            voiceId: (job as any).voiceId || adminOrg?.voiceId || fallbackVoiceId,
-            allowedVoices: Array.isArray(adminOrg?.allowedVoices) ? adminOrg.allowedVoices : fallbackAllowedVoices,
-            aiName: (job as any).aiName || "Ishitha",
+            jdExtractedDetails: (job as any).jdExtractedDetails || null,
+            aiInterviewerVoiceId: (job as any).aiInterviewerVoiceId || adminOrg?.defaultVoiceId || fallbackVoiceId,
+            allowedVoiceIds: Array.isArray(adminOrg?.allowedVoiceIds) ? adminOrg.allowedVoiceIds : fallbackAllowedVoices,
+            aiInterviewerName: (job as any).aiInterviewerName || "Ishitha",
             interviewMode: (job as any).interviewMode || "ats",
           }));
         } catch (err) {
@@ -130,34 +130,18 @@ function CreateJobForm() {
       };
       loadJob();
     }
-  }, [isEditMode, jobId, adminOrg?.voiceId, fallbackVoiceId, fallbackAllowedVoices]);
-
-  useEffect(() => {
-    const method = searchParams.get("method");
-    if (method === "ai-chat") {
-      const draft = localStorage.getItem("jd_draft");
-      if (draft) {
-        try {
-          const data = JSON.parse(draft);
-          const { voiceId: _a, allowedVoices: _b, aiName: _c, ...jdData } = data || {};
-          setFormData((prev: any) => ({ ...prev, ...jdData }));
-          localStorage.removeItem("jd_draft");
-          toast.success("Job description synced from AI Assistant!");
-        } catch (e) { console.error("CreateJob Sync - Parse Error:", e); }
-      }
-    }
-  }, [searchParams]);
+  }, [isEditMode, jobId, adminOrg?.defaultVoiceId, fallbackVoiceId, fallbackAllowedVoices]);
 
   useEffect(() => {
     if (!isEditMode && !searchParams.get("id")) {
       const method = searchParams.get("method");
       if (method !== "ai-chat") {
         setFormData({
-          title: "", role: "", deadline: "",
-          interviewQuestions: [],
-          screeningThreshold: 60, screeningCriteria: {},
-          voiceId: fallbackVoiceId, allowedVoices: fallbackAllowedVoices,
-          aiName: "Ishitha", extractedDetails: null, interviewMode: "ats",
+          title: "", jobRole: "", applicationDeadline: "",
+          aiGeneratedInterviewQuestions: [],
+          resumeScreeningThreshold: 60, resumeScreeningCriteria: {},
+          aiInterviewerVoiceId: fallbackVoiceId, allowedVoiceIds: fallbackAllowedVoices,
+          aiInterviewerName: "Ishitha", jdExtractedDetails: null, interviewMode: "ats",
         });
         setIsAnalyzing(false);
         setAnalysisError(null);
@@ -206,11 +190,11 @@ function CreateJobForm() {
         if (typeof r2Url === "string" && !r2Url.startsWith("blob:")) jdPersistedUrlRef.current = r2Url;
         setFormData((prev: any) => ({
           ...prev,
-          title: extracted?.job_title || prev.role || "New Job",
-          role: extracted?.job_title || prev.role || "",
-          interviewQuestions: Array.isArray(extracted?.interview_questions) && extracted.interview_questions.length > 0
-            ? extracted.interview_questions : prev.interviewQuestions,
-          extractedDetails: extracted,
+          title: extracted?.job_title || prev.jobRole || "New Job",
+          jobRole: extracted?.job_title || prev.jobRole || "",
+          aiGeneratedInterviewQuestions: Array.isArray(extracted?.interview_questions) && extracted.interview_questions.length > 0
+            ? extracted.interview_questions : prev.aiGeneratedInterviewQuestions,
+          jdExtractedDetails: extracted,
           jdPreviewUrl: r2Url || prev.jdPreviewUrl,
         }));
       } else {
@@ -234,7 +218,7 @@ function CreateJobForm() {
       toast.error(interviewAccessLocked ? getInterviewQuotaSupportMessage("interviews") : "Job limit reached. Go to Billing to upgrade your plan.");
       return;
     }
-    if (!String(currentFormData.deadline || "").trim()) {
+    if (!String(currentFormData.applicationDeadline || "").trim()) {
       toast.error("Please fill the application deadline.");
       return;
     }
@@ -244,23 +228,23 @@ function CreateJobForm() {
       return;
     }
     setIsSavingDraft(true);
-    let parsedQuestions = currentFormData.interviewQuestions || [];
+    let parsedQuestions = currentFormData.aiGeneratedInterviewQuestions || [];
     if (typeof parsedQuestions === "string") { try { parsedQuestions = JSON.parse(parsedQuestions); } catch { parsedQuestions = []; } }
     const jobData = {
       title: currentFormData.title || "Untitled Job",
       description: currentFormData.description || "",
-      role: currentFormData.role || "",
-      deadline: currentFormData.deadline || null,
+      jobRole: currentFormData.jobRole || "",
+      applicationDeadline: currentFormData.applicationDeadline || null,
       jdFileName: currentFormData.jdFileName || null,
       jdPreviewUrl: getPersistedJdUrl(currentFormData),
-      extractedDetails: currentFormData.extractedDetails
-        ? typeof currentFormData.extractedDetails === "string" ? currentFormData.extractedDetails : JSON.stringify(currentFormData.extractedDetails)
+      jdExtractedDetails: currentFormData.jdExtractedDetails
+        ? typeof currentFormData.jdExtractedDetails === "string" ? currentFormData.jdExtractedDetails : JSON.stringify(currentFormData.jdExtractedDetails)
         : null,
-      interviewQuestions: parsedQuestions,
-      screeningThreshold: Number(currentFormData.screeningThreshold ?? 60),
-      screeningCriteria: sanitizeScreeningCriteria(currentFormData.screeningCriteria || {}),
-      voiceId: currentFormData.voiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
-      aiName: currentFormData.aiName || "Ishitha",
+      aiGeneratedInterviewQuestions: parsedQuestions,
+      resumeScreeningThreshold: Number(currentFormData.resumeScreeningThreshold ?? 60),
+      resumeScreeningCriteria: sanitizeScreeningCriteria(currentFormData.resumeScreeningCriteria || {}),
+      aiInterviewerVoiceId: currentFormData.aiInterviewerVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
+      aiInterviewerName: currentFormData.aiInterviewerName || "Ishitha",
       interviewMode: currentFormData.interviewMode || "ats",
     };
     try {
@@ -288,15 +272,15 @@ function CreateJobForm() {
   };
 
   const screeningConfig = useMemo(() => ({
-    threshold: Number(formData.screeningThreshold ?? 60),
-    criteria: (formData.screeningCriteria || {}) as ScreeningCriteria,
-  }), [formData.screeningThreshold, formData.screeningCriteria]);
+    threshold: Number(formData.resumeScreeningThreshold ?? 60),
+    criteria: (formData.resumeScreeningCriteria || {}) as ScreeningCriteria,
+  }), [formData.resumeScreeningThreshold, formData.resumeScreeningCriteria]);
 
   const handleScreeningConfig = useMemo(() => (cfg: any) =>
     setFormData((prev: any) => {
-      const current = { threshold: Number(prev.screeningThreshold ?? 60), criteria: (prev.screeningCriteria || {}) as ScreeningCriteria };
+      const current = { threshold: Number(prev.resumeScreeningThreshold ?? 60), criteria: (prev.resumeScreeningCriteria || {}) as ScreeningCriteria };
       const next = typeof cfg === "function" ? cfg(current) : cfg;
-      return { ...prev, screeningThreshold: Number(next.threshold ?? 60), screeningCriteria: sanitizeScreeningCriteria(next.criteria || {}) };
+      return { ...prev, resumeScreeningThreshold: Number(next.threshold ?? 60), resumeScreeningCriteria: sanitizeScreeningCriteria(next.criteria || {}) };
     }), []);
 
   // -- Success --------------------------------------------------------------
@@ -492,10 +476,10 @@ function CreateJobForm() {
                   Job Role <span className="text-[#7C3AED]">*</span>
                 </Label>
                 <Input
-                  value={formData.role || ""}
-                  onChange={(e) => setFormData((prev: any) => ({ ...prev, role: e.target.value }))}
+                  value={formData.jobRole || ""}
+                  onChange={(e) => setFormData((prev: any) => ({ ...prev, jobRole: e.target.value }))}
                   placeholder="e.g. Backend Engineer"
-                  className={cn("h-9 rounded-xl bg-gray-50 text-sm placeholder:text-gray-400 focus-visible:ring-[#7C3AED]/20 focus-visible:border-[#7C3AED] focus-visible:bg-white transition-all", isAnalyzing && !formData.role && "animate-pulse bg-violet-50/30")}
+                  className={cn("h-9 rounded-xl bg-gray-50 text-sm placeholder:text-gray-400 focus-visible:ring-[#7C3AED]/20 focus-visible:border-[#7C3AED] focus-visible:bg-white transition-all", isAnalyzing && !formData.jobRole && "animate-pulse bg-violet-50/30")}
                   style={{ border: "1px solid #E9E7FF" }}
                 />
               </div>
@@ -504,11 +488,11 @@ function CreateJobForm() {
                   <Calendar className="h-3 w-3" /> Deadline <span className="text-[#7C3AED]">*</span>
                 </Label>
                 <PremiumDatePicker
-                  value={formData.deadline || ""}
-                  onChange={(date) => setFormData((prev: any) => ({ ...prev, deadline: date }))}
+                  value={formData.applicationDeadline || ""}
+                  onChange={(date) => setFormData((prev: any) => ({ ...prev, applicationDeadline: date }))}
                   placeholder="Select deadline"
                   disabledBeforeToday={true}
-                  className={cn(isAnalyzing && !formData.deadline && "opacity-90")}
+                  className={cn(isAnalyzing && !formData.applicationDeadline && "opacity-90")}
                 />
               </div>
               {isAnalyzing && (

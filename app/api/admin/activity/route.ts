@@ -49,7 +49,7 @@ export async function GET(req: Request) {
                 where: {
                     ...(dateCutoff ? { interviewUpdatedAt: { gte: dateCutoff } } : {}),
                     application: { job: { organizationId: orgId } },
-                    interviewStatus: { in: ["COMPLETED", "IN_PROGRESS"] },
+                    interviewStatus: { in: ["COMPLETED", "LAUNCHING", "PROGRESS"] },
                 },
                 select: {
                     id: true, interviewStatus: true, interviewUpdatedAt: true, interviewCompletedAt: true,

@@ -135,7 +135,7 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: "Job creation is blocked because your organization is restricted." }, { status: 403 });
             }
             const billingStatus = await getOrgBillingStatus(session.orgId);
-            if (billingStatus.interviewQuotaTotal > 0 && !billingStatus.hasSufficientInterviews) {
+            if (billingStatus.totalInterviewsAllowed > 0 && !billingStatus.hasSufficientInterviews) {
                 return NextResponse.json(
                     {
                         error: getInterviewQuotaSupportMessage("interviews"),

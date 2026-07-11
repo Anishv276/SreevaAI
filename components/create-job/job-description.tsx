@@ -38,8 +38,8 @@ export function JobDescription({
             ...prev,
             jdFileName: undefined,
             jdPreviewUrl: undefined,
-            interviewQuestions: [],
-            extractedDetails: null,
+            aiGeneratedInterviewQuestions: [],
+            jdExtractedDetails: null,
         }));
     };
 

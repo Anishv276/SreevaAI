@@ -37,16 +37,16 @@ import { formatOrgPlan } from "@/lib/org-plans";
 interface OrgDetail {
     id: string;
     name: string;
-    slug: string;
-    plan: string;
+    urlSlug: string;
+    billingPlan: string;
     status: string;
     industry: string | null;
-    usageMetrics?: Record<string, unknown> | null;
-    interviewQuotaTotal?: number;
-    interviewQuotaUsed?: number;
-    creditsUsed?: number;
-    voiceId?: string;
-    allowedVoices?: string[];
+    platformUsageMetrics?: Record<string, unknown> | null;
+    totalInterviewsAllowed?: number;
+    totalInterviewsUsed?: number;
+    billingCreditsUsed?: number;
+    defaultVoiceId?: string;
+    allowedVoiceIds?: string[];
     sttModel?: string;
     ttsProvider?: string;
     ttsModel?: string;
@@ -172,9 +172,9 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
         return providers.length ? Array.from(new Set(providers)).join(", ") : "-";
     };
     const getConfiguredTtsVoices = () => {
-        const ids = Array.isArray(org?.allowedVoices) && org.allowedVoices.length > 0
-            ? org.allowedVoices
-            : org?.voiceId ? [org.voiceId] : [];
+        const ids = Array.isArray(org?.allowedVoiceIds) && org.allowedVoiceIds.length > 0
+            ? org.allowedVoiceIds
+            : org?.defaultVoiceId ? [org.defaultVoiceId] : [];
         return ids
             .map((id) => ALL_VOICES.find((v) => v.id === id))
             .filter(Boolean) as typeof ALL_VOICES;
@@ -290,7 +290,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                 <div className="h-10 w-1 bg-[#7C3AED] rounded-full" />
                                 <div>
                                     <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Active Jobs</h1>
-                                    <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mt-2 italic">{org?.name}  {formatOrgPlan(org?.plan) || "Enterprise"} Panel</p>
+                                    <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mt-2 italic">{org?.name}  {formatOrgPlan(org?.billingPlan) || "Enterprise"} Panel</p>
                                 </div>
                             </div>
                         </div>
@@ -543,7 +543,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                                 { label: "Interview Brief", key: "interviewBrief" },
                                                 { label: "Interview LLM Generation", key: "interviewLLMGeneration" },
                                             ].map((row) => {
-                                                const usage = (org?.usageMetrics ?? {}) as Record<string, unknown>;
+                                                const usage = (org?.platformUsageMetrics ?? {}) as Record<string, unknown>;
                                                 const billingAll = (usage.billing ?? {}) as Record<string, BillingFeatureMetrics>;
                                                 const billing = (billingAll[row.key] ?? {}) as BillingFeatureMetrics;
                                                 const llmCost = Number(billing?.costUsd || 0);
@@ -574,7 +574,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                         <div className="mt-2 text-4xl font-black text-violet-600">
                                             {fmt(
                                                 (() => {
-                                                    const usage = (org?.usageMetrics ?? {}) as Record<string, unknown>;
+                                                    const usage = (org?.platformUsageMetrics ?? {}) as Record<string, unknown>;
                                                     const billingAll = (usage.billing ?? {}) as Record<string, BillingFeatureMetrics>;
                                                     return (
                                                         Number((billingAll["interview"] as BillingFeatureMetrics)?.costUsd || 0)
@@ -597,7 +597,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                         { label: "Cartesia", provider: "CARTESIA" },
                                         { label: "Sarvam", provider: "SARVAM" },
                                     ].map((tts) => {
-                                        const usage = (org?.usageMetrics ?? {}) as Record<string, unknown>;
+                                        const usage = (org?.platformUsageMetrics ?? {}) as Record<string, unknown>;
                                         const billingAll = (usage.billing ?? {}) as Record<string, BillingFeatureMetrics>;
                                         const interviewBilling = (billingAll["interview"] ?? {}) as BillingFeatureMetrics;
                                         // Find provider-specific TTS data from ttsByModel
@@ -631,7 +631,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                 <h4 className="text-[12px] font-black uppercase tracking-[0.15em] text-gray-500 mb-4">STT Hub - Deepgram</h4>
                                 <div className="grid gap-4 md:grid-cols-2">
                                     {(() => {
-                                        const usage = (org?.usageMetrics ?? {}) as Record<string, unknown>;
+                                        const usage = (org?.platformUsageMetrics ?? {}) as Record<string, unknown>;
                                         const billingAll = (usage.billing ?? {}) as Record<string, BillingFeatureMetrics>;
                                         const interviewBilling = (billingAll["interview"] ?? {}) as BillingFeatureMetrics;
                                         const sttMinutes = (Number(interviewBilling?.sttAudioSeconds || 0) / 60).toFixed(1);
@@ -665,7 +665,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                         "resumeReport",
                                         "interviewReport",
                                     ].reduce((sum, key) => {
-                                        const usage = (org?.usageMetrics ?? {}) as Record<string, unknown>;
+                                        const usage = (org?.platformUsageMetrics ?? {}) as Record<string, unknown>;
                                         const billingAll = (usage.billing ?? {}) as Record<string, BillingFeatureMetrics>;
                                         const row = billingAll[key] ?? {};
                                         return (
@@ -681,14 +681,14 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                         <div className="grid gap-4 border-t border-gray-100 bg-gray-50/50 px-6 py-5 md:grid-cols-3">
                             <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
                                 <div className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Interview quota used</div>
-                                <div className="mt-2 text-3xl font-black text-gray-900">{Number(org?.interviewQuotaUsed || 0).toLocaleString()}</div>
+                                <div className="mt-2 text-3xl font-black text-gray-900">{Number(org?.totalInterviewsUsed || 0).toLocaleString()}</div>
                                 <div className="mt-1 text-xs font-bold text-gray-500 uppercase tracking-wider">
                                     1 interview is deducted after each completed session.
                                 </div>
                             </div>
                             <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
                                 <div className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Credits used</div>
-                                <div className="mt-2 text-3xl font-black text-gray-900">{Number(org?.creditsUsed || 0).toFixed(2)}</div>
+                                <div className="mt-2 text-3xl font-black text-gray-900">{Number(org?.billingCreditsUsed || 0).toFixed(2)}</div>
                                 <div className="mt-1 text-xs font-bold text-gray-500 uppercase tracking-wider">
                                     1 minute = 1 credit.
                                 </div>
@@ -696,7 +696,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                             <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
                                 <div className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Interview quota remaining</div>
                                 <div className="mt-2 text-3xl font-black text-gray-900">
-                                    {Math.max(0, Number(org?.interviewQuotaTotal || 0) - Number(org?.interviewQuotaUsed || 0)).toLocaleString()}
+                                    {Math.max(0, Number(org?.totalInterviewsAllowed || 0) - Number(org?.totalInterviewsUsed || 0)).toLocaleString()}
                                 </div>
                                 <div className="mt-1 text-xs font-bold text-gray-500 uppercase tracking-wider">
                                     Current org balance.

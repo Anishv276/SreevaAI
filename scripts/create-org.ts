@@ -87,7 +87,7 @@ async function createOrg(rl: readline.Interface): Promise<void> {
     const plan = normalizeOrgPlan(planInput) || DEFAULT_ORG_PLAN;
 
     const quotaInput = (await prompt(rl, "Interview quota (number of interviews allowed, default 0): ")).trim();
-    const interviewQuotaTotal = Math.max(0, parseInt(quotaInput) || 0);
+    const totalInterviewsAllowed = Math.max(0, parseInt(quotaInput) || 0);
 
     const hashedPassword = await bcrypt.hash(adminPassword, 10);
 
@@ -97,7 +97,7 @@ async function createOrg(rl: readline.Interface): Promise<void> {
             name: orgName,
             urlSlug,
             billingPlan: plan,
-            totalInterviewsAllowed: interviewQuotaTotal,
+            totalInterviewsAllowed,
             billingCreditsUsed: 0,
             platformUsageMetrics: {},
             isOnboardingComplete: true,

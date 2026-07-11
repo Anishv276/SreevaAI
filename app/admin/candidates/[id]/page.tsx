@@ -154,7 +154,7 @@ const _dims: { name: string; score: number; evidence: string }[] =
     ].filter(d => d.score > 0 || d.evidence);
 const _dimByName = (name: string) => _dims.find((d) => d.name.toLowerCase().includes(name.toLowerCase()))?.score ?? 0;
 const interviewReportScores = {
-    overall:               candidate?.aiScore ? Number(candidate.aiScore) : Number(interviewReportData?.overall ?? 0),
+    overall:               candidate?.resumeAiScore ? Number(candidate.resumeAiScore) : Number(interviewReportData?.overall ?? 0),
     engagement:            Number(interviewReportData?.engagement ?? 0),
     communication:         _dimByName("communication"),
     domain_knowledge:      _dimByName("domain"),
@@ -439,11 +439,11 @@ const groupedProctoringSignals = rawProctoringEvents.reduce((acc: any[], ev: any
             : "";
         return typeof snapshot === "string" && snapshot.trim()
             ? snapshot
-            : `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(candidate?.fullName || "Candidate")}`;
+            : `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(candidate?.candidateFullName || "Candidate")}`;
     })();
     const resumeReportPayload: any = (() => {
         try {
-            const raw = candidate?.fullScanReport;
+            const raw = candidate?.resumeAiReport;
             if (!raw) return {};
             return typeof raw === "string" ? JSON.parse(raw) : raw;
         } catch {
@@ -451,7 +451,7 @@ const groupedProctoringSignals = rawProctoringEvents.reduce((acc: any[], ev: any
         }
     })();
     const structuredResumeData: any = (() => {
-        const raw = candidate?.resumeData;
+        const raw = candidate?.resumeParsedData;
         const parsed = safeJsonParse(raw, {});
         if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
             if (parsed.structured && typeof parsed.structured === "object" && !Array.isArray(parsed.structured)) {
@@ -467,7 +467,7 @@ const groupedProctoringSignals = rawProctoringEvents.reduce((acc: any[], ev: any
     const resumeReportModel = useMemo(() => {
         const report = resumeReportPayload || {};
         const resumeStruct = structuredResumeData || {};
-        const fullName = candidate?.fullName || "Candidate";
+        const fullName = candidate?.candidateFullName || "Candidate";
         const workHistory = (Array.isArray(report.work_history_annotated) && report.work_history_annotated.length > 0)
             ? report.work_history_annotated
             : Array.isArray(report.work_history)
@@ -476,7 +476,7 @@ const groupedProctoringSignals = rawProctoringEvents.reduce((acc: any[], ev: any
                     ? resumeStruct.work_history
                 : [];
         const breakdown = report.breakdown || null;
-        const score = Number(candidate?.aiScore ?? report.score ?? 0) || 0;
+        const score = Number(candidate?.resumeAiScore ?? report.score ?? 0) || 0;
         const experienceYears: number | null = (() => {
             const v = report.candidate_years ?? report.experience_assessment?.years ?? resumeStruct?.experience?.total_years ?? null;
             const n = Number(v);
@@ -495,19 +495,19 @@ const groupedProctoringSignals = rawProctoringEvents.reduce((acc: any[], ev: any
         return buildSreevaAIResumeViewModel({
             candidate: {
                 fullName,
-                createdAt: candidate?.createdAt,
+                createdAt: candidate?.appliedAt,
                 location: candidate?.location || candidate?.city || "—",
-                resumeUrl: candidate?.resumeUrl || null,
+                resumeUrl: candidate?.resumeFileUrl || null,
                 job: { title: candidate?.job?.title || candidate?.jobTitle || "Role N/A" },
                 experienceYears,
             },
             mounted,
             displayAvatar: candidatePhotoSrc,
             backHref,
-            hasAiReport: Boolean(candidate?.fullScanReport),
-            hasResumeText: Boolean(candidate?.resumeText),
+            hasAiReport: Boolean(candidate?.resumeAiReport),
+            hasResumeText: Boolean(candidate?.resumeRawText),
             matchScore: score,
-            normalizedStatus: String(candidate?.resumeStatus || "pending"),
+            normalizedStatus: String(candidate?.resumeScreeningStatus || "pending"),
             breakdown,
             combinedWorkHistory: workHistory,
             structuredResumeData,

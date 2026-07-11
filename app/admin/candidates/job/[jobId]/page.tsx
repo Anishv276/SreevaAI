@@ -16,19 +16,19 @@ import { motion } from "framer-motion";
 interface JobDetails {
     id: string;
     title: string;
-    role?: string | null;
+    jobRole?: string | null;
     applicants?: number | null;
     interviewMode?: string | null;
-    screeningThreshold?: number | null;
+    resumeScreeningThreshold?: number | null;
     description?: string | null;
     experience?: string | null;
     responsibilities?: string | null;
     requirements?: string | null;
     skills?: string | null;
     salary?: string | null;
-    extractedDetails?: Record<string, unknown> | string | null;
+    jdExtractedDetails?: Record<string, unknown> | string | null;
     jdPreviewUrl?: string | null;
-    screeningCriteria?: Record<string, any> | string | null;
+    resumeScreeningCriteria?: Record<string, any> | string | null;
 }
 
 export default function JobCandidatesPage() {
@@ -59,19 +59,19 @@ export default function JobCandidatesPage() {
                 setJob({
                     id: data.id,
                     title: data.title,
-                    role: data.role || null,
+                    jobRole: data.jobRole || null,
                     applicants: data.applicants ?? data._count?.applications ?? 0,
                     interviewMode: data.interviewMode || "ats",
-                    screeningThreshold: data.screeningThreshold ?? null,
+                    resumeScreeningThreshold: data.resumeScreeningThreshold ?? null,
                     description: data.description || null,
                     experience: data.experience || null,
                     responsibilities: data.responsibilities || null,
                     requirements: data.requirements || null,
                     skills: data.skills || null,
                     salary: data.salary || null,
-                    extractedDetails: data.extractedDetails || null,
+                    jdExtractedDetails: data.jdExtractedDetails || null,
                     jdPreviewUrl: data.jdPreviewUrl || null,
-                    screeningCriteria: data.screeningCriteria || null,
+                    resumeScreeningCriteria: data.resumeScreeningCriteria || null,
                 });
             } catch (error) {
                 console.error("Failed to fetch job:", error);
@@ -201,15 +201,6 @@ export default function JobCandidatesPage() {
 
                     {/* Right: Metrics */}
                     <div className="flex items-stretch gap-2 w-full xl:w-auto">
-                        {/* Total Candidates */}
-                        <div className="flex items-start gap-2 p-3 rounded-xl bg-violet-50/50 border border-violet-100 flex-1 min-w-[110px]">
-                            <div className="mt-0.5"><svg className="h-4 w-4 text-violet-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg></div>
-                            <div>
-                                <p className="text-xl font-black text-gray-900 leading-none mb-1">{applicantCount}</p>
-                                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Total</p>
-                            </div>
-                        </div>
-
                         {/* Shortlisted */}
                         <div className="flex flex-col justify-between p-3 rounded-xl bg-emerald-50/30 border border-emerald-100 flex-1 min-w-[110px] relative">
                             <div className="flex items-start gap-2">
@@ -222,6 +213,18 @@ export default function JobCandidatesPage() {
                             <div className="absolute top-3 right-3 text-[10px] font-bold text-gray-400">{getPct(stats.shortlisted)}%</div>
                         </div>
 
+                        {/* Scheduled */}
+                        <div className="flex flex-col justify-between p-3 rounded-xl bg-amber-50/30 border border-amber-100 flex-1 min-w-[110px] relative">
+                            <div className="flex items-start gap-2">
+                                <div className="mt-0.5"><svg className="h-4 w-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+                                <div className="pr-6">
+                                    <p className="text-xl font-black text-gray-900 leading-none mb-1">{stats.interviewPending}</p>
+                                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Scheduled</p>
+                                </div>
+                            </div>
+                            <div className="absolute top-3 right-3 text-[10px] font-bold text-gray-400">{getPct(stats.interviewPending)}%</div>
+                        </div>
+
                         {/* Interviewed */}
                         <div className="flex flex-col justify-between p-3 rounded-xl bg-blue-50/30 border border-blue-100 flex-1 min-w-[110px] relative">
                             <div className="flex items-start gap-2">
@@ -232,18 +235,6 @@ export default function JobCandidatesPage() {
                                 </div>
                             </div>
                             <div className="absolute top-3 right-3 text-[10px] font-bold text-gray-400">{getPct(stats.interviewCompleted)}%</div>
-                        </div>
-
-                        {/* Ready for Hire */}
-                        <div className="flex flex-col justify-between p-3 rounded-xl bg-amber-50/30 border border-amber-100 flex-1 min-w-[110px] relative">
-                            <div className="flex items-start gap-2">
-                                <div className="mt-0.5"><svg className="h-4 w-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
-                                <div className="pr-6">
-                                    <p className="text-xl font-black text-gray-900 leading-none mb-1">{stats.readyForHire}</p>
-                                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Ready</p>
-                                </div>
-                            </div>
-                            <div className="absolute top-3 right-3 text-[10px] font-bold text-gray-400">{getPct(stats.readyForHire)}%</div>
                         </div>
 
                         {/* Rejected */}

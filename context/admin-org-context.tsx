@@ -5,17 +5,17 @@ export type OrgData = {
     status: string;
     orgId?: string | null;
     name?: string;
-    plan?: string;
-    voiceId?: string | null;
-    allowedVoices?: string[];
+    billingPlan?: string;
+    defaultVoiceId?: string | null;
+    allowedVoiceIds?: string[];
     sttModel?: string | null;
     maxActiveJobs?: string | null;
     activeJobCount?: number;
     proctoringSignals?: string | null;
-    interviewQuotaTotal?: number;
-    interviewQuotaUsed?: number;
+    totalInterviewsAllowed?: number;
+    totalInterviewsUsed?: number;
     interviewQuotaRemaining?: number;
-    creditsUsed?: number;
+    billingCreditsUsed?: number;
 };
 type AdminOrgContextValue = OrgData & {
     refresh: () => void;
@@ -70,13 +70,18 @@ export function AdminOrgProvider({
                 ...(orgJson && {
                     status: String(orgJson.status || prev.status || "ACTIVE").toUpperCase(),
                     name: orgJson.name,
-                    plan: orgJson.plan,
+                    billingPlan: orgJson.billingPlan,
+                    defaultVoiceId: orgJson.defaultVoiceId,
+                    allowedVoiceIds: orgJson.allowedVoiceIds,
+                    sttModel: orgJson.sttModel,
+                    maxActiveJobs: orgJson.maxActiveJobs,
+                    activeJobCount: orgJson.activeJobCount,
                 }),
                 ...(creditsJson && {
-                    interviewQuotaTotal: Number(creditsJson.interviewQuotaTotal ?? 0),
-                    interviewQuotaUsed: Number(creditsJson.interviewQuotaUsed ?? 0),
+                    totalInterviewsAllowed: Number(creditsJson.totalInterviewsAllowed ?? 0),
+                    totalInterviewsUsed: Number(creditsJson.totalInterviewsUsed ?? 0),
                     interviewQuotaRemaining: Number(creditsJson.interviewQuotaRemaining ?? 0),
-                    creditsUsed: Number(creditsJson.creditsUsed ?? 0),
+                    billingCreditsUsed: Number(creditsJson.billingCreditsUsed ?? 0),
                 }),
             }));
         } catch {

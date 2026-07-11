@@ -10,7 +10,7 @@ export function LowCreditsBanner({ orgStatus }: { orgStatus?: string }) {
     // ⚡ Read from shared context -- no fetch needed (was 2 API calls per page load)
     const liveStatus = adminOrg?.status || String(orgStatus || "").trim().toUpperCase();
     const isSuspended = isOrgRestrictedStatus(liveStatus);
-    const total = Number(adminOrg?.interviewQuotaTotal ?? 0);
+    const total = Number(adminOrg?.totalInterviewsAllowed ?? 0);
     const remaining = Number(adminOrg?.interviewQuotaRemaining ?? 0);
     let state: BannerState = null;
     if (isSuspended) {

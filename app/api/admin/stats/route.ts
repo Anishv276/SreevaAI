@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
                     AND i."isDeleted" = false
                 )::INT AS "interviewedPrev",
                 COUNT(*) FILTER (
-                    WHERE i."interviewStatus" = 'IN_PROGRESS'
+                    WHERE i."interviewStatus" IN ('LAUNCHING', 'PROGRESS')
                     AND i."isDeleted" = false
                 )::INT AS "liveInterviews",
                 COUNT(*) FILTER (

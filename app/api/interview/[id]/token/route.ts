@@ -14,7 +14,7 @@ async function resolveInterview(applicationId: string) {
         include: {
             job: {
                 include: {
-                    organization: { select: { enabledProctoringSignals: true } },
+                    organization: { select: { name: true, enabledProctoringSignals: true } },
                 },
             },
             interview: true,
@@ -38,11 +38,10 @@ function checkJobExpiration(job: { closedAt?: Date | null; applicationDeadline?:
     return { ok: true };
 }
 
-function checkSchedulingGate(interview: { interviewScheduledAt: Date | null; interviewStatus: string; interviewStartedAt: Date | null; inviteLinkStatus?: string | null }): {
+function checkSchedulingGate(interview: { interviewScheduledAt: Date | null; interviewStatus: string; interviewStartedAt: Date | null }): {
     ok: boolean; code?: string; error?: string; status?: number; remainingMs?: number; shouldFail?: boolean;
 } {
     const interviewStatus = String(interview.interviewStatus || "").toUpperCase();
-    const linkStatus = String(interview.inviteLinkStatus || "").toUpperCase();
 
     if (interviewStatus === "COMPLETED") {
         return { ok: false, code: "INTERVIEW_COMPLETED", error: "Interview completed. Please contact support@sreevaai.com for assistance.", status: 409 };
@@ -52,6 +51,9 @@ function checkSchedulingGate(interview: { interviewScheduledAt: Date | null; int
         return { ok: false, code: "INTERVIEW_FAILED", error: "This interview session has ended. Please contact support@sreevaai.com to reschedule.", status: 409 };
     }
 
+    if (interviewStatus === "NO_SHOW") {
+        return { ok: false, code: "SLOT_EXPIRED", error: "Your slot has expired. Please contact your recruiter to reschedule.", status: 403 };
+    }
 
     if (!interview.interviewScheduledAt) {
         return { ok: false, code: "NOT_SCHEDULED", error: "No slot booked yet. Please schedule your interview first.", status: 403 };
@@ -71,7 +73,7 @@ function checkSchedulingGate(interview: { interviewScheduledAt: Date | null; int
         };
     }
 
-    // Past the window close: fail if the greeting was never reached (interviewStartedAt unset).
+    // Past the window close: fail if the candidate never entered the room (interviewStartedAt unset).
     if (remainingMs < -LATE_CLOSE_MS && !interview.interviewStartedAt) {
         const neverJoined = interviewStatus === "SCHEDULED";
         return {
@@ -85,9 +87,9 @@ function checkSchedulingGate(interview: { interviewScheduledAt: Date | null; int
         };
     }
 
-    // Greeting already spoken (interviewStartedAt set) -- a second /token call means
-    // another device/tab is trying to join a session that's already live.
-    if (interview.interviewStartedAt) {
+    // Already entering/live (LAUNCHING or PROGRESS) -- a second /token call means
+    // another device/tab is trying to join a session that's already underway.
+    if (interviewStatus === "LAUNCHING" || interviewStatus === "PROGRESS") {
         return {
             ok: false,
             code: "INTERVIEW_IN_PROGRESS",
@@ -129,10 +131,10 @@ export async function POST(
 
         const gate = checkSchedulingGate(interview);
         if (!gate.ok) {
-            if (gate.code === "SLOT_EXPIRED" && interview.inviteLinkStatus !== "EXPIRED") {
+            if (gate.code === "SLOT_EXPIRED" && interview.interviewStatus !== "NO_SHOW") {
                 await prisma.interview.update({
                     where: { applicationId },
-                    data: { inviteLinkStatus: "EXPIRED" }
+                    data: { interviewStatus: "NO_SHOW" }
                 }).catch(() => { });
             }
             return NextResponse.json(
@@ -147,11 +149,12 @@ export async function POST(
         const serverUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL || process.env.LIVEKIT_URL;
         const agentName = process.env.LIVEKIT_AGENT_NAME || "ai_interviewer";
 
-        // Mark IN_PROGRESS on first token request
-        if (interview.interviewStatus === "PENDING") {
+        // Candidate is entering the room -- mark LAUNCHING so a second device is blocked
+        // from here on (PROGRESS is set later by the agent once it actually joins).
+        if (interview.interviewStatus === "SCHEDULED") {
             await prisma.interview.update({
                 where: { applicationId },
-                data: { interviewStatus: "IN_PROGRESS", interviewStartedAt: new Date(), inviteLinkStatus: "EXPIRED" },
+                data: { interviewStatus: "LAUNCHING", interviewStartedAt: new Date() },
             }).catch(() => { });
         }
 
@@ -202,6 +205,7 @@ export async function POST(
             duration: durationSeconds,
             roleLabel: application.job?.jobRole || application.job?.title || "Interview",
             candidateName: application.candidateFullName,
+            orgName: application.job?.organization?.name || "",
             proctoringSignals,
             scheduledAt: interview.interviewScheduledAt?.toISOString(),
         });
@@ -227,7 +231,7 @@ export async function GET(
         const application = await prisma.application.findUnique({
             where: { id: applicationId },
             include: {
-                job: true,
+                job: { include: { organization: { select: { name: true } } } },
                 interview: true
             },
         });
@@ -249,10 +253,10 @@ export async function GET(
 
         const gate = checkSchedulingGate(interview);
         if (!gate.ok) {
-            if (gate.code === "SLOT_EXPIRED" && interview.inviteLinkStatus !== "EXPIRED") {
+            if (gate.code === "SLOT_EXPIRED" && interview.interviewStatus !== "NO_SHOW") {
                 await prisma.interview.update({
                     where: { applicationId },
-                    data: { inviteLinkStatus: "EXPIRED" }
+                    data: { interviewStatus: "NO_SHOW" }
                 }).catch(() => { });
             }
             return NextResponse.json(
@@ -261,7 +265,13 @@ export async function GET(
             );
         }
 
-        return NextResponse.json({ ok: true, code: "ACTIVE", scheduledAt: interview.interviewScheduledAt?.toISOString(), remainingMs: gate.remainingMs });
+        return NextResponse.json({
+            ok: true,
+            code: "ACTIVE",
+            scheduledAt: interview.interviewScheduledAt?.toISOString(),
+            remainingMs: gate.remainingMs,
+            orgName: application.job?.organization?.name || "",
+        });
     } catch (error) {
         console.error("Status check error:", error);
         return NextResponse.json({ error: "Failed to check status" }, { status: 500 });

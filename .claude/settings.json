@@ -349,7 +349,6 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\('interview/agent_runtime.py', encoding='utf-8'\\).read\\(\\)\\); print\\('agent_runtime OK'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('interview/agent_runtime.py', encoding='utf-8'\\).read\\(\\)\\); print\\('agent_runtime.py OK'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('interview/agent_scoring.py', encoding='utf-8'\\).read\\(\\)\\); print\\('agent_scoring.py OK'\\)\")",
-<<<<<<< HEAD
       "Bash(xargs grep -lIi \"drive\")",
       "Bash(set -e)",
       "Bash(npx prisma *)",
@@ -367,10 +366,7 @@
       "Bash(find ./livekit-python-agent -maxdepth 1 -iname \"*.env*\")",
       "Bash(sed -i 's/organization: { select: { slug: true } }/organization: { select: { urlSlug: true } }/; s/organization?\\\\.slug/organization?.urlSlug/' scripts/test-upload-batch.ts)",
       "Bash(sed -i 's/organization: { select: { slug: true } }/organization: { select: { urlSlug: true } }/; s/organization?\\\\.slug/organization?.urlSlug/' scripts/test-upload-e2e.ts)",
-      "Bash(echo \"EXIT: $?\")"
-=======
-<<<<<<< HEAD
-      "Bash(npx prisma *)",
+      "Bash(echo \"EXIT: $?\")",
       "Bash(tee /tmp/migrate_out.txt)",
       "Skill(artifact-design)",
       "Skill(artifact-design:*)",
@@ -384,15 +380,16 @@
       "Read(//c/Users/vamsi/OneDrive/Documents/**)",
       "Bash(python -c \"import ast; ast.parse\\(open\\('interview/generate_brief.py', encoding='utf-8'\\).read\\(\\)\\)\")",
       "Bash(grep -rn \"DIRECT_URL\" --include=\"*.env*\" --include=\"docker-compose*.yml\" aws-deployment/)",
-      "Bash(grep -n \"DIRECT_URL\" .env.example)"
-=======
+      "Bash(grep -n \"DIRECT_URL\" .env.example)",
       "Bash(cp \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\SreevaAI\\\\Logo_svg.png\" \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\\\\public\\\\sreevaai-logo.png\")",
       "Bash(grep -n \"^\\\\s*\\\\.hero\\\\s*{$\\\\|^\\\\s*\\\\.hero-right\\\\s*{$\\\\|\\\\.hero\\\\s*{\" \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\\\\app\\\\\\(marketing\\)\\\\marketing.css\")",
       "Bash(grep -n \"^a \\\\|^a{\\\\|^a,\\\\|^button {\\\\|^button{\\\\|^button,\" \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\\\\app\\\\globals.css\")",
       "Bash(python3 -c ' *)",
-      "Bash(grep -n \"RoiCalculator\\\\|{/\\\\*  ========== ROI\\\\|{/\\\\*  ========== FAQ\" \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\\\\app\\\\\\(marketing\\)\\\\page.tsx\")"
->>>>>>> b84be87f259cf22e40323fd1d9f1330453f06c2c
->>>>>>> f94f7087f39bb18e2297fd90e8e32752848cd88e
+      "Bash(grep -n \"RoiCalculator\\\\|{/\\\\*  ========== ROI\\\\|{/\\\\*  ========== FAQ\" \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\\\\app\\\\\\(marketing\\)\\\\page.tsx\")",
+      "Bash(python -c \"import json; json.load\\(open\\(r'c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\\\\.claude\\\\settings.json'\\)\\)\")",
+      "Bash(python -c \"import json; json.load\\(open\\(r'c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\\\\.claude\\\\settings.json', encoding='utf-8'\\)\\)\")",
+      "Bash(grep -n \"className=\\\\\"[^\\\\\"]*font-\\\\|className={\\\\`[^\\\\`]*font-\" components/admin/candidate-profile/resume-report-sreevaai.tsx components/admin/candidate-profile/interview-report-sreevaai.tsx)",
+      "Bash(node -e \"require\\('./node_modules/.bin/tsc'\\)\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",

@@ -239,8 +239,8 @@ export async function GET(request: Request) {
         const toEffectiveStatus = (org: {
             status?: string | null;
             statusControl?: string | null;
-            interviewQuotaTotal?: number | null;
-            interviewQuotaUsed?: number | null;
+            totalInterviewsAllowed?: number | null;
+            totalInterviewsUsed?: number | null;
         }) => {
             const status = String(org.status || "ACTIVE").toUpperCase();
             if (status === "CLOSED") {
@@ -250,8 +250,8 @@ export async function GET(request: Request) {
             if (statusControl === ORG_STATUS_CONTROL_MANUAL) {
                 return "SUSPENDED";
             }
-            const total = Math.max(0, Number(org.interviewQuotaTotal || 0));
-            const used = Math.max(0, Number(org.interviewQuotaUsed || 0));
+            const total = Math.max(0, Number(org.totalInterviewsAllowed || 0));
+            const used = Math.max(0, Number(org.totalInterviewsUsed || 0));
             const remaining = Math.max(0, total - used);
             if (total > 0 && remaining <= 0) return "SUSPENDED";
             if (total > 0 && remaining > 0) return "ACTIVE";
@@ -263,8 +263,8 @@ export async function GET(request: Request) {
                 status: toEffectiveStatus({
                     status: org.orgStatus as string | null,
                     statusControl: org.quotaControlMode as string | null,
-                    interviewQuotaTotal: org.totalInterviewsAllowed as number | null,
-                    interviewQuotaUsed: org.totalInterviewsUsed as number | null,
+                    totalInterviewsAllowed: org.totalInterviewsAllowed as number | null,
+                    totalInterviewsUsed: org.totalInterviewsUsed as number | null,
                 }),
             })),
             pagination: { total, page, limit, totalPages },
@@ -286,7 +286,7 @@ export async function POST(request: Request) {
         const {
             orgName, slug, plan, adminEmail, adminPassword,
             maxActiveJobs,
-            interviewQuotaTotal,
+            totalInterviewsAllowed: requestedTotalInterviewsAllowed,
             recordingEnabled,
             recordingRetentionDays,
             proctoringSignals,
@@ -376,7 +376,7 @@ export async function POST(request: Request) {
                         ? normalizeOrgLimitInput(maxActiveJobs)
                         : "Unlimited",
                 maxConcurrentInterviews: maxConcurrentSlots !== undefined && maxConcurrentSlots !== null ? Math.max(1, parseInt(maxConcurrentSlots)) : 5,
-                totalInterviewsAllowed: Math.max(0, Math.round(Number(interviewQuotaTotal ?? 0) || 0)),
+                totalInterviewsAllowed: Math.max(0, Math.round(Number(requestedTotalInterviewsAllowed ?? 0) || 0)),
                 billingCreditsUsed: 0,
                 isRecordingEnabled: resolvedRecordingEnabled ? true : null,
                 recordingKeepForDays: resolvedRecordingEnabled ? resolvedRecordingRetentionDays : null,

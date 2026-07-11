@@ -122,7 +122,7 @@ async function validateInterviewAccess(applicationId: string, interviewToken: st
                 select: {
                     candidateInviteToken: true,
                     inviteLinkExpiresAt: true,
-                    inviteLinkStatus: true,
+                    interviewStatus: true,
                     isTestSession: true,
                 },
             },
@@ -138,8 +138,9 @@ async function validateInterviewAccess(applicationId: string, interviewToken: st
     }
 
     const isTest = app.interview?.isTestSession === true;
-    if (!isTest && app.interview.inviteLinkStatus && app.interview.inviteLinkStatus !== "ACTIVE") {
-        console.error("[verify-speech] validateInterviewAccess failed: Link not ACTIVE");
+    const terminalStatuses = ["COMPLETED", "FAILED", "NO_SHOW"];
+    if (!isTest && terminalStatuses.includes(String(app.interview.interviewStatus || "").toUpperCase())) {
+        console.error("[verify-speech] validateInterviewAccess failed: Interview session ended");
         return null;
     }
     return app.job.organizationId;

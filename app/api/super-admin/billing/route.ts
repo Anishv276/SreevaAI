@@ -225,7 +225,7 @@ export async function GET(request: Request) {
                 sttCostUsd: Math.round(totalSttCost * 1e6) / 1e6,
                 totalCostUsd: Math.round((totalLlmCost + totalTtsCost + totalSttCost) * 1e6) / 1e6,
             },
-            creditsUsed: Number(org.billingCreditsUsed || 0),
+            billingCreditsUsed: Number(org.billingCreditsUsed || 0),
         });
     } catch (error) {
         console.error("Super-admin billing error:", error);

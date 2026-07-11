@@ -178,7 +178,7 @@ async def get_interview_context(app_id: str) -> dict:
            COALESCE(d."aiInterviewerVoiceId", o."defaultVoiceId") AS "voiceId",
            COALESCE(d."aiInterviewerName", 'Ishitha') AS "aiName", o.name AS "orgName",
            o."enabledProctoringSignals" AS "proctoringSignals",
-           o."sttModel", o."ttsProvider", o."ttsModel",
+           o."sttModel", o."ttsProvider", o."ttsModel", o."ttsSpeed",
            o."llmInterviewLive", o."llmInterviewEval", o."llmInterviewBrief", o."llmInterviewReport",
            i."interviewStatus" AS "interviewStatus",
            i."aiInterviewBrief" AS "interviewBrief"
@@ -311,8 +311,8 @@ async def persist_transcript(
     except Exception as e:
         logger.error(f"[TRANSCRIPT] DB save failed: {e}")
 async def mark_interview_started(app_id: str) -> None:
-    """Mark interview as IN_PROGRESS.
-    Only updates rows whose current status is not already IN_PROGRESS or COMPLETED.
+    """Mark interview as PROGRESS (agent has actually joined and is live).
+    Only updates rows whose current status is not already LAUNCHING, PROGRESS, or COMPLETED.
     Returns normally on success; RAISES on DB failure so the caller can abort startup.
     Raising here prevents a second agent from launching when the first one's write failed.
     """
@@ -324,21 +324,21 @@ async def mark_interview_started(app_id: str) -> None:
             """UPDATE "Interview"
                SET "interviewStatus" = $1, "interviewStartedAt" = NOW(), "interviewUpdatedAt" = NOW()
                WHERE "applicationId" = $2
-                 AND "interviewStatus" NOT IN ('IN_PROGRESS', 'COMPLETED')""",
-            "IN_PROGRESS", app_id,
+                 AND "interviewStatus" NOT IN ('PROGRESS', 'COMPLETED')""",
+            "PROGRESS", app_id,
         )
         # result is a status string like "UPDATE 1" or "UPDATE 0"
         updated_rows = int(result.split()[-1]) if result else 0
         if updated_rows == 0:
             raise RuntimeError(
-                f"[INTERVIEW] Cannot start app {app_id}: already IN_PROGRESS or COMPLETED "
+                f"[INTERVIEW] Cannot start app {app_id}: already PROGRESS or COMPLETED "
                 f"(another agent instance may be running). Aborting to prevent duplicate agents."
             )
         await conn.execute(
             'UPDATE "Application" SET "interviewPhaseStatus" = $1, "applicationUpdatedAt" = NOW() WHERE id = $2',
             "IN_PROGRESS", app_id,
         )
-    logger.info(f"[INTERVIEW] App {app_id} marked as IN_PROGRESS.")
+    logger.info(f"[INTERVIEW] App {app_id} marked as PROGRESS.")
 async def mark_interview_failed(app_id: str, reason: str = "technical_error") -> None:
     """Mark interview and application as FAILED in DB.
     Called whenever the agent crashes before a normal completion so the Job

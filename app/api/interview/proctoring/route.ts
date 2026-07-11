@@ -54,7 +54,7 @@ export async function POST(req: Request) {
     // -- AUTHENTICATION & LIFECYCLE --------------------
     const authCheck = await prisma.interview.findUnique({
       where: { applicationId },
-      select: { candidateInviteToken: true, inviteLinkExpiresAt: true, interviewStartedAt: true, inviteLinkStatus: true, isTestSession: true }
+      select: { candidateInviteToken: true, inviteLinkExpiresAt: true, interviewStartedAt: true, interviewStatus: true, isTestSession: true }
     });
     if (requireInterviewToken && (!authCheck || authCheck.candidateInviteToken !== interviewToken)) {
       return NextResponse.json({ error: "Unauthorized: Invalid security token" }, { status: 401 });
@@ -68,15 +68,16 @@ export async function POST(req: Request) {
       // Bypass expiration logic entirely if it's a test interview
       const isTest = authCheck.isTestSession === true;
       const isExpiredByTime = !isTest && joinWindowExpired;
+      const alreadyNoShow = authCheck.interviewStatus === "NO_SHOW";
 
-      if (isExpiredByTime && authCheck.inviteLinkStatus !== "EXPIRED") {
+      if (isExpiredByTime && !alreadyNoShow) {
         await prisma.interview.update({
           where: { applicationId },
-          data: { inviteLinkStatus: "EXPIRED" },
+          data: { interviewStatus: "NO_SHOW" },
         }).catch(() => { });
       }
 
-      if (!isTest && (authCheck.inviteLinkStatus === "EXPIRED" || isExpiredByTime)) {
+      if (!isTest && (alreadyNoShow || isExpiredByTime)) {
         return NextResponse.json({ error: "Access Denied: Interview link has expired. Please contact support." }, { status: 403 });
       }
     }
@@ -134,7 +135,7 @@ export async function POST(req: Request) {
           id: generateId("int", app?.candidateFullName || applicationId),
           applicationId,
           candidateInviteToken: crypto.randomUUID(),
-          interviewStatus: "IN_PROGRESS",
+          interviewStatus: "PROGRESS",
           proctoringEvents: mergedEvents,
           interviewCreatedAt: now,
           interviewUpdatedAt: now,

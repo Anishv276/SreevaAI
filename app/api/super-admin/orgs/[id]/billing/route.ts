@@ -77,7 +77,7 @@ export async function GET(
             aggregates.interview.sessionDuration += Number(row.interviewDuration || 0);
         }
 
-        // All costs and interview-level aggregates come from usageMetrics.billing (billing.py accurate data).
+        // All costs and interview-level aggregates come from platformUsageMetrics.billing (billing.py accurate data).
         const billingBucket = (orgUsage.billing && typeof orgUsage.billing === "object")
             ? (orgUsage.billing as Record<string, any>)
             : {};

@@ -27,7 +27,7 @@ async function persistInterviewUpdateRaw(params: {
     recordingCompletedAt,
     recordingDurationSec
   } = params;
-  const finalStatus = interviewStatus || "IN_PROGRESS";
+  const finalStatus = interviewStatus || "PROGRESS";
   const app = await prisma.application.findUnique({
     where: { id: applicationId },
     select: { candidateFullName: true, job: { select: { title: true, jobRole: true } } }
@@ -51,7 +51,7 @@ async function persistInterviewUpdateRaw(params: {
   await prisma.$executeRawUnsafe(
     `
     INSERT INTO "Interview" (id, "applicationId", "candidateInviteToken", "interviewStatus", "fullTranscript", "proctoringSnapshotUrls", "sessionRecording", "interviewCompletedAt", "interviewCreatedAt", "interviewUpdatedAt")
-    VALUES ($1, $2, $3, COALESCE($4::text, 'IN_PROGRESS'), $6, $7, COALESCE($8::jsonb, '{}'::jsonb), CASE WHEN COALESCE($4::text, 'IN_PROGRESS') = 'COMPLETED' THEN NOW() ELSE NULL END, NOW(), NOW())
+    VALUES ($1, $2, $3, COALESCE($4::text, 'PROGRESS'), $6, $7, COALESCE($8::jsonb, '{}'::jsonb), CASE WHEN COALESCE($4::text, 'PROGRESS') = 'COMPLETED' THEN NOW() ELSE NULL END, NOW(), NOW())
     ON CONFLICT ("applicationId")
     DO UPDATE SET
       "interviewStatus" = COALESCE($4::text, "Interview"."interviewStatus"),
@@ -59,7 +59,6 @@ async function persistInterviewUpdateRaw(params: {
       "proctoringSnapshotUrls" = COALESCE($7, "Interview"."proctoringSnapshotUrls"),
       "sessionRecording" = CASE WHEN $5::text IS NOT NULL THEN $8::jsonb ELSE "Interview"."sessionRecording" END,
       "interviewCompletedAt" = CASE WHEN COALESCE($4::text, "Interview"."interviewStatus") = 'COMPLETED' THEN NOW() ELSE "Interview"."interviewCompletedAt" END,
-      "inviteLinkStatus" = CASE WHEN COALESCE($4::text, "Interview"."interviewStatus") = 'COMPLETED' THEN 'EXPIRED' ELSE "Interview"."inviteLinkStatus" END,
       "interviewUpdatedAt" = NOW()
     `,
     interviewId,
@@ -95,7 +94,7 @@ export async function POST(req: Request) {
       recordingCompletedAt,
       recordingDurationSec
     } = result.data;
-    const finalInterviewStatus = interviewStatus || status || "IN_PROGRESS";
+    const finalInterviewStatus = interviewStatus || status || "PROGRESS";
     const requireInterviewToken = isInterviewTokenRequired();
     // -- AUTHENTICATION --------------------------------
     const interview = await prisma.interview.findUnique({

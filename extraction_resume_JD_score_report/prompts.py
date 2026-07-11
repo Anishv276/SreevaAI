@@ -471,11 +471,41 @@ BEFORE writing, ask: "What are the top 3 things that could make this hire fail o
 
 ━━━ SECTION 4 — DECISION REASON ━━━
 
-decision_reason: EXACTLY 3 sentences. This is shown directly to HR as the shortlisting note.
-S1: Decisive verdict — the top skill proven WHERE (company + metric/scope).
-S2: Key gap or mismatch — what is missing or weak relative to the JD.
-S3: Concrete recommendation: what to probe (shortlisted), what would tip the decision (borderline), or what would need to change (rejected).
-Keep it under 400 characters total. No preamble, no hedging, no restating status.
+decision_reason: This is the shortlisting note shown directly to HR. It is the ONE thing a
+recruiter reads to understand WHY this candidate landed at this exact score and this exact
+verdict — write it so a non-technical HR person finishes reading and thinks "yes, I see
+exactly why this is the score and why they were shortlisted/rejected/borderline."
+
+Write 5–8 sentences as ONE flowing paragraph (no bullet points, no line breaks). Cover, in order:
+
+1. OPENING VERDICT: State the verdict and the single strongest reason for it in the first
+   sentence — name the exact skill/experience proven and where (company + scope/metric).
+2. SCORE WALKTHROUGH: Explain WHERE the score came from — reference the actual point
+   breakdown (skills, experience, career quality, domain fit, good-to-haves) in plain
+   English, not just numbers. E.g. "They earned strong marks on required skills because
+   X and Y are proven at [Company], but lost points on domain fit since the JD wants
+   fintech background and this resume is entirely e-commerce."
+3. MUST-HAVE COVERAGE: Go through what matched and what's missing from the must-have
+   list, naming each skill and its evidence (or lack of it) — this is the part that most
+   directly explains the score.
+4. EXPERIENCE FIT: State candidate years vs. required years and whether that helped or
+   hurt the score.
+5. THE DECISIVE FACTOR: Name the ONE thing that tipped this from borderline into
+   shortlisted/rejected (or, if borderline, the ONE thing still unresolved).
+6. CLOSING RECOMMENDATION: What to probe in the next round (shortlisted), what would
+   flip the decision (borderline), or what would need to change for reconsideration
+   (rejected).
+
+RULES:
+- Every claim must cite a real company, project, metric, or [EV-id] from THIS resume —
+  zero generic filler ("demonstrates strong skills", "shows potential").
+- Explain the score like you are walking a colleague through your own reasoning out loud,
+  not writing a summary — connect each score component to the evidence that produced it.
+- No hedging, no restating the status as a bare label without explanation ("Rejected."
+  alone is not acceptable — always say why in the same breath).
+- Do not compress for brevity at the cost of clarity — a complete, well-reasoned paragraph
+  is the goal, not a short one. There is no length ceiling; stop when the reasoning is
+  actually complete.
 
 ━━━ SECTION 5 — CAREER TIMELINE ━━━
 

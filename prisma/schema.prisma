@@ -7,38 +7,39 @@ datasource db {
 }
 
 model OrganizationDetails {
-  id                       String   @id
+  id                       String                    @id
   name                     String
-  urlSlug                  String   @unique
-  billingPlan              String   @default("STARTER")
-  maxActiveJobs            String   @default("Unlimited")
-  maxConcurrentInterviews  Int      @default(5)
-  enabledProctoringSignals Json?    @default("{\"tab_switch\": false, \"fullscreen_exit\": false, \"window_focus_loss\": false, \"face_absence\": false, \"multiple_faces\": false, \"camera_disabled\": false, \"connection_lost\": false, \"latency_mismatch\": false, \"identity_mismatch\": false, \"microphone_disabled\": false, \"answer_integrity\": false, \"session_fingerprint\": false}")
-  orgStatus                String   @default("ACTIVE")
-  orgCreatedAt             DateTime @default(now())
-  orgUpdatedAt             DateTime @updatedAt
-  isOnboardingComplete     Boolean  @default(false)
+  urlSlug                  String                    @unique
+  billingPlan              String                    @default("STARTER")
+  maxActiveJobs            String                    @default("Unlimited")
+  maxConcurrentInterviews  Int                       @default(5)
+  enabledProctoringSignals Json?                     @default("{\"tab_switch\": false, \"fullscreen_exit\": false, \"window_focus_loss\": false, \"face_absence\": false, \"multiple_faces\": false, \"camera_disabled\": false, \"connection_lost\": false, \"latency_mismatch\": false, \"identity_mismatch\": false, \"microphone_disabled\": false, \"answer_integrity\": false, \"session_fingerprint\": false}")
+  orgStatus                String                    @default("ACTIVE")
+  orgCreatedAt             DateTime                  @default(now())
+  orgUpdatedAt             DateTime                  @updatedAt
+  isOnboardingComplete     Boolean                   @default(false)
   // AI Model Configuration (all set via Super Admin → Models page)
-  sttModel                 String   @default("flux-general-en")
-  ttsProvider              String   @default("ELEVENLABS")
-  ttsModel                 String   @default("eleven_turbo_v2_5")
-  defaultVoiceId           String   @default("EXAVITQu4vr4xnSDxMaL")
-  allowedVoiceIds          String[] @default([])
-  llmResumeExtraction      String   @default("gpt-5.4-mini")
-  llmJdExtraction          String   @default("gpt-5.4-mini")
-  llmResumeReport          String   @default("gpt-5.4-mini")
-  llmInterviewLive         String   @default("gpt-4.1-mini")
-  llmInterviewEval         String   @default("gpt-4.1-nano")
-  llmInterviewBrief        String   @default("gpt-4.1")
-  llmInterviewReport       String   @default("gpt-5.4-mini")
-  totalInterviewsAllowed   Int      @default(0)
-  totalInterviewsUsed      Int      @default(0)
-  billingCreditsUsed       Float    @default(0)
-  quotaControlMode         String   @default("QUOTA")
-  platformUsageMetrics     Json?    @default("{}")
+  sttModel                 String                    @default("flux-general-en")
+  ttsProvider              String                    @default("ELEVENLABS")
+  ttsModel                 String                    @default("eleven_turbo_v2_5")
+  ttsSpeed                 Float                     @default(1)
+  defaultVoiceId           String                    @default("EXAVITQu4vr4xnSDxMaL")
+  allowedVoiceIds          String[]                  @default([])
+  llmResumeExtraction      String                    @default("gpt-5.4-mini")
+  llmJdExtraction          String                    @default("gpt-5.4-mini")
+  llmResumeReport          String                    @default("gpt-5.4-mini")
+  llmInterviewLive         String                    @default("gpt-4.1-mini")
+  llmInterviewEval         String                    @default("gpt-4.1-nano")
+  llmInterviewBrief        String                    @default("gpt-4.1")
+  llmInterviewReport       String                    @default("gpt-5.4-mini")
+  totalInterviewsAllowed   Int                       @default(0)
+  totalInterviewsUsed      Int                       @default(0)
+  billingCreditsUsed       Float                     @default(0)
+  quotaControlMode         String                    @default("QUOTA")
+  platformUsageMetrics     Json?                     @default("{}")
   isRecordingEnabled       Boolean?
   recordingKeepForDays     Int?
-  isDeleted                Boolean  @default(false)
+  isDeleted                Boolean                   @default(false)
   jobs                     Job[]
   organizationCredentials  OrganizationCredentials[]
 
@@ -47,15 +48,15 @@ model OrganizationDetails {
 }
 
 model SuperAdmin {
-  id                         String    @id @default(cuid())
-  email                      String    @unique
-  password                   String
-  name                       String
-  passwordResetOtp           String?
-  passwordResetOtpExpiresAt  DateTime?
-  accountCreatedAt           DateTime  @default(now())
-  accountUpdatedAt           DateTime  @updatedAt
-  isDeleted                  Boolean   @default(false)
+  id                        String    @id @default(cuid())
+  email                     String    @unique
+  password                  String
+  name                      String
+  passwordResetOtp          String?
+  passwordResetOtpExpiresAt DateTime?
+  accountCreatedAt          DateTime  @default(now())
+  accountUpdatedAt          DateTime  @updatedAt
+  isDeleted                 Boolean   @default(false)
 }
 
 model OrganizationCredentials {
@@ -75,24 +76,24 @@ model OrganizationCredentials {
 }
 
 model Job {
-  id                            String            @id
+  id                            String                  @id
   title                         String
   jobRole                       String?
-  resumeScreeningThreshold      Int               @default(0)
+  resumeScreeningThreshold      Int                     @default(0)
   createdByCredentialId         String
-  jobCreatedAt                  DateTime          @default(now())
-  jobUpdatedAt                  DateTime          @updatedAt
-  resumeScreeningCriteria       String?           @default("{}")
-  jdExtractedDetails            String?           @default("{}")
-  aiGeneratedInterviewQuestions String?           @default("[]")
+  jobCreatedAt                  DateTime                @default(now())
+  jobUpdatedAt                  DateTime                @updatedAt
+  resumeScreeningCriteria       String?                 @default("{}")
+  jdExtractedDetails            String?                 @default("{}")
+  aiGeneratedInterviewQuestions String?                 @default("[]")
   jdFileName                    String?
   jdPreviewUrl                  String?
   organizationId                String?
   applicationDeadline           DateTime?
-  aiInterviewerName             String?           @default("Ishitha")
-  aiInterviewerVoiceId          String?           @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
-  interviewMode                 String?           @default("ats")
-  isDeleted                     Boolean           @default(false)
+  aiInterviewerName             String?                 @default("Ishitha")
+  aiInterviewerVoiceId          String?                 @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
+  interviewMode                 String?                 @default("ats")
+  isDeleted                     Boolean                 @default(false)
   applications                  Application[]
   creator                       OrganizationCredentials @relation("CreatedJobs", fields: [createdByCredentialId], references: [id], onDelete: Cascade)
   organization                  OrganizationDetails?    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -102,24 +103,24 @@ model Job {
 }
 
 model Application {
-  id                    String       @id
+  id                    String     @id
   candidateFullName     String
   candidateEmail        String
   candidatePhone        String
   resumeFileUrl         String
   resumeAiScore         Int?
   resumeAiReport        String?
-  appliedAt             DateTime     @default(now())
-  applicationUpdatedAt  DateTime     @updatedAt
+  appliedAt             DateTime   @default(now())
+  applicationUpdatedAt  DateTime   @updatedAt
   resumeRawText         String?
   resumeParsedData      String?
   jobId                 String
-  resumeScreeningStatus String       @default("pending")
-  interviewPhaseStatus  String       @default("pending")
+  resumeScreeningStatus String     @default("pending")
+  interviewPhaseStatus  String     @default("pending")
   resumeFullScanReport  String?
-  isDeleted             Boolean      @default(false)
+  isDeleted             Boolean    @default(false)
   resumeFileName        String?
-  job                   Job          @relation(fields: [jobId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  job                   Job        @relation(fields: [jobId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   interview             Interview?
 
   @@index([jobId, resumeScreeningStatus, applicationUpdatedAt])
@@ -148,7 +149,6 @@ model Interview {
   billingSnapshotAtCompletion Json?           @default("{}")
   proctoringEvents            Json?           @default("[]")
   proctoringAnalysis          Json?           @default("{}")
-  inviteLinkStatus            String          @default("ACTIVE")
   perQuestionAnalysis         Json?           @default("[]")
   aiScoreBreakdown            Json?           @default("{}")
   aiInterviewSummary          Json?           @default("{}")
@@ -159,7 +159,7 @@ model Interview {
   isDeleted                   Boolean         @default(false)
   isTestSession               Boolean         @default(false)
   testSessionBillingMetrics   Json?           @default("{}")
-  aiInterviewBrief            Json?           // Pre-generated by brief-generation worker (slot flow only)
+  aiInterviewBrief            Json? // Pre-generated by brief-generation worker (slot flow only)
   application                 Application     @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   supportTickets              SupportTicket[]
 

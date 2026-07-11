@@ -137,18 +137,6 @@ function CandidateStatsRow() {
                 <div className="absolute top-3 right-3 text-[10px] font-bold text-gray-400">{getPct(stats.shortlisted)}%</div>
             </div>
 
-            {/* Interviewed */}
-            <div className="flex flex-col justify-between p-3 rounded-xl bg-blue-50/30 border border-blue-100 flex-1 min-w-[110px] relative">
-                <div className="flex items-start gap-1">
-                    <div className="mt-0.5"><svg className="h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg></div>
-                    <div className="pr-6">
-                        <p className="text-xl font-black text-gray-900 leading-none mb-1">{stats.interviewRunning + stats.interviewCompleted}</p>
-                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Interviewed</p>
-                    </div>
-                </div>
-                <div className="absolute top-3 right-3 text-[10px] font-bold text-gray-400">{getPct(stats.interviewRunning + stats.interviewCompleted)}%</div>
-            </div>
-
             {/* Scheduled */}
             <div className="flex flex-col justify-between p-3 rounded-xl bg-amber-50/30 border border-amber-100 flex-1 min-w-[110px] relative">
                 <div className="flex items-start gap-1">
@@ -159,6 +147,18 @@ function CandidateStatsRow() {
                     </div>
                 </div>
                 <div className="absolute top-3 right-3 text-[10px] font-bold text-gray-400">{getPct(stats.interviewPending)}%</div>
+            </div>
+
+            {/* Interviewed */}
+            <div className="flex flex-col justify-between p-3 rounded-xl bg-blue-50/30 border border-blue-100 flex-1 min-w-[110px] relative">
+                <div className="flex items-start gap-1">
+                    <div className="mt-0.5"><svg className="h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg></div>
+                    <div className="pr-6">
+                        <p className="text-xl font-black text-gray-900 leading-none mb-1">{stats.interviewCompleted}</p>
+                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Interviewed</p>
+                    </div>
+                </div>
+                <div className="absolute top-3 right-3 text-[10px] font-bold text-gray-400">{getPct(stats.interviewCompleted)}%</div>
             </div>
 
             {/* Rejected */}

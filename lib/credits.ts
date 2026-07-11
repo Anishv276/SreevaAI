@@ -1,12 +1,9 @@
 /**
  * Billing helpers for organizations.
  *
- * The app now tracks two separate concepts:
+ * The app tracks two separate concepts:
  * - interview quota: the customer-facing count of available interviews
- * - credits used: the internal usage counter stored on the organization row
- *
- * Existing callers still import this module as "credits", so we keep that filename
- * while exposing interview and usage status helpers.
+ * - billing credits used: the internal usage counter stored on the organization row
  */
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -15,10 +12,10 @@ export const ORG_STATUS_CONTROL_MANUAL = "MANUAL";
 export const ORG_STATUS_CONTROL_QUOTA = "QUOTA";
 export type OrgStatusControl = typeof ORG_STATUS_CONTROL_MANUAL | typeof ORG_STATUS_CONTROL_QUOTA;
 export interface BillingStatus {
-    interviewQuotaTotal: number;
-    interviewQuotaUsed: number;
+    totalInterviewsAllowed: number;
+    totalInterviewsUsed: number;
     interviewQuotaRemaining: number;
-    creditsUsed: number;
+    billingCreditsUsed: number;
     minutesUsed: number;
     hasSufficientInterviews: boolean;
 }
@@ -38,30 +35,30 @@ export function getInterviewQuotaUnits(durationSeconds: number): number {
 }
 export async function getOrgBillingStatus(orgId: string): Promise<BillingStatus> {
     const org = await prisma.$queryRaw<Array<{
-        interviewQuotaTotal: number | null;
-        interviewQuotaUsed: number | null;
-        creditsUsed: number | null;
+        totalInterviewsAllowed: number | null;
+        totalInterviewsUsed: number | null;
+        billingCreditsUsed: number | null;
     }>>(
         Prisma.sql`
             SELECT
-                "totalInterviewsAllowed" AS "interviewQuotaTotal",
-                "totalInterviewsUsed"    AS "interviewQuotaUsed",
-                "billingCreditsUsed"     AS "creditsUsed"
+                "totalInterviewsAllowed",
+                "totalInterviewsUsed",
+                "billingCreditsUsed"
             FROM "OrganizationDetails"
             WHERE id = ${orgId} AND "isDeleted" = false
             LIMIT 1
         `
     );
-    const interviewQuotaTotal = org[0]?.interviewQuotaTotal ?? 0;
-    const interviewQuotaUsed = org[0]?.interviewQuotaUsed ?? 0;
-    const interviewQuotaRemaining = Math.max(0, interviewQuotaTotal - interviewQuotaUsed);
-    const creditsUsed = Number(org[0]?.creditsUsed ?? 0);
+    const totalInterviewsAllowed = org[0]?.totalInterviewsAllowed ?? 0;
+    const totalInterviewsUsed = org[0]?.totalInterviewsUsed ?? 0;
+    const interviewQuotaRemaining = Math.max(0, totalInterviewsAllowed - totalInterviewsUsed);
+    const billingCreditsUsed = Number(org[0]?.billingCreditsUsed ?? 0);
     return {
-        interviewQuotaTotal,
-        interviewQuotaUsed,
+        totalInterviewsAllowed,
+        totalInterviewsUsed,
         interviewQuotaRemaining,
-        creditsUsed,
-        minutesUsed: creditsUsed,
+        billingCreditsUsed,
+        minutesUsed: billingCreditsUsed,
         hasSufficientInterviews: interviewQuotaRemaining > 0,
     };
 }
@@ -71,15 +68,15 @@ export async function getOrgCreditStatus(orgId: string): Promise<CreditStatus> {
 export async function syncOrgStatusWithInterviewQuota(orgId: string): Promise<string | null> {
     const rows = await prisma.$queryRaw<Array<{
         status: string | null;
-        interviewQuotaTotal: number | null;
-        interviewQuotaUsed: number | null;
+        totalInterviewsAllowed: number | null;
+        totalInterviewsUsed: number | null;
         statusControl: string | null;
     }>>(
         Prisma.sql`
             SELECT
                 "orgStatus"              AS "status",
-                "totalInterviewsAllowed" AS "interviewQuotaTotal",
-                "totalInterviewsUsed"    AS "interviewQuotaUsed",
+                "totalInterviewsAllowed",
+                "totalInterviewsUsed",
                 "quotaControlMode"       AS "statusControl"
             FROM "OrganizationDetails"
             WHERE id = ${orgId} AND "isDeleted" = false
@@ -90,9 +87,9 @@ export async function syncOrgStatusWithInterviewQuota(orgId: string): Promise<st
     if (!current) {
         return null;
     }
-    const interviewQuotaTotal = Number(current.interviewQuotaTotal || 0);
-    const interviewQuotaUsed = Number(current.interviewQuotaUsed || 0);
-    const interviewQuotaRemaining = Math.max(0, interviewQuotaTotal - interviewQuotaUsed);
+    const totalInterviewsAllowed = Number(current.totalInterviewsAllowed || 0);
+    const totalInterviewsUsed = Number(current.totalInterviewsUsed || 0);
+    const interviewQuotaRemaining = Math.max(0, totalInterviewsAllowed - totalInterviewsUsed);
     const currentStatus = String(current.status || "ACTIVE").toUpperCase();
     if (currentStatus === "CLOSED") {
         return "CLOSED";
@@ -107,14 +104,14 @@ export async function syncOrgStatusWithInterviewQuota(orgId: string): Promise<st
         }
         return "SUSPENDED";
     }
-    if (interviewQuotaTotal > 0 && interviewQuotaRemaining <= 0 && currentStatus !== "SUSPENDED") {
+    if (totalInterviewsAllowed > 0 && interviewQuotaRemaining <= 0 && currentStatus !== "SUSPENDED") {
         await prisma.organizationDetails.update({
             where: { id: orgId },
             data: { orgStatus: "SUSPENDED" },
         });
         return "SUSPENDED";
     }
-    if (interviewQuotaTotal > 0 && interviewQuotaRemaining > 0 && currentStatus !== "ACTIVE") {
+    if (totalInterviewsAllowed > 0 && interviewQuotaRemaining > 0 && currentStatus !== "ACTIVE") {
         await prisma.organizationDetails.update({
             where: { id: orgId },
             data: { orgStatus: "ACTIVE" },
@@ -127,15 +124,15 @@ export async function getEffectiveOrgStatus(orgId: string): Promise<string | nul
     // ⚡ Single query -- fetch all needed columns in one round-trip
     const rows = await prisma.$queryRaw<Array<{
         status: string | null;
-        interviewQuotaTotal: number | null;
-        interviewQuotaUsed: number | null;
+        totalInterviewsAllowed: number | null;
+        totalInterviewsUsed: number | null;
         statusControl: string | null;
     }>>(
         Prisma.sql`
             SELECT
                 "orgStatus"              AS "status",
-                "totalInterviewsAllowed" AS "interviewQuotaTotal",
-                "totalInterviewsUsed"    AS "interviewQuotaUsed",
+                "totalInterviewsAllowed",
+                "totalInterviewsUsed",
                 "quotaControlMode"       AS "statusControl"
             FROM "OrganizationDetails"
             WHERE id = ${orgId} AND "isDeleted" = false
@@ -152,13 +149,13 @@ export async function getEffectiveOrgStatus(orgId: string): Promise<string | nul
     if (statusControl === ORG_STATUS_CONTROL_MANUAL) {
         return "SUSPENDED";
     }
-    const interviewQuotaTotal = Number(current.interviewQuotaTotal || 0);
-    const interviewQuotaUsed = Number(current.interviewQuotaUsed || 0);
-    const interviewQuotaRemaining = Math.max(0, interviewQuotaTotal - interviewQuotaUsed);
-    if (interviewQuotaTotal > 0 && interviewQuotaRemaining <= 0) {
+    const totalInterviewsAllowed = Number(current.totalInterviewsAllowed || 0);
+    const totalInterviewsUsed = Number(current.totalInterviewsUsed || 0);
+    const interviewQuotaRemaining = Math.max(0, totalInterviewsAllowed - totalInterviewsUsed);
+    if (totalInterviewsAllowed > 0 && interviewQuotaRemaining <= 0) {
         return "SUSPENDED";
     }
-    if (interviewQuotaTotal > 0 && interviewQuotaRemaining > 0) {
+    if (totalInterviewsAllowed > 0 && interviewQuotaRemaining > 0) {
         return "ACTIVE";
     }
     return String(current.status || "ACTIVE").toUpperCase();

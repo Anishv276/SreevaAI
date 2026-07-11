@@ -77,11 +77,11 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState("");
-    const [interviewQuotaTotalInput, setInterviewQuotaTotalInput] = useState("0");
+    const [totalInterviewsAllowedInput, setTotalInterviewsAllowedInput] = useState("0");
     const [interviewTopUpInput, setInterviewTopUpInput] = useState("0");
     const [billingSnapshot, setBillingSnapshot] = useState({
-        interviewQuotaTotal: 0,
-        interviewQuotaUsed: 0,
+        totalInterviewsAllowed: 0,
+        totalInterviewsUsed: 0,
         interviewQuotaRemaining: 0,
     });
     const [form, setForm] = useState({
@@ -100,8 +100,8 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                 const data = await res.json();
                 if (!res.ok) { setError("Organization not found"); return; }
                 setForm({
-                    name: data.name || "", slug: data.slug || "",
-                    plan: normalizeOrgPlan(data.plan) || DEFAULT_ORG_PLAN,
+                    name: data.name || "", slug: data.urlSlug || "",
+                    plan: normalizeOrgPlan(data.billingPlan) || DEFAULT_ORG_PLAN,
                     maxActiveJobs: formatOrgLimitValue(data.maxActiveJobs),
                     maxConcurrentSlots: data.maxConcurrentSlots != null ? String(data.maxConcurrentSlots) : "5",
                     proctoringSignals: normalizeProctoringSignals(data.proctoringSignals),
@@ -111,11 +111,11 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                     recordingRetentionDays: data.recordingRetentionDays == null ? "" : String(data.recordingRetentionDays),
                 });
                 setBillingSnapshot({
-                    interviewQuotaTotal: Number(data.interviewQuotaTotal || 0),
-                    interviewQuotaUsed: Number(data.interviewQuotaUsed || 0),
-                    interviewQuotaRemaining: Math.max(0, Number(data.interviewQuotaTotal || 0) - Number(data.interviewQuotaUsed || 0)),
+                    totalInterviewsAllowed: Number(data.totalInterviewsAllowed || 0),
+                    totalInterviewsUsed: Number(data.totalInterviewsUsed || 0),
+                    interviewQuotaRemaining: Math.max(0, Number(data.totalInterviewsAllowed || 0) - Number(data.totalInterviewsUsed || 0)),
                 });
-                setInterviewQuotaTotalInput(String(Number(data.interviewQuotaTotal || 0)));
+                setTotalInterviewsAllowedInput(String(Number(data.totalInterviewsAllowed || 0)));
             } catch { setError("Failed to load organization"); }
             finally { setLoading(false); }
         };
@@ -132,14 +132,17 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         }
         setSaving(true);
         try {
+            const { slug, plan, ...restForm } = form;
             const res = await fetch(`/api/super-admin/orgs/${id}`, {
                 method: "PATCH", headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    ...form,
+                    ...restForm,
+                    urlSlug: slug,
+                    billingPlan: plan,
                     recordingEnabled: form.recordingEnabled ? true : null,
                     recordingRetentionDays: form.recordingEnabled ? Number(form.recordingRetentionDays) : null,
                     maxConcurrentSlots: Number(form.maxConcurrentSlots || 5),
-                    interviewQuotaTotal: Math.max(0, Number(interviewQuotaTotalInput) || 0),
+                    totalInterviewsAllowed: Math.max(0, Number(totalInterviewsAllowedInput) || 0),
                     interviewQuotaTopUp: Math.max(0, Number(interviewTopUpInput) || 0),
                 }),
             });
@@ -239,16 +242,16 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                 <div>
                                     <p className="text-[10px] font-semibold uppercase tracking-widest text-violet-600">Interview Quotas</p>
                                     <p className="text-sm font-medium text-gray-600 mt-1">
-                                        Current total: <span className="font-semibold text-gray-900">{billingSnapshot.interviewQuotaTotal}</span>
+                                        Current total: <span className="font-semibold text-gray-900">{billingSnapshot.totalInterviewsAllowed}</span>
                                         {" "} | 
-                                        Used: <span className="font-semibold text-gray-900">{billingSnapshot.interviewQuotaUsed}</span>
+                                        Used: <span className="font-semibold text-gray-900">{billingSnapshot.totalInterviewsUsed}</span>
                                         {" "} | Remaining: <span className="font-semibold text-gray-900">{billingSnapshot.interviewQuotaRemaining}</span>
                                     </p>
                                 </div>
                                 <div className="text-right">
                                     <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">New total after save</p>
                                     <p className="text-lg font-semibold text-gray-900">
-                                        {Math.max(0, Number(interviewQuotaTotalInput) || 0) + Math.max(0, Number(interviewTopUpInput) || 0)}
+                                        {Math.max(0, Number(totalInterviewsAllowedInput) || 0) + Math.max(0, Number(interviewTopUpInput) || 0)}
                                     </p>
                                 </div>
                             </div>
@@ -259,8 +262,8 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                     type="number"
                                     min="0"
                                     required={false}
-                                    value={interviewQuotaTotalInput}
-                                    onChange={(e: any) => setInterviewQuotaTotalInput(e.target.value)}
+                                    value={totalInterviewsAllowedInput}
+                                    onChange={(e: any) => setTotalInterviewsAllowedInput(e.target.value)}
                                     placeholder="100"
                                 />
                                 <PremiumInput
