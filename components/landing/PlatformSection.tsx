@@ -74,7 +74,7 @@ export default function PlatformSection() {
       const step = PLATFORM_CONVERSATION[pMsgIndex];
 
       if (step.kind === "signal") {
-        renderSignalChip(step.label);
+        renderSignalChip((step as { label: string }).label);
         pMsgIndex++;
         setTimeout(playPlatformStream, 700);
         return;
@@ -112,15 +112,16 @@ export default function PlatformSection() {
     }
 
     const platformSection = document.getElementById("platform");
-    let pObserver;
+    let pObserver: IntersectionObserver | undefined;
     if (platformSection) {
-      pObserver = new IntersectionObserver((entries) => {
+      const observer: IntersectionObserver = new IntersectionObserver((entries) => {
         if (entries[0].isIntersecting) {
           setTimeout(playPlatformStream, 600);
-          pObserver.disconnect();
+          observer.disconnect();
         }
       }, { threshold: 0.3 });
-      pObserver.observe(platformSection);
+      observer.observe(platformSection);
+      pObserver = observer;
     }
 
     return () => {
