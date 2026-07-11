@@ -2,7 +2,7 @@
 
 ## Overview
 
-When the eval system decides `action = "MOVE_ON"` (triggered by 4 cases: saturated, dry_topic, weak_exit, or forced_action), the interview transitions from the current topic to the next one. This is a **synchronous, pure-Python flow with zero LLM calls** for directive generation — Ishita (the interview LLM) is the only call that fires.
+When the eval system decides `action = "MOVE_ON"` (triggered by 4 cases: saturated, dry_topic, weak_exit, or forced_action), the interview transitions from the current topic to the next one. This is a **synchronous, pure-Python flow with zero LLM calls** for directive generation — Ishitha (the interview LLM) is the only call that fires.
 
 ---
 
@@ -233,7 +233,7 @@ remove_system_messages_multi(chat_ctx,
 # Add new directive (step 5 output)
 chat_ctx.add_message(role="system", content=_directive)
 
-# Add topic-lock frame (tells Ishita what to do)
+# Add topic-lock frame (tells Ishitha what to do)
 chat_ctx.add_message(role="system", content=(
     "[TOPIC_LOCK - CRITICAL INSTRUCTION]\n"
     "PREVIOUS TOPIC IS CLOSED. DO NOT REFERENCE IT.\n"
@@ -250,7 +250,7 @@ agent._move_on_opener_pending = True
 
 ---
 
-### Step 7: Ishita's LLM Call (The ONLY LLM Call)
+### Step 7: Ishitha's LLM Call (The ONLY LLM Call)
 `llm_node` wakes up:
 
 1. **Detects MOVE_ON in context:** sees `DECISION: MOVE_ON` in system messages
@@ -258,7 +258,7 @@ agent._move_on_opener_pending = True
 3. **Reads the two system messages:** the directive + TOPIC_LOCK frame
 4. **Generates a fresh question** on the new topic
 
-**Ishita speaks:**
+**Ishitha speaks:**
 ```
 "Ah, makes sense. So you've worked on API design — walk me through a time 
 you chose between REST and GraphQL. What was driving that call?"
@@ -297,7 +297,7 @@ _directive = (
 )
 ```
 
-Ishita reads this and:
+Ishitha reads this and:
 1. Says a warm closing
 2. Calls `end_call` tool
 3. Session ends
@@ -320,7 +320,7 @@ Ishita reads this and:
 - **`_mark_topic_covered(topic)`** — 2 operations: add to covered set, remove from pool
 - **`_next_uncovered_topic()`** — returns `_topic_pool[0]` or None
 - **`_build_move_on_directive()`** — pure string assembly from brief + band + reaction
-- **Ishita's LLM call** — only call that generates the spoken question
+- **Ishitha's LLM call** — only call that generates the spoken question
 - **`_OVERLAP_STOPWORDS`** — still used by TOPIC_GUARD (separate mechanism)
 
 ---
@@ -335,9 +335,9 @@ Ishita reads this and:
 | 4 | Fetch brief item | ~0ms | Linear scan (small list) |
 | 5 | Build directive | ~0ms | String ops |
 | 6 | Inject into context | ~0ms | List ops |
-| 7 | **Ishita LLM call** | **~1-2s** | **OpenAI API** |
+| 7 | **Ishitha LLM call** | **~1-2s** | **OpenAI API** |
 
-Total: **~1-2 seconds** per MOVE_ON, all in Ishita's generation. No wasted LLM calls for directive prose.
+Total: **~1-2 seconds** per MOVE_ON, all in Ishitha's generation. No wasted LLM calls for directive prose.
 
 ---
 
@@ -351,7 +351,7 @@ TURN 1 — Warmup
   → _mark_topic_covered("warmup")
   → _next_topic = _next_uncovered_topic()  → "DataFlow Project"
   → _directive = "MOVE_ON to DataFlow Project"
-  → Ishita: "Alright, let's start with the DataFlow project you mentioned..."
+  → Ishitha: "Alright, let's start with the DataFlow project you mentioned..."
 
 TURNS 2-5 — DataFlow Project (RESUME_TOPIC)
   Q1: "Walk me through what you built"
@@ -365,7 +365,7 @@ TURNS 2-5 — DataFlow Project (RESUME_TOPIC)
   → _mark_topic_covered("DataFlow Project")
   → _next_topic = _next_uncovered_topic()  → "API Design Patterns"
   → _directive = "MOVE_ON to API Design Patterns"
-  → Ishita: "Ah, makes sense. So you've worked on API design..."
+  → Ishitha: "Ah, makes sense. So you've worked on API design..."
 
 TURNS 6-8 — API Design Patterns (RESUME_TOPIC)
   Q1: "Walk me through choosing REST vs GraphQL"
@@ -377,7 +377,7 @@ TURNS 6-8 — API Design Patterns (RESUME_TOPIC)
   → _mark_topic_covered("API Design Patterns")
   → _next_topic = _next_uncovered_topic()  → "Kubernetes" (JD_TOPIC)
   → _directive = "MOVE_ON to Kubernetes"
-  → Ishita: "Got it. This role involves Kubernetes heavily. What's your experience there?"
+  → Ishitha: "Got it. This role involves Kubernetes heavily. What's your experience there?"
 
 TURNS 9-11 — Kubernetes (JD_TOPIC)
   Q1: "What's your exposure to Kubernetes?"
@@ -390,8 +390,8 @@ TURNS 9-11 — Kubernetes (JD_TOPIC)
   → _mark_topic_covered("Kubernetes")
   → _next_topic = _next_uncovered_topic()  → None (pool empty)
   → _directive = "WRAP_UP"
-  → Ishita: "That covers everything I wanted to go through. Thanks for your time!"
-  → Ishita calls end_call
+  → Ishitha: "That covers everything I wanted to go through. Thanks for your time!"
+  → Ishitha calls end_call
 
 SESSION ENDS
 Covered topics: warmup, DataFlow Project, API Design Patterns, Kubernetes
@@ -404,11 +404,11 @@ Report generated with scores, signals, coverage
 
 1. **Brief owns ordering** — topic pool sequence is sacred; brief must never emit duplicates
 2. **No runtime dedup** — brief generation handles overlap prevention, not runtime loop
-3. **One LLM call per turn** — Ishita asks the question, no middleware LLM prose-ifying directives
+3. **One LLM call per turn** — Ishitha asks the question, no middleware LLM prose-ifying directives
 4. **Pure Python directives** — band rules, brief fields, reaction hints are all lookup tables
 5. **Topic is banned immediately** — remove from pool before picking next, so no race conditions
-6. **Ishita strips history** — old Q&A torn from context during MOVE_ON, fresh start
-7. **No coverage memory** — no forbidden-questions list, Ishita judges repetition from her own read of context
+6. **Ishitha strips history** — old Q&A torn from context during MOVE_ON, fresh start
+7. **No coverage memory** — no forbidden-questions list, Ishitha judges repetition from her own read of context
 
 ---
 
@@ -422,6 +422,6 @@ MOVE_ON is a **7-step linear flow** that transitions the interview to a new topi
 4. Fetch brief item (linear search)
 5. Build directive (Python string assembly, ~0ms)
 6. Inject into context (2 messages)
-7. Ishita speaks (only LLM call, ~1-2s)
+7. Ishitha speaks (only LLM call, ~1-2s)
 
-**No pre-fire tasks, no fallbacks, no overlap dedup, no forbidden-questions caching.** Brief generates a clean, non-overlapping topic list; runtime executes it in order; Ishita generates natural transitions.
+**No pre-fire tasks, no fallbacks, no overlap dedup, no forbidden-questions caching.** Brief generates a clean, non-overlapping topic list; runtime executes it in order; Ishitha generates natural transitions.

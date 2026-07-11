@@ -231,7 +231,7 @@ The goal: test role depth, not just candidate experience.
 Rules:
   - EXACTLY 2 role topics. Choose the 2 highest-signal concepts for this role.
   - Do NOT copy resume or JD items. Completely independent.
-  - Each role_topic must be specific enough that Ishita can ask one concrete, grounded question about it.
+  - Each role_topic must be specific enough that Ishitha can ask one concrete, grounded question about it.
   - Role topics must change based on band: same concept, different depth.
 
 Examples for common roles (pick the 2 strongest for the actual role):

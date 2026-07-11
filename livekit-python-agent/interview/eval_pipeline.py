@@ -118,7 +118,7 @@ class TopicState:
         # answers) incorrectly looked like two-in-a-row and forced a premature MOVE_ON.
         return self.consecutive_zero_scores >= 2
 
-    # Signals where Ishita is re-asking / rephrasing / redirecting the SAME question
+    # Signals where Ishitha is re-asking / rephrasing / redirecting the SAME question
     # instead of asking a new follow-up. The candidate has not yet had a real attempt,
     # so this turn must not count toward follow_up_turns, saturation, dry_topic, or
     # the fired-signals variety ban. Score contribution is zero regardless.

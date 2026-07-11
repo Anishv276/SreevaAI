@@ -170,7 +170,7 @@ class CoverageRecord:
     source:         CoverageSource
     gist:           str = ""          # first ~25 words of candidate answer; "" for auto
     via_topic:      str = ""          # parent topic title when source == AUTO_SKILL
-    questions_asked: list[str] = field(default_factory=list)  # every question Ishita asked on this topic
+    questions_asked: list[str] = field(default_factory=list)  # every question Ishitha asked on this topic
 
 class CoveredTopics:
     """Single source of truth for all covered topics.
@@ -389,7 +389,7 @@ def _topic_short_key_for_ordering(topic: str) -> str:
 
 def _build_cross_ref_rule(source_tag: str) -> str:
     """Cross-reference rule for a MOVE_ON directive, keyed on the topic TAG.
-    Tells Ishita how to treat a topic the candidate may already have touched.
+    Tells Ishitha how to treat a topic the candidate may already have touched.
     Shared by both the pre-fired and the synchronous MOVE_ON paths so they stay
     identical — the pre-fired path previously passed "" and lost this guidance.
     """
@@ -455,7 +455,7 @@ def _build_probe_directive(
     """
     Builds the probe directive synchronously — no LLM call.
     All inputs come from the eval result + topic brief already in memory.
-    The interview LLM (Ishita) reads this and generates her own question.
+    The interview LLM (Ishitha) reads this and generates her own question.
 
     Eliminates the middle directive LLM call, collapsing 3 calls/turn → 2.
 
@@ -525,7 +525,7 @@ def _build_probe_directive(
         prev_question=prev_question,
     )
 
-    # Filler guidance -- classify prev answer intent so Ishita's reaction is connected
+    # Filler guidance -- classify prev answer intent so Ishitha's reaction is connected
     _prev_lower = (prev_answer or "").lower().strip()
     _is_connection_check = any(p in _prev_lower for p in ("can you hear", "are you there", "hello?", "you there?"))
     _is_clarification_ask = _is_connection_check or any(
@@ -633,7 +633,7 @@ async def _generate_move_on_directive(
     Ask GPT-4.1-mini to generate a full MOVE_ON directive including the opening
     question for the new topic. Returns the complete directive string ready for
     injection into chat_ctx.
-    The directive tells Ishita:
+    The directive tells Ishitha:
     - What topic she is leaving (closed)
     - What the new topic is + full context
     - What angle to open on (from the analyst brief)
@@ -773,16 +773,16 @@ async def _generate_move_on_directive(
             f"Do NOT ask why they worked somewhere or what drew them to a company."
         )
     _system = (
-        "You are writing an internal directive for an AI interviewer named Ishita. "
+        "You are writing an internal directive for an AI interviewer named Ishitha. "
         "This directive is NEVER spoken aloud — it is a private instruction she reads and acts on silently.\n\n"
         "Your job: write the [NEXT_TURN_DIRECTIVE] block for a MOVE_ON moment. "
         "You will be given the new topic, its source tag, the analyst brief, and the candidate's last answer. "
-        "From all of this, tell Ishita exactly what she should find out and how to open — not what to say.\n\n"
+        "From all of this, tell Ishitha exactly what she should find out and how to open — not what to say.\n\n"
 
         "━━━ THE CORE PRINCIPLE ━━━\n"
-        "Ishita is on a live voice call. The candidate cannot see a screen. "
+        "Ishitha is on a live voice call. The candidate cannot see a screen. "
         "They have no idea what topic is coming next. "
-        "Your directive must ensure Ishita's first question gives the candidate enough context to answer. "
+        "Your directive must ensure Ishitha's first question gives the candidate enough context to answer. "
         "A question with no context — 'What was your biggest challenge?' — is unanswerable without knowing what it refers to.\n\n"
 
         "HOW GOOD INTERVIEWERS OPEN A NEW TOPIC:\n"
@@ -817,13 +817,13 @@ async def _generate_move_on_directive(
         "NEW ACTIVE TOPIC: <new topic>  [TAG: <source>]\n"
         "WHAT WE KNOW: 2-3 bullet points about the new topic from the analyst brief\n"
         "OPENING ANGLE: The specific thing worth probing first — what question to open with conceptually, "
-        "and what context Ishita must give the candidate so they understand what's being asked\n"
+        "and what context Ishitha must give the candidate so they understand what's being asked\n"
         "WHAT TO FIND OUT: one sentence on what a good answer to this topic would reveal\n"
-        "FORBIDDEN: 2-3 specific things Ishita must NOT say or do on this topic\n\n"
+        "FORBIDDEN: 2-3 specific things Ishitha must NOT say or do on this topic\n\n"
 
-        "Do NOT write the actual question. Ishita generates it herself from your guidance.\n"
+        "Do NOT write the actual question. Ishitha generates it herself from your guidance.\n"
         "Do NOT write 'Suggested question:' or any scripted line she would copy verbatim.\n"
-        "ONE question only — Ishita must ask one thing and then listen. "
+        "ONE question only — Ishitha must ask one thing and then listen. "
         "No compound questions, no 'and also', no multi-part asks.\n\n"
         "Output plain text only. No markdown. No code blocks."
     )
@@ -874,9 +874,9 @@ async def _generate_move_on_directive(
         generated = "".join(chunks).strip()
         if not generated:
             raise ValueError("empty response")
-        # Sanity check: directive must not contain a scripted question for Ishita to copy
+        # Sanity check: directive must not contain a scripted question for Ishitha to copy
         if "SUGGESTED OPENING QUESTION" in generated.upper():
-            # Strip it -- Ishita generates her own from topic context
+            # Strip it -- Ishitha generates her own from topic context
             generated = re.sub(
                 r"SUGGESTED OPENING QUESTION.*$", "", generated, flags=re.I | re.DOTALL
             ).strip()
@@ -1265,7 +1265,7 @@ class InterviewContext(BaseModel):
     language: str
     orgId: Optional[str] = None
     orgName: Optional[str] = None
-    aiName: Optional[str] = "Ishita"
+    aiName: Optional[str] = "Ishitha"
     voiceId: Optional[str] = None
     # AI model config from org row
     sttModel: Optional[str] = None
@@ -1928,7 +1928,7 @@ async def entrypoint(ctx: JobContext):
     # Flux provides native end-of-turn detection via EOT events -- no separate semantic
     # turn detector needed. turn_detection="stt" tells LiveKit to use Flux's EOT events.
     logger.info("[TURN_DETECTOR] Flux native EOT active (engine=%s)", getattr(stt_plugin, "_hr_stt_engine", "flux"))
-    ai_name = ctx_data.aiName or "Ishita"
+    ai_name = ctx_data.aiName or "Ishitha"
     welcome_text = build_greeting_text(candidate_first_name or candidate_name, ai_name)
     logger.info("[FLOW] Greeting precomputed during launching phase")
     session_kwargs = {
@@ -2208,7 +2208,7 @@ async def entrypoint(ctx: JobContext):
     ready_event = asyncio.Event()
     launch_prereqs_signal_sent = False
     # Per-turn decision engine state
-    _last_interviewer_question = ""   # most recent question Ishita asked
+    _last_interviewer_question = ""   # most recent question Ishitha asked
     _last_question_topic: Optional[str] = None  # short title of current topic (for eval scoring)
     answer_scores: list[dict] = []    # log of all answer quality scores for final DB save
     _active_topic: Optional[str] = None  # full context string for LLM; initialized after topic pools built
@@ -2242,7 +2242,7 @@ async def entrypoint(ctx: JobContext):
     _topic_records: list[dict] = []
     # Running buffer of candidate answers for the CURRENT active topic (reset on MOVE_ON)
     _current_topic_answers: list[str] = []
-    # Running buffer of QUESTIONS Ishita asked on the CURRENT active topic (reset on MOVE_ON).
+    # Running buffer of QUESTIONS Ishitha asked on the CURRENT active topic (reset on MOVE_ON).
     # Snapshotted into CoverageRecord.questions_asked when the topic is closed, so they become
     # GLOBAL forbidden questions -- preventing the same concept being re-asked under a later topic.
     _current_topic_questions: list[str] = []
@@ -2357,7 +2357,7 @@ async def entrypoint(ctx: JobContext):
     ) -> None:
         """Single entry point for all topic completion — covered, denied, skipped, all go here.
 
-        questions_asked: the questions Ishita asked on THIS topic. They are stored on the
+        questions_asked: the questions Ishitha asked on THIS topic. They are stored on the
         stored in CoveredTopics._store for report rendering only.
         """
         if not topic:
@@ -2776,7 +2776,7 @@ async def entrypoint(ctx: JobContext):
             # special short-answer directives or follow-up-freeze behavior.
             # --- Per-Turn Answer Evaluator (Decision Engine) ---
             # Fires on every candidate response. Evaluates answer quality in real-time
-            # and injects a NEXT_TURN_DIRECTIVE before Ishita generates her next response.
+            # and injects a NEXT_TURN_DIRECTIVE before Ishitha generates her next response.
             # Decision: PROBE (which mode) or MOVE_ON - fully signal-driven, no fixed depth.
             # Greeting = turn 1, warmup question = turn 2, interview starts at turn 3.
             # Warmup turns (before warmup_complete) are recorded as zero-scored placeholders
@@ -3184,7 +3184,7 @@ async def entrypoint(ctx: JobContext):
                             # in CoveredTopics.get_memory_block() (coverage_memory), so
                             # nothing is lost -- they still show up as FORBIDDEN in every
                             # subsequent directive. This is the primary fix for the bug
-                            # where Ishita kept asking old-topic questions after MOVE_ON.
+                            # where Ishitha kept asking old-topic questions after MOVE_ON.
                             _asked_questions_log.clear()
                             logger.info(
                                 "[TOPIC_RECORD] turn=%d | recorded topic=%r exit=%s probes=%d avg_overall=%.1f answers=%d q_forbidden=%d",
@@ -3258,7 +3258,7 @@ async def entrypoint(ctx: JobContext):
                         remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
                         chat_ctx.add_message(role="system", content=_directive)
                         logger.info("[AGENT] turn=%d | WRAP_UP directive injected", turn_snapshot)
-                        logger.info("[EVAL] turn=%d | releasing LLM gate -- Ishita will speak now", turn_snapshot)
+                        logger.info("[EVAL] turn=%d | releasing LLM gate -- Ishitha will speak now", turn_snapshot)
                         agent._waiting_for_eval = False
                         agent._directive_ready.set()
                         return
@@ -3294,7 +3294,7 @@ async def entrypoint(ctx: JobContext):
                     # JD_TOPIC / ROLE_TOPIC). This is the ONLY place that handles how to
                     # treat a topic the candidate may already have touched. The source
                     # framing itself ("we require X" vs "you built X") lives in the
-                    # directive's _angle_guide and Ishita's system prompt -- not here.
+                    # directive's _angle_guide and Ishitha's system prompt -- not here.
                     _topic_type = _next_brief_item.topic_type if _next_brief_item else ""
                     _cross_ref_rule = _build_cross_ref_rule(_src)
                     # Use the pre-fired directive task if it matches the active topic,
@@ -3376,7 +3376,7 @@ async def entrypoint(ctx: JobContext):
                         "employer name to it. NEVER say '...at <Company>' about it.\n"
                         if "[standalone]" in (_active_topic or "").lower() else ""
                     )
-                    # SOURCE RULE -- the one short line that tells Ishita HOW to frame the
+                    # SOURCE RULE -- the one short line that tells Ishitha HOW to frame the
                     # opener based on the topic tag. Keyed on the real tag values.
                     # This is what makes "we require so-and-so skill" (JD) differ from
                     # "what did you build" (resume) and "how do you think about X" (role).
@@ -3479,7 +3479,7 @@ async def entrypoint(ctx: JobContext):
                         ",".join((_probe_brief_item.probe_avoid or [])[:2]) if _probe_brief_item else "-",
                     )
                     logger.debug("[PROBE_DIRECTIVE] turn=%d:\n%s", turn_snapshot, _directive)
-                logger.info("[EVAL] turn=%d | releasing LLM gate -- Ishita will speak now", turn_snapshot)
+                logger.info("[EVAL] turn=%d | releasing LLM gate -- Ishitha will speak now", turn_snapshot)
                 agent._waiting_for_eval = False
                 agent._directive_ready.set()
         except Exception as e:
@@ -3524,7 +3524,7 @@ async def entrypoint(ctx: JobContext):
         if turn_snapshot == _last_evaluated_turn_snapshot:
             # LiveKit/Flux fired a second end-of-turn for the same candidate turn (e.g.
             # a pause mid-answer was detected as EOT, then more speech followed before
-            # Ishita replied). turn_count only advances on assistant turns.
+            # Ishitha replied). turn_count only advances on assistant turns.
             #
             # During real interview questions (turn_snapshot > 2, warmup already done),
             # eval only fires once per turn -- previously this repeat fragment was
@@ -3565,7 +3565,7 @@ async def entrypoint(ctx: JobContext):
             await _process_user_conversation_item(content, "user", turn_snapshot, is_final_eot=True)
             _append_with_elapsed("Candidate", content)
             # If the candidate reciprocated the "how are you doing?" greeting (asked
-            # Ishita back), a bare scripted warmup line ignoring that reads as rude.
+            # Ishitha back), a bare scripted warmup line ignoring that reads as rude.
             # Prepend a short fixed reciprocal reply -- still scripted (no LLM filler
             # variance), just acknowledges the question was heard.
             _content_lc_greet = content.lower()
@@ -3663,7 +3663,7 @@ async def entrypoint(ctx: JobContext):
             agent._directive_ready.set()
         elif not warmup_complete:
             # Candidate answered the warmup question but didn't signal readiness yet
-            # (e.g. "I'm doing great" instead of "yes"/"ready"). Ishita should ask a
+            # (e.g. "I'm doing great" instead of "yes"/"ready"). Ishitha should ask a
             # natural follow-up / re-confirm readiness rather than staying silent -- 
             # release the gate we closed above so the LLM can respond to what they said.
             remove_system_messages(chat_ctx, "[PHASE_STATUS]")
@@ -3682,7 +3682,7 @@ async def entrypoint(ctx: JobContext):
             agent._directive_ready.set()
     agent._completed_user_turn_handler = _handle_completed_user_turn
     #  TRANSCRIPT EVENT HANDLER
-    # Registered on session "conversation_item_added"  fires for BOTH Ishita
+    # Registered on session "conversation_item_added"  fires for BOTH Ishitha
     # (assistant) and Candidate (user) turns. Handles:
     #    Transcript persistence for both speakers
     #    turn_count / question tracking for assistant turns
@@ -3705,7 +3705,7 @@ async def entrypoint(ctx: JobContext):
             if role == "assistant":
                 if not _candidate_turn_since_last_assistant:
                     # Hard block -- LLM fired twice in a row without a candidate reply.
-                    # This happens when STT echoes Ishita's greeting back as a candidate
+                    # This happens when STT echoes Ishitha's greeting back as a candidate
                     # fragment, triggering a second LLM generation before the first one
                     # finished. During warmup this creates the greeting-repeat loop seen
                     # in transcript (AI 0:23, 0:27, 0:32 all saying warmup phrases).
@@ -3735,7 +3735,7 @@ async def entrypoint(ctx: JobContext):
                 # and was off by one, so the very first interview question was never tracked
                 # as _last_interviewer_question -- silently skipping turn 3's scoring.
                 _is_interview_turn = warmup_complete
-                # Save Ishita's line to transcript
+                # Save Ishitha's line to transcript
                 _append_with_elapsed("Interviewer", clean_content)
                 if _is_interview_turn:
                     # Fix #2: Reset nudge flags when a new question is asked.
@@ -3883,11 +3883,11 @@ async def entrypoint(ctx: JobContext):
                             ),
                         )
                         logger.info("[PHASE_STATUS] Opening question sealed: %r", _last_interviewer_question[:80])
-                        # Pre-clear the LLM gate NOW -- Ishita just delivered the first interview
+                        # Pre-clear the LLM gate NOW -- Ishitha just delivered the first interview
                         # question. The next event will be Vamsi answering (Turn 3 candidate turn).
                         # Without this pre-clear, llm_node fires the moment Turn 3 STT arrives
                         # (gate was still SET from warmup), generating BEFORE Vamsi's answer is
-                        # in chat_ctx, causing Ishita to repeat the same opening question.
+                        # in chat_ctx, causing Ishitha to repeat the same opening question.
                         # Clearing here ensures the gate is already closed when Turn 3 fires,
                         # so the sync gate fast-path (which sets it) runs after the answer lands.
                         agent._waiting_for_eval = True
@@ -3921,7 +3921,7 @@ async def entrypoint(ctx: JobContext):
                 _candidate_turn_since_last_assistant = False
                 turn_count += 1
                 if not warmup_complete and turn_count == 2:
-                    # Ishita just said "Are you ready to begin?" -- gate the LLM so it
+                    # Ishitha just said "Are you ready to begin?" -- gate the LLM so it
                     # waits for the candidate's answer. The warmup completion handler
                     # will inject the warmup-done directive and release the gate.
                     agent._waiting_for_eval = True
