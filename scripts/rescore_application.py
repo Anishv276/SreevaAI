@@ -20,9 +20,9 @@ def rescore(identifier: str, dry_run: bool = False):
 
     # Find the application
     if identifier.startswith("app-"):
-        cur.execute('SELECT id,"fullName","resumeData","resumeText","jobId","aiScore" FROM "Application" WHERE id=%s', (identifier,))
+        cur.execute('SELECT id,"candidateFullName","resumeParsedData","resumeRawText","jobId","resumeAiScore" FROM "Application" WHERE id=%s', (identifier,))
     else:
-        cur.execute('SELECT id,"fullName","resumeData","resumeText","jobId","aiScore" FROM "Application" WHERE "fullName" ILIKE %s AND "isDeleted"=false ORDER BY "createdAt" DESC LIMIT 1', (f"%{identifier}%",))
+        cur.execute('SELECT id,"candidateFullName","resumeParsedData","resumeRawText","jobId","resumeAiScore" FROM "Application" WHERE "candidateFullName" ILIKE %s AND "isDeleted"=false ORDER BY "appliedAt" DESC LIMIT 1', (f"%{identifier}%",))
     row = cur.fetchone()
     if not row:
         print(f"Application not found: {identifier}")
@@ -33,7 +33,7 @@ def rescore(identifier: str, dry_run: bool = False):
     resume_text = resume_text or ""
 
     # Get JD
-    cur.execute('SELECT "extractedDetails","screeningCriteria","title" FROM "Job" WHERE id=%s', (job_id,))
+    cur.execute('SELECT "jdExtractedDetails","resumeScreeningCriteria","title" FROM "Job" WHERE id=%s', (job_id,))
     dr = cur.fetchone()
     if not dr or not dr[0]:
         print(f"Job not found or has no JD: {job_id}")
@@ -68,7 +68,7 @@ def rescore(identifier: str, dry_run: bool = False):
     import asyncio
     try:
         # Org's configured model for resume reports -- no hardcoded fallback.
-        cur.execute('SELECT o."id", o."llmResumeReport" FROM "Job" d JOIN "Organization" o ON o.id = d."orgId" WHERE d.id=%s', (job_id,))
+        cur.execute('SELECT o."id", o."llmResumeReport" FROM "Job" d JOIN "OrganizationDetails" o ON o.id = d."organizationId" WHERE d.id=%s', (job_id,))
         org_row = cur.fetchone()
         if not org_row:
             print(f"Org not found for job: {job_id}")
@@ -103,7 +103,7 @@ def rescore(identifier: str, dry_run: bool = False):
         report_json = json.dumps(score_result)
 
     cur.execute(
-        'UPDATE "Application" SET "aiScore"=%s, "aiReport"=%s, "updatedAt"=NOW() WHERE id=%s',
+        'UPDATE "Application" SET "resumeAiScore"=%s, "resumeAiReport"=%s, "applicationUpdatedAt"=NOW() WHERE id=%s',
         (new_score, report_json, app_id)
     )
     conn.commit()

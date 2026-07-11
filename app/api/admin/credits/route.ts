@@ -35,10 +35,10 @@ export async function GET(request: Request) {
         if (isSuperAdminRole(session.role)) {
             const { prisma } = await import("@/lib/prisma");
             const { Prisma } = await import("@prisma/client");
-            const rows = await prisma.$queryRaw<Array<{ usageMetrics: unknown }>>(
-                Prisma.sql`SELECT "usageMetrics" FROM "Organization" WHERE id = ${orgId} LIMIT 1`
+            const rows = await prisma.$queryRaw<Array<{ platformUsageMetrics: unknown }>>(
+                Prisma.sql`SELECT "platformUsageMetrics" FROM "OrganizationDetails" WHERE id = ${orgId} LIMIT 1`
             );
-            const raw = rows[0]?.usageMetrics;
+            const raw = rows[0]?.platformUsageMetrics;
             usageMetrics = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
         }
         return NextResponse.json({ ...status, ...(usageMetrics !== null ? { usageMetrics } : {}) }, {

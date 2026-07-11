@@ -76,25 +76,25 @@ export async function GET(req: NextRequest) {
         const from = searchParams.get("from") ?? undefined;
         const to = searchParams.get("to") ?? undefined;
         const start = getRangeStart(range, from, to);
-        // Fetch completed interviews in range, with integritySignals
-        let interviews: { id: string; integritySignals: unknown; applicationId: string }[] = [];
+        // Fetch completed interviews in range, with proctoringEvents
+        let interviews: { id: string; proctoringEvents: unknown; applicationId: string }[] = [];
         try {
             interviews = await prisma.interview.findMany({
                 where: {
-                    status: "COMPLETED",
-                    completedAt: { gte: start },
-                    application: { job: { orgId } },
+                    interviewStatus: "COMPLETED",
+                    interviewCompletedAt: { gte: start },
+                    application: { job: { organizationId: orgId } },
                 },
                 select: {
                     id: true,
                     applicationId: true,
-                    integritySignals: true,
+                    proctoringEvents: true,
                 },
             });
         } catch {
-            // integritySignals column may not exist yet - return zeros
+            // proctoringEvents column may not exist yet - return zeros
             const total = await prisma.interview.count({
-                where: { status: "COMPLETED", completedAt: { gte: start }, application: { job: { orgId } } },
+                where: { interviewStatus: "COMPLETED", interviewCompletedAt: { gte: start }, application: { job: { organizationId: orgId } } },
             });
             return NextResponse.json({
                 total,
@@ -112,7 +112,7 @@ export async function GET(req: NextRequest) {
         const flaggedSet = new Set<string>();   // interview IDs with HIGH severity events
         const lowRiskSet = new Set<string>();   // interview IDs with LOW/MEDIUM severity
         for (const iv of interviews) {
-            const raw = iv.integritySignals;
+            const raw = iv.proctoringEvents;
             if (!raw) continue;
             let events: ProctoringEvent[] = [];
             try {

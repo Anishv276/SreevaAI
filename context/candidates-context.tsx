@@ -424,16 +424,21 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
     }, []);
     const addCandidate = async (newCandidateData: Omit<Candidate, "id" | "date" | "status" | "score">) => {
         try {
-            const fullName =
+            const candidateFullName =
                 (newCandidateData as Candidate).name ||
                 (newCandidateData as any).fullName ||
+                (newCandidateData as any).candidateFullName ||
                 "";
             const response = await fetch("/api/candidates", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     ...newCandidateData,
-                    fullName,
+                    candidateFullName,
+                    candidateEmail: (newCandidateData as any).email || (newCandidateData as any).candidateEmail || "",
+                    candidatePhone: (newCandidateData as any).phone || (newCandidateData as any).candidatePhone || "",
+                    resumeFileUrl: (newCandidateData as any).resumeUrl || (newCandidateData as any).resumeFileUrl,
+                    resumeRawText: (newCandidateData as any).resumeText || (newCandidateData as any).resumeRawText,
                 }),
             });
             if (!response.ok) {

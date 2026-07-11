@@ -1,24 +1,24 @@
 import { DEFAULT_ORG_AI_CONFIG } from "@/lib/ai-models-config";
 
-// Job-level config only carries voiceId (inherits everything else from org).
+// Job-level config only carries aiInterviewerVoiceId (inherits everything else from org).
 export function normalizeJobAiConfig(args: { current?: Record<string, unknown> | null; next?: Record<string, unknown> | null } | Record<string, unknown>): Record<string, unknown> {
     const fields = ("next" in args || "current" in args)
         ? ({ ...(args as any).current, ...(args as any).next } as Record<string, unknown>)
         : args as Record<string, unknown>;
-    const voiceId = String(fields.voiceId || DEFAULT_ORG_AI_CONFIG.voiceId).trim() || DEFAULT_ORG_AI_CONFIG.voiceId;
-    return { voiceId };
+    const aiInterviewerVoiceId = String(fields.aiInterviewerVoiceId || DEFAULT_ORG_AI_CONFIG.voiceId).trim() || DEFAULT_ORG_AI_CONFIG.voiceId;
+    return { aiInterviewerVoiceId };
 }
 
 export function normalizeOrgAiConfig(fields: Record<string, unknown>): Record<string, unknown> {
-    const voiceId = String(fields.voiceId || DEFAULT_ORG_AI_CONFIG.voiceId).trim() || DEFAULT_ORG_AI_CONFIG.voiceId;
-    const allowedVoices: string[] = (() => {
-        const raw = fields.allowedVoices;
+    const defaultVoiceId = String(fields.defaultVoiceId || DEFAULT_ORG_AI_CONFIG.voiceId).trim() || DEFAULT_ORG_AI_CONFIG.voiceId;
+    const allowedVoiceIds: string[] = (() => {
+        const raw = fields.allowedVoiceIds;
         if (!Array.isArray(raw)) return [];
         return Array.from(new Set(raw.map((id) => String(id || "").trim()).filter(Boolean)));
     })();
     return {
-        voiceId,
-        allowedVoices,
+        defaultVoiceId,
+        allowedVoiceIds,
         sttModel:           String(fields.sttModel           || DEFAULT_ORG_AI_CONFIG.sttModel).trim(),
         ttsProvider:        String(fields.ttsProvider        || DEFAULT_ORG_AI_CONFIG.ttsProvider).trim().toUpperCase(),
         ttsModel:           String(fields.ttsModel           || DEFAULT_ORG_AI_CONFIG.ttsModel).trim(),

@@ -5,7 +5,7 @@ dotenv.config();
 const prisma = new PrismaClient();
 async function main() {
   const application = await prisma.application.findFirst({
-    orderBy: { createdAt: 'desc' },
+    orderBy: { appliedAt: 'desc' },
     include: { interview: true }
   });
   if (!application) {
@@ -17,18 +17,18 @@ async function main() {
     console.log('Creating interview for application:', application.id);
     interview = await prisma.interview.create({
       data: {
-        id: generateId("int", application.fullName || application.id),
+        id: generateId("int", application.candidateFullName || application.id),
         applicationId: application.id,
-        status: 'PENDING',
-        expiresAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000) // 2 days
+        interviewStatus: 'PENDING',
+        inviteLinkExpiresAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000) // 2 days
       }
     });
   }
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://sreevaai.com';
-  const link = `${baseUrl}/interview/${application.id}?token=${interview.accessToken}`;
+  const link = `${baseUrl}/interview/${application.id}?token=${interview.candidateInviteToken}`;
   console.log('--- TEST INTERVIEW LINK ---');
-  console.log('Candidate:', application.fullName);
-  console.log('Email:', application.email);
+  console.log('Candidate:', application.candidateFullName);
+  console.log('Email:', application.candidateEmail);
   console.log('Link:', link);
   console.log('---------------------------');
 }

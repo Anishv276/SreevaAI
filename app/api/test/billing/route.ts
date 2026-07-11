@@ -15,32 +15,32 @@ export async function GET(request: Request) {
 
         const testInterviews = await prisma.interview.findMany({
             where: {
-                isTest: true,
+                isTestSession: true,
                 isDeleted: false,
-                application: { job: { orgId } },
+                application: { job: { organizationId: orgId } },
             },
             select: {
                 id: true,
-                completedAt: true,
-                updatedAt: true,
-                interviewDuration: true,
-                testBillingMetrics: true,
+                interviewCompletedAt: true,
+                interviewUpdatedAt: true,
+                durationInSeconds: true,
+                testSessionBillingMetrics: true,
                 application: {
                     select: {
-                        fullName: true,
-                        job: { select: { title: true, role: true } },
+                        candidateFullName: true,
+                        job: { select: { title: true, jobRole: true } },
                     },
                 },
             },
-            orderBy: { updatedAt: "desc" },
+            orderBy: { interviewUpdatedAt: "desc" },
             take: 100,
         });
 
         let totalLlm = 0, totalTts = 0, totalStt = 0, totalReport = 0, totalCost = 0;
 
         const rows = testInterviews.map((iv) => {
-            const m = (iv.testBillingMetrics && typeof iv.testBillingMetrics === "object")
-                ? iv.testBillingMetrics as Record<string, number>
+            const m = (iv.testSessionBillingMetrics && typeof iv.testSessionBillingMetrics === "object")
+                ? iv.testSessionBillingMetrics as Record<string, number>
                 : {};
             const llm = Number(m.llmCost ?? 0);
             const tts = Number(m.ttsCost ?? 0);
@@ -51,12 +51,12 @@ export async function GET(request: Request) {
             const cost = llm + tts + stt + report;
             totalLlm += llm; totalTts += tts; totalStt += stt; totalReport += report; totalCost += cost;
 
-            const durationSec = Number(iv.interviewDuration ?? 0);
+            const durationSec = Number(iv.durationInSeconds ?? 0);
             return {
                 id: iv.id,
-                candidate: iv.application?.fullName || "Unknown",
-                job: iv.application?.job?.role || iv.application?.job?.title || "—",
-                date: (iv.completedAt ?? iv.updatedAt).toISOString(),
+                candidate: iv.application?.candidateFullName || "Unknown",
+                job: iv.application?.job?.jobRole || iv.application?.job?.title || "—",
+                date: (iv.interviewCompletedAt ?? iv.interviewUpdatedAt).toISOString(),
                 duration: durationSec ? `${Math.floor(durationSec / 60)}m ${durationSec % 60}s` : "—",
                 llmCost: llm,
                 ttsCost: tts,

@@ -41,9 +41,9 @@ export async function POST(req: NextRequest) {
         // -- AUTHENTICATION --------------------------------
         const interview = await prisma.interview.findUnique({
             where: { applicationId },
-            select: { accessToken: true }
+            select: { candidateInviteToken: true }
         });
-        if (requireInterviewToken && (!interview || interview.accessToken !== interviewToken)) {
+        if (requireInterviewToken && (!interview || interview.candidateInviteToken !== interviewToken)) {
             return NextResponse.json({ error: "Unauthorized: Invalid security token" }, { status: 401 });
         }
         const roomName = "interview_" + applicationId;

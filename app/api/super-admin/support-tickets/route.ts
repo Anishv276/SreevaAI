@@ -16,19 +16,19 @@ export async function GET(request: Request) {
         const offset = (page - 1) * limit;
         const where: Prisma.SupportTicketWhereInput = {};
         if (status && status !== "ALL") {
-            where.status = status;
+            where.ticketStatus = status;
         }
         if (q) {
             where.OR = [
-                { name: { contains: q, mode: "insensitive" } },
-                { email: { contains: q, mode: "insensitive" } },
-                { issueAbout: { contains: q, mode: "insensitive" } },
+                { reporterName: { contains: q, mode: "insensitive" } },
+                { reporterEmail: { contains: q, mode: "insensitive" } },
+                { issueDescription: { contains: q, mode: "insensitive" } },
                 {
                     interview: {
                         application: {
                             OR: [
-                                { fullName: { contains: q, mode: "insensitive" } },
-                                { email: { contains: q, mode: "insensitive" } },
+                                { candidateFullName: { contains: q, mode: "insensitive" } },
+                                { candidateEmail: { contains: q, mode: "insensitive" } },
                                 {
                                     job: {
                                         organization: {
@@ -46,7 +46,7 @@ export async function GET(request: Request) {
             prisma.supportTicket.count({ where }),
             prisma.supportTicket.findMany({
                 where,
-                orderBy: { createdAt: "desc" },
+                orderBy: { ticketCreatedAt: "desc" },
                 skip: offset,
                 take: limit,
                 include: {
@@ -67,9 +67,9 @@ export async function GET(request: Request) {
                     },
                 },
             }),
-            prisma.supportTicket.count({ where: { ...where, status: "OPEN" } }),
-            prisma.supportTicket.count({ where: { ...where, status: "RESOLVED" } }),
-            prisma.supportTicket.count({ where: { ...where, status: "CLOSED" } }),
+            prisma.supportTicket.count({ where: { ...where, ticketStatus: "OPEN" } }),
+            prisma.supportTicket.count({ where: { ...where, ticketStatus: "RESOLVED" } }),
+            prisma.supportTicket.count({ where: { ...where, ticketStatus: "CLOSED" } }),
         ]);
         const missingApplicationIds = tickets
             .filter((ticket) => !ticket.interview && ticket.applicationId)
@@ -135,9 +135,9 @@ export async function PATCH(request: Request) {
         }
         const ticket = await prisma.supportTicket.update({
             where: { id },
-            data: { 
-                status,
-                resolvedAt: status === "RESOLVED" || status === "CLOSED" ? new Date() : null
+            data: {
+                ticketStatus: status,
+                ticketResolvedAt: status === "RESOLVED" || status === "CLOSED" ? new Date() : null
             },
         });
         return NextResponse.json(ticket);

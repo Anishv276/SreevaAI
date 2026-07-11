@@ -29,29 +29,29 @@ export async function POST(
     const interview = await prisma.interview.findUnique({
       where: { applicationId },
       select: {
-        accessToken: true,
-        expiresAt: true,
-        startedAt: true,
-        status: true,
-        linkStatus: true,
+        candidateInviteToken: true,
+        inviteLinkExpiresAt: true,
+        interviewStartedAt: true,
+        interviewStatus: true,
+        inviteLinkStatus: true,
       },
     });
     if (!interview) {
       return NextResponse.json({ error: "Interview session not found" }, { status: 404 });
     }
-    if (requireInterviewToken && interview.accessToken !== interviewToken) {
+    if (requireInterviewToken && interview.candidateInviteToken !== interviewToken) {
       return NextResponse.json({ error: "Invalid interview token" }, { status: 401 });
     }
     const startNow = Date.now();
-    const interviewRecordStatus = String(interview.status || "").toUpperCase();
+    const interviewRecordStatus = String(interview.interviewStatus || "").toUpperCase();
     if (interviewRecordStatus === "COMPLETED" || interviewRecordStatus === "NO_SHOW") {
       return NextResponse.json({
         error: "Interview has been completed.",
         code: "INTERVIEW_COMPLETED",
       }, { status: 409 });
     }
-    if (interview.startedAt) {
-      if (interview.linkStatus === "EXPIRED") {
+    if (interview.interviewStartedAt) {
+      if (interview.inviteLinkStatus === "EXPIRED") {
         return NextResponse.json({
           error: "Access Denied: Interview link has expired. Please contact support.",
           code: "LINK_EXPIRED",
@@ -60,10 +60,10 @@ export async function POST(
       return NextResponse.json({
         success: true,
         alreadyStarted: true,
-        startedAt: interview.startedAt,
+        startedAt: interview.interviewStartedAt,
       });
     }
-    if (interview.linkStatus === "EXPIRED") {
+    if (interview.inviteLinkStatus === "EXPIRED") {
       return NextResponse.json({
         error: "Access Denied: Interview link has expired. Please contact support.",
         code: "LINK_EXPIRED",
@@ -74,7 +74,7 @@ export async function POST(
       {
         applicationId,
         startedAt: new Date(startedAtMs).toISOString(),
-        accessToken: interview.accessToken,
+        accessToken: interview.candidateInviteToken,
       },
     );
     return NextResponse.json({

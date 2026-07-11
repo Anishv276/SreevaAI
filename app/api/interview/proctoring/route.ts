@@ -54,42 +54,42 @@ export async function POST(req: Request) {
     // -- AUTHENTICATION & LIFECYCLE --------------------
     const authCheck = await prisma.interview.findUnique({
       where: { applicationId },
-      select: { accessToken: true, expiresAt: true, startedAt: true, linkStatus: true, isTest: true }
+      select: { candidateInviteToken: true, inviteLinkExpiresAt: true, interviewStartedAt: true, inviteLinkStatus: true, isTestSession: true }
     });
-    if (requireInterviewToken && (!authCheck || authCheck.accessToken !== interviewToken)) {
+    if (requireInterviewToken && (!authCheck || authCheck.candidateInviteToken !== interviewToken)) {
       return NextResponse.json({ error: "Unauthorized: Invalid security token" }, { status: 401 });
     }
     if (authCheck) {
       const now = Date.now();
-      const startedAtMs = authCheck.startedAt ? authCheck.startedAt.getTime() : null;
+      const startedAtMs = authCheck.interviewStartedAt ? authCheck.interviewStartedAt.getTime() : null;
       // joinWindow only blocks active sessions -- not already-completed/no-show ones
       const joinWindowExpired = startedAtMs !== null && (now - startedAtMs) >= JOIN_WINDOW_MS;
-      
+
       // Bypass expiration logic entirely if it's a test interview
-      const isTest = authCheck.isTest === true;
+      const isTest = authCheck.isTestSession === true;
       const isExpiredByTime = !isTest && joinWindowExpired;
 
-      if (isExpiredByTime && authCheck.linkStatus !== "EXPIRED") {
+      if (isExpiredByTime && authCheck.inviteLinkStatus !== "EXPIRED") {
         await prisma.interview.update({
           where: { applicationId },
-          data: { linkStatus: "EXPIRED" },
+          data: { inviteLinkStatus: "EXPIRED" },
         }).catch(() => { });
       }
 
-      if (!isTest && (authCheck.linkStatus === "EXPIRED" || isExpiredByTime)) {
+      if (!isTest && (authCheck.inviteLinkStatus === "EXPIRED" || isExpiredByTime)) {
         return NextResponse.json({ error: "Access Denied: Interview link has expired. Please contact support." }, { status: 403 });
       }
     }
     const requestedEvents = normalizeProctoringEvents(result.data.events);
     const interview = await prisma.interview.findUnique({
       where: { applicationId },
-      select: { id: true, integritySignals: true },
+      select: { id: true, proctoringEvents: true },
     });
-    const currentEvents = parseStoredEvents(interview?.integritySignals);
+    const currentEvents = parseStoredEvents(interview?.proctoringEvents);
     const app = await prisma.application.findUnique({
       where: { id: applicationId },
       select: {
-        fullName: true,
+        candidateFullName: true,
         job: {
           select: {
             organization: {
@@ -119,25 +119,25 @@ export async function POST(req: Request) {
       await prisma.interview.update({
         where: { applicationId },
         data: {
-          integritySignals: mergedEvents,
-          updatedAt: now,
+          proctoringEvents: mergedEvents,
+          interviewUpdatedAt: now,
         }
       });
     } else {
       await prisma.interview.upsert({
         where: { applicationId },
         update: {
-          integritySignals: mergedEvents,
-          updatedAt: now,
+          proctoringEvents: mergedEvents,
+          interviewUpdatedAt: now,
         },
         create: {
-          id: generateId("int", app?.fullName || applicationId),
+          id: generateId("int", app?.candidateFullName || applicationId),
           applicationId,
-          accessToken: crypto.randomUUID(),
-          status: "IN_PROGRESS",
-          integritySignals: mergedEvents,
-          createdAt: now,
-          updatedAt: now,
+          candidateInviteToken: crypto.randomUUID(),
+          interviewStatus: "IN_PROGRESS",
+          proctoringEvents: mergedEvents,
+          interviewCreatedAt: now,
+          interviewUpdatedAt: now,
         },
       });
     }

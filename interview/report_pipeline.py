@@ -1388,11 +1388,11 @@ async def _node_signals(state: ReportState) -> dict:
             pool = await DatabasePool.get()
             async with pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    'SELECT "integritySignals" FROM "Interview" WHERE "applicationId" = $1 LIMIT 1',
+                    'SELECT "proctoringEvents" FROM "Interview" WHERE "applicationId" = $1 LIMIT 1',
                     app_id,
                 )
-            if row and row["integritySignals"]:
-                raw = row["integritySignals"]
+            if row and row["proctoringEvents"]:
+                raw = row["proctoringEvents"]
                 parsed = raw if isinstance(raw, list) else (
                     json.loads(raw) if isinstance(raw, str) else []
                 )
@@ -1734,17 +1734,17 @@ async def _node_assemble(state: ReportState) -> dict:
                 pool = await DatabasePool.get()
                 async with pool.acquire() as conn:
                     row = await conn.fetchrow(
-                        'SELECT "integritySignals" FROM "Interview" WHERE "applicationId" = $1 LIMIT 1',
+                        'SELECT "proctoringEvents" FROM "Interview" WHERE "applicationId" = $1 LIMIT 1',
                         app_id,
                     )
                     existing: list = []
-                    if row and row["integritySignals"]:
-                        raw = row["integritySignals"]
+                    if row and row["proctoringEvents"]:
+                        raw = row["proctoringEvents"]
                         existing = raw if isinstance(raw, list) else (
                             json.loads(raw) if isinstance(raw, str) else []
                         )
                     await conn.execute(
-                        """UPDATE "Interview" SET "integritySignals" = $1, "updatedAt" = NOW()
+                        """UPDATE "Interview" SET "proctoringEvents" = $1, "interviewUpdatedAt" = NOW()
                            WHERE "applicationId" = $2""",
                         json.dumps(existing + [answer_integrity_event]),
                         app_id,
@@ -1828,10 +1828,10 @@ async def _node_assemble(state: ReportState) -> dict:
             # Update Interview table with scores
             await conn.execute(
                 """UPDATE "Interview"
-                   SET "scoreBreakdown"    = $1,
-                       "skillRatings"      = $2,
-                       "signalAnalysis"    = $3,
-                       "interviewSummary"  = $4
+                   SET "aiScoreBreakdown"  = $1,
+                       "aiSkillRatings"    = $2,
+                       "proctoringAnalysis" = $3,
+                       "aiInterviewSummary" = $4
                    WHERE "applicationId"  = $5""",
                 json.dumps(score_breakdown_report),
                 json.dumps(skill_ratings_list),
@@ -2134,7 +2134,7 @@ async def generate_interview_summary(
         async with pool.acquire() as conn:
             await conn.execute(
                 """UPDATE "Interview"
-                   SET "interviewSummary" = COALESCE("interviewSummary", '{}') || $1::jsonb
+                   SET "aiInterviewSummary" = COALESCE("aiInterviewSummary", '{}') || $1::jsonb
                    WHERE "applicationId"  = $2""",
                 json.dumps({"summary": summary_text, "decision_note": verdict_parsed}),
                 app_id,

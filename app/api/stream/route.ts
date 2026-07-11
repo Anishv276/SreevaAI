@@ -37,23 +37,23 @@ export async function GET(request: Request) {
                     // A SUPER_ADMIN (no single org) gets a heartbeat-only stream;
                     // everyone else is scoped strictly to their own org's jobs.
                     if (!sessionOrgId) return;
-                    const orgScope = { job: { orgId: sessionOrgId } };
+                    const orgScope = { job: { organizationId: sessionOrgId } };
                     // Check for NEW applications
                     const newApps = await prisma.application.findMany({
-                        where: { ...orgScope, createdAt: { gt: lastCheck } },
-                        select: { id: true, fullName: true, email: true, createdAt: true },
-                        orderBy: { createdAt: "desc" },
+                        where: { ...orgScope, appliedAt: { gt: lastCheck } },
+                        select: { id: true, candidateFullName: true, candidateEmail: true, appliedAt: true },
+                        orderBy: { appliedAt: "desc" },
                         take: 5
                     });
                     // Check for UPDATED applications (status changes by AI worker etc.)
                     const updatedApps = await prisma.application.findMany({
                         where: {
                             ...orgScope,
-                            updatedAt: { gt: lastCheck },
-                            createdAt: { lte: lastCheck } // exclude newly created (already caught above)
+                            applicationUpdatedAt: { gt: lastCheck },
+                            appliedAt: { lte: lastCheck } // exclude newly created (already caught above)
                         },
-                        select: { id: true, resumeStatus: true, interviewStatus: true, updatedAt: true },
-                        orderBy: { updatedAt: "desc" },
+                        select: { id: true, resumeScreeningStatus: true, interviewPhaseStatus: true, applicationUpdatedAt: true },
+                        orderBy: { applicationUpdatedAt: "desc" },
                         take: 10
                     });
                     if (newApps.length > 0) {

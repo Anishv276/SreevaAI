@@ -33,9 +33,9 @@ export async function POST(request: Request) {
         // Verify job belongs to org
         const job = await prisma.job.findUnique({
             where: { id: jobId },
-            select: { title: true, orgId: true, organization: { select: { name: true, urlSlug: true } } },
+            select: { title: true, organizationId: true, organization: { select: { name: true, urlSlug: true } } },
         });
-        if (!job || job.orgId !== session.orgId) {
+        if (!job || job.organizationId !== session.orgId) {
             return NextResponse.json({ error: "Job not found" }, { status: 404 });
         }
         jobTitle = job.title;

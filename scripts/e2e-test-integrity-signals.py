@@ -57,12 +57,12 @@ async def _find_or_create_interview(pool, app_id: str | None) -> str:
         aid = f"test-int-{uuid.uuid4().hex[:12]}"
         async with pool.acquire() as conn:
             await conn.execute(
-                """INSERT INTO "Application" (id, "jobId", "fullName", "email")
+                """INSERT INTO "Application" (id, "jobId", "candidateFullName", "candidateEmail")
                    VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO NOTHING""",
                 aid, "test-job-id", "Test Candidate", "test@example.com",
             )
             await conn.execute(
-                """INSERT INTO "Interview" (id, "applicationId", "accessToken", status)
+                """INSERT INTO "Interview" (id, "applicationId", "candidateInviteToken", "interviewStatus")
                    VALUES ($1, $2, $3, $4) ON CONFLICT ("applicationId") DO NOTHING""",
                 f"int-{uuid.uuid4().hex[:12]}", aid, uuid.uuid4().hex, "IN_PROGRESS",
             )
@@ -75,23 +75,23 @@ async def _find_or_create_interview(pool, app_id: str | None) -> str:
 async def _write_events(pool, app_id: str, events: list[dict]) -> None:
     async with pool.acquire() as conn:
         await conn.execute(
-            """UPDATE "Interview" SET "integritySignals" = $1, "updatedAt" = NOW()
+            """UPDATE "Interview" SET "proctoringEvents" = $1, "interviewUpdatedAt" = NOW()
                WHERE "applicationId" = $2""",
             json.dumps(events),
             app_id,
         )
-    print(f"[WRITE] Inserted {len(events)} proctoring events into integritySignals")
+    print(f"[WRITE] Inserted {len(events)} proctoring events into proctoringEvents")
 
 
 async def _read_events(pool, app_id: str) -> list[dict]:
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            'SELECT "integritySignals" FROM "Interview" WHERE "applicationId" = $1 LIMIT 1',
+            'SELECT "proctoringEvents" FROM "Interview" WHERE "applicationId" = $1 LIMIT 1',
             app_id,
         )
-    if not row or not row["integritySignals"]:
+    if not row or not row["proctoringEvents"]:
         return []
-    raw = row["integritySignals"]
+    raw = row["proctoringEvents"]
     result = raw if isinstance(raw, list) else (json.loads(raw) if isinstance(raw, str) else [])
     return result
 
@@ -100,12 +100,12 @@ async def _read_raw_json(pool, app_id: str) -> str | None:
     """Return the raw integritySignals value as a pretty-printed JSON string."""
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            'SELECT "integritySignals" FROM "Interview" WHERE "applicationId" = $1 LIMIT 1',
+            'SELECT "proctoringEvents" FROM "Interview" WHERE "applicationId" = $1 LIMIT 1',
             app_id,
         )
     if not row:
         return None
-    raw = row["integritySignals"]
+    raw = row["proctoringEvents"]
     if isinstance(raw, list):
         return json.dumps(raw, indent=2)
     if isinstance(raw, str):

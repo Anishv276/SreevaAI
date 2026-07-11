@@ -21,54 +21,54 @@ export async function GET(
         const orgScope =
             session.role === "SUPER_ADMIN"
                 ? { id }
-                : { id, job: { orgId: session.orgId ?? "__none__" } };
+                : { id, job: { organizationId: session.orgId ?? "__none__" } };
         const candidate = await prisma.application.findFirst({
             where: orgScope,
             select: {
                 id: true,
-                fullName: true,
-                email: true,
-                phone: true,
-                resumeUrl: true,
-                aiScore: true,
-                aiReport: true,
-                fullScanReport: true,
-                resumeText: true,
-                resumeData: true,
-                resumeStatus: true,
-                interviewStatus: true,
-                createdAt: true,
-                updatedAt: true,
+                candidateFullName: true,
+                candidateEmail: true,
+                candidatePhone: true,
+                resumeFileUrl: true,
+                resumeAiScore: true,
+                resumeAiReport: true,
+                resumeFullScanReport: true,
+                resumeRawText: true,
+                resumeParsedData: true,
+                resumeScreeningStatus: true,
+                interviewPhaseStatus: true,
+                appliedAt: true,
+                applicationUpdatedAt: true,
                 job: {
                     select: {
                         title: true,
-                        orgId: true,
-                        role: true,
-                        extractedDetails: true,
+                        organizationId: true,
+                        jobRole: true,
+                        jdExtractedDetails: true,
                     }
                 },
                 interview: {
                     select: {
                         id: true,
                         applicationId: true,
-                        status: true,
-                        startedAt: true,
-                        completedAt: true,
-                        interviewTranscript: true,
-                        interviewDuration: true,
-                        interviewSummary: true,
-                        candidateFeedback: true,
-                        candidateRating: true,
-                        createdAt: true,
-                        updatedAt: true,
-                        inviteSentAt: true,
-                        skillRatings: true,
-                        scoreBreakdown: true,
-                        signalAnalysis: true,
-                        questionByQuestionAnalysis: true,
-                        integritySignals: true,
-                        recording: true,
-                        snapshots: true,
+                        interviewStatus: true,
+                        interviewStartedAt: true,
+                        interviewCompletedAt: true,
+                        fullTranscript: true,
+                        durationInSeconds: true,
+                        aiInterviewSummary: true,
+                        candidateFeedbackText: true,
+                        candidateSelfRating: true,
+                        interviewCreatedAt: true,
+                        interviewUpdatedAt: true,
+                        inviteEmailSentAt: true,
+                        aiSkillRatings: true,
+                        aiScoreBreakdown: true,
+                        proctoringAnalysis: true,
+                        perQuestionAnalysis: true,
+                        proctoringEvents: true,
+                        sessionRecording: true,
+                        proctoringSnapshotUrls: true,
                     }
                 }
             }
@@ -79,11 +79,11 @@ export async function GET(
         const interview = candidate.interview
             ? {
                   ...candidate.interview,
-                  ...(candidate.interview.recording
+                  ...(candidate.interview.sessionRecording
                       ? {
-                            interviewRecordingUrl: getRecordingUrl(candidate.interview.recording),
-                            recordingDurationSec: getRecordingDurationSec(candidate.interview.recording),
-                            recordingMimeType: getRecordingMimeType(candidate.interview.recording),
+                            interviewRecordingUrl: getRecordingUrl(candidate.interview.sessionRecording),
+                            recordingDurationSec: getRecordingDurationSec(candidate.interview.sessionRecording),
+                            recordingMimeType: getRecordingMimeType(candidate.interview.sessionRecording),
                         }
                       : {}),
               }
@@ -94,7 +94,7 @@ export async function GET(
         return NextResponse.json({
             ...candidate,
             interview,
-            formattedDate: new Date(candidate.createdAt).toLocaleDateString(),
+            formattedDate: new Date(candidate.appliedAt).toLocaleDateString(),
             jobTitle: candidate.job?.title || "Role N/A"
         }, {
             headers: {
@@ -127,15 +127,15 @@ export async function DELETE(
         const candidate = await prisma.application.findFirst({
             where: {
                 id,
-                job: { orgId }
+                job: { organizationId: orgId }
             },
             select: {
                 id: true,
-                resumeUrl: true,
+                resumeFileUrl: true,
                 interview: {
                     select: {
-                        recording: true,
-                        snapshots: true
+                        sessionRecording: true,
+                        proctoringSnapshotUrls: true
                     }
                 }
             }
@@ -159,7 +159,7 @@ export async function DELETE(
         await prisma.$transaction(async (tx) => {
             // 1. Soft Delete Support Tickets
             await tx.$executeRaw`
-                UPDATE "SupportTicket" SET "status" = 'DELETED'
+                UPDATE "SupportTicket" SET "ticketStatus" = 'DELETED'
                 WHERE "interviewId" IN (
                     SELECT "id" FROM "Interview" WHERE "applicationId" = ${id}
                 )
@@ -206,34 +206,34 @@ export async function PATCH(
         const body = parsed.data;
         // -- SECURITY: Verify ownership ---------------------
         const candidate = await prisma.application.findFirst({
-            where: { id, job: { orgId } }
+            where: { id, job: { organizationId: orgId } }
         });
         if (!candidate) {
             return NextResponse.json({ error: "Candidate not found or unauthorized" }, { status: 404 });
         }
 
         const normalize = (value: unknown) => String(value || "").trim().toLowerCase().replace(/[_-]+/g, " ");
-        const isShortlist = normalize(body.resumeStatus) === "shortlisted";
-        const isRejected = normalize(body.resumeStatus) === "rejected";
+        const isShortlist = normalize(body.resumeScreeningStatus) === "shortlisted";
+        const isRejected = normalize(body.resumeScreeningStatus) === "rejected";
 
         // -- UPDATE -----------------------------------------
         // Manual HR override: directly apply whatever status they select
         const dataToUpdate: any = {
-            ...(body.resumeStatus !== undefined && { resumeStatus: body.resumeStatus }),
-            ...(body.interviewStatus !== undefined && { interviewStatus: body.interviewStatus }),
+            ...(body.resumeScreeningStatus !== undefined && { resumeScreeningStatus: body.resumeScreeningStatus }),
+            ...(body.interviewPhaseStatus !== undefined && { interviewPhaseStatus: body.interviewPhaseStatus }),
         };
         if (isShortlist) {
-            dataToUpdate.resumeStatus = "shortlisted";
-            dataToUpdate.interviewStatus = "pending";
+            dataToUpdate.resumeScreeningStatus = "shortlisted";
+            dataToUpdate.interviewPhaseStatus = "pending";
         }
         if (isRejected) {
-            dataToUpdate.resumeStatus = "rejected";
-            dataToUpdate.interviewStatus = "Not Qualified";
+            dataToUpdate.resumeScreeningStatus = "rejected";
+            dataToUpdate.interviewPhaseStatus = "Not Qualified";
         }
         const updated = await prisma.application.update({
             where: { id },
             data: dataToUpdate,
-            include: { job: { select: { title: true, orgId: true } } },
+            include: { job: { select: { title: true, organizationId: true } } },
         });
         if (isShortlist || isRejected) {
             const actionLabel = isShortlist
@@ -242,7 +242,7 @@ export async function PATCH(
             await appendCandidateActivity(id, {
                 type: "status_changed",
                 label: actionLabel,
-                details: `resume=${updated.resumeStatus}, interview=${updated.interviewStatus}`,
+                details: `resume=${updated.resumeScreeningStatus}, interview=${updated.interviewPhaseStatus}`,
                 timestamp: new Date().toISOString(),
                 source: "hr",
             });

@@ -14,11 +14,11 @@ export type Job = {
     requirements?: string;
     skills?: string;
     slug?: string;
-    role?: string;
-    deadline?: string | null;
+    jobRole?: string;
+    applicationDeadline?: string | null;
     createdAt: string;
-    voiceId?: string;
-    aiName?: string;
+    aiInterviewerVoiceId?: string;
+    aiInterviewerName?: string;
 };
 interface Pagination {
     total: number;

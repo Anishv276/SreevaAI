@@ -26,7 +26,7 @@ export async function PATCH(
         }
         const updated = await prisma.application.update({
             where: { id: candidateId },
-            data: { resumeStatus },
+            data: { resumeScreeningStatus: resumeStatus },
         });
         return NextResponse.json(updated);
     } catch (err) {

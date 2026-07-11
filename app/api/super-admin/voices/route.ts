@@ -123,19 +123,19 @@ export async function GET() {
     }
     const selectableVoices = await listSelectableVoices();
     const selectableIds = new Set(selectableVoices.map((voice) => voice.id));
-    const rows = await prisma.engineVoice.findMany({ orderBy: [{ provider: "asc" }, { name: "asc" }] });
+    const rows = await prisma.aIVoice.findMany({ orderBy: [{ voiceProvider: "asc" }, { voiceName: "asc" }] });
     return NextResponse.json({
       selectableVoices,
       customVoices: rows.map((row) => ({
         id: row.id,
-        name: row.name,
-        provider: row.provider,
-        model: row.model,
-        description: row.description,
-        gender: row.gender,
-        tags: row.tags,
-        isBuiltIn: row.isBuiltIn,
-        isActive: row.isActive,
+        name: row.voiceName,
+        provider: row.voiceProvider,
+        model: row.voiceModel,
+        description: row.voiceDescription,
+        gender: row.voiceGender,
+        tags: row.voiceTags,
+        isBuiltIn: row.isSystemDefault,
+        isActive: row.isAvailable,
         isSelectable: selectableIds.has(row.id),
       })),
       builtInVoices: ALL_VOICES.map((voice) => ({ ...voice, isSelectable: selectableIds.has(voice.id) })),
@@ -169,59 +169,59 @@ export async function POST(request: Request) {
           { status: 400 }
         );
       }
-      await prisma.engineVoice.deleteMany({ where: { id } });
+      await prisma.aIVoice.deleteMany({ where: { id } });
       return NextResponse.json({ success: true });
     }
     if (action === "remove") {
       if (builtIn) {
-        await prisma.engineVoice.upsert({
+        await prisma.aIVoice.upsert({
           where: { id },
-          update: { isActive: false, isBuiltIn: true },
+          update: { isAvailable: false, isSystemDefault: true },
           create: {
             id,
-            name: builtIn.name,
-            provider: builtIn.provider,
-            model: builtIn.model,
-            description: builtIn.description,
-            gender: builtIn.gender,
-            tags: builtIn.tags || [],
-            isBuiltIn: true,
-            isActive: false,
+            voiceName: builtIn.name,
+            voiceProvider: builtIn.provider,
+            voiceModel: builtIn.model,
+            voiceDescription: builtIn.description,
+            voiceGender: builtIn.gender,
+            voiceTags: builtIn.tags || [],
+            isSystemDefault: true,
+            isAvailable: false,
           },
         });
       } else {
-        await prisma.engineVoice.upsert({
+        await prisma.aIVoice.upsert({
           where: { id },
-          update: { isActive: false },
+          update: { isAvailable: false },
           create: {
             id,
-            name: id,
-            provider: provider || "CARTESIA",
-            model: defaultModelForProvider(provider || "CARTESIA"),
-            description: null,
-            gender: null,
-            tags: [],
-            isBuiltIn: false,
-            isActive: false,
+            voiceName: id,
+            voiceProvider: provider || "CARTESIA",
+            voiceModel: defaultModelForProvider(provider || "CARTESIA"),
+            voiceDescription: null,
+            voiceGender: null,
+            voiceTags: [],
+            isSystemDefault: false,
+            isAvailable: false,
           },
         });
       }
       return NextResponse.json({ success: true });
     }
     if (builtIn) {
-      await prisma.engineVoice.upsert({
+      await prisma.aIVoice.upsert({
         where: { id },
-        update: { isActive: true, isBuiltIn: true, isDeleted: false },
+        update: { isAvailable: true, isSystemDefault: true, isDeleted: false },
         create: {
           id,
-          name: builtIn.name,
-          provider: builtIn.provider,
-          model: builtIn.model,
-          description: builtIn.description,
-          gender: builtIn.gender,
-          tags: builtIn.tags || [],
-          isBuiltIn: true,
-          isActive: true,
+          voiceName: builtIn.name,
+          voiceProvider: builtIn.provider,
+          voiceModel: builtIn.model,
+          voiceDescription: builtIn.description,
+          voiceGender: builtIn.gender,
+          voiceTags: builtIn.tags || [],
+          isSystemDefault: true,
+          isAvailable: true,
         },
       });
       return NextResponse.json({ success: true });
@@ -229,43 +229,43 @@ export async function POST(request: Request) {
     if (!provider) {
       return NextResponse.json({ error: "provider must be CARTESIA, SARVAM, or ELEVENLABS for custom voices" }, { status: 400 });
     }
-    let name = id;
-    let description: string | null = null;
-    let gender: "male" | "female" | null = null;
+    let voiceName = id;
+    let voiceDescription: string | null = null;
+    let voiceGender: "male" | "female" | null = null;
     if (provider === "CARTESIA") {
       const metadata = await fetchCartesiaVoiceMetadata(id);
-      name = metadata.name;
-      description = metadata.description;
-      gender = metadata.gender;
+      voiceName = metadata.name;
+      voiceDescription = metadata.description;
+      voiceGender = metadata.gender;
     } else if (provider === "ELEVENLABS") {
       const metadata = await fetchElevenLabsVoiceMetadata(id);
-      name = metadata.name;
-      description = metadata.description;
-      gender = metadata.gender;
+      voiceName = metadata.name;
+      voiceDescription = metadata.description;
+      voiceGender = metadata.gender;
     }
-    await prisma.engineVoice.upsert({
+    await prisma.aIVoice.upsert({
       where: { id },
       update: {
-        name,
-        provider,
-        model: defaultModelForProvider(provider),
-        description,
-        gender,
-        tags: [],
-        isBuiltIn: false,
-        isActive: true,
+        voiceName,
+        voiceProvider: provider,
+        voiceModel: defaultModelForProvider(provider),
+        voiceDescription,
+        voiceGender,
+        voiceTags: [],
+        isSystemDefault: false,
+        isAvailable: true,
         isDeleted: false,
       },
       create: {
         id,
-        name,
-        provider,
-        model: defaultModelForProvider(provider),
-        description,
-        gender,
-        tags: [],
-        isBuiltIn: false,
-        isActive: true,
+        voiceName,
+        voiceProvider: provider,
+        voiceModel: defaultModelForProvider(provider),
+        voiceDescription,
+        voiceGender,
+        voiceTags: [],
+        isSystemDefault: false,
+        isAvailable: true,
       },
     });
     return NextResponse.json({ success: true });

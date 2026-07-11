@@ -25,8 +25,8 @@ export async function GET(
         if (candidate.jobId !== jobId) {
             return NextResponse.json({ error: "Candidate not in this job" }, { status: 403 });
         }
-        const resumeText = candidate.resumeText || "";
-        const fileName = (candidate.fileName || candidateId).replace(".pdf", ".txt");
+        const resumeText = candidate.resumeRawText || "";
+        const fileName = (candidate.resumeFileName || candidateId).replace(".pdf", ".txt");
         return new NextResponse(resumeText, {
             status: 200,
             headers: {

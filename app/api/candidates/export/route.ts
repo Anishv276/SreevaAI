@@ -22,14 +22,14 @@ export async function GET(request: Request) {
         const candidates = await prisma.application.findMany({
             where: {
                 jobId: jobId || undefined,
-                job: { orgId }
+                job: { organizationId: orgId }
             },
             include: {
                 job: {
                     select: { title: true }
                 }
             },
-            orderBy: { updatedAt: "desc" }
+            orderBy: { applicationUpdatedAt: "desc" }
         });
         // -- CSV INJECTION DEFENSE ------------------------------------------
         // Candidate-controlled fields (name, email, phone) can begin with a
@@ -46,13 +46,13 @@ export async function GET(request: Request) {
         const headers = ["Candidate ID", "Name", "Email", "Phone", "Role", "AI Score", "Resume Status", "Interview Status"];
         const rows = candidates.map((c: (typeof candidates)[number]) => [
             csvCell(c.id),
-            csvCell(c.fullName),
-            csvCell(c.email),
-            csvCell(c.phone),
+            csvCell(c.candidateFullName),
+            csvCell(c.candidateEmail),
+            csvCell(c.candidatePhone),
             csvCell(c.job?.title || "Unknown"),
-            c.aiScore || 0,
-            csvCell(c.resumeStatus || "pending"),
-            csvCell(c.interviewStatus || "pending")
+            c.resumeAiScore || 0,
+            csvCell(c.resumeScreeningStatus || "pending"),
+            csvCell(c.interviewPhaseStatus || "pending")
         ]);
         const csvContent = [headers.join(","), ...rows.map((r: (typeof rows)[number]) => r.join(","))].join("\n");
         // Return as a downloadable CSV file

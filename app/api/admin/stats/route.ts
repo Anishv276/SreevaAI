@@ -38,44 +38,44 @@ export async function GET(req: NextRequest) {
         };
         const appStats = await prisma.$queryRaw<AppStatsRow[]>`
             SELECT
-                COUNT(*) FILTER (WHERE a."createdAt" >= ${start})::INT AS applications,
-                COUNT(*) FILTER (WHERE a."createdAt" >= ${todayStart})::INT AS "applicationsToday",
-                COUNT(*) FILTER (WHERE a."createdAt" >= ${prevStart} AND a."createdAt" < ${prevEnd})::INT AS "applicationsPrev",
-                COUNT(*) FILTER (WHERE a."createdAt" >= ${start} AND a."aiScore" IS NOT NULL)::INT AS "screenedInPeriod",
-                COUNT(*) FILTER (WHERE a."updatedAt" >= ${start} AND LOWER(a."resumeStatus") = 'shortlisted')::INT AS shortlisted,
-                COUNT(*) FILTER (WHERE a."updatedAt" >= ${prevStart} AND a."updatedAt" < ${prevEnd} AND LOWER(a."resumeStatus") = 'shortlisted')::INT AS "shortlistedPrev",
+                COUNT(*) FILTER (WHERE a."appliedAt" >= ${start})::INT AS applications,
+                COUNT(*) FILTER (WHERE a."appliedAt" >= ${todayStart})::INT AS "applicationsToday",
+                COUNT(*) FILTER (WHERE a."appliedAt" >= ${prevStart} AND a."appliedAt" < ${prevEnd})::INT AS "applicationsPrev",
+                COUNT(*) FILTER (WHERE a."appliedAt" >= ${start} AND a."resumeAiScore" IS NOT NULL)::INT AS "screenedInPeriod",
+                COUNT(*) FILTER (WHERE a."applicationUpdatedAt" >= ${start} AND LOWER(a."resumeScreeningStatus") = 'shortlisted')::INT AS shortlisted,
+                COUNT(*) FILTER (WHERE a."applicationUpdatedAt" >= ${prevStart} AND a."applicationUpdatedAt" < ${prevEnd} AND LOWER(a."resumeScreeningStatus") = 'shortlisted')::INT AS "shortlistedPrev",
                 COUNT(*) FILTER (
-                    WHERE i."status" = 'COMPLETED' AND i."completedAt" >= ${start}
+                    WHERE i."interviewStatus" = 'COMPLETED' AND i."interviewCompletedAt" >= ${start}
                     AND i."isDeleted" = false
                 )::INT AS interviewed,
                 COUNT(*) FILTER (
-                    WHERE i."status" = 'COMPLETED' AND i."completedAt" >= ${prevStart} AND i."completedAt" < ${prevEnd}
+                    WHERE i."interviewStatus" = 'COMPLETED' AND i."interviewCompletedAt" >= ${prevStart} AND i."interviewCompletedAt" < ${prevEnd}
                     AND i."isDeleted" = false
                 )::INT AS "interviewedPrev",
                 COUNT(*) FILTER (
-                    WHERE i."status" = 'IN_PROGRESS'
+                    WHERE i."interviewStatus" = 'IN_PROGRESS'
                     AND i."isDeleted" = false
                 )::INT AS "liveInterviews",
                 COUNT(*) FILTER (
-                    WHERE i."status" = 'COMPLETED' AND a."aiScore" IS NULL
+                    WHERE i."interviewStatus" = 'COMPLETED' AND a."resumeAiScore" IS NULL
                     AND i."isDeleted" = false
                 )::INT AS "needsReview",
                 COUNT(*) FILTER (
-                    WHERE i."createdAt" >= ${start}
+                    WHERE i."interviewCreatedAt" >= ${start}
                     AND i."isDeleted" = false
                 )::INT AS invited,
                 COUNT(*) FILTER (
-                    WHERE a."updatedAt" >= ${start}
-                    AND (LOWER(a."resumeStatus") = 'rejected' OR LOWER(a."interviewStatus") = 'rejected')
+                    WHERE a."applicationUpdatedAt" >= ${start}
+                    AND (LOWER(a."resumeScreeningStatus") = 'rejected' OR LOWER(a."interviewPhaseStatus") = 'rejected')
                 )::INT AS rejected,
                 COUNT(*) FILTER (
-                    WHERE a."updatedAt" >= ${prevStart} AND a."updatedAt" < ${prevEnd}
-                    AND (LOWER(a."resumeStatus") = 'rejected' OR LOWER(a."interviewStatus") = 'rejected')
+                    WHERE a."applicationUpdatedAt" >= ${prevStart} AND a."applicationUpdatedAt" < ${prevEnd}
+                    AND (LOWER(a."resumeScreeningStatus") = 'rejected' OR LOWER(a."interviewPhaseStatus") = 'rejected')
                 )::INT AS "rejectedPrev"
             FROM "Application" a
             JOIN "Job" d ON d.id = a."jobId"
             LEFT JOIN "Interview" i ON i."applicationId" = a.id
-            WHERE d."orgId" = ${orgId}
+            WHERE d."organizationId" = ${orgId}
               AND a."isDeleted" = false
               AND d."isDeleted" = false
         `;
@@ -84,18 +84,18 @@ export async function GET(req: NextRequest) {
                 COUNT(*)::INT AS "activeJobs",
                 0::INT AS "closingSoon"
             FROM "Job"
-            WHERE "orgId" = ${orgId}
+            WHERE "organizationId" = ${orgId}
               AND "isDeleted" = false
         `;
         const scoreStats = await prisma.$queryRaw<Array<{ avgScore: number | null }>>(Prisma.sql`
-            SELECT COALESCE(AVG(a."aiScore"), 0)::FLOAT AS "avgScore"
+            SELECT COALESCE(AVG(a."resumeAiScore"), 0)::FLOAT AS "avgScore"
             FROM "Application" a
             JOIN "Job" d ON d.id = a."jobId"
-            WHERE d."orgId" = ${orgId}
+            WHERE d."organizationId" = ${orgId}
               AND a."isDeleted" = false
               AND d."isDeleted" = false
-              AND a."aiScore" IS NOT NULL
-              AND a."updatedAt" >= ${start}
+              AND a."resumeAiScore" IS NOT NULL
+              AND a."applicationUpdatedAt" >= ${start}
         `);
         const s = appStats[0];
         const d = jobStats[0];

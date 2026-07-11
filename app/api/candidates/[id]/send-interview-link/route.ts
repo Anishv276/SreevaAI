@@ -39,7 +39,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             console.error(`[INTERVIEW] Application not found for ID: ${applicationId}`);
             return NextResponse.json({ error: "Application not found" }, { status: 404 });
         }
-        if (!isSuperAdmin && session.orgId && application.job?.orgId !== session.orgId) {
+        if (!isSuperAdmin && session.orgId && application.job?.organizationId !== session.orgId) {
             return NextResponse.json({ error: "Forbidden: Candidate belongs to another organization" }, { status: 403 });
         }
         if (!isSuperAdmin && session.orgId) {
@@ -54,48 +54,48 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
                 );
             }
         }
-        const resumeStatus = (application.resumeStatus || "").toUpperCase();
+        const resumeStatus = (application.resumeScreeningStatus || "").toUpperCase();
         // Allow: shortlisted/accepted (ATS flow), skipped/completed (interview-only flow)
         const canSendAgain =
             ["SHORTLISTED", "ACCEPTED", "SKIPPED", "COMPLETED"].includes(resumeStatus);
         if (!canSendAgain) {
             console.error(`[INTERVIEW] Status mismatch. Resume: ${resumeStatus}`);
             return NextResponse.json({
-                error: `Candidate is not eligible for an interview link yet. Current resume status: "${application.resumeStatus}".`
+                error: `Candidate is not eligible for an interview link yet. Current resume status: "${application.resumeScreeningStatus}".`
             }, { status: 400 });
         }
-        if (!application.email) {
+        if (!application.candidateEmail) {
             return NextResponse.json({ error: "Candidate email is missing" }, { status: 400 });
         }
-        const jobDeadline = application.job?.deadline ? new Date(application.job.deadline) : null;
+        const jobDeadline = application.job?.applicationDeadline ? new Date(application.job.applicationDeadline) : null;
         const interviewRecord = await prisma.interview.upsert({
             where: { applicationId },
             update: {
-                inviteSentAt: new Date(),
-                status: "PENDING",
-                scheduledAt: null,
-                startedAt: null,
-                completedAt: null,
-                expiresAt: jobDeadline,
-                linkStatus: "ACTIVE",
-                isTest: false,          // always clear test flag on real invite
-                interviewBrief: Prisma.JsonNull,   // clear any stale brief from a previous run
+                inviteEmailSentAt: new Date(),
+                interviewStatus: "PENDING",
+                interviewScheduledAt: null,
+                interviewStartedAt: null,
+                interviewCompletedAt: null,
+                inviteLinkExpiresAt: jobDeadline,
+                inviteLinkStatus: "ACTIVE",
+                isTestSession: false,
+                aiInterviewBrief: Prisma.JsonNull,
             },
             create: {
-                id: generateId("int", application.fullName || applicationId),
+                id: generateId("int", application.candidateFullName || applicationId),
                 applicationId,
-                inviteSentAt: new Date(),
-                status: "PENDING",
-                expiresAt: jobDeadline,
-                linkStatus: "ACTIVE",
-                isTest: false,
+                inviteEmailSentAt: new Date(),
+                interviewStatus: "PENDING",
+                inviteLinkExpiresAt: jobDeadline,
+                inviteLinkStatus: "ACTIVE",
+                isTestSession: false,
             },
         });
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-        const scheduleLink = `${baseUrl}/schedule/${interviewRecord.accessToken}`;
+        const scheduleLink = `${baseUrl}/schedule/${interviewRecord.candidateInviteToken}`;
         const mailResult = await sendScheduleInviteEmail({
-            email: application.email,
-            fullName: application.fullName || "Candidate",
+            email: application.candidateEmail,
+            fullName: application.candidateFullName || "Candidate",
             jobTitle: application.job?.title || "Unknown Role",
             orgName: application.job?.organization?.name || "Sreeva AI",
             scheduleLink,
@@ -108,7 +108,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         }
         await prisma.application.update({
             where: { id: applicationId },
-            data: { interviewStatus: "pending", updatedAt: new Date() },
+            data: { interviewPhaseStatus: "pending", applicationUpdatedAt: new Date() },
         });
         await appendCandidateActivity(applicationId, {
             type: "interview_invite_sent",

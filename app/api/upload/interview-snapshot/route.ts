@@ -16,13 +16,13 @@ export async function POST(request: Request) {
         // -- AUTHENTICATION --------------------------------
         const interview = await prisma.interview.findUnique({
             where: { applicationId },
-            select: { accessToken: true, status: true }
+            select: { candidateInviteToken: true, interviewStatus: true }
         });
         if (requireInterviewToken) {
-            if (!interview || interview.accessToken !== interviewToken) {
+            if (!interview || interview.candidateInviteToken !== interviewToken) {
                 return NextResponse.json({ error: "Unauthorized: Invalid session token" }, { status: 401 });
             }
-            if (interview.status !== "IN_PROGRESS" && interview.status !== "PENDING") {
+            if (interview.interviewStatus !== "IN_PROGRESS" && interview.interviewStatus !== "PENDING") {
                 return NextResponse.json({ error: "Unauthorized: Interview is not in an active state" }, { status: 403 });
             }
         }

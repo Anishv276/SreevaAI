@@ -117,32 +117,32 @@ async function validateInterviewAccess(applicationId: string, interviewToken: st
     const app = await prisma.application.findUnique({
         where: { id: applicationId },
         select: {
-            job: { select: { orgId: true } },
+            job: { select: { organizationId: true } },
             interview: {
                 select: {
-                    accessToken: true,
-                    expiresAt: true,
-                    linkStatus: true,
-                    isTest: true,
+                    candidateInviteToken: true,
+                    inviteLinkExpiresAt: true,
+                    inviteLinkStatus: true,
+                    isTestSession: true,
                 },
             },
         },
     });
-    if (!app?.job?.orgId || !app.interview) {
-        console.error("[verify-speech] validateInterviewAccess failed: Missing orgId or interview", { orgId: app?.job?.orgId, hasInterview: !!app?.interview });
+    if (!app?.job?.organizationId || !app.interview) {
+        console.error("[verify-speech] validateInterviewAccess failed: Missing orgId or interview", { orgId: app?.job?.organizationId, hasInterview: !!app?.interview });
         return null;
     }
-    if (isInterviewTokenRequired() && app.interview?.accessToken !== interviewToken) {
-        console.error("[verify-speech] validateInterviewAccess failed: Invalid interview token", { required: isInterviewTokenRequired(), expected: app.interview?.accessToken, received: interviewToken });
+    if (isInterviewTokenRequired() && app.interview?.candidateInviteToken !== interviewToken) {
+        console.error("[verify-speech] validateInterviewAccess failed: Invalid interview token", { required: isInterviewTokenRequired(), expected: app.interview?.candidateInviteToken, received: interviewToken });
         return null;
     }
 
-    const isTest = app.interview?.isTest === true;
-    if (!isTest && app.interview.linkStatus && app.interview.linkStatus !== "ACTIVE") {
+    const isTest = app.interview?.isTestSession === true;
+    if (!isTest && app.interview.inviteLinkStatus && app.interview.inviteLinkStatus !== "ACTIVE") {
         console.error("[verify-speech] validateInterviewAccess failed: Link not ACTIVE");
         return null;
     }
-    return app.job.orgId;
+    return app.job.organizationId;
 }
 export async function POST(req: NextRequest) {
     try {

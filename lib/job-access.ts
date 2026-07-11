@@ -6,7 +6,7 @@ export type JobAccessResult =
 /**
  * Authorize an admin/super-admin caller against a specific job and enforce
  * tenant isolation: a regular admin may only act on jobs in their own org;
- * a SUPER_ADMIN may act on any job. Returns the resolved job orgId on success.
+ * a SUPER_ADMIN may act on any job. Returns the resolved job organizationId on success.
  *
  * Use this for every resume-screening / job sub-route that takes a jobId from
  * the URL so cross-tenant access can't slip through a missing check.
@@ -18,13 +18,13 @@ export async function authorizeJobAccess(jobId: string): Promise<JobAccessResult
     }
     const job = await prisma.job.findUnique({
         where: { id: jobId },
-        select: { id: true, orgId: true },
+        select: { id: true, organizationId: true },
     });
-    if (!job || !job.orgId) {
+    if (!job || !job.organizationId) {
         return { ok: false, status: 404, error: "Job not found" };
     }
-    if (!isSuperAdminRole(session.role) && job.orgId !== session.orgId) {
+    if (!isSuperAdminRole(session.role) && job.organizationId !== session.orgId) {
         return { ok: false, status: 403, error: "Job belongs to a different organization" };
     }
-    return { ok: true, session, orgId: job.orgId };
+    return { ok: true, session, orgId: job.organizationId };
 }

@@ -33,49 +33,49 @@ export async function GET(request: Request) {
         const endDate = searchParams.get("endDate");
         const where: Prisma.JobWhereInput = {};
         if (startDate || endDate) {
-            where.createdAt = {};
-            if (startDate) (where.createdAt as Prisma.DateTimeFilter).gte = new Date(startDate);
+            where.jobCreatedAt = {};
+            if (startDate) (where.jobCreatedAt as Prisma.DateTimeFilter).gte = new Date(startDate);
             if (endDate) {
                 const end = new Date(endDate);
                 end.setHours(23, 59, 59, 999);
-                (where.createdAt as Prisma.DateTimeFilter).lte = end;
+                (where.jobCreatedAt as Prisma.DateTimeFilter).lte = end;
             }
         }
         // -- ADMIN ACCESS: Filter by Role & Org -----------
         if (session.role === "SUPER_ADMIN") {
-            if (orgId) where.orgId = orgId;
+            if (orgId) where.organizationId = orgId;
         } else {
-            where.orgId = session.orgId;
+            where.organizationId = session.orgId;
         }
         // Search filters
         if (search) {
             where.OR = [
                 { title: { contains: search, mode: "insensitive" } },
-                { role: { contains: search, mode: "insensitive" } }
+                { jobRole: { contains: search, mode: "insensitive" } }
             ];
         }
         const [jobs, total] = await Promise.all([
             prisma.job.findMany({
                 where,
-                orderBy: { createdAt: "desc" },
+                orderBy: { jobCreatedAt: "desc" },
                 skip,
                 take: limit,
                 select: {
                     id: true,
                     title: true,
-                    role: true,
-                    screeningThreshold: true,
-                    creatorId: true,
-                    createdAt: true,
-                    updatedAt: true,
-                    screeningCriteria: true,
-                    interviewQuestions: true,
+                    jobRole: true,
+                    resumeScreeningThreshold: true,
+                    createdByCredentialId: true,
+                    jobCreatedAt: true,
+                    jobUpdatedAt: true,
+                    resumeScreeningCriteria: true,
+                    aiGeneratedInterviewQuestions: true,
                     jdFileName: true,
                     jdPreviewUrl: true,
-                    orgId: true,
-                    deadline: true,
-                    aiName: true,
-                    voiceId: true,
+                    organizationId: true,
+                    applicationDeadline: true,
+                    aiInterviewerName: true,
+                    aiInterviewerVoiceId: true,
                     interviewMode: true,
                     _count: {
                         select: { applications: { where: { isDeleted: false } } },
@@ -85,9 +85,9 @@ export async function GET(request: Request) {
             prisma.job.count({ where })
         ]);
         const formattedJobs = jobs.map((job) => {
-            const screeningThreshold = Number(job.screeningThreshold ?? 60);
+            const screeningThreshold = Number(job.resumeScreeningThreshold ?? 60);
             const parsedScreening = parseJobScreeningSettings(
-                job.screeningCriteria,
+                job.resumeScreeningCriteria,
                 screeningThreshold,
             );
             return {
@@ -101,7 +101,7 @@ export async function GET(request: Request) {
                 aiScreening: {
                     enabled: true,
                 },
-                interviewQuestions: job.interviewQuestions ? JSON.parse(job.interviewQuestions) : []
+                interviewQuestions: job.aiGeneratedInterviewQuestions ? JSON.parse(job.aiGeneratedInterviewQuestions) : []
             };
         });
         return NextResponse.json({
@@ -147,7 +147,7 @@ export async function POST(request: Request) {
             const maxActiveJobs = parseOrgLimitValue(org?.maxActiveJobs);
             if (maxActiveJobs !== null) {
                 const activeJobCount = await prisma.job.count({
-                    where: { orgId: session.orgId }
+                    where: { organizationId: session.orgId }
                 });
                 if (isJobCreationLocked(maxActiveJobs, activeJobCount)) {
                     return NextResponse.json(
@@ -174,10 +174,10 @@ export async function POST(request: Request) {
         }
         const data = result.data;
         const aiConfig = normalizeJobAiConfig({
-            next: { voiceId: data.voiceId },
+            next: { aiInterviewerVoiceId: data.aiInterviewerVoiceId },
         });
         const screeningCriteria = (() => {
-            const raw = data.screeningCriteria;
+            const raw = data.resumeScreeningCriteria;
             if (!raw) return {};
             if (typeof raw === "string") {
                 try {
@@ -191,25 +191,25 @@ export async function POST(request: Request) {
         const normalizedScreeningCriteria = sanitizeScreeningCriteria(screeningCriteria);
         const mergedScreeningCriteria = {
             ...normalizedScreeningCriteria,
-            ...(data.screeningThreshold !== undefined ? { threshold: data.screeningThreshold } : {}),
+            ...(data.resumeScreeningThreshold !== undefined ? { threshold: data.resumeScreeningThreshold } : {}),
         };
         const jobId = generateId("drv", data.title);
         const job = await prisma.job.create({
             data: {
                 id: jobId,
                 title: data.title,
-                role: data.role || null,
-                extractedDetails: data.extractedDetails || null,
+                jobRole: data.jobRole || null,
+                jdExtractedDetails: data.jdExtractedDetails || null,
                 jdFileName: data.jdFileName || null,
                 jdPreviewUrl: data.jdPreviewUrl?.startsWith("blob:") ? null : (data.jdPreviewUrl || null),
-                screeningCriteria: JSON.stringify(mergedScreeningCriteria),
-                screeningThreshold: data.screeningThreshold ?? 60,
-                deadline: normalizeDeadlineDate(data.deadline as string | null | undefined),
-                interviewQuestions: data.interviewQuestions ? JSON.stringify(data.interviewQuestions) : "[]",
-                aiName: data.aiName || "Ishitha",
+                resumeScreeningCriteria: JSON.stringify(mergedScreeningCriteria),
+                resumeScreeningThreshold: data.resumeScreeningThreshold ?? 60,
+                applicationDeadline: normalizeDeadlineDate(data.applicationDeadline as string | null | undefined),
+                aiGeneratedInterviewQuestions: data.aiGeneratedInterviewQuestions ? JSON.stringify(data.aiGeneratedInterviewQuestions) : "[]",
+                aiInterviewerName: data.aiInterviewerName || "Ishitha",
                 interviewMode: data.interviewMode || "ats",
-                orgId: session.orgId!,
-                creatorId: session.userId,
+                organizationId: session.orgId!,
+                createdByCredentialId: session.userId,
                 ...aiConfig,
             },
         });
@@ -238,7 +238,7 @@ export async function DELETE(request: Request) {
         const { ids } = result.data;
         // -- SECURITY: Ensure IDs belong to the Org -----------
         const belongsToOrg = await prisma.job.findMany({
-            where: { id: { in: ids }, orgId: session.orgId },
+            where: { id: { in: ids }, organizationId: session.orgId },
             select: { id: true },
         });
         const validIds = belongsToOrg.map((d: (typeof belongsToOrg)[number]) => d.id);
@@ -263,12 +263,12 @@ export async function DELETE(request: Request) {
                     UPDATE "Interview"
                     SET "isDeleted" = true,
                         "applicationId" = 'del_' || ${timestamp} || '_' || "applicationId",
-                        "accessToken" = 'del_' || ${timestamp} || '_' || "accessToken"
+                        "candidateInviteToken" = 'del_' || ${timestamp} || '_' || "candidateInviteToken"
                     WHERE "applicationId" IN (SELECT "id" FROM "Application" WHERE "jobId" IN (${idList}))
                 `;
                 // 6. Soft Delete Support Tickets
                 await tx.$executeRaw`
-                    UPDATE "SupportTicket" SET "status" = 'DELETED'
+                    UPDATE "SupportTicket" SET "ticketStatus" = 'DELETED'
                     WHERE "interviewId" IN (
                         SELECT "id" FROM "Interview" WHERE "applicationId" IN (
                             SELECT "id" FROM "Application" WHERE "jobId" IN (${idList})

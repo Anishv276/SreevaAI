@@ -20,24 +20,24 @@ export async function GET(req: Request) {
         // Top candidates this period = recently completed interviews with highest AI score
         const applications = await prisma.application.findMany({
             where: {
-                job: { orgId },
-                aiScore: { not: null },
-                updatedAt: { gte: start },
-                interview: { status: "COMPLETED" },
+                job: { organizationId: orgId },
+                resumeAiScore: { not: null },
+                applicationUpdatedAt: { gte: start },
+                interview: { interviewStatus: "COMPLETED" },
             },
             select: {
                 id: true,
-                fullName: true,
-                aiScore: true,
-                resumeStatus: true,
-                job: { select: { title: true, role: true } },
+                candidateFullName: true,
+                resumeAiScore: true,
+                resumeScreeningStatus: true,
+                job: { select: { title: true, jobRole: true } },
                 interview: {
                     select: {
-                        status: true,
+                        interviewStatus: true,
                     },
                 },
             },
-            orderBy: { aiScore: "desc" },
+            orderBy: { resumeAiScore: "desc" },
             take: 6,
         });
         const candidates = applications.map((app) => {
@@ -47,10 +47,10 @@ export async function GET(req: Request) {
                 rejected: "Rejected",
                 pending: "Pending",
             };
-            const compositeStatus = normalizeStatus(app.resumeStatus);
+            const compositeStatus = normalizeStatus(app.resumeScreeningStatus);
             const displayStatus = statusMap[compositeStatus] ?? "Reviewing";
             // Initials from name
-            const initials = (app.fullName || "")
+            const initials = (app.candidateFullName || "")
                 .split(" ")
                 .map((w) => w[0])
                 .join("")
@@ -58,11 +58,11 @@ export async function GET(req: Request) {
                 .toUpperCase();
             return {
                 id: app.id,
-                name: app.fullName || "Unnamed Candidate",
+                name: app.candidateFullName || "Unnamed Candidate",
                 initials,
-                role: app.job.role || app.job.title,
+                role: app.job.jobRole || app.job.title,
                 jobTitle: app.job.title,
-                interviewScore: app.aiScore,
+                interviewScore: app.resumeAiScore,
                 resumeScore: null,
                 status: displayStatus,
             };

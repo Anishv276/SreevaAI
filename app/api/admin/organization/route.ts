@@ -29,39 +29,39 @@ export async function GET(request: Request) {
         }
         const orgRows = await prisma.$queryRaw<Array<{
             name: string | null;
-            plan: string | null;
-            onboardingComplete: boolean | null;
-            status: string | null;
-            statusControl: string | null;
-            voiceId: string | null;
-            allowedVoices: string[] | null;
+            billingPlan: string | null;
+            isOnboardingComplete: boolean | null;
+            orgStatus: string | null;
+            quotaControlMode: string | null;
+            defaultVoiceId: string | null;
+            allowedVoiceIds: string[] | null;
             sttModel: string | null;
             maxActiveJobs: string | null;
-            proctoringSignals: unknown;
-            interviewQuotaTotal: number | null;
-            interviewQuotaUsed: number | null;
+            enabledProctoringSignals: unknown;
+            totalInterviewsAllowed: number | null;
+            totalInterviewsUsed: number | null;
             activeJobCount: number | null;
         }>>(
             Prisma.sql`
                 SELECT
                     o.name,
-                    o.plan,
-                    o."onboardingComplete",
-                    o.status,
-                    o."statusControl",
-                    o."voiceId",
-                    o."allowedVoices",
+                    o."billingPlan",
+                    o."isOnboardingComplete",
+                    o."orgStatus",
+                    o."quotaControlMode",
+                    o."defaultVoiceId",
+                    o."allowedVoiceIds",
                     o."sttModel",
                     o."maxActiveJobs",
-                    o."proctoringSignals",
-                    o."interviewQuotaTotal",
-                    o."interviewQuotaUsed",
+                    o."enabledProctoringSignals",
+                    o."totalInterviewsAllowed",
+                    o."totalInterviewsUsed",
                     (
                         SELECT COUNT(*)
                         FROM "Job" d
-                        WHERE d."orgId" = o.id AND d."isDeleted" = false
+                        WHERE d."organizationId" = o.id AND d."isDeleted" = false
                     )::INT AS "activeJobCount"
-                FROM "Organization" o
+                FROM "OrganizationDetails" o
                 WHERE o.id = ${orgId} AND o."isDeleted" = false
                 LIMIT 1
             `
@@ -70,8 +70,8 @@ export async function GET(request: Request) {
         if (!org) {
             return NextResponse.json({ error: "Organization not found" }, { status: 404 });
         }
-        let effectiveStatus = String(org.status || "ACTIVE").toUpperCase();
-        if (org.statusControl === "QUOTA" && (org.interviewQuotaTotal ?? 0) > 0 && (org.interviewQuotaUsed ?? 0) >= (org.interviewQuotaTotal ?? 0)) {
+        let effectiveStatus = String(org.orgStatus || "ACTIVE").toUpperCase();
+        if (org.quotaControlMode === "QUOTA" && (org.totalInterviewsAllowed ?? 0) > 0 && (org.totalInterviewsUsed ?? 0) >= (org.totalInterviewsAllowed ?? 0)) {
             effectiveStatus = "QUOTA_EXCEEDED";
         }
         return NextResponse.json({

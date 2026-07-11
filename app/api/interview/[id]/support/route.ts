@@ -38,17 +38,17 @@ export async function POST(
         if (!interview) {
             return NextResponse.json({ error: "Interview not found" }, { status: 404 });
         }
-        if (requireInterviewToken && interview.accessToken !== interviewToken) {
+        if (requireInterviewToken && interview.candidateInviteToken !== interviewToken) {
             return NextResponse.json({ error: "Unauthorized: Invalid support token" }, { status: 401 });
         }
         const ticket = await prisma.supportTicket.create({
             data: {
                 interviewId: interview.id,
                 applicationId: interview.applicationId,
-                name: normalizedName,
-                email: normalizedEmail,
-                issueAbout: normalizedIssueAbout,
-                status: "OPEN",
+                reporterName: normalizedName,
+                reporterEmail: normalizedEmail,
+                issueDescription: normalizedIssueAbout,
+                ticketStatus: "OPEN",
             },
         });
         return NextResponse.json({ success: true, ticketId: ticket.id });

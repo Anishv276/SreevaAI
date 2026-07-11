@@ -50,21 +50,21 @@ export async function GET(request: Request) {
             SELECT
                 o.*,
                 (SELECT COUNT(*)::INT FROM "OrganizationCredentials" u WHERE u."organizationId" = o.id AND u."isDeleted" = false) as "adminCount",
-                (SELECT COUNT(*)::INT FROM "Job" d WHERE d."orgId" = o.id AND d."isDeleted" = false) as "jobCount",
-                (SELECT COUNT(*)::INT FROM "Application" a JOIN "Job" d ON d.id = a."jobId" WHERE d."orgId" = o.id AND a."isDeleted" = false AND d."isDeleted" = false) as "candidateCount",
+                (SELECT COUNT(*)::INT FROM "Job" d WHERE d."organizationId" = o.id AND d."isDeleted" = false) as "jobCount",
+                (SELECT COUNT(*)::INT FROM "Application" a JOIN "Job" d ON d.id = a."jobId" WHERE d."organizationId" = o.id AND a."isDeleted" = false AND d."isDeleted" = false) as "candidateCount",
                 (SELECT COUNT(*)::INT FROM "Interview" i
                  JOIN "Application" a ON a.id = i."applicationId"
                  JOIN "Job" d ON d.id = a."jobId"
-                 WHERE d."orgId" = o.id AND i."isDeleted" = false AND a."isDeleted" = false AND d."isDeleted" = false) as "interviewCount",
+                 WHERE d."organizationId" = o.id AND i."isDeleted" = false AND a."isDeleted" = false AND d."isDeleted" = false) as "interviewCount",
                 (SELECT COUNT(*)::INT FROM "Interview" i
                  JOIN "Application" a ON a.id = i."applicationId"
                  JOIN "Job" d ON d.id = a."jobId"
-                 WHERE d."orgId" = o.id AND i."isDeleted" = false AND a."isDeleted" = false AND d."isDeleted" = false AND i."status" = 'COMPLETED') as "interviewsCompleted",
-                COALESCE(o."creditsUsed", 0) as "creditsUsed"
-            FROM "Organization" o
-            WHERE o."isDeleted" = false AND (o."name" ILIKE ${sqlSearch} OR o."slug" ILIKE ${sqlSearch})
-            ${fromDate && toDate ? Prisma.sql`AND o."createdAt" BETWEEN ${fromDate} AND ${toDate}` : Prisma.empty}
-            ORDER BY o."createdAt" DESC
+                 WHERE d."organizationId" = o.id AND i."isDeleted" = false AND a."isDeleted" = false AND d."isDeleted" = false AND i."interviewStatus" = 'COMPLETED') as "interviewsCompleted",
+                COALESCE(o."billingCreditsUsed", 0) as "billingCreditsUsed"
+            FROM "OrganizationDetails" o
+            WHERE o."isDeleted" = false AND (o."name" ILIKE ${sqlSearch} OR o."urlSlug" ILIKE ${sqlSearch})
+            ${fromDate && toDate ? Prisma.sql`AND o."orgCreatedAt" BETWEEN ${fromDate} AND ${toDate}` : Prisma.empty}
+            ORDER BY o."orgCreatedAt" DESC
             LIMIT ${limit} OFFSET ${offset}
         `) as Array<Record<string, unknown> & {
             adminCount: number;
@@ -72,9 +72,9 @@ export async function GET(request: Request) {
             candidateCount: number;
             interviewCount: number;
             interviewsCompleted: number;
-            creditsUsed: number;
-            interviewQuotaTotal: number;
-            interviewQuotaUsed: number;
+            billingCreditsUsed: number;
+            totalInterviewsAllowed: number;
+            totalInterviewsUsed: number;
         }>;
         const lastWeek = new Date();
         lastWeek.setDate(lastWeek.getDate() - 7);
@@ -109,26 +109,26 @@ export async function GET(request: Request) {
                     (SELECT COUNT(*)::INT FROM "OrganizationCredentials" WHERE "isDeleted" = false) as "totalAdmins",
                     (SELECT COUNT(*)::INT FROM "Job" WHERE "isDeleted" = false) as "totalJobs",
                     (SELECT COUNT(*)::INT FROM "Application" WHERE "isDeleted" = false) as "totalCandidates",
-                    (SELECT COUNT(*)::INT FROM "Application" WHERE "isDeleted" = false AND "resumeStatus" = 'shortlisted') as "totalShortlisted",
-                    (SELECT COUNT(*)::INT FROM "Interview" WHERE "isDeleted" = false AND "status" = 'COMPLETED') as "totalInterviewed",
-                    COALESCE(SUM("interviewQuotaTotal"), 0)::INT as "totalInterviewQuotaAllocated",
-                    COALESCE(SUM("interviewQuotaUsed"), 0)::INT as "totalInterviewQuotaConsumed",
-                    COALESCE(SUM(COALESCE("creditsUsed", 0)), 0)::FLOAT as "totalCreditsUsed"
-                FROM "Organization" WHERE "isDeleted" = false
+                    (SELECT COUNT(*)::INT FROM "Application" WHERE "isDeleted" = false AND "resumeScreeningStatus" = 'shortlisted') as "totalShortlisted",
+                    (SELECT COUNT(*)::INT FROM "Interview" WHERE "isDeleted" = false AND "interviewStatus" = 'COMPLETED') as "totalInterviewed",
+                    COALESCE(SUM("totalInterviewsAllowed"), 0)::INT as "totalInterviewQuotaAllocated",
+                    COALESCE(SUM("totalInterviewsUsed"), 0)::INT as "totalInterviewQuotaConsumed",
+                    COALESCE(SUM(COALESCE("billingCreditsUsed", 0)), 0)::FLOAT as "totalCreditsUsed"
+                FROM "OrganizationDetails" WHERE "isDeleted" = false
             `,
-            prisma.$queryRaw<Array<{ name: string, creditsUsed: number }>>`
+            prisma.$queryRaw<Array<{ name: string, billingCreditsUsed: number }>>`
                 SELECT
                     o."name",
-                    COALESCE(o."creditsUsed", 0) as "creditsUsed"
-                FROM "Organization" o
+                    COALESCE(o."billingCreditsUsed", 0) as "billingCreditsUsed"
+                FROM "OrganizationDetails" o
                 WHERE o."isDeleted" = false
-                ORDER BY "creditsUsed" DESC
+                ORDER BY "billingCreditsUsed" DESC
                 LIMIT 5
             `,
             prisma.$queryRaw<Array<{ name: string, count: number }>>`
                 SELECT o."name", COUNT(i.id)::INT as "count"
-                FROM "Organization" o
-                JOIN "Job" d ON d."orgId" = o.id
+                FROM "OrganizationDetails" o
+                JOIN "Job" d ON d."organizationId" = o.id
                 JOIN "Application" a ON a."jobId" = d.id
                 JOIN "Interview" i ON i."applicationId" = a.id
                 WHERE o."isDeleted" = false AND d."isDeleted" = false AND a."isDeleted" = false AND i."isDeleted" = false
@@ -139,40 +139,40 @@ export async function GET(request: Request) {
             prisma.$queryRaw<Array<{ type: string, detail: string, org: string, at: Date }>>`
                 SELECT * FROM (
                     SELECT * FROM (
-                        SELECT 'ORG' as type, name as detail, '' as org, "createdAt" as at
-                        FROM "Organization"
+                        SELECT 'ORG' as type, name as detail, '' as org, "orgCreatedAt" as at
+                        FROM "OrganizationDetails"
                         WHERE "isDeleted" = false
-                        ORDER BY "createdAt" DESC
+                        ORDER BY "orgCreatedAt" DESC
                         LIMIT 10
                     ) org_activity
                     UNION ALL
                     SELECT * FROM (
-                        SELECT 'JOB' as type, d.title as detail, COALESCE(o.name, '') as org, d."createdAt" as at
+                        SELECT 'JOB' as type, d.title as detail, COALESCE(o.name, '') as org, d."jobCreatedAt" as at
                         FROM "Job" d
-                        LEFT JOIN "Organization" o ON o.id = d."orgId"
+                        LEFT JOIN "OrganizationDetails" o ON o.id = d."organizationId"
                         WHERE d."isDeleted" = false
-                        ORDER BY d."createdAt" DESC
+                        ORDER BY d."jobCreatedAt" DESC
                         LIMIT 10
                     ) job_activity
                     UNION ALL
                     SELECT * FROM (
-                        SELECT 'CANDIDATE' as type, a."fullName" as detail, COALESCE(o.name, '') as org, a."createdAt" as at
+                        SELECT 'CANDIDATE' as type, a."candidateFullName" as detail, COALESCE(o.name, '') as org, a."appliedAt" as at
                         FROM "Application" a
                         LEFT JOIN "Job" d ON d.id = a."jobId"
-                        LEFT JOIN "Organization" o ON o.id = d."orgId"
+                        LEFT JOIN "OrganizationDetails" o ON o.id = d."organizationId"
                         WHERE a."isDeleted" = false
-                        ORDER BY a."createdAt" DESC
+                        ORDER BY a."appliedAt" DESC
                         LIMIT 10
                     ) candidate_activity
                     UNION ALL
                     SELECT * FROM (
-                        SELECT 'INTERVIEW' as type, 'Completed' as detail, COALESCE(o.name, '') as org, i."completedAt" as at
+                        SELECT 'INTERVIEW' as type, 'Completed' as detail, COALESCE(o.name, '') as org, i."interviewCompletedAt" as at
                         FROM "Interview" i
                         JOIN "Application" a ON a.id = i."applicationId"
                         LEFT JOIN "Job" d ON d.id = a."jobId"
-                        LEFT JOIN "Organization" o ON o.id = d."orgId"
-                        WHERE i."isDeleted" = false AND a."isDeleted" = false AND i."status" = 'COMPLETED' AND i."completedAt" IS NOT NULL
-                        ORDER BY i."completedAt" DESC
+                        LEFT JOIN "OrganizationDetails" o ON o.id = d."organizationId"
+                        WHERE i."isDeleted" = false AND a."isDeleted" = false AND i."interviewStatus" = 'COMPLETED' AND i."interviewCompletedAt" IS NOT NULL
+                        ORDER BY i."interviewCompletedAt" DESC
                         LIMIT 10
                     ) interview_activity
                 ) activity_feed
@@ -190,14 +190,14 @@ export async function GET(request: Request) {
                 candidatesPrev: number;
             }>>`
                 SELECT
-                    (SELECT COUNT(*)::INT FROM "Organization" WHERE "isDeleted" = false AND "createdAt" >= ${lastWeek}) as "orgsNew",
-                    (SELECT COUNT(*)::INT FROM "Organization" WHERE "isDeleted" = false AND "createdAt" >= ${twoWeeksAgo} AND "createdAt" < ${lastWeek}) as "orgsPrev",
+                    (SELECT COUNT(*)::INT FROM "OrganizationDetails" WHERE "isDeleted" = false AND "orgCreatedAt" >= ${lastWeek}) as "orgsNew",
+                    (SELECT COUNT(*)::INT FROM "OrganizationDetails" WHERE "isDeleted" = false AND "orgCreatedAt" >= ${twoWeeksAgo} AND "orgCreatedAt" < ${lastWeek}) as "orgsPrev",
                     (SELECT COUNT(*)::INT FROM "OrganizationCredentials" WHERE "isDeleted" = false AND "accountCreatedAt" >= ${lastWeek}) as "adminsNew",
                     (SELECT COUNT(*)::INT FROM "OrganizationCredentials" WHERE "isDeleted" = false AND "accountCreatedAt" >= ${twoWeeksAgo} AND "accountCreatedAt" < ${lastWeek}) as "adminsPrev",
-                    (SELECT COUNT(*)::INT FROM "Job" WHERE "isDeleted" = false AND "createdAt" >= ${lastWeek}) as "jobsNew",
-                    (SELECT COUNT(*)::INT FROM "Job" WHERE "isDeleted" = false AND "createdAt" >= ${twoWeeksAgo} AND "createdAt" < ${lastWeek}) as "jobsPrev",
-                    (SELECT COUNT(*)::INT FROM "Application" WHERE "isDeleted" = false AND "createdAt" >= ${lastWeek}) as "candidatesNew",
-                    (SELECT COUNT(*)::INT FROM "Application" WHERE "isDeleted" = false AND "createdAt" >= ${twoWeeksAgo} AND "createdAt" < ${lastWeek}) as "candidatesPrev"
+                    (SELECT COUNT(*)::INT FROM "Job" WHERE "isDeleted" = false AND "jobCreatedAt" >= ${lastWeek}) as "jobsNew",
+                    (SELECT COUNT(*)::INT FROM "Job" WHERE "isDeleted" = false AND "jobCreatedAt" >= ${twoWeeksAgo} AND "jobCreatedAt" < ${lastWeek}) as "jobsPrev",
+                    (SELECT COUNT(*)::INT FROM "Application" WHERE "isDeleted" = false AND "appliedAt" >= ${lastWeek}) as "candidatesNew",
+                    (SELECT COUNT(*)::INT FROM "Application" WHERE "isDeleted" = false AND "appliedAt" >= ${twoWeeksAgo} AND "appliedAt" < ${lastWeek}) as "candidatesPrev"
             `,
         ]);
         const calculateTrend = (curr: number, prev: number) => {
@@ -221,7 +221,7 @@ export async function GET(request: Request) {
             totalCreditsUsed: c.totalCreditsUsed || 0,
             orgCreditStats: orgCreditStats.map(o => ({
                 name: o.name,
-                creditsUsed: Number(o.creditsUsed || 0),
+                creditsUsed: Number(o.billingCreditsUsed || 0),
             })),
             orgInterviewStats: orgInterviewStats.map(o => ({
                 name: o.name,
@@ -260,7 +260,12 @@ export async function GET(request: Request) {
         return NextResponse.json({
             orgs: orgs.map((org) => ({
                 ...org,
-                status: toEffectiveStatus(org),
+                status: toEffectiveStatus({
+                    status: org.orgStatus as string | null,
+                    statusControl: org.quotaControlMode as string | null,
+                    interviewQuotaTotal: org.totalInterviewsAllowed as number | null,
+                    interviewQuotaUsed: org.totalInterviewsUsed as number | null,
+                }),
             })),
             pagination: { total, page, limit, totalPages },
             stats,

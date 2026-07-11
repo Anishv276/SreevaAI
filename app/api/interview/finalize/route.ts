@@ -14,61 +14,61 @@ async function persistInterviewUpdateRaw(params: {
   recordingUrl?: string;
   transcript?: string;
   interviewStatus?: string;
-  snapshots?: string[];
+  proctoringSnapshotUrls?: string[];
   recordingCompletedAt?: Date;
   recordingDurationSec?: number;
 }) {
-  const { 
+  const {
     applicationId,
     recordingUrl,
     transcript,
     interviewStatus,
-    snapshots,
+    proctoringSnapshotUrls,
     recordingCompletedAt,
-    recordingDurationSec 
+    recordingDurationSec
   } = params;
   const finalStatus = interviewStatus || "IN_PROGRESS";
   const app = await prisma.application.findUnique({
     where: { id: applicationId },
-    select: { fullName: true, job: { select: { title: true, role: true } } }
+    select: { candidateFullName: true, job: { select: { title: true, jobRole: true } } }
   });
   const existingInterview = await prisma.interview.findUnique({
     where: { applicationId },
-    select: { recording: true },
+    select: { sessionRecording: true },
   }).catch(() => null);
-  const interviewId = generateId("int", app?.fullName || applicationId);
-  const accessToken = crypto.randomUUID();
+  const interviewId = generateId("int", app?.candidateFullName || applicationId);
+  const candidateInviteToken = crypto.randomUUID();
   const completedAtIso = recordingCompletedAt?.toISOString() || null;
   const recordingPatch: RecordingState = recordingUrl ? {
-    name: [app?.fullName, app?.job?.title || app?.job?.role].filter(Boolean).join(" - ") || applicationId,
+    name: [app?.candidateFullName, app?.job?.title || app?.job?.jobRole].filter(Boolean).join(" - ") || applicationId,
     status: finalStatus === "COMPLETED" ? "COMPLETED" : "IN_PROGRESS",
     url: recordingUrl,
     recordedAt: completedAtIso || new Date().toISOString(),
     completedAt: completedAtIso,
     durationSec: recordingDurationSec || null,
   } : {};
-  const nextRecording = mergeRecordingState(existingInterview?.recording, recordingPatch);
+  const nextRecording = mergeRecordingState(existingInterview?.sessionRecording, recordingPatch);
   await prisma.$executeRawUnsafe(
     `
-    INSERT INTO "Interview" (id, "applicationId", "accessToken", status, "interviewTranscript", "snapshots", "recording", "completedAt", "createdAt", "updatedAt")
+    INSERT INTO "Interview" (id, "applicationId", "candidateInviteToken", "interviewStatus", "fullTranscript", "proctoringSnapshotUrls", "sessionRecording", "interviewCompletedAt", "interviewCreatedAt", "interviewUpdatedAt")
     VALUES ($1, $2, $3, COALESCE($4::text, 'IN_PROGRESS'), $6, $7, COALESCE($8::jsonb, '{}'::jsonb), CASE WHEN COALESCE($4::text, 'IN_PROGRESS') = 'COMPLETED' THEN NOW() ELSE NULL END, NOW(), NOW())
     ON CONFLICT ("applicationId")
     DO UPDATE SET
-      status = COALESCE($4::text, "Interview".status),
-      "interviewTranscript" = COALESCE($6::text, "Interview"."interviewTranscript"),
-      "snapshots" = COALESCE($7, "Interview"."snapshots"),
-      "recording" = CASE WHEN $5::text IS NOT NULL THEN $8::jsonb ELSE "Interview"."recording" END,
-      "completedAt" = CASE WHEN COALESCE($4::text, "Interview".status) = 'COMPLETED' THEN NOW() ELSE "Interview"."completedAt" END,
-      "linkStatus" = CASE WHEN COALESCE($4::text, "Interview".status) = 'COMPLETED' THEN 'EXPIRED' ELSE "Interview"."linkStatus" END,
-      "updatedAt" = NOW()
+      "interviewStatus" = COALESCE($4::text, "Interview"."interviewStatus"),
+      "fullTranscript" = COALESCE($6::text, "Interview"."fullTranscript"),
+      "proctoringSnapshotUrls" = COALESCE($7, "Interview"."proctoringSnapshotUrls"),
+      "sessionRecording" = CASE WHEN $5::text IS NOT NULL THEN $8::jsonb ELSE "Interview"."sessionRecording" END,
+      "interviewCompletedAt" = CASE WHEN COALESCE($4::text, "Interview"."interviewStatus") = 'COMPLETED' THEN NOW() ELSE "Interview"."interviewCompletedAt" END,
+      "inviteLinkStatus" = CASE WHEN COALESCE($4::text, "Interview"."interviewStatus") = 'COMPLETED' THEN 'EXPIRED' ELSE "Interview"."inviteLinkStatus" END,
+      "interviewUpdatedAt" = NOW()
     `,
     interviewId,
     applicationId,
-    accessToken,
+    candidateInviteToken,
     finalStatus,
     recordingUrl || null,
     transcript || null,
-    snapshots || [],
+    proctoringSnapshotUrls || [],
     JSON.stringify(nextRecording)
   );
 }
@@ -91,7 +91,7 @@ export async function POST(req: Request) {
       status,
       appStatus,
       duration,
-      snapshots,
+      proctoringSnapshotUrls,
       recordingCompletedAt,
       recordingDurationSec
     } = result.data;
@@ -100,9 +100,9 @@ export async function POST(req: Request) {
     // -- AUTHENTICATION --------------------------------
     const interview = await prisma.interview.findUnique({
       where: { applicationId },
-      select: { accessToken: true, completedAt: true }
+      select: { candidateInviteToken: true, interviewCompletedAt: true }
     });
-    if (requireInterviewToken && (!interview || interview.accessToken !== interviewToken)) {
+    if (requireInterviewToken && (!interview || interview.candidateInviteToken !== interviewToken)) {
       return NextResponse.json({ error: "Unauthorized: Invalid finalization token" }, { status: 401 });
     }
     const transcriptRaw = transcript;
@@ -116,12 +116,12 @@ export async function POST(req: Request) {
         select: {
           job: {
             select: {
-              orgId: true,
+              organizationId: true,
             },
           },
         },
       });
-      const recordingOrgId = appForRecordingPolicy?.job?.orgId || "";
+      const recordingOrgId = appForRecordingPolicy?.job?.organizationId || "";
       if (recordingOrgId) {
         recordingSettingsForOrg = await getOrgRecordingSettings(recordingOrgId);
         if (!recordingSettingsForOrg.recordingEnabled) {
@@ -139,7 +139,7 @@ export async function POST(req: Request) {
       recordingUrl: recordingUrlForPersist,
       transcript: finalTranscript,
       interviewStatus: finalInterviewStatus,
-      snapshots,
+      proctoringSnapshotUrls,
       recordingCompletedAt,
       recordingDurationSec: finalDuration ?? recordingDurationSec,
     });
@@ -148,8 +148,8 @@ export async function POST(req: Request) {
         `
         UPDATE "Interview"
         SET
-          "recording" = jsonb_set(COALESCE("recording", '{}'::jsonb), '{status}', '"DISABLED"'::jsonb, true),
-          "updatedAt" = NOW()
+          "sessionRecording" = jsonb_set(COALESCE("sessionRecording", '{}'::jsonb), '{status}', '"DISABLED"'::jsonb, true),
+          "interviewUpdatedAt" = NOW()
         WHERE "applicationId" = $1
         `,
         applicationId
@@ -157,29 +157,29 @@ export async function POST(req: Request) {
     }
     const interviewAfterPersist = await prisma.interview.findUnique({
       where: { applicationId },
-      select: { completedAt: true },
+      select: { interviewCompletedAt: true },
     });
-    // Duration: use client-sent value, else compute from startedAt
+    // Duration: use client-sent value, else compute from interviewStartedAt
     let resolvedDuration = finalDuration;
     if ((resolvedDuration === null || isNaN(resolvedDuration as number))) {
-      const startedAtRows = await prisma.$queryRaw<Array<{ startedAt: Date | null }>>`
-        SELECT "startedAt" FROM "Interview" WHERE "applicationId" = ${applicationId} LIMIT 1
+      const startedAtRows = await prisma.$queryRaw<Array<{ interviewStartedAt: Date | null }>>`
+        SELECT "interviewStartedAt" FROM "Interview" WHERE "applicationId" = ${applicationId} LIMIT 1
       `;
-      const startedAt = startedAtRows?.[0]?.startedAt;
+      const startedAt = startedAtRows?.[0]?.interviewStartedAt;
       if (startedAt) {
         resolvedDuration = Math.round((Date.now() - new Date(startedAt).getTime()) / 1000);
       }
     }
     if (resolvedDuration !== null && !isNaN(resolvedDuration as number)) {
       await prisma.$executeRawUnsafe(
-        `UPDATE "Interview" SET "interviewDuration" = $1, "updatedAt" = NOW() WHERE "applicationId" = $2`,
+        `UPDATE "Interview" SET "durationInSeconds" = $1, "interviewUpdatedAt" = NOW() WHERE "applicationId" = $2`,
         resolvedDuration,
         applicationId
       );
     }
     const finalAppStatus = appStatus || "COMPLETED";
     await prisma.$executeRawUnsafe(
-      'UPDATE "Application" SET "interviewStatus" = $1, "updatedAt" = NOW() WHERE id = $2',
+      'UPDATE "Application" SET "interviewPhaseStatus" = $1, "applicationUpdatedAt" = NOW() WHERE id = $2',
       finalAppStatus,
       applicationId
     );
@@ -192,17 +192,17 @@ export async function POST(req: Request) {
         const appForOrg = await prisma.application.findUnique({
           where: { id: applicationId },
           select: {
-            fullName: true,
-            job: { select: { orgId: true, role: true, title: true } }
+            candidateFullName: true,
+            job: { select: { organizationId: true, jobRole: true, title: true } }
           }
         });
-        const orgId = appForOrg?.job?.orgId;
+        const orgId = appForOrg?.job?.organizationId;
         if (recordingUrlForPersist && orgId) {
           const recordingSettings = recordingSettingsForOrg || await getOrgRecordingSettings(orgId);
           if (recordingSettings.recordingEnabled && recordingSettings.recordingRetentionDays !== null) {
             await scheduleRecordingRetentionDeletion({
               applicationId,
-              completedAt: interviewAfterPersist?.completedAt || recordingCompletedAt || new Date(),
+              completedAt: interviewAfterPersist?.interviewCompletedAt || recordingCompletedAt || new Date(),
               retentionDays: recordingSettings.recordingRetentionDays,
               recordingUrl: recordingUrlForPersist,
             }).catch((error) => {

@@ -30,22 +30,22 @@ export async function GET(req: NextRequest) {
         const scoreGroups = await prisma.$queryRaw<Array<ScoreGroupRow>>(Prisma.sql`
             SELECT
                 CASE
-                    WHEN a."aiScore" < 40 THEN '0-39'
-                    WHEN a."aiScore" < 60 THEN '40-59'
-                    WHEN a."aiScore" < 80 THEN '60-79'
+                    WHEN a."resumeAiScore" < 40 THEN '0-39'
+                    WHEN a."resumeAiScore" < 60 THEN '40-59'
+                    WHEN a."resumeAiScore" < 80 THEN '60-79'
                     ELSE '80-100'
                 END AS label,
                 COUNT(*)::INT AS count
             FROM "Interview" iv
             JOIN "Application" a ON iv."applicationId" = a."id"
             JOIN "Job" d ON a."jobId" = d."id"
-            WHERE d."orgId" = ${orgId}
+            WHERE d."organizationId" = ${orgId}
               AND iv."isDeleted" = false
               AND a."isDeleted" = false
               AND d."isDeleted" = false
-              AND iv."status" = 'COMPLETED'
-              AND iv."completedAt" >= ${start}
-              AND a."aiScore" IS NOT NULL
+              AND iv."interviewStatus" = 'COMPLETED'
+              AND iv."interviewCompletedAt" >= ${start}
+              AND a."resumeAiScore" IS NOT NULL
             GROUP BY label
         `);
         const bands = [

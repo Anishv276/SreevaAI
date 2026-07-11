@@ -277,7 +277,7 @@ export default function CandidatesPage() {
                     const res = await fetch(`/api/candidates/${candidate.id}`);
                     if (!res.ok) return null;
                     const data = await res.json().catch(() => null);
-                    const score = deriveCandidateInterviewScore(data?.interview?.skillRatings);
+                    const score = deriveCandidateInterviewScore(data?.interview?.aiSkillRatings);
                     return { id: candidate.id, score: score ?? -1 };
                 })
             );

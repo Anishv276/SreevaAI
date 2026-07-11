@@ -23,7 +23,7 @@ async function resolveInterview(applicationId: string) {
     });
 }
 
-function checkJobExpiration(job: { closedAt?: Date | null; deadline?: Date | null } | null | undefined): {
+function checkJobExpiration(job: { closedAt?: Date | null; applicationDeadline?: Date | null } | null | undefined): {
     ok: boolean; code?: string; error?: string;
 } {
     if (!job) return { ok: true };
@@ -39,11 +39,11 @@ function checkJobExpiration(job: { closedAt?: Date | null; deadline?: Date | nul
     return { ok: true };
 }
 
-function checkSchedulingGate(interview: { scheduledAt: Date | null; status: string; startedAt: Date | null; linkStatus?: string | null }): {
+function checkSchedulingGate(interview: { interviewScheduledAt: Date | null; interviewStatus: string; interviewStartedAt: Date | null; inviteLinkStatus?: string | null }): {
     ok: boolean; code?: string; error?: string; status?: number; remainingMs?: number;
 } {
-    const interviewStatus = String(interview.status || "").toUpperCase();
-    const linkStatus = String(interview.linkStatus || "").toUpperCase();
+    const interviewStatus = String(interview.interviewStatus || "").toUpperCase();
+    const linkStatus = String(interview.inviteLinkStatus || "").toUpperCase();
 
     if (interviewStatus === "COMPLETED") {
         return { ok: false, code: "INTERVIEW_COMPLETED", error: "Interview completed. Please contact support@sreevaai.com for assistance.", status: 409 };
@@ -54,12 +54,12 @@ function checkSchedulingGate(interview: { scheduledAt: Date | null; status: stri
     }
 
 
-    if (!interview.scheduledAt) {
+    if (!interview.interviewScheduledAt) {
         return { ok: false, code: "NOT_SCHEDULED", error: "No slot booked yet. Please schedule your interview first.", status: 403 };
     }
 
     const now = Date.now();
-    const slotMs = interview.scheduledAt.getTime();
+    const slotMs = interview.interviewScheduledAt.getTime();
     const remainingMs = slotMs - now;
 
     if (remainingMs > PRE_OPEN_MS) {
@@ -100,7 +100,7 @@ export async function POST(
         if (!application) return NextResponse.json({ error: "Application not found" }, { status: 404 });
         const interview = application.interview;
         if (!interview) return NextResponse.json({ error: "Interview session not found" }, { status: 404 });
-        if (requireToken && interview.accessToken !== interviewToken) {
+        if (requireToken && interview.candidateInviteToken !== interviewToken) {
             return NextResponse.json({ error: "Invalid interview token" }, { status: 401 });
         }
 
@@ -114,14 +114,14 @@ export async function POST(
 
         const gate = checkSchedulingGate(interview);
         if (!gate.ok) {
-            if (gate.code === "SLOT_EXPIRED" && interview.linkStatus !== "EXPIRED") {
+            if (gate.code === "SLOT_EXPIRED" && interview.inviteLinkStatus !== "EXPIRED") {
                 await prisma.interview.update({
                     where: { applicationId },
-                    data: { linkStatus: "EXPIRED" }
+                    data: { inviteLinkStatus: "EXPIRED" }
                 }).catch(() => {});
             }
             return NextResponse.json(
-                { error: gate.error, code: gate.code, scheduledAt: interview.scheduledAt?.toISOString(), remainingMs: gate.remainingMs },
+                { error: gate.error, code: gate.code, scheduledAt: interview.interviewScheduledAt?.toISOString(), remainingMs: gate.remainingMs },
                 { status: gate.status }
             );
         }
@@ -133,10 +133,10 @@ export async function POST(
         const agentName = process.env.LIVEKIT_AGENT_NAME || "ai_interviewer";
 
         // Mark IN_PROGRESS on first token request
-        if (interview.status === "PENDING") {
+        if (interview.interviewStatus === "PENDING") {
             await prisma.interview.update({
                 where: { applicationId },
-                data: { status: "IN_PROGRESS", startedAt: new Date(), linkStatus: "EXPIRED" },
+                data: { interviewStatus: "IN_PROGRESS", interviewStartedAt: new Date(), inviteLinkStatus: "EXPIRED" },
             }).catch(() => {});
         }
 
@@ -163,8 +163,8 @@ export async function POST(
                 await dispatchClient.createDispatch(roomName, agentName, {
                     metadata: JSON.stringify({
                         applicationId,
-                        candidateName: application.fullName,
-                        roleLabel: application.job?.role || application.job?.title || "Interview",
+                        candidateName: application.candidateFullName,
+                        roleLabel: application.job?.jobRole || application.job?.title || "Interview",
                         timeLimitMins: FIXED_INTERVIEW_DURATION_MINUTES,
                     }),
                 });
@@ -185,10 +185,10 @@ export async function POST(
             token: await at.toJwt(),
             url: serverUrl,
             duration: durationSeconds,
-            roleLabel: application.job?.role || application.job?.title || "Interview",
-            candidateName: application.fullName,
+            roleLabel: application.job?.jobRole || application.job?.title || "Interview",
+            candidateName: application.candidateFullName,
             proctoringSignals,
-            scheduledAt: interview.scheduledAt?.toISOString(),
+            scheduledAt: interview.interviewScheduledAt?.toISOString(),
         });
     } catch (error) {
         console.error("LiveKit token error:", error);
@@ -220,7 +220,7 @@ export async function GET(
             return NextResponse.json({ error: "Interview session not found" }, { status: 404 });
         }
         const interview = application.interview;
-        if (requireToken && interview.accessToken !== interviewToken) {
+        if (requireToken && interview.candidateInviteToken !== interviewToken) {
             return NextResponse.json({ error: "Invalid interview token" }, { status: 401 });
         }
 
@@ -234,19 +234,19 @@ export async function GET(
 
         const gate = checkSchedulingGate(interview);
         if (!gate.ok) {
-            if (gate.code === "SLOT_EXPIRED" && interview.linkStatus !== "EXPIRED") {
+            if (gate.code === "SLOT_EXPIRED" && interview.inviteLinkStatus !== "EXPIRED") {
                 await prisma.interview.update({
                     where: { applicationId },
-                    data: { linkStatus: "EXPIRED" }
+                    data: { inviteLinkStatus: "EXPIRED" }
                 }).catch(() => {});
             }
             return NextResponse.json(
-                { error: gate.error, code: gate.code, scheduledAt: interview.scheduledAt?.toISOString(), remainingMs: gate.remainingMs },
+                { error: gate.error, code: gate.code, scheduledAt: interview.interviewScheduledAt?.toISOString(), remainingMs: gate.remainingMs },
                 { status: gate.status }
             );
         }
 
-        return NextResponse.json({ ok: true, code: "ACTIVE", scheduledAt: interview.scheduledAt?.toISOString(), remainingMs: gate.remainingMs });
+        return NextResponse.json({ ok: true, code: "ACTIVE", scheduledAt: interview.interviewScheduledAt?.toISOString(), remainingMs: gate.remainingMs });
     } catch (error) {
         console.error("Status check error:", error);
         return NextResponse.json({ error: "Failed to check status" }, { status: 500 });

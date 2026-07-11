@@ -35,7 +35,7 @@ export async function POST(request: Request) {
             where: { id: jobId },
             include: { organization: { select: { name: true } } },
         });
-        if (!job || job.orgId !== orgId) {
+        if (!job || job.organizationId !== orgId) {
             return NextResponse.json({ error: "Job not found" }, { status: 404 });
         }
 
@@ -54,13 +54,13 @@ export async function POST(request: Request) {
             await prisma.application.create({
                 data: {
                     id: appId,
-                    fullName,
-                    email,
-                    phone: phone || "",
-                    resumeUrl: resumeUrl || "",
+                    candidateFullName: fullName,
+                    candidateEmail: email,
+                    candidatePhone: phone || "",
+                    resumeFileUrl: resumeUrl || "",
                     jobId,
-                    resumeStatus: hasResume ? "waiting" : "skipped",
-                    interviewStatus: "pending",
+                    resumeScreeningStatus: hasResume ? "waiting" : "skipped",
+                    interviewPhaseStatus: "pending",
                 },
             });
 
@@ -91,20 +91,20 @@ export async function POST(request: Request) {
                     data: {
                         id: interviewId,
                         applicationId: appId,
-                        inviteSentAt: new Date(),
-                        expiresAt,
-                        status: "PENDING",
+                        inviteEmailSentAt: new Date(),
+                        inviteLinkExpiresAt: expiresAt,
+                        interviewStatus: "PENDING",
                     },
                 });
 
                 const interview = await prisma.interview.findUnique({
                     where: { applicationId: appId },
-                    select: { accessToken: true },
+                    select: { candidateInviteToken: true },
                 });
 
                 let sent = false;
                 try {
-                    const scheduleLink = `${baseUrl}/schedule/${interview?.accessToken}`;
+                    const scheduleLink = `${baseUrl}/schedule/${interview?.candidateInviteToken}`;
                     await sendScheduleInviteEmail({
                         email,
                         fullName,

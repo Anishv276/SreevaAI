@@ -14,78 +14,78 @@ export async function GET() {
         const awaitingReview = await prisma.application.findMany({
             where: {
                 isDeleted: false,
-                job: { orgId, isDeleted: false },
-                interview: { status: "COMPLETED", isDeleted: false },
-                resumeStatus: { notIn: ["SHORTLISTED", "shortlisted", "REJECTED", "rejected"] },
+                job: { organizationId: orgId, isDeleted: false },
+                interview: { interviewStatus: "COMPLETED", isDeleted: false },
+                resumeScreeningStatus: { notIn: ["SHORTLISTED", "shortlisted", "REJECTED", "rejected"] },
             },
             select: {
                 id: true,
-                fullName: true,
-                aiScore: true,
-                updatedAt: true,
-                job: { select: { title: true, role: true } },
-                interview: { select: { completedAt: true } },
+                candidateFullName: true,
+                resumeAiScore: true,
+                applicationUpdatedAt: true,
+                job: { select: { title: true, jobRole: true } },
+                interview: { select: { interviewCompletedAt: true } },
             },
-            orderBy: { updatedAt: "asc" },
+            orderBy: { applicationUpdatedAt: "asc" },
         });
         const inviteNotSent = await prisma.application.findMany({
             where: {
                 isDeleted: false,
-                job: { orgId, isDeleted: false },
+                job: { organizationId: orgId, isDeleted: false },
                 OR: [
                     { interview: null },
-                    { interview: { inviteSentAt: null, status: "PENDING", isDeleted: false } },
+                    { interview: { inviteEmailSentAt: null, interviewStatus: "PENDING", isDeleted: false } },
                 ],
-                resumeStatus: { notIn: ["REJECTED", "rejected"] },
+                resumeScreeningStatus: { notIn: ["REJECTED", "rejected"] },
             },
             select: {
                 id: true,
-                fullName: true,
-                createdAt: true,
-                job: { select: { title: true, role: true } },
+                candidateFullName: true,
+                appliedAt: true,
+                job: { select: { title: true, jobRole: true } },
             },
-            orderBy: { createdAt: "asc" },
+            orderBy: { appliedAt: "asc" },
         });
         const shortlistedNoDecision = await prisma.application.findMany({
             where: {
                 isDeleted: false,
-                job: { orgId, isDeleted: false },
-                resumeStatus: { in: ["SHORTLISTED", "shortlisted"] },
+                job: { organizationId: orgId, isDeleted: false },
+                resumeScreeningStatus: { in: ["SHORTLISTED", "shortlisted"] },
             },
             select: {
                 id: true,
-                fullName: true,
-                updatedAt: true,
-                job: { select: { title: true, role: true } },
+                candidateFullName: true,
+                applicationUpdatedAt: true,
+                job: { select: { title: true, jobRole: true } },
             },
-            orderBy: { updatedAt: "asc" },
+            orderBy: { applicationUpdatedAt: "asc" },
         });
 
         const jobsExpiringSoon = await prisma.job.count({
             where: {
-                orgId,
+                organizationId: orgId,
                 isDeleted: false,
-                deadline: {
+                applicationDeadline: {
                     gte: new Date(),
                     lte: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
                 },
             },
         });
-        
+
         const candidatesYetToStart = await prisma.interview.count({
             where: {
-                application: { job: { orgId } },
+                application: { job: { organizationId: orgId } },
                 isDeleted: false,
-                status: "PENDING",
-                inviteSentAt: { not: null },
+                interviewStatus: "PENDING",
+                inviteEmailSentAt: { not: null },
             },
         });
 
         const invitesSentLast24h = await prisma.interview.count({
             where: {
-                application: { job: { orgId } },
+                application: { job: { organizationId: orgId } },
                 isDeleted: false,
-                inviteSentAt: {
+                inviteEmailSentAt: {
                     gte: new Date(Date.now() - 24 * 60 * 60 * 1000),
                 },
             },
@@ -94,25 +94,25 @@ export async function GET() {
         return NextResponse.json({
             awaitingReview: awaitingReview.map((a) => ({
                 id: a.id,
-                name: a.fullName,
-                role: a.job.role || a.job.title,
+                name: a.candidateFullName,
+                role: a.job.jobRole || a.job.title,
                 jobTitle: a.job.title,
-                score: a.aiScore,
-                daysWaiting: daysSince(a.interview?.completedAt ?? a.updatedAt),
+                score: a.resumeAiScore,
+                daysWaiting: daysSince(a.interview?.interviewCompletedAt ?? a.applicationUpdatedAt),
             })),
             inviteNotSent: inviteNotSent.map((a) => ({
                 id: a.id,
-                name: a.fullName,
-                role: a.job.role || a.job.title,
+                name: a.candidateFullName,
+                role: a.job.jobRole || a.job.title,
                 jobTitle: a.job.title,
-                daysWaiting: daysSince(a.createdAt),
+                daysWaiting: daysSince(a.appliedAt),
             })),
             shortlistedNoDecision: shortlistedNoDecision.map((a) => ({
                 id: a.id,
-                name: a.fullName,
-                role: a.job.role || a.job.title,
+                name: a.candidateFullName,
+                role: a.job.jobRole || a.job.title,
                 jobTitle: a.job.title,
-                daysWaiting: daysSince(a.updatedAt),
+                daysWaiting: daysSince(a.applicationUpdatedAt),
             })),
             upcomingActivity: {
                 reportsReadyForReview: awaitingReview.length, // now full count, no take() cap

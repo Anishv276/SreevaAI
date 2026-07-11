@@ -38,23 +38,23 @@ export async function POST(request: Request) {
             create: {
                 id: interviewId,
                 applicationId,
-                status: "PENDING",
-                isTest: true,
-                testBillingMetrics: { skipReport, llmCost: 0, ttsCost: 0, sttCost: 0 },
+                interviewStatus: "PENDING",
+                isTestSession: true,
+                testSessionBillingMetrics: { skipReport, llmCost: 0, ttsCost: 0, sttCost: 0 },
             },
             update: {
-                status: "PENDING",
-                isTest: true,
-                startedAt: null,
-                completedAt: null,
-                interviewTranscript: null,
-                questionByQuestionAnalysis: [],
-                scoreBreakdown: {},
-                interviewSummary: {},
-                skillRatings: [],
-                testBillingMetrics: { skipReport, llmCost: 0, ttsCost: 0, sttCost: 0 },
+                interviewStatus: "PENDING",
+                isTestSession: true,
+                interviewStartedAt: null,
+                interviewCompletedAt: null,
+                fullTranscript: null,
+                perQuestionAnalysis: [],
+                aiScoreBreakdown: {},
+                aiInterviewSummary: {},
+                aiSkillRatings: [],
+                testSessionBillingMetrics: { skipReport, llmCost: 0, ttsCost: 0, sttCost: 0 },
             },
-            select: { accessToken: true },
+            select: { candidateInviteToken: true },
         });
 
         const proctoringSignals = normalizeProctoringSignals(application.job?.organization?.enabledProctoringSignals);
@@ -91,8 +91,8 @@ export async function POST(request: Request) {
                 await dispatchClient.createDispatch(roomName, agentName, {
                     metadata: JSON.stringify({
                         applicationId,
-                        candidateName: application.fullName,
-                        roleLabel: application.job?.role || application.job?.title || "Interview",
+                        candidateName: application.candidateFullName,
+                        roleLabel: application.job?.jobRole || application.job?.title || "Interview",
                         timeLimitMins: FIXED_INTERVIEW_DURATION_MINUTES,
                         isTest: true,
                         skipReport,
@@ -114,10 +114,10 @@ export async function POST(request: Request) {
             token: await at.toJwt(),
             url: serverUrl,
             duration: durationSeconds,
-            roleLabel: application.job?.role || application.job?.title || "Interview",
-            candidateName: application.fullName,
+            roleLabel: application.job?.jobRole || application.job?.title || "Interview",
+            candidateName: application.candidateFullName,
             applicationId,
-            interviewToken: interview.accessToken,
+            interviewToken: interview.candidateInviteToken,
             proctoringSignals,
         });
     } catch (error) {

@@ -21,15 +21,15 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
         if (!application) {
             return NextResponse.json({ error: "Application not found" }, { status: 404 });
         }
-        if (session.orgId && application.job?.orgId !== session.orgId) {
+        if (session.orgId && application.job?.organizationId !== session.orgId) {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
-        if (!application.email) {
+        if (!application.candidateEmail) {
             return NextResponse.json({ error: "Candidate email is missing" }, { status: 400 });
         }
         const mailResult = await sendRejectionEmail({
-            email: application.email,
-            fullName: application.fullName,
+            email: application.candidateEmail,
+            fullName: application.candidateFullName,
             jobTitle: application.job?.title || "Unknown Role",
             orgName: application.job?.organization?.name || "Sreeva AI",
         });

@@ -15,42 +15,42 @@ export async function GET(req: Request) {
         const limit = Math.min(20, Math.max(1, parseInt(searchParams.get("limit") || "20")));
         const start = getRangeStart(range, from);
         const jobs = await prisma.job.findMany({
-            where: { orgId, isDeleted: false },
+            where: { organizationId: orgId, isDeleted: false },
             select: {
                 id: true,
                 title: true,
-                role: true,
-                screeningThreshold: true,
+                jobRole: true,
+                resumeScreeningThreshold: true,
                 applications: {
-                    where: { createdAt: { gte: start } },
+                    where: { appliedAt: { gte: start } },
                     select: {
                         id: true,
-                        resumeStatus: true,
-                        aiScore: true,
-                        interview: { select: { status: true } },
+                        resumeScreeningStatus: true,
+                        resumeAiScore: true,
+                        interview: { select: { interviewStatus: true } },
                     },
                 },
             },
-            orderBy: { createdAt: "desc" },
+            orderBy: { jobCreatedAt: "desc" },
             take: limit,
         });
         const result = jobs.map((job: (typeof jobs)[number]) => {
             const apps = job.applications;
             const applied = apps.length;
-            const screened = apps.filter((a: (typeof apps)[number]) => a.aiScore != null).length;
+            const screened = apps.filter((a: (typeof apps)[number]) => a.resumeAiScore != null).length;
             const interviewed = apps.filter(
-                (a: (typeof apps)[number]) => a.interview?.status === "COMPLETED"
+                (a: (typeof apps)[number]) => a.interview?.interviewStatus === "COMPLETED"
             ).length;
             const shortlisted = apps.filter((a: (typeof apps)[number]) =>
-                ["shortlisted", "SHORTLISTED"].includes(a.resumeStatus ?? "")
+                ["shortlisted", "SHORTLISTED"].includes(a.resumeScreeningStatus ?? "")
             ).length;
             // Screening progress: screened/applied as %
             const screeningPct = applied > 0 ? Math.round((screened / applied) * 100) : 0;
             return {
                 id: job.id,
                 title: job.title,
-                role: job.role,
-                screeningThreshold: Number(job.screeningThreshold ?? 60),
+                role: job.jobRole,
+                screeningThreshold: Number(job.resumeScreeningThreshold ?? 60),
                 screeningPct,
                 applied,
                 screened,

@@ -15,66 +15,66 @@ export async function GET(req: Request) {
             where: {
                 application: {
                     job: {
-                        orgId: orgId
+                        organizationId: orgId
                     }
                 },
                 OR: [
-                    { startedAt: { not: null } },
-                    { completedAt: { not: null } },
-                    { inviteSentAt: { not: null } }
+                    { interviewStartedAt: { not: null } },
+                    { interviewCompletedAt: { not: null } },
+                    { inviteEmailSentAt: { not: null } }
                 ]
             },
             select: {
                 id: true,
-                status: true,
-                inviteSentAt: true,
-                scheduledAt: true,
-                startedAt: true,
-                completedAt: true,
-                interviewDuration: true,
+                interviewStatus: true,
+                inviteEmailSentAt: true,
+                interviewScheduledAt: true,
+                interviewStartedAt: true,
+                interviewCompletedAt: true,
+                durationInSeconds: true,
                 application: {
                     select: {
                         id: true,
-                        fullName: true,
-                        resumeUrl: true,
-                        aiScore: true,
+                        candidateFullName: true,
+                        resumeFileUrl: true,
+                        resumeAiScore: true,
                         job: {
                             select: {
                                 id: true,
                                 title: true,
-                                role: true
+                                jobRole: true
                             }
                         }
                     }
                 }
             },
             orderBy: {
-                updatedAt: "desc"
+                interviewUpdatedAt: "desc"
             }
         });
 
         const events = interviews.map((iv) => {
             // Determine start and end times
-            const start = iv.startedAt || iv.scheduledAt || iv.inviteSentAt || new Date();
-            const durationMinutes = iv.interviewDuration || 30; // default to 30 mins
-            let end = iv.completedAt;
+            const start = iv.interviewStartedAt || iv.interviewScheduledAt || iv.inviteEmailSentAt || new Date();
+            const durationMinutes = iv.durationInSeconds ? Math.round(iv.durationInSeconds / 60) : 30; // default to 30 mins
+            let end = iv.interviewCompletedAt;
             if (!end) {
                 end = new Date(start.getTime() + durationMinutes * 60000);
             }
 
             return {
                 id: iv.id,
-                title: `${iv.application.fullName} - ${iv.application.job?.title || "Interview"}`,
+                title: `${iv.application.candidateFullName} - ${iv.application.job?.title || "Interview"}`,
                 start,
                 end,
-                status: iv.status,
+                status: iv.interviewStatus,
                 candidate: {
                     id: iv.application.id,
-                    name: iv.application.fullName,
-                    role: iv.application.job?.role || iv.application.job?.title,
+                    name: iv.application.candidateFullName,
+                    role: iv.application.job?.jobRole || iv.application.job?.title,
                     jobId: iv.application.job?.id,
-                    score: iv.application.aiScore,
-                    resumeUrl: iv.application.resumeUrl
+                    score: iv.application.resumeAiScore,
+                    resumeUrl: iv.application.resumeFileUrl
                 }
             };
         });

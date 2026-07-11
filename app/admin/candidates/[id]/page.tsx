@@ -118,27 +118,27 @@ export default function CandidateProfilePage() {
     }, [id, fetchCandidate]);
 const interviewReportData: any = (() => {
     try {
-        const raw = candidate?.interview?.scoreBreakdown;
+        const raw = candidate?.interview?.aiScoreBreakdown;
         if (!raw) return {};
         const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
         const interview = candidate?.interview as any;
         return {
             ...parsed,
             signal_analysis: (() => {
-                const sa = interview?.signalAnalysis ?? interview?.behavioralSignalsAnalysis ?? parsed?.signal_analysis ?? parsed?.behavioral_analysis;
+                const sa = interview?.proctoringAnalysis ?? interview?.behavioralSignalsAnalysis ?? parsed?.signal_analysis ?? parsed?.behavioral_analysis;
                 if (!sa) return {};
                 return typeof sa === "string" ? JSON.parse(sa) : sa;
             })(),
-            integrity_signals: interview?.integritySignals ?? [],
+            integrity_signals: interview?.proctoringEvents ?? [],
         };
     } catch {
         return {};
     }
 })()
 const interviewRecordingUrl = candidate?.interview?.interviewRecordingUrl || "";
-const interviewTranscript = candidate?.interview?.interviewTranscript || "";
+const interviewTranscript = candidate?.interview?.fullTranscript || "";
 const interviewSummaryData: any = (() => {
-    const raw = (candidate?.interview as any)?.interviewSummary;
+    const raw = (candidate?.interview as any)?.aiInterviewSummary;
     if (!raw) return {};
     try { return typeof raw === "string" ? JSON.parse(raw) : raw; } catch { return {}; }
 })();
@@ -179,7 +179,7 @@ const integrityScore = Number(_integrity.score ?? 100);
 const integrityBand  = String(_integrity.band ?? "HIGH");
 // -- Skills: now read directly from the dedicated skillRatings column (flat array)
 const skillRatingsList: any[] = (() => {
-    const raw = (candidate?.interview as any)?.skillRatings;
+    const raw = (candidate?.interview as any)?.aiSkillRatings;
     if (Array.isArray(raw)) return raw;
     if (typeof raw === "string") {
         try { return JSON.parse(raw) as any[]; } catch { return []; }
@@ -213,15 +213,15 @@ const interviewReportVerdict = typeof interviewSummaryData?.decision_note === "o
     const interviewReportSummary = typeof interviewSummaryData?.decision_note === "string" 
         ? interviewSummaryData.decision_note 
         : interviewSummaryData?.summary || "";
-    const interviewStatusNormalized = String(candidate?.interview?.status || candidate?.interviewStatus || "").trim().toUpperCase();
+    const interviewStatusNormalized = String(candidate?.interview?.interviewStatus || candidate?.interviewPhaseStatus || "").trim().toUpperCase();
     const interviewIsFinished =
         interviewStatusNormalized === "COMPLETED" ||
         interviewStatusNormalized === "FINISHED" ||
-        Boolean(candidate?.interview?.completedAt);
+        Boolean(candidate?.interview?.interviewCompletedAt);
     const interviewReportLocked = !interviewIsFinished;
     // -- Parse integritySignals -- frontend tab-switch/proctoring events --
     const rawProctoringEvents: any[] = (() => {
-        const raw = candidate?.interview?.integritySignals;
+        const raw = candidate?.interview?.proctoringEvents;
         if (Array.isArray(raw)) return raw;
         if (typeof raw === "string") {
             try { return JSON.parse(raw) as any[]; } catch { return []; }
@@ -321,7 +321,7 @@ const groupedProctoringSignals = rawProctoringEvents.reduce((acc: any[], ev: any
         .filter((e) => enabledProctoringSignals.size === 0 || enabledProctoringSignals.has(e.signal_name));
     // -- Parse answerScores -- stored as JSON string in DB --
     const answerScoresParsed: { question: string; answer: string; depth: number; clarity: number; specificity: number; grounding: number; overall: number; signals: string[]; response_latency_sec: number }[] = (() => {
-        const raw = candidate?.interview?.questionByQuestionAnalysis;
+        const raw = candidate?.interview?.perQuestionAnalysis;
         const parsed = (() => {
             if (!raw) return null;
             if (typeof raw === "object") return raw;
@@ -418,8 +418,8 @@ const groupedProctoringSignals = rawProctoringEvents.reduce((acc: any[], ev: any
     // time-limit endings. Only fall back to the raw recording file length for
     // rows saved before interviewDuration existed, so this page can never show
     // a different number than the billing table for the same interview.
-    const recordingDurationSec = typeof candidate?.interview?.interviewDuration === "number"
-        ? candidate.interview.interviewDuration
+    const recordingDurationSec = typeof candidate?.interview?.durationInSeconds === "number"
+        ? candidate.interview.durationInSeconds
         : typeof candidate?.interview?.recordingDurationSec === "number"
             ? candidate.interview.recordingDurationSec
             : null;
@@ -434,8 +434,8 @@ const groupedProctoringSignals = rawProctoringEvents.reduce((acc: any[], ev: any
         return wordCount >= 800 ? "Strong" : wordCount >= 250 ? "Average" : "Limited";
     })();
     const candidatePhotoSrc = (() => {
-        const snapshot = Array.isArray(candidate?.interview?.snapshots)
-            ? candidate.interview.snapshots.find((src: unknown) => typeof src === "string" && src.trim())
+        const snapshot = Array.isArray(candidate?.interview?.proctoringSnapshotUrls)
+            ? candidate.interview.proctoringSnapshotUrls.find((src: unknown) => typeof src === "string" && src.trim())
             : "";
         return typeof snapshot === "string" && snapshot.trim()
             ? snapshot
@@ -632,7 +632,7 @@ const groupedProctoringSignals = rawProctoringEvents.reduce((acc: any[], ev: any
                     skillsEvaluated,
                     skillRatingsList,
                     avgResponseTimeSec,
-                    reportNotGenerated: Boolean(candidate?.interview?.isTest && isFallbackReport),
+                    reportNotGenerated: Boolean(candidate?.interview?.isTestSession && isFallbackReport),
                 })}
             />
         </>

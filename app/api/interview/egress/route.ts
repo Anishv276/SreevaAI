@@ -103,9 +103,9 @@ function addSeconds(base: Date | null, seconds: number | null | undefined) {
 async function getRetentionDaysForApplication(applicationId: string) {
     const application = await prisma.application.findUnique({
         where: { id: applicationId },
-        select: { job: { select: { orgId: true } } },
+        select: { job: { select: { organizationId: true } } },
     }).catch(() => null);
-    const orgId = String(application?.job?.orgId || "");
+    const orgId = String(application?.job?.organizationId || "");
     if (!orgId) return null;
     const settings = await getOrgRecordingSettings(orgId);
     return settings.recordingEnabled ? settings.recordingRetentionDays : null;
@@ -113,9 +113,9 @@ async function getRetentionDaysForApplication(applicationId: string) {
 async function authenticateInterview(applicationId: string, interviewToken: string, requireInterviewToken: boolean) {
     const interviewRecord = await prisma.interview.findUnique({
         where: { applicationId },
-        select: { accessToken: true },
+        select: { candidateInviteToken: true },
     });
-    if (requireInterviewToken && (!interviewRecord || interviewRecord.accessToken !== interviewToken)) {
+    if (requireInterviewToken && (!interviewRecord || interviewRecord.candidateInviteToken !== interviewToken)) {
         return false;
     }
     return true;
@@ -123,9 +123,9 @@ async function authenticateInterview(applicationId: string, interviewToken: stri
 async function getInterviewManifest(applicationId: string): Promise<EgressManifest> {
     const row = await prisma.interview.findUnique({
         where: { applicationId },
-        select: { recording: true },
+        select: { sessionRecording: true },
     });
-    const recording = normalizeRecordingState(row?.recording);
+    const recording = normalizeRecordingState(row?.sessionRecording);
     return normalizeManifest(recording.manifest);
 }
 async function persistRecordingState(params: {
@@ -156,10 +156,10 @@ async function persistRecordingState(params: {
     } = params;
     const currentRow = await prisma.interview.findUnique({
         where: { applicationId },
-        select: { recording: true },
+        select: { sessionRecording: true },
     }).catch(() => null);
     const currentManifest = normalizeManifest(
-        normalizeRecordingState(currentRow?.recording).manifest
+        normalizeRecordingState(currentRow?.sessionRecording).manifest
     );
     const nextManifest = {
         ...currentManifest,
@@ -181,7 +181,7 @@ async function persistRecordingState(params: {
     const retentionDueAt = terminalWithAsset && normalizedRetentionDays !== null
         ? computeRecordingRetentionDueAt(retentionBase, normalizedRetentionDays)
         : null;
-    const nextRecording = mergeRecordingState(currentRow?.recording, {
+    const nextRecording = mergeRecordingState(currentRow?.sessionRecording, {
         ...(recordingName ? { name: recordingName } : {}),
         mode: nextManifest.mode || "livekit_egress",
         status,
@@ -208,8 +208,8 @@ async function persistRecordingState(params: {
     } as RecordingState);
     await prisma.$executeRawUnsafe(
         `UPDATE "Interview"
-         SET "recording" = $2::jsonb,
-             "updatedAt" = NOW()
+         SET "sessionRecording" = $2::jsonb,
+             "interviewUpdatedAt" = NOW()
          WHERE "applicationId" = $1::text`,
         applicationId,
         JSON.stringify(nextRecording)
@@ -298,24 +298,24 @@ export async function POST(req: Request) {
             const application = await prisma.application.findUnique({
                 where: { id: applicationId },
                 select: {
-                    fullName: true,
-                    job: { select: { title: true, orgId: true, organization: { select: { urlSlug: true } } } },
+                    candidateFullName: true,
+                    job: { select: { title: true, organizationId: true, organization: { select: { urlSlug: true } } } },
                 },
             });
-            const orgSlug = application?.job?.organization?.urlSlug || application?.job?.orgId || "unknown-org";
+            const orgSlug = application?.job?.organization?.urlSlug || application?.job?.organizationId || "unknown-org";
             const jobTitle = (application?.job?.title || "unknown-job").replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-            const candName = (application?.fullName || applicationId)
+            const candName = (application?.candidateFullName || applicationId)
                 .replace(/[^a-zA-Z0-9_\- ]/g, "")
                 .trim()
                 .replace(/\s+/g, "_")
                 .toLowerCase();
             const safeCandidate = candName;
             const recordingName = buildRecordingName(
-                application?.fullName,
+                application?.candidateFullName,
                 application?.job?.title,
                 applicationId
             );
-            const orgId = String(application?.job?.orgId || "");
+            const orgId = String(application?.job?.organizationId || "");
             if (orgId) {
                 const recordingSettings = await getOrgRecordingSettings(orgId);
                 if (!recordingSettings.recordingEnabled) {

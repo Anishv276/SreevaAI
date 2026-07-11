@@ -25,29 +25,29 @@ export async function GET(request: Request) {
     }
     const interviews = await prisma.interview.findMany({
       where: {
-        status: { not: "PENDING" },
-        application: { job: { orgId } },
+        interviewStatus: { not: "PENDING" },
+        application: { job: { organizationId: orgId } },
       },
       select: {
         id: true,
-        status: true,
-        updatedAt: true,
-        completedAt: true,
-        interviewDuration: true,
-        recording: true,
+        interviewStatus: true,
+        interviewUpdatedAt: true,
+        interviewCompletedAt: true,
+        durationInSeconds: true,
+        sessionRecording: true,
         application: {
           select: {
-            fullName: true,
-            job: { select: { title: true, role: true } },
+            candidateFullName: true,
+            job: { select: { title: true, jobRole: true } },
           },
         },
       },
-      orderBy: { updatedAt: "desc" },
+      orderBy: { interviewUpdatedAt: "desc" },
       take: 50,
     });
     const rows = interviews
       .map((row) => {
-        // Single source of truth: Interview.interviewDuration (set exactly once,
+        // Single source of truth: Interview.durationInSeconds (set exactly once,
         // clamped to the fixed session length for time-limit endings, by
         // update_interview_status() in agent_persistence.py). Falls back to the
         // recording file length only for older rows saved before that column
@@ -55,16 +55,16 @@ export async function GET(request: Request) {
         // identical formula billing.py's deduct_quota() uses — so this table's
         // duration and credits columns can never disagree with each other or
         // with what was actually billed.
-        const durationSec = Number(row.interviewDuration ?? getRecordingDurationSec(row.recording) ?? 0);
+        const durationSec = Number(row.durationInSeconds ?? getRecordingDurationSec(row.sessionRecording) ?? 0);
         const creditsUsed = durationSec > 0 ? Math.round((durationSec / 60) * 100) / 100 : 0;
-        const date = (row.completedAt ?? row.updatedAt).toISOString();
+        const date = (row.interviewCompletedAt ?? row.interviewUpdatedAt).toISOString();
         return {
           id: row.id,
-          candidate: row.application?.fullName || "Unknown Candidate",
-          role: row.application?.job?.role || row.application?.job?.title || "Unknown Role",
+          candidate: row.application?.candidateFullName || "Unknown Candidate",
+          role: row.application?.job?.jobRole || row.application?.job?.title || "Unknown Role",
           interviews: 1,
           creditsUsed,
-          status: normalizeStatus(row.status),
+          status: normalizeStatus(row.interviewStatus),
           date,
           time: (() => { const m = Math.floor(durationSec / 60); const s = durationSec % 60; return durationSec ? `${m}m ${String(s).padStart(2, "0")}s` : undefined; })(),
         };

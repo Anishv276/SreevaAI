@@ -75,134 +75,134 @@ model OrganizationCredentials {
 }
 
 model Job {
-  id                 String            @id
-  title              String
-  role               String?
-  screeningThreshold Int               @default(0)
-  creatorId          String
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
-  screeningCriteria  String?           @default("{}")
-  extractedDetails   String?           @default("{}")
-  interviewQuestions String?           @default("[]")
-  jdFileName         String?
-  jdPreviewUrl       String?
-  orgId              String?
-  deadline           DateTime?
-  aiName             String?           @default("Ishitha")
-  voiceId            String?           @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
-  interviewMode      String?           @default("ats")
-  isDeleted          Boolean           @default(false)
-  applications       Application[]
-  creator            OrganizationCredentials @relation("CreatedJobs", fields: [creatorId], references: [id], onDelete: Cascade)
-  organization       OrganizationDetails?    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id                            String            @id
+  title                         String
+  jobRole                       String?
+  resumeScreeningThreshold      Int               @default(0)
+  createdByCredentialId         String
+  jobCreatedAt                  DateTime          @default(now())
+  jobUpdatedAt                  DateTime          @updatedAt
+  resumeScreeningCriteria       String?           @default("{}")
+  jdExtractedDetails            String?           @default("{}")
+  aiGeneratedInterviewQuestions String?           @default("[]")
+  jdFileName                    String?
+  jdPreviewUrl                  String?
+  organizationId                String?
+  applicationDeadline           DateTime?
+  aiInterviewerName             String?           @default("Ishitha")
+  aiInterviewerVoiceId          String?           @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
+  interviewMode                 String?           @default("ats")
+  isDeleted                     Boolean           @default(false)
+  applications                  Application[]
+  creator                       OrganizationCredentials @relation("CreatedJobs", fields: [createdByCredentialId], references: [id], onDelete: Cascade)
+  organization                  OrganizationDetails?    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  @@index([orgId])
-  @@index([orgId, createdAt(sort: Desc)])
+  @@index([organizationId])
+  @@index([organizationId, jobCreatedAt(sort: Desc)])
 }
 
 model Application {
-  id              String       @id
-  fullName        String
-  email           String
-  phone           String
-  resumeUrl       String
-  aiScore         Int?
-  aiReport        String?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  resumeText      String?
-  resumeData      String?
-  jobId           String
-  resumeStatus    String       @default("pending")
-  interviewStatus String       @default("pending")
-  fullScanReport  String?
-  isDeleted       Boolean      @default(false)
-  fileName        String?
-  job             Job          @relation(fields: [jobId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  interview       Interview?
+  id                    String       @id
+  candidateFullName     String
+  candidateEmail        String
+  candidatePhone        String
+  resumeFileUrl         String
+  resumeAiScore         Int?
+  resumeAiReport        String?
+  appliedAt             DateTime     @default(now())
+  applicationUpdatedAt  DateTime     @updatedAt
+  resumeRawText         String?
+  resumeParsedData      String?
+  jobId                 String
+  resumeScreeningStatus String       @default("pending")
+  interviewPhaseStatus  String       @default("pending")
+  resumeFullScanReport  String?
+  isDeleted             Boolean      @default(false)
+  resumeFileName        String?
+  job                   Job          @relation(fields: [jobId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  interview             Interview?
 
-  @@index([jobId, resumeStatus, updatedAt])
-  @@index([jobId, aiScore(sort: Desc), updatedAt(sort: Desc)])
-  @@index([createdAt(sort: Desc)])
-  @@index([updatedAt(sort: Desc)])
+  @@index([jobId, resumeScreeningStatus, applicationUpdatedAt])
+  @@index([jobId, resumeAiScore(sort: Desc), applicationUpdatedAt(sort: Desc)])
+  @@index([appliedAt(sort: Desc)])
+  @@index([applicationUpdatedAt(sort: Desc)])
 }
 
 /// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model Interview {
-  id                         String          @id
-  applicationId              String          @unique
-  accessToken                String          @unique @default(uuid())
-  inviteSentAt               DateTime?
-  expiresAt                  DateTime?
-  status                     String          @default("PENDING")
-  startedAt                  DateTime?
-  completedAt                DateTime?
-  interviewTranscript        String?
-  createdAt                  DateTime        @default(now())
-  updatedAt                  DateTime        @updatedAt
-  interviewDuration          Int?
-  snapshots                  String[]        @default([])
-  candidateFeedback          String?
-  candidateRating            Json?
-  billingSnapshot            Json?           @default("{}")
-  integritySignals           Json?           @default("[]")
-  signalAnalysis             Json?           @default("{}")
-  linkStatus                 String          @default("ACTIVE")
-  questionByQuestionAnalysis Json?           @default("[]")
-  scoreBreakdown             Json?           @default("{}")
-  interviewSummary           Json?           @default("{}")
-  recording                  Json?           @default("{}")
-  skillRatings               Json?           @default("[]")
-  scheduledAt                DateTime?
-  timezone                   String?         @default("Asia/Kolkata")
-  isDeleted                  Boolean         @default(false)
-  isTest                     Boolean         @default(false)
-  testBillingMetrics         Json?           @default("{}")
-  interviewBrief             Json?           // Pre-generated by brief-generation worker (slot flow only)
-  application                Application     @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  supportTickets             SupportTicket[]
+  id                          String          @id
+  applicationId               String          @unique
+  candidateInviteToken        String          @unique @default(uuid())
+  inviteEmailSentAt           DateTime?
+  inviteLinkExpiresAt         DateTime?
+  interviewStatus             String          @default("PENDING")
+  interviewStartedAt          DateTime?
+  interviewCompletedAt        DateTime?
+  fullTranscript              String?
+  interviewCreatedAt          DateTime        @default(now())
+  interviewUpdatedAt          DateTime        @updatedAt
+  durationInSeconds           Int?
+  proctoringSnapshotUrls      String[]        @default([])
+  candidateFeedbackText       String?
+  candidateSelfRating         Json?
+  billingSnapshotAtCompletion Json?           @default("{}")
+  proctoringEvents            Json?           @default("[]")
+  proctoringAnalysis          Json?           @default("{}")
+  inviteLinkStatus            String          @default("ACTIVE")
+  perQuestionAnalysis         Json?           @default("[]")
+  aiScoreBreakdown            Json?           @default("{}")
+  aiInterviewSummary          Json?           @default("{}")
+  sessionRecording            Json?           @default("{}")
+  aiSkillRatings              Json?           @default("[]")
+  interviewScheduledAt        DateTime?
+  interviewTimezone           String?         @default("Asia/Kolkata")
+  isDeleted                   Boolean         @default(false)
+  isTestSession               Boolean         @default(false)
+  testSessionBillingMetrics   Json?           @default("{}")
+  aiInterviewBrief            Json?           // Pre-generated by brief-generation worker (slot flow only)
+  application                 Application     @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  supportTickets              SupportTicket[]
 
-  @@index([status])
-  @@index([status, completedAt(sort: Desc)])
-  @@index([status, updatedAt(sort: Desc)])
-  @@index([updatedAt(sort: Desc)])
-  @@index([isTest])
+  @@index([interviewStatus])
+  @@index([interviewStatus, interviewCompletedAt(sort: Desc)])
+  @@index([interviewStatus, interviewUpdatedAt(sort: Desc)])
+  @@index([interviewUpdatedAt(sort: Desc)])
+  @@index([isTestSession])
 }
 
 model SupportTicket {
-  id            String     @id @default(cuid())
-  interviewId   String?
-  applicationId String?
-  name          String
-  email         String
-  issueAbout    String
-  status        String     @default("OPEN")
-  resolvedAt    DateTime?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-  isDeleted     Boolean    @default(false)
-  interview     Interview? @relation(fields: [interviewId], references: [id])
+  id               String     @id @default(cuid())
+  interviewId      String?
+  applicationId    String?
+  reporterName     String
+  reporterEmail    String
+  issueDescription String
+  ticketStatus     String     @default("OPEN")
+  ticketResolvedAt DateTime?
+  ticketCreatedAt  DateTime   @default(now())
+  ticketUpdatedAt  DateTime   @updatedAt
+  isDeleted        Boolean    @default(false)
+  interview        Interview? @relation(fields: [interviewId], references: [id])
 
-  @@index([status, createdAt])
-  @@index([interviewId, createdAt])
+  @@index([ticketStatus, ticketCreatedAt])
+  @@index([interviewId, ticketCreatedAt])
   @@index([applicationId])
 }
 
-model EngineVoice {
-  id          String   @id
-  name        String
-  provider    String
-  model       String
-  description String?
-  gender      String?
-  tags        String[] @default([])
-  isActive    Boolean  @default(true)
-  isBuiltIn   Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  isDeleted   Boolean  @default(false)
+model AIVoice {
+  id               String   @id
+  voiceName        String
+  voiceProvider    String
+  voiceModel       String
+  voiceDescription String?
+  voiceGender      String?
+  voiceTags        String[] @default([])
+  isAvailable      Boolean  @default(true)
+  isSystemDefault  Boolean  @default(false)
+  voiceCreatedAt   DateTime @default(now())
+  voiceUpdatedAt   DateTime @updatedAt
+  isDeleted        Boolean  @default(false)
 
-  @@index([isActive])
-  @@index([provider])
+  @@index([isAvailable])
+  @@index([voiceProvider])
 }

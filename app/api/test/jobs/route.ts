@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSession, isSuperAdminRole } from "@/lib/auth";
 
 const TEST_KEY = process.env.TEST_PAGE_KEY || "1285";
 
@@ -15,9 +14,9 @@ export async function GET(request: Request) {
         if (!orgId) return NextResponse.json({ error: "orgId required" }, { status: 400 });
 
         const jobs = await prisma.job.findMany({
-            where: { orgId, isDeleted: false },
-            select: { id: true, title: true, role: true, _count: { select: { applications: true } } },
-            orderBy: { createdAt: "desc" },
+            where: { organization: { id: orgId }, isDeleted: false },
+            select: { id: true, title: true, jobRole: true, _count: { select: { applications: true } } },
+            orderBy: { jobCreatedAt: "desc" },
         });
 
         return NextResponse.json({ jobs });

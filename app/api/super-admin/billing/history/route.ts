@@ -25,7 +25,7 @@ export async function GET(request: Request) {
 
         const where: any = {
             application: {
-                job: { orgId }
+                job: { organizationId: orgId }
             },
             isDeleted: false
         };
@@ -50,7 +50,7 @@ export async function GET(request: Request) {
                 startDate = new Date(0);
             }
 
-            where.completedAt = {
+            where.interviewCompletedAt = {
                 gte: startDate,
                 lte: endDate
             };
@@ -60,8 +60,8 @@ export async function GET(request: Request) {
             where.application = {
                 ...where.application,
                 OR: [
-                    { fullName: { contains: search, mode: "insensitive" } },
-                    { email: { contains: search, mode: "insensitive" } },
+                    { candidateFullName: { contains: search, mode: "insensitive" } },
+                    { candidateEmail: { contains: search, mode: "insensitive" } },
                     { job: { title: { contains: search, mode: "insensitive" } } }
                 ]
             };
@@ -73,16 +73,16 @@ export async function GET(request: Request) {
                 include: {
                     application: {
                         select: {
-                            fullName: true,
-                            email: true,
+                            candidateFullName: true,
+                            candidateEmail: true,
                             id: true,
                             job: {
-                                select: { title: true, role: true }
+                                select: { title: true, jobRole: true }
                             }
                         }
                     }
                 },
-                orderBy: { createdAt: "desc" },
+                orderBy: { interviewCreatedAt: "desc" },
                 skip: offset,
                 take: limit,
             }),
@@ -91,13 +91,13 @@ export async function GET(request: Request) {
 
         const history = interviews.map(inv => ({
             id: inv.id,
-            candidateName: inv.application.fullName,
-            candidateEmail: inv.application.email,
+            candidateName: inv.application.candidateFullName,
+            candidateEmail: inv.application.candidateEmail,
             applicationId: inv.application.id,
-            role: inv.application.job?.role || inv.application.job?.title || "Unknown Role",
-            date: inv.completedAt || inv.updatedAt || inv.createdAt,
-            duration: inv.interviewDuration || 0,
-            status: inv.status,
+            role: inv.application.job?.jobRole || inv.application.job?.title || "Unknown Role",
+            date: inv.interviewCompletedAt || inv.interviewUpdatedAt || inv.interviewCreatedAt,
+            duration: inv.durationInSeconds || 0,
+            status: inv.interviewStatus,
             interviewsCount: 1
         }));
 

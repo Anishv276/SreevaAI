@@ -9,13 +9,13 @@ import { appendCandidateActivity } from "@/lib/candidate-activity";
 type EmailAction = "shortlist" | "reject";
 type BulkEmailTarget = {
     id: string;
-    fullName: string;
-    email: string;
-    resumeStatus: string | null;
+    candidateFullName: string | null;
+    candidateEmail: string | null;
+    resumeScreeningStatus: string | null;
     job: {
         id: string;
         title: string;
-        orgId: string | null;
+        organizationId: string | null;
         organization?: { name: string | null } | null;
     } | null;
 };
@@ -50,18 +50,18 @@ export async function POST(request: Request) {
         }
         // -- Resolve applications (direct + resume-candidate indirection) ------
         const directApplications = await prisma.application.findMany({
-            where: { id: { in: ids }, job: { orgId } },
+            where: { id: { in: ids }, job: { organizationId: orgId } },
             select: {
                 id: true,
-                fullName: true,
-                email: true,
-                resumeStatus: true,
-                resumeUrl: true,
+                candidateFullName: true,
+                candidateEmail: true,
+                resumeScreeningStatus: true,
+                resumeFileUrl: true,
                 job: {
                     select: {
                         id: true,
                         title: true,
-                        orgId: true,
+                        organizationId: true,
                         organization: { select: { name: true } },
                     },
                 },
@@ -83,8 +83,8 @@ export async function POST(request: Request) {
         const skipReasons: string[] = [];
         const eligible: BulkEmailTarget[] = [];
         for (const app of orderedApplications) {
-            if (!app.email) {
-                skipReasons.push(`${app.fullName || app.id}: Missing email address`);
+            if (!app.candidateEmail) {
+                skipReasons.push(`${app.candidateFullName || app.id}: Missing email address`);
                 continue;
             }
             eligible.push(app);

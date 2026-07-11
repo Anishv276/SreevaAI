@@ -9,7 +9,7 @@ export interface SessionUser {
     email: string;
     name: string;
     role: SessionRole;
-    orgId: string | null;
+    orgId: string | null; // session-level key — maps to OrganizationCredentials.organizationId
     onboardingComplete?: boolean;
 }
 type SessionTokenPayload = SessionUser & {

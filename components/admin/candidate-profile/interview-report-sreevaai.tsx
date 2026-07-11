@@ -427,7 +427,7 @@ export function buildSreevaAIInterviewViewModel(i: {
   const rawIntegrityScore = (() => {
     // Access via isFallbackReport check
     if (i.isFallbackReport) return 100;
-    const raw = (i as any).candidate?.interview?.skillRatings;
+    const raw = (i as any).candidate?.interview?.aiSkillRatings;
     if (!raw) return proctoringRows.some((r) => r.bad) ? 65 : 95;
     try {
       const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;

@@ -883,8 +883,8 @@ class BillingRepository:
             async with pool.acquire() as conn:
                 async with conn.transaction():
                     row = await conn.fetchrow(
-                        'SELECT COALESCE("usageMetrics", \'{}\'::jsonb) AS "usageMetrics" '
-                        'FROM "Organization" WHERE id = $1 FOR UPDATE',
+                        'SELECT COALESCE("platformUsageMetrics", \'{}\'::jsonb) AS "usageMetrics" '
+                        'FROM "OrganizationDetails" WHERE id = $1 FOR UPDATE',
                         org_id,
                     )
                     if not row:
@@ -902,7 +902,7 @@ class BillingRepository:
                             _fb.get("outputTokens"), _fb.get("costUsd"),
                         )
                     await conn.execute(
-                        'UPDATE "Organization" SET "usageMetrics" = $1::jsonb, "updatedAt" = NOW() WHERE id = $2',
+                        'UPDATE "OrganizationDetails" SET "platformUsageMetrics" = $1::jsonb, "orgUpdatedAt" = NOW() WHERE id = $2',
                         json.dumps(merged), org_id,
                     )
             logger.info("[BILLING] Flushed %d pending entries for org=%s", len(pending), org_id)
@@ -930,8 +930,8 @@ class BillingRepository:
             async with pool.acquire() as conn:
                 async with conn.transaction():
                     row = await conn.fetchrow(
-                        'SELECT COALESCE("usageMetrics", \'{}\'::jsonb) AS "usageMetrics" '
-                        'FROM "Organization" WHERE id = $1 FOR UPDATE',
+                        'SELECT COALESCE("platformUsageMetrics", \'{}\'::jsonb) AS "usageMetrics" '
+                        'FROM "OrganizationDetails" WHERE id = $1 FOR UPDATE',
                         org_id,
                     )
                     if not row:
@@ -976,7 +976,7 @@ class BillingRepository:
                         stt_config={"provider": stt_provider or "", "model": stt_model or ""},
                     )
                     await conn.execute(
-                        'UPDATE "Organization" SET "usageMetrics" = $1::jsonb, "updatedAt" = NOW() WHERE id = $2',
+                        'UPDATE "OrganizationDetails" SET "platformUsageMetrics" = $1::jsonb, "orgUpdatedAt" = NOW() WHERE id = $2',
                         json.dumps(merged), org_id,
                     )
             llm_t = session_summary["llm"]["totals"]
@@ -1087,7 +1087,7 @@ class BillingRepository:
             pool = await cls._get_pool()
             async with pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    'SELECT i.id, COALESCE(i."billingSnapshot", \'{}\'::jsonb) AS "billingSnapshot" '
+                    'SELECT i.id, COALESCE(i."billingSnapshotAtCompletion", \'{}\'::jsonb) AS "billingSnapshot" '
                     'FROM "Interview" i '
                     'JOIN "Application" a ON a.id = i."applicationId" '
                     'WHERE a.id = $1 LIMIT 1',
@@ -1102,7 +1102,7 @@ class BillingRepository:
                 if existing.get("billedAt") is not None:
                     persisted["billedAt"] = existing["billedAt"]
                 await conn.execute(
-                    'UPDATE "Interview" SET "billingSnapshot" = $1::jsonb, "updatedAt" = NOW() '
+                    'UPDATE "Interview" SET "billingSnapshotAtCompletion" = $1::jsonb, "interviewUpdatedAt" = NOW() '
                     'WHERE "applicationId" = $2',
                     json.dumps(persisted), app_id,
                 )
@@ -1154,17 +1154,17 @@ class BillingRepository:
             pool = await cls._get_pool()
             async with pool.acquire() as conn:
                 await conn.execute(
-                    """UPDATE "Interview" SET "testBillingMetrics" = jsonb_set(
+                    """UPDATE "Interview" SET "testSessionBillingMetrics" = jsonb_set(
                            jsonb_set(
-                               COALESCE("testBillingMetrics", '{}'::jsonb),
+                               COALESCE("testSessionBillingMetrics", '{}'::jsonb),
                                '{reportLlmCost}',
-                               to_jsonb(COALESCE(("testBillingMetrics"->>'reportLlmCost')::float, 0) + $1::float),
+                               to_jsonb(COALESCE(("testSessionBillingMetrics"->>'reportLlmCost')::float, 0) + $1::float),
                                true
                            ),
                            '{reportLlmRuns}',
-                           to_jsonb(COALESCE(("testBillingMetrics"->>'reportLlmRuns')::int, 0) + 1),
+                           to_jsonb(COALESCE(("testSessionBillingMetrics"->>'reportLlmRuns')::int, 0) + 1),
                            true
-                       ), "updatedAt" = NOW()
+                       ), "interviewUpdatedAt" = NOW()
                        WHERE "applicationId" = $2""",
                     cost, app_id,
                 )
@@ -1180,9 +1180,9 @@ class BillingRepository:
             pool = await cls._get_pool()
             async with pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    """SELECT d."orgId",
-                              i."interviewDuration",
-                              NULLIF(i."recording"->>'durationSec', '')::float AS "recordingDurationSec"
+                    """SELECT d."organizationId" AS "orgId",
+                              i."durationInSeconds" AS "interviewDuration",
+                              NULLIF(i."sessionRecording"->>'durationSec', '')::float AS "recordingDurationSec"
                        FROM "Interview" i
                        JOIN "Application" a ON a.id = i."applicationId"
                        JOIN "Job"       d ON d.id  = a."jobId"
@@ -1199,13 +1199,13 @@ class BillingRepository:
                 dur = float(duration_seconds or 0) or float(row["interviewDuration"] or 0) or float(row["recordingDurationSec"] or 0)
                 marked = await conn.fetch(
                     """UPDATE "Interview"
-                       SET "billingSnapshot" = jsonb_set(
-                               COALESCE("billingSnapshot", '{}'::jsonb),
+                       SET "billingSnapshotAtCompletion" = jsonb_set(
+                               COALESCE("billingSnapshotAtCompletion", '{}'::jsonb),
                                '{billedAt}',
                                to_jsonb(extract(epoch from now())::bigint)
-                           ), "updatedAt" = NOW()
+                           ), "interviewUpdatedAt" = NOW()
                        WHERE "applicationId" = $1
-                         AND ("billingSnapshot" IS NULL OR "billingSnapshot"->'billedAt' IS NULL)
+                         AND ("billingSnapshotAtCompletion" IS NULL OR "billingSnapshotAtCompletion"->'billedAt' IS NULL)
                        RETURNING id""",
                     app_id,
                 )
@@ -1213,14 +1213,14 @@ class BillingRepository:
                     logger.info("[BILLING] deduct_quota: already billed for app=%s — skip", app_id)
                     return
                 await conn.execute(
-                    'UPDATE "Organization" SET "interviewQuotaUsed" = COALESCE("interviewQuotaUsed", 0) + 1, "updatedAt" = NOW() WHERE id = $1',
+                    'UPDATE "OrganizationDetails" SET "totalInterviewsUsed" = COALESCE("totalInterviewsUsed", 0) + 1, "orgUpdatedAt" = NOW() WHERE id = $1',
                     org_id,
                 )
                 if dur > 0:
                     credits = round((dur / 60) * 100) / 100
                     if credits > 0:
                         await conn.execute(
-                            'UPDATE "Organization" SET "creditsUsed" = COALESCE("creditsUsed", 0) + $1, "updatedAt" = NOW() WHERE id = $2',
+                            'UPDATE "OrganizationDetails" SET "billingCreditsUsed" = COALESCE("billingCreditsUsed", 0) + $1, "orgUpdatedAt" = NOW() WHERE id = $2',
                             credits, org_id,
                         )
                         logger.info("[BILLING] Deducted 1 quota + %.2f credits: app=%s org=%s dur=%.0fs", credits, app_id, org_id, dur)

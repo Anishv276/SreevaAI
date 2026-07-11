@@ -62,24 +62,24 @@ export async function POST(
       select: {
         id: true,
         title: true,
-        orgId: true,
+        organizationId: true,
         organization: { select: { urlSlug: true } },
       },
     });
     if (!job) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
-    if (!job.orgId) {
+    if (!job.organizationId) {
       return NextResponse.json({ error: "Job has no organisation" }, { status: 400 });
     }
-    if (!isSuperAdminRole(session.role) && job.orgId !== session.orgId) {
+    if (!isSuperAdminRole(session.role) && job.organizationId !== session.orgId) {
       return NextResponse.json({ error: "Job belongs to a different organization" }, { status: 403 });
     }
 
-    const orgSlug = job.organization?.urlSlug || job.orgId;
+    const orgSlug = job.organization?.urlSlug || job.organizationId;
     const safeJobTitle = job.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
 
-    const billingStatus = await getOrgBillingStatus(job.orgId);
+    const billingStatus = await getOrgBillingStatus(job.organizationId);
     if (billingStatus.interviewQuotaTotal > 0 && !billingStatus.hasSufficientInterviews) {
       return NextResponse.json(
         {
@@ -141,20 +141,20 @@ export async function POST(
       await prisma.application.createMany({
         data: prepared.map((row) => ({
           id: row.applicationId,
-          fullName: row.fullName,
-          email: "",
-          phone: "",
-          resumeUrl: row.uploadedUrl,
-          aiScore: 0,
-          aiReport: buildProgressState(0, "waiting"),
-          resumeText: null,
-          resumeData: JSON.stringify({
+          candidateFullName: row.fullName,
+          candidateEmail: "",
+          candidatePhone: "",
+          resumeFileUrl: row.uploadedUrl,
+          resumeAiScore: 0,
+          resumeAiReport: buildProgressState(0, "waiting"),
+          resumeRawText: null,
+          resumeParsedData: JSON.stringify({
             source: { bucket: row.bucket, key: row.key, url: row.uploadedUrl, downloadUrl: row.downloadUrl },
           }),
           jobId,
-          fileName: row.fileName,
-          resumeStatus: "waiting",
-          interviewStatus: "pending",
+          resumeFileName: row.fileName,
+          resumeScreeningStatus: "waiting",
+          interviewPhaseStatus: "pending",
         })),
       });
     } catch (dbErr: any) {
@@ -177,7 +177,7 @@ export async function POST(
             bucket: row.bucket,
             key: row.key,
             fileName: row.fileName,
-            orgId: job.orgId,
+            orgId: job.organizationId,
           },
           {
             attempts: 2,
@@ -203,9 +203,9 @@ export async function POST(
         return prisma.application.update({
           where: { id: prepared[i].applicationId },
           data: {
-            resumeStatus: "failed",
-            aiReport: buildProgressState(0, "failed", { error: "Failed to enqueue screening job" }),
-            updatedAt: new Date(),
+            resumeScreeningStatus: "failed",
+            resumeAiReport: buildProgressState(0, "failed", { error: "Failed to enqueue screening job" }),
+            applicationUpdatedAt: new Date(),
           },
         }).catch((e: any) => console.error(`[RESUME-UPLOAD] Could not mark ${prepared[i].applicationId} failed: ${e?.message}`));
       })
@@ -238,19 +238,19 @@ export async function GET(
 
     const candidates = await prisma.application.findMany({
       where: { jobId },
-      orderBy: { createdAt: "asc" },
+      orderBy: { appliedAt: "asc" },
       select: {
         id: true,
         jobId: true,
-        fullName: true,
-        fileName: true,
-        email: true,
-        phone: true,
-        aiScore: true,
-        aiReport: true,
-        resumeStatus: true,
-        createdAt: true,
-        updatedAt: true,
+        candidateFullName: true,
+        resumeFileName: true,
+        candidateEmail: true,
+        candidatePhone: true,
+        resumeAiScore: true,
+        resumeAiReport: true,
+        resumeScreeningStatus: true,
+        appliedAt: true,
+        applicationUpdatedAt: true,
       },
     });
 

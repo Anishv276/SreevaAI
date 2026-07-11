@@ -159,25 +159,25 @@ class BriefRepository:
 
     _FETCH_QUERY = """
     SELECT
-        a.id           AS "applicationId",
-        a."fullName",
-        a."resumeData",
-        d."role",
+        a.id                                        AS "applicationId",
+        a."candidateFullName"                       AS "fullName",
+        a."resumeParsedData"                        AS "resumeData",
+        d."jobRole"                                 AS "role",
         d."title",
-        d."extractedDetails",
-        d."interviewQuestions",
+        d."jdExtractedDetails"                      AS "extractedDetails",
+        d."aiGeneratedInterviewQuestions"           AS "interviewQuestions",
         o."llmInterviewBrief"
     FROM "Application" a
     JOIN "Job" d ON a."jobId" = d.id
-    LEFT JOIN "Organization" o ON d."orgId" = o.id
+    LEFT JOIN "OrganizationDetails" o ON d."organizationId" = o.id
     WHERE a.id = $1
     LIMIT 1
     """
 
     _PERSIST_QUERY = """
     UPDATE "Interview"
-    SET "interviewBrief" = $1::jsonb,
-        "updatedAt"      = NOW()
+    SET "aiInterviewBrief"   = $1::jsonb,
+        "interviewUpdatedAt" = NOW()
     WHERE "applicationId" = $2
     """
 

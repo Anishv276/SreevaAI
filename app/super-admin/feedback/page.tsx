@@ -21,30 +21,30 @@ type CandidateRating = {
 type InterviewFeedbackRow = {
     id: string;
     applicationId: string;
-    status: string;
-    completedAt: string | null;
-    updatedAt: string;
-    createdAt: string;
-    interviewDuration: number | null;
+    interviewStatus: string;
+    interviewCompletedAt: string | null;
+    interviewUpdatedAt: string;
+    interviewCreatedAt: string;
+    durationInSeconds: number | null;
     interviewRecordingUrl: string | null;
     recordingStatus: string | null;
     recordingCompletedAt: string | null;
-    candidateFeedback: string | null;
-    candidateRating: unknown;
+    candidateFeedbackText: string | null;
+    candidateSelfRating: unknown;
     application: {
         id: string;
-        fullName: string;
-        email: string;
-        phone: string;
+        candidateFullName: string;
+        candidateEmail: string;
+        candidatePhone: string;
         job?: {
             id: string;
             title: string;
-            role: string | null;
+            jobRole: string | null;
             organization?: {
                 id: string;
                 name: string;
-                slug: string;
-                plan: string;
+                urlSlug: string;
+                billingPlan: string;
             } | null;
         } | null;
     } | null;
@@ -97,10 +97,10 @@ function overallMeta(label: string | null): OverallMeta {
     }
 }
 function candidateName(row: InterviewFeedbackRow) {
-    return row.application?.fullName?.trim() || "Unknown candidate";
+    return row.application?.candidateFullName?.trim() || "Unknown candidate";
 }
 function candidateEmail(row: InterviewFeedbackRow) {
-    return row.application?.email?.trim() || "Unknown email";
+    return row.application?.candidateEmail?.trim() || "Unknown email";
 }
 function orgName(row: InterviewFeedbackRow) {
     return row.application?.job?.organization?.name?.trim() || "No organization";
@@ -268,10 +268,10 @@ export default function SuperAdminFeedbackPage() {
                                                 <td className="px-4 py-4 text-center">
                                                     <div className="flex flex-col items-center min-w-[120px]">
                                                         <span className="text-[10px] font-bold text-gray-700 tabular-nums">
-                                                            {formatDateTime(feedback.updatedAt)}
+                                                            {formatDateTime(feedback.interviewUpdatedAt)}
                                                         </span>
                                                         <span className="text-[9px] text-gray-400 font-medium tabular-nums">
-                                                            {feedback.completedAt ? "Interview completed" : "Feedback updated"}
+                                                            {feedback.interviewCompletedAt ? "Interview completed" : "Feedback updated"}
                                                         </span>
                                                     </div>
                                                 </td>
@@ -328,7 +328,7 @@ export default function SuperAdminFeedbackPage() {
                         </div>
                         <div className="px-8 py-6">
                             {viewFeedback && (() => {
-                                const parsed = parseCandidateRating(viewFeedback.candidateRating);
+                                const parsed = parseCandidateRating(viewFeedback.candidateSelfRating);
                                 const meta = overallMeta(parsed.overallFeeling);
                                 const notes = (parsed.notes || viewFeedback.candidateFeedback || "").trim();
                                 return (
@@ -406,7 +406,7 @@ export default function SuperAdminFeedbackPage() {
                                             </div>
                                             <div className="rounded-2xl border border-gray-100 bg-white p-4">
                                                 <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Duration</p>
-                                                <p className="mt-2 text-sm font-bold text-gray-900">{formatDuration(viewFeedback.interviewDuration)}</p>
+                                                <p className="mt-2 text-sm font-bold text-gray-900">{formatDuration(viewFeedback.durationInSeconds)}</p>
                                             </div>
                                         </div>
                                         <div className="flex justify-end pt-2">

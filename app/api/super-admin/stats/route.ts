@@ -51,34 +51,35 @@ export async function GET() {
                     (SELECT COUNT(*)::INT FROM "SuperAdmin" WHERE "isDeleted" = false) AS "totalAdmins",
                     (SELECT COUNT(*)::INT FROM "Job" WHERE "isDeleted" = false) AS "totalJobs",
                     (SELECT COUNT(*)::INT FROM "Application" WHERE "isDeleted" = false) AS "totalCandidates",
-                    (SELECT COUNT(*)::INT FROM "Application" WHERE "isDeleted" = false AND UPPER("resumeStatus") = 'SHORTLISTED') AS "totalShortlisted",
-                    (SELECT COUNT(*)::INT FROM "Interview" WHERE "isDeleted" = false AND "status" = 'COMPLETED') AS "totalInterviewed",
-                    COALESCE(SUM("interviewQuotaTotal"), 0)::INT AS "totalInterviewQuotaAllocated",
-                    COALESCE(SUM("interviewQuotaUsed"), 0)::INT AS "totalInterviewQuotaConsumed",
-                    COALESCE(SUM(COALESCE("creditsUsed", 0)), 0)::FLOAT AS "totalCreditsUsed"
-                FROM "Organization" WHERE "isDeleted" = false
+                    (SELECT COUNT(*)::INT FROM "Application" WHERE "isDeleted" = false AND UPPER("resumeScreeningStatus") = 'SHORTLISTED') AS "totalShortlisted",
+                    (SELECT COUNT(*)::INT FROM "Interview" WHERE "isDeleted" = false AND "interviewStatus" = 'COMPLETED') AS "totalInterviewed",
+                    COALESCE(SUM("totalInterviewsAllowed"), 0)::INT AS "totalInterviewQuotaAllocated",
+                    COALESCE(SUM("totalInterviewsUsed"), 0)::INT AS "totalInterviewQuotaConsumed",
+                    COALESCE(SUM(COALESCE("billingCreditsUsed", 0)), 0)::FLOAT AS "totalCreditsUsed"
+                FROM "OrganizationDetails" WHERE "isDeleted" = false
             `,
             prisma.$queryRaw<Array<OrgStatusRow>>`
-                SELECT status, "statusControl", "interviewQuotaTotal", "interviewQuotaUsed"
-                FROM "Organization"
+                SELECT "orgStatus" AS status, "quotaControlMode" AS "statusControl",
+                       "totalInterviewsAllowed" AS "interviewQuotaTotal", "totalInterviewsUsed" AS "interviewQuotaUsed"
+                FROM "OrganizationDetails"
                 WHERE "isDeleted" = false
             `,
             prisma.$queryRaw<Array<CreditRow>>(Prisma.sql`
-                SELECT name, COALESCE("creditsUsed", 0)::FLOAT AS "creditsUsed"
-                FROM "Organization"
+                SELECT name, COALESCE("billingCreditsUsed", 0)::FLOAT AS "creditsUsed"
+                FROM "OrganizationDetails"
                 WHERE "isDeleted" = false
-                ORDER BY COALESCE("creditsUsed", 0) DESC, name ASC
+                ORDER BY COALESCE("billingCreditsUsed", 0) DESC, name ASC
                 LIMIT 4
             `),
             prisma.$queryRaw<Array<{ totalCreditsUsed: number }>>(Prisma.sql`
-                SELECT COALESCE(SUM(COALESCE("creditsUsed", 0)), 0)::FLOAT AS "totalCreditsUsed"
-                FROM "Organization"
+                SELECT COALESCE(SUM(COALESCE("billingCreditsUsed", 0)), 0)::FLOAT AS "totalCreditsUsed"
+                FROM "OrganizationDetails"
                 WHERE "isDeleted" = false
             `),
             prisma.$queryRaw<Array<InterviewRow>>(Prisma.sql`
                 SELECT o.name, COUNT(i.id)::INT AS count
-                FROM "Organization" o
-                JOIN "Job" d ON d."orgId" = o.id
+                FROM "OrganizationDetails" o
+                JOIN "Job" d ON d."organizationId" = o.id
                 JOIN "Application" a ON a."jobId" = d.id
                 JOIN "Interview" i ON i."applicationId" = a.id
                 WHERE o."isDeleted" = false AND d."isDeleted" = false AND a."isDeleted" = false AND i."isDeleted" = false
@@ -88,58 +89,58 @@ export async function GET() {
             `),
             prisma.$queryRaw<Array<{ totalInterviews: number }>>(Prisma.sql`
                 SELECT COUNT(i.id)::INT AS "totalInterviews"
-                FROM "Organization" o
-                JOIN "Job" d ON d."orgId" = o.id
+                FROM "OrganizationDetails" o
+                JOIN "Job" d ON d."organizationId" = o.id
                 JOIN "Application" a ON a."jobId" = d.id
                 JOIN "Interview" i ON i."applicationId" = a.id
                 WHERE o."isDeleted" = false AND d."isDeleted" = false AND a."isDeleted" = false AND i."isDeleted" = false
             `),
             prisma.$queryRaw<Array<{ name: string; used: number; total: number }>>`
                 SELECT name,
-                    COALESCE("interviewQuotaUsed", 0)::INT AS used,
-                    COALESCE("interviewQuotaTotal", 0)::INT AS total
-                FROM "Organization"
-                WHERE "isDeleted" = false AND COALESCE("interviewQuotaTotal", 0) > 0
-                ORDER BY (COALESCE("interviewQuotaUsed", 0)::FLOAT / NULLIF(COALESCE("interviewQuotaTotal", 0), 0)) DESC
+                    COALESCE("totalInterviewsUsed", 0)::INT AS used,
+                    COALESCE("totalInterviewsAllowed", 0)::INT AS total
+                FROM "OrganizationDetails"
+                WHERE "isDeleted" = false AND COALESCE("totalInterviewsAllowed", 0) > 0
+                ORDER BY (COALESCE("totalInterviewsUsed", 0)::FLOAT / NULLIF(COALESCE("totalInterviewsAllowed", 0), 0)) DESC
                 LIMIT 8
             `,
             prisma.$queryRaw<Array<RecentActivityRow>>(Prisma.sql`
                 SELECT * FROM (
                     SELECT * FROM (
-                        SELECT 'ORG'::text AS type, o.name AS detail, ''::text AS org, o."createdAt" AS at
-                        FROM "Organization" o
+                        SELECT 'ORG'::text AS type, o.name AS detail, ''::text AS org, o."orgCreatedAt" AS at
+                        FROM "OrganizationDetails" o
                         WHERE o."isDeleted" = false
-                        ORDER BY o."createdAt" DESC
+                        ORDER BY o."orgCreatedAt" DESC
                         LIMIT 10
                     ) org_activity
                     UNION ALL
                     SELECT * FROM (
-                        SELECT 'JOB'::text AS type, d.title AS detail, COALESCE(o.name, '')::text AS org, d."createdAt" AS at
+                        SELECT 'JOB'::text AS type, d.title AS detail, COALESCE(o.name, '')::text AS org, d."jobCreatedAt" AS at
                         FROM "Job" d
-                        LEFT JOIN "Organization" o ON o.id = d."orgId"
+                        LEFT JOIN "OrganizationDetails" o ON o.id = d."organizationId"
                         WHERE d."isDeleted" = false
-                        ORDER BY d."createdAt" DESC
+                        ORDER BY d."jobCreatedAt" DESC
                         LIMIT 10
                     ) job_activity
                     UNION ALL
                     SELECT * FROM (
-                        SELECT 'CANDIDATE'::text AS type, a."fullName" AS detail, COALESCE(o.name, '')::text AS org, a."createdAt" AS at
+                        SELECT 'CANDIDATE'::text AS type, a."candidateFullName" AS detail, COALESCE(o.name, '')::text AS org, a."appliedAt" AS at
                         FROM "Application" a
                         LEFT JOIN "Job" d ON d.id = a."jobId"
-                        LEFT JOIN "Organization" o ON o.id = d."orgId"
+                        LEFT JOIN "OrganizationDetails" o ON o.id = d."organizationId"
                         WHERE a."isDeleted" = false
-                        ORDER BY a."createdAt" DESC
+                        ORDER BY a."appliedAt" DESC
                         LIMIT 10
                     ) candidate_activity
                     UNION ALL
                     SELECT * FROM (
-                        SELECT 'INTERVIEW'::text AS type, 'Completed'::text AS detail, COALESCE(o.name, '')::text AS org, i."completedAt" AS at
+                        SELECT 'INTERVIEW'::text AS type, 'Completed'::text AS detail, COALESCE(o.name, '')::text AS org, i."interviewCompletedAt" AS at
                         FROM "Interview" i
                         JOIN "Application" a ON a.id = i."applicationId"
                         LEFT JOIN "Job" d ON d.id = a."jobId"
-                        LEFT JOIN "Organization" o ON o.id = d."orgId"
-                        WHERE i."isDeleted" = false AND a."isDeleted" = false AND i."status" = 'COMPLETED' AND i."completedAt" IS NOT NULL
-                        ORDER BY i."completedAt" DESC
+                        LEFT JOIN "OrganizationDetails" o ON o.id = d."organizationId"
+                        WHERE i."isDeleted" = false AND a."isDeleted" = false AND i."interviewStatus" = 'COMPLETED' AND i."interviewCompletedAt" IS NOT NULL
+                        ORDER BY i."interviewCompletedAt" DESC
                         LIMIT 10
                     ) interview_activity
                 ) activity_feed
@@ -157,22 +158,22 @@ export async function GET() {
                 candidatesPrev: number;
             }>>`
                 SELECT
-                    (SELECT COUNT(*)::INT FROM "Organization" WHERE "isDeleted" = false AND "createdAt" >= ${lastWeek}) AS "orgsNew",
-                    (SELECT COUNT(*)::INT FROM "Organization" WHERE "isDeleted" = false AND "createdAt" >= ${twoWeeksAgo} AND "createdAt" < ${lastWeek}) AS "orgsPrev",
+                    (SELECT COUNT(*)::INT FROM "OrganizationDetails" WHERE "isDeleted" = false AND "orgCreatedAt" >= ${lastWeek}) AS "orgsNew",
+                    (SELECT COUNT(*)::INT FROM "OrganizationDetails" WHERE "isDeleted" = false AND "orgCreatedAt" >= ${twoWeeksAgo} AND "orgCreatedAt" < ${lastWeek}) AS "orgsPrev",
                     (SELECT COUNT(*)::INT FROM "SuperAdmin" WHERE "isDeleted" = false AND "accountCreatedAt" >= ${lastWeek}) AS "adminsNew",
                     (SELECT COUNT(*)::INT FROM "SuperAdmin" WHERE "isDeleted" = false AND "accountCreatedAt" >= ${twoWeeksAgo} AND "accountCreatedAt" < ${lastWeek}) AS "adminsPrev",
-                    (SELECT COUNT(*)::INT FROM "Job" WHERE "isDeleted" = false AND "createdAt" >= ${lastWeek}) AS "jobsNew",
-                    (SELECT COUNT(*)::INT FROM "Job" WHERE "isDeleted" = false AND "createdAt" >= ${twoWeeksAgo} AND "createdAt" < ${lastWeek}) AS "jobsPrev",
-                    (SELECT COUNT(*)::INT FROM "Application" WHERE "isDeleted" = false AND "createdAt" >= ${lastWeek}) AS "candidatesNew",
-                    (SELECT COUNT(*)::INT FROM "Application" WHERE "isDeleted" = false AND "createdAt" >= ${twoWeeksAgo} AND "createdAt" < ${lastWeek}) AS "candidatesPrev"
+                    (SELECT COUNT(*)::INT FROM "Job" WHERE "isDeleted" = false AND "jobCreatedAt" >= ${lastWeek}) AS "jobsNew",
+                    (SELECT COUNT(*)::INT FROM "Job" WHERE "isDeleted" = false AND "jobCreatedAt" >= ${twoWeeksAgo} AND "jobCreatedAt" < ${lastWeek}) AS "jobsPrev",
+                    (SELECT COUNT(*)::INT FROM "Application" WHERE "isDeleted" = false AND "appliedAt" >= ${lastWeek}) AS "candidatesNew",
+                    (SELECT COUNT(*)::INT FROM "Application" WHERE "isDeleted" = false AND "appliedAt" >= ${twoWeeksAgo} AND "appliedAt" < ${lastWeek}) AS "candidatesPrev"
             `,
             prisma.$queryRaw<Array<{ count: number }>>`
                 SELECT COUNT(DISTINCT o.id)::INT AS count
-                FROM "Organization" o
-                JOIN "Job" d ON d."orgId" = o.id
+                FROM "OrganizationDetails" o
+                JOIN "Job" d ON d."organizationId" = o.id
                 JOIN "Application" a ON a."jobId" = d.id
                 JOIN "Interview" i ON i."applicationId" = a.id
-                WHERE o."isDeleted" = false AND d."isDeleted" = false AND a."isDeleted" = false AND i."isDeleted" = false AND i."status" = 'COMPLETED' AND i."completedAt" >= ${thirtyDaysAgo}
+                WHERE o."isDeleted" = false AND d."isDeleted" = false AND a."isDeleted" = false AND i."isDeleted" = false AND i."interviewStatus" = 'COMPLETED' AND i."interviewCompletedAt" >= ${thirtyDaysAgo}
             `,
         ]);
         let activeOrgs = 0;

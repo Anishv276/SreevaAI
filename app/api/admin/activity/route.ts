@@ -25,46 +25,46 @@ export async function GET(req: Request) {
         const start = getRangeStart(range, from);
         // --- Core Fetcher Function ---
         async function fetchActivity(dateCutoff: Date | null): Promise<[
-            Array<{ id: string; createdAt: Date; job: { title: string | null } | null }>,
+            Array<{ id: string; appliedAt: Date; job: { title: string | null } | null }>,
             Array<{
                 id: string;
-                status: string;
-                updatedAt: Date;
-                completedAt: Date | null;
-                application: { aiScore: number | null; job: { title: string | null } | null };
+                interviewStatus: string;
+                interviewUpdatedAt: Date;
+                interviewCompletedAt: Date | null;
+                application: { resumeAiScore: number | null; job: { title: string | null } | null };
             }>,
-            Array<{ id: string; updatedAt: Date; job: { title: string | null } | null }>
+            Array<{ id: string; applicationUpdatedAt: Date; job: { title: string | null } | null }>
         ]> {
             const applicationWhere = {
-                job: { orgId },
-                ...(dateCutoff ? { createdAt: { gte: dateCutoff } } : {}),
+                job: { organizationId: orgId },
+                ...(dateCutoff ? { appliedAt: { gte: dateCutoff } } : {}),
             };
             const recentApplications = await prisma.application.findMany({
                 where: applicationWhere,
-                select: { id: true, createdAt: true, job: { select: { title: true } } },
-                orderBy: { createdAt: "desc" },
+                select: { id: true, appliedAt: true, job: { select: { title: true } } },
+                orderBy: { appliedAt: "desc" },
                 take: 20
             });
             const recentInterviews = await prisma.interview.findMany({
                 where: {
-                    ...(dateCutoff ? { updatedAt: { gte: dateCutoff } } : {}),
-                    application: { job: { orgId } },
-                    status: { in: ["COMPLETED", "IN_PROGRESS"] },
+                    ...(dateCutoff ? { interviewUpdatedAt: { gte: dateCutoff } } : {}),
+                    application: { job: { organizationId: orgId } },
+                    interviewStatus: { in: ["COMPLETED", "IN_PROGRESS"] },
                 },
                 select: {
-                    id: true, status: true, updatedAt: true, completedAt: true,
-                    application: { select: { aiScore: true, job: { select: { title: true } } } },
+                    id: true, interviewStatus: true, interviewUpdatedAt: true, interviewCompletedAt: true,
+                    application: { select: { resumeAiScore: true, job: { select: { title: true } } } },
                 },
-                orderBy: { updatedAt: "desc" },
+                orderBy: { interviewUpdatedAt: "desc" },
                 take: 20
             });
             const recentRejections = await prisma.application.findMany({
                 where: {
-                    ...(dateCutoff ? { updatedAt: { gte: dateCutoff } } : {}),
-                    resumeStatus: { in: ["rejected", "REJECTED"] }, job: { orgId },
+                    ...(dateCutoff ? { applicationUpdatedAt: { gte: dateCutoff } } : {}),
+                    resumeScreeningStatus: { in: ["rejected", "REJECTED"] }, job: { organizationId: orgId },
                 },
-                select: { id: true, updatedAt: true, job: { select: { title: true } } },
-                orderBy: { updatedAt: "desc" },
+                select: { id: true, applicationUpdatedAt: true, job: { select: { title: true } } },
+                orderBy: { applicationUpdatedAt: "desc" },
                 take: 20
             });
             return [recentApplications, recentInterviews, recentRejections];
@@ -88,11 +88,11 @@ export async function GET(req: Request) {
         // Group new uploads by job + time window (10-min buckets)
         const appsByJobBucket: Record<string, { count: number; job: string; time: Date }> = {};
         for (const app of recentApplications) {
-            const bucket = Math.floor(app.createdAt.getTime() / (10 * 60 * 1000));
+            const bucket = Math.floor(app.appliedAt.getTime() / (10 * 60 * 1000));
             const jobTitle = app.job?.title || "Unknown Job";
             const key = `${jobTitle}__${bucket}`;
             if (!appsByJobBucket[key]) {
-                appsByJobBucket[key] = { count: 0, job: jobTitle, time: app.createdAt };
+                appsByJobBucket[key] = { count: 0, job: jobTitle, time: app.appliedAt };
             }
             appsByJobBucket[key].count++;
         }
@@ -109,13 +109,13 @@ export async function GET(req: Request) {
         // Completed interviews
         const completedByJob: Record<string, { scores: number[]; job: string; time: Date }> = {};
         for (const iv of recentInterviews) {
-            if (iv.status !== "COMPLETED") continue;
+            if (iv.interviewStatus !== "COMPLETED") continue;
             const key = iv.application.job?.title || "Unknown Job";
             if (!completedByJob[key]) {
-                completedByJob[key] = { scores: [], job: key, time: iv.updatedAt };
+                completedByJob[key] = { scores: [], job: key, time: iv.interviewUpdatedAt };
             }
-            if (iv.application.aiScore != null) completedByJob[key].scores.push(iv.application.aiScore);
-            if (iv.updatedAt > completedByJob[key].time) completedByJob[key].time = iv.updatedAt;
+            if (iv.application.resumeAiScore != null) completedByJob[key].scores.push(iv.application.resumeAiScore);
+            if (iv.interviewUpdatedAt > completedByJob[key].time) completedByJob[key].time = iv.interviewUpdatedAt;
         }
         for (const [key, val] of Object.entries(completedByJob)) {
             const avgScore = val.scores.length
@@ -137,10 +137,10 @@ export async function GET(req: Request) {
         for (const rej of recentRejections) {
             const key = rej.job?.title || "Unknown Job";
             if (!rejByJob[key]) {
-                rejByJob[key] = { count: 0, job: key, time: rej.updatedAt };
+                rejByJob[key] = { count: 0, job: key, time: rej.applicationUpdatedAt };
             }
             rejByJob[key].count++;
-            if (rej.updatedAt > rejByJob[key].time) rejByJob[key].time = rej.updatedAt;
+            if (rej.applicationUpdatedAt > rejByJob[key].time) rejByJob[key].time = rej.applicationUpdatedAt;
         }
         for (const [key, val] of Object.entries(rejByJob)) {
             activities.push({

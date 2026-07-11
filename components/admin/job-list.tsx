@@ -57,7 +57,7 @@ export function JobList() {
                                     </h3>
                                 </div>
                                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-6">
-                                    {job.role || job.title}
+                                    {job.jobRole || job.title}
                                 </p>
                             </div>
                             {/* Footer Section */}

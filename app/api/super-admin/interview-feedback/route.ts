@@ -8,20 +8,20 @@ function buildSearchClause(query: string): Prisma.InterviewWhereInput {
         OR: [
             { id: { contains: query, mode: "insensitive" } },
             { applicationId: { contains: query, mode: "insensitive" } },
-            { candidateFeedback: { contains: query, mode: "insensitive" } },
+            { candidateFeedbackText: { contains: query, mode: "insensitive" } },
             {
                 application: {
-                    fullName: { contains: query, mode: "insensitive" },
+                    candidateFullName: { contains: query, mode: "insensitive" },
                 },
             },
             {
                 application: {
-                    email: { contains: query, mode: "insensitive" },
+                    candidateEmail: { contains: query, mode: "insensitive" },
                 },
             },
             {
                 application: {
-                    phone: { contains: query, mode: "insensitive" },
+                    candidatePhone: { contains: query, mode: "insensitive" },
                 },
             },
             {
@@ -34,7 +34,7 @@ function buildSearchClause(query: string): Prisma.InterviewWhereInput {
             {
                 application: {
                     job: {
-                        role: { contains: query, mode: "insensitive" },
+                        jobRole: { contains: query, mode: "insensitive" },
                     },
                 },
             },
@@ -72,8 +72,8 @@ export async function GET(request: Request) {
         const offset = (page - 1) * limit;
         const baseWhere: Prisma.InterviewWhereInput = {
             OR: [
-                { candidateRating: { not: Prisma.JsonNull } },
-                { candidateFeedback: { not: null } },
+                { candidateSelfRating: { not: Prisma.JsonNull } },
+                { candidateFeedbackText: { not: null } },
             ],
         };
         const where: Prisma.InterviewWhereInput = q
@@ -82,14 +82,14 @@ export async function GET(request: Request) {
         const notesWhere: Prisma.InterviewWhereInput = {
             AND: [
                 where,
-                { candidateFeedback: { not: null } },
-                { candidateFeedback: { not: "" } },
+                { candidateFeedbackText: { not: null } },
+                { candidateFeedbackText: { not: "" } },
             ],
         };
         const ratingWhere: Prisma.InterviewWhereInput = {
             AND: [
                 where,
-                { candidateRating: { not: Prisma.JsonNull } },
+                { candidateSelfRating: { not: Prisma.JsonNull } },
             ],
         };
         const todayStart = new Date();
@@ -97,38 +97,38 @@ export async function GET(request: Request) {
         const todayWhere: Prisma.InterviewWhereInput = {
             AND: [
                 where,
-                { updatedAt: { gte: todayStart } },
+                { interviewUpdatedAt: { gte: todayStart } },
             ],
         };
         const [total, feedbacks, withNotesCount, withRatingCount, todayCount] = await prisma.$transaction([
             prisma.interview.count({ where }),
             prisma.interview.findMany({
                 where,
-                orderBy: { updatedAt: "desc" },
+                orderBy: { interviewUpdatedAt: "desc" },
                 skip: offset,
                 take: limit,
                 select: {
                     id: true,
                     applicationId: true,
-                    status: true,
-                    completedAt: true,
-                    updatedAt: true,
-                    createdAt: true,
-                    interviewDuration: true,
-                    recording: true,
-                    candidateFeedback: true,
-                    candidateRating: true,
+                    interviewStatus: true,
+                    interviewCompletedAt: true,
+                    interviewUpdatedAt: true,
+                    interviewCreatedAt: true,
+                    durationInSeconds: true,
+                    sessionRecording: true,
+                    candidateFeedbackText: true,
+                    candidateSelfRating: true,
                     application: {
                         select: {
                             id: true,
-                            fullName: true,
-                            email: true,
-                            phone: true,
+                            candidateFullName: true,
+                            candidateEmail: true,
+                            candidatePhone: true,
                             job: {
                                 select: {
                                     id: true,
                                     title: true,
-                                    role: true,
+                                    jobRole: true,
                                     organization: {
                                         select: {
                                             id: true,
@@ -148,7 +148,7 @@ export async function GET(request: Request) {
             prisma.interview.count({ where: todayWhere }),
         ]);
         const normalizedFeedbacks = feedbacks.map((feedback: any) => {
-            const recording = normalizeRecordingState(feedback.recording);
+            const recording = normalizeRecordingState(feedback.sessionRecording);
             return {
                 ...feedback,
                 interviewRecordingUrl: getRecordingUrl(recording),

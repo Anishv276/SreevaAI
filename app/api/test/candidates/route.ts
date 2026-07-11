@@ -18,13 +18,13 @@ export async function GET(request: Request) {
             where: { jobId },
             select: {
                 id: true,
-                fullName: true,
-                email: true,
-                interviewStatus: true,
-                aiScore: true,
-                interview: { select: { status: true, isTest: true, completedAt: true } },
+                candidateFullName: true,
+                candidateEmail: true,
+                interviewPhaseStatus: true,
+                resumeAiScore: true,
+                interview: { select: { interviewStatus: true, isTestSession: true, interviewCompletedAt: true } },
             },
-            orderBy: { createdAt: "desc" },
+            orderBy: { appliedAt: "desc" },
             take: 100,
         });
 

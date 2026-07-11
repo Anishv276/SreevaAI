@@ -17,7 +17,7 @@ export async function GET(request: Request) {
         }
         const applications = await prisma.application.findMany({
             where: {
-                email: {
+                candidateEmail: {
                     equals: normalizedEmail,
                     mode: "insensitive",
                 },
@@ -27,7 +27,7 @@ export async function GET(request: Request) {
                     select: {
                         id: true,
                         title: true,
-                        deadline: true,
+                        applicationDeadline: true,
                         organization: {
                             select: {
                                 name: true,
@@ -38,48 +38,48 @@ export async function GET(request: Request) {
                 interview: {
                     select: {
                         id: true,
-                        status: true,
-                        accessToken: true,
-                        expiresAt: true,
-                        startedAt: true,
-                        completedAt: true,
-                        interviewDuration: true,
-                        linkStatus: true,
+                        interviewStatus: true,
+                        candidateInviteToken: true,
+                        inviteLinkExpiresAt: true,
+                        interviewStartedAt: true,
+                        interviewCompletedAt: true,
+                        durationInSeconds: true,
+                        inviteLinkStatus: true,
                     }
                 }
             },
-            orderBy: { createdAt: "desc" }
+            orderBy: { appliedAt: "desc" }
         });
         const formattedApplications = applications.map((app: any) => {
             const effectiveLinkStatus = app.interview
-                ? (app.interview.linkStatus || "ACTIVE")
+                ? (app.interview.inviteLinkStatus || "ACTIVE")
                 : null;
             const interviewStage = app.interview
                 ? {
-                    status: app.interview.status,
-                    token: app.interview.accessToken,
-                    accessToken: app.interview.accessToken,
-                    expiresAt: app.interview.expiresAt,
+                    status: app.interview.interviewStatus,
+                    token: app.interview.candidateInviteToken,
+                    accessToken: app.interview.candidateInviteToken,
+                    expiresAt: app.interview.inviteLinkExpiresAt,
                     mode: "DEADLINE",
                     linkStatus: effectiveLinkStatus,
                     canStart: (() => {
-                        if (app.interview.status !== "PENDING") return false;
-                        const startedAtMs = app.interview.startedAt ? new Date(app.interview.startedAt).getTime() : null;
+                        if (app.interview.interviewStatus !== "PENDING") return false;
+                        const startedAtMs = app.interview.interviewStartedAt ? new Date(app.interview.interviewStartedAt).getTime() : null;
                         const nowMs = Date.now();
                         const withinRejoinWindow = startedAtMs === null || nowMs <= startedAtMs + 5 * 60 * 1000;
                         return withinRejoinWindow;
                     })(),
                     interviewLink: buildInterviewLink(appUrl, app.id, {
-                        token: isInterviewTokenRequired() ? app.interview.accessToken : null,
+                        token: isInterviewTokenRequired() ? app.interview.candidateInviteToken : null,
                         orgName: app.job?.organization?.name || "Sreeva AI",
                     }),
                 }
                 : null;
             return {
                 id: app.id,
-                status: app.resumeStatus,
-                score: app.aiScore,
-                createdAt: app.createdAt,
+                status: app.resumeScreeningStatus,
+                score: app.resumeAiScore,
+                createdAt: app.appliedAt,
                 job: app.job,
                 interview: interviewStage,
             };

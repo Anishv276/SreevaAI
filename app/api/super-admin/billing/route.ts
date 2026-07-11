@@ -39,18 +39,18 @@ export async function GET(request: Request) {
 
         const thisMonthInterviews = await prisma.interview.findMany({
             where: {
-                application: { job: { orgId } },
-                completedAt: { gte: startOfMonth },
-                status: "COMPLETED",
+                application: { job: { organizationId: orgId } },
+                interviewCompletedAt: { gte: startOfMonth },
+                interviewStatus: "COMPLETED",
                 isDeleted: false
             }
         });
 
         const lastMonthInterviews = await prisma.interview.findMany({
             where: {
-                application: { job: { orgId } },
-                completedAt: { gte: startOfLastMonth, lte: endOfLastMonth },
-                status: "COMPLETED",
+                application: { job: { organizationId: orgId } },
+                interviewCompletedAt: { gte: startOfLastMonth, lte: endOfLastMonth },
+                interviewStatus: "COMPLETED",
                 isDeleted: false
             }
         });
@@ -58,8 +58,8 @@ export async function GET(request: Request) {
         const activeJobsCount = org.jobs.length;
         const maxActiveJobsStr = org.maxActiveJobs === "Unlimited" ? "Unlimited" : parseInt(org.maxActiveJobs);
 
-        const thisMonthTimeSec = thisMonthInterviews.reduce((acc, curr) => acc + (curr.interviewDuration || 0), 0);
-        const lastMonthTimeSec = lastMonthInterviews.reduce((acc, curr) => acc + (curr.interviewDuration || 0), 0);
+        const thisMonthTimeSec = thisMonthInterviews.reduce((acc, curr) => acc + (curr.durationInSeconds || 0), 0);
+        const lastMonthTimeSec = lastMonthInterviews.reduce((acc, curr) => acc + (curr.durationInSeconds || 0), 0);
 
         const usageVsLastMonth = lastMonthInterviews.length > 0
             ? Math.round(((thisMonthInterviews.length - lastMonthInterviews.length) / lastMonthInterviews.length) * 100)
@@ -80,11 +80,11 @@ export async function GET(request: Request) {
                 trendMap.set(hourLabel, 0);
             }
             trendInterviews = await prisma.interview.findMany({
-                where: { application: { job: { orgId } }, completedAt: { gte: startOfToday }, status: "COMPLETED", isDeleted: false }
+                where: { application: { job: { organizationId: orgId } }, interviewCompletedAt: { gte: startOfToday }, interviewStatus: "COMPLETED", isDeleted: false }
             });
             trendInterviews.forEach(inv => {
-                if (inv.completedAt) {
-                    const d = new Date(inv.completedAt);
+                if (inv.interviewCompletedAt) {
+                    const d = new Date(inv.interviewCompletedAt);
                     d.setMinutes(0, 0, 0);
                     const hourLabel = d.toLocaleDateString('en-US') + ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
                     if (trendMap.has(hourLabel)) trendMap.set(hourLabel, trendMap.get(hourLabel)! + 1);
@@ -98,11 +98,11 @@ export async function GET(request: Request) {
                 d.setDate(d.getDate() + 1);
             }
             trendInterviews = await prisma.interview.findMany({
-                where: { application: { job: { orgId } }, completedAt: { gte: startOfWeek }, status: "COMPLETED", isDeleted: false }
+                where: { application: { job: { organizationId: orgId } }, interviewCompletedAt: { gte: startOfWeek }, interviewStatus: "COMPLETED", isDeleted: false }
             });
             trendInterviews.forEach(inv => {
-                if (inv.completedAt) {
-                    const dateKey = new Date(inv.completedAt).toISOString().split('T')[0];
+                if (inv.interviewCompletedAt) {
+                    const dateKey = new Date(inv.interviewCompletedAt).toISOString().split('T')[0];
                     if (trendMap.has(dateKey)) trendMap.set(dateKey, trendMap.get(dateKey)! + 1);
                 }
             });
@@ -119,11 +119,11 @@ export async function GET(request: Request) {
                     trendMap.set(hourLabel, 0);
                 }
                 trendInterviews = await prisma.interview.findMany({
-                    where: { application: { job: { orgId } }, completedAt: { gte: startDate, lte: endDate }, status: "COMPLETED", isDeleted: false }
+                    where: { application: { job: { organizationId: orgId } }, interviewCompletedAt: { gte: startDate, lte: endDate }, interviewStatus: "COMPLETED", isDeleted: false }
                 });
                 trendInterviews.forEach(inv => {
-                    if (inv.completedAt) {
-                        const dt = new Date(inv.completedAt);
+                    if (inv.interviewCompletedAt) {
+                        const dt = new Date(inv.interviewCompletedAt);
                         dt.setMinutes(0, 0, 0);
                         const hourLabel = dt.toLocaleDateString('en-US') + ' ' + dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
                         if (trendMap.has(hourLabel)) trendMap.set(hourLabel, trendMap.get(hourLabel)! + 1);
@@ -136,11 +136,11 @@ export async function GET(request: Request) {
                     d.setDate(d.getDate() + 1);
                 }
                 trendInterviews = await prisma.interview.findMany({
-                    where: { application: { job: { orgId } }, completedAt: { gte: startDate, lte: endDate }, status: "COMPLETED", isDeleted: false }
+                    where: { application: { job: { organizationId: orgId } }, interviewCompletedAt: { gte: startDate, lte: endDate }, interviewStatus: "COMPLETED", isDeleted: false }
                 });
                 trendInterviews.forEach(inv => {
-                    if (inv.completedAt) {
-                        const dateKey = new Date(inv.completedAt).toISOString().split('T')[0];
+                    if (inv.interviewCompletedAt) {
+                        const dateKey = new Date(inv.interviewCompletedAt).toISOString().split('T')[0];
                         if (trendMap.has(dateKey)) trendMap.set(dateKey, trendMap.get(dateKey)! + 1);
                     }
                 });
@@ -152,8 +152,8 @@ export async function GET(request: Request) {
                 d.setDate(d.getDate() + 1);
             }
             thisMonthInterviews.forEach(interview => {
-                if (interview.completedAt) {
-                    const dateKey = new Date(interview.completedAt).toISOString().split('T')[0];
+                if (interview.interviewCompletedAt) {
+                    const dateKey = new Date(interview.interviewCompletedAt).toISOString().split('T')[0];
                     if (trendMap.has(dateKey)) {
                         trendMap.set(dateKey, trendMap.get(dateKey)! + 1);
                     }

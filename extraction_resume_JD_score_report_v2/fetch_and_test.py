@@ -36,11 +36,11 @@ def get_conn():
 
 def fetch_gtm_job(cur) -> dict | None:
     cur.execute("""
-        SELECT id, title, role, "extractedDetails", "screeningCriteria", "jdPreviewUrl"
+        SELECT id, title, "jobRole" AS role, "jdExtractedDetails" AS "extractedDetails", "resumeScreeningCriteria" AS "screeningCriteria", "jdPreviewUrl"
         FROM "Job"
-        WHERE ("title" ILIKE '%gtm%' OR "role" ILIKE '%gtm%')
+        WHERE ("title" ILIKE '%gtm%' OR "jobRole" ILIKE '%gtm%')
           AND "isDeleted" = false
-        ORDER BY "createdAt" DESC
+        ORDER BY "jobCreatedAt" DESC
         LIMIT 5
     """)
     rows = cur.fetchall()
@@ -75,21 +75,21 @@ def fetch_gtm_job(cur) -> dict | None:
 def fetch_vamsi_application(cur, job_id: str | None = None) -> dict | None:
     if job_id:
         cur.execute("""
-            SELECT id, "fullName", email, "resumeData", "resumeText", "aiScore", "aiReport", "jobId"
+            SELECT id, "candidateFullName", "candidateEmail", "resumeParsedData", "resumeRawText", "resumeAiScore", "resumeAiReport", "jobId"
             FROM "Application"
-            WHERE "fullName" ILIKE %s
+            WHERE "candidateFullName" ILIKE %s
               AND "isDeleted" = false
               AND "jobId" = %s
-            ORDER BY "createdAt" DESC
+            ORDER BY "appliedAt" DESC
             LIMIT 5
         """, ('%vamsi%', job_id))
     else:
         cur.execute("""
-            SELECT id, "fullName", email, "resumeData", "resumeText", "aiScore", "aiReport", "jobId"
+            SELECT id, "candidateFullName", "candidateEmail", "resumeParsedData", "resumeRawText", "resumeAiScore", "resumeAiReport", "jobId"
             FROM "Application"
-            WHERE "fullName" ILIKE %s
+            WHERE "candidateFullName" ILIKE %s
               AND "isDeleted" = false
-            ORDER BY "createdAt" DESC
+            ORDER BY "appliedAt" DESC
             LIMIT 5
         """, ('%vamsi%',))
     rows = cur.fetchall()

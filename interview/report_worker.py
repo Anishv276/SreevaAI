@@ -211,7 +211,7 @@ async def _run(payload: dict) -> None:
             stt_cost = round(plugin_stt_audio_seconds * 0.0043 / 60, 6)
             async with pool.acquire() as conn:
                 await conn.execute(
-                    """UPDATE "Interview" SET "testBillingMetrics" = $1::jsonb, "updatedAt" = NOW()
+                    """UPDATE "Interview" SET "testSessionBillingMetrics" = $1::jsonb, "interviewUpdatedAt" = NOW()
                        WHERE "applicationId" = $2""",
                     json.dumps({
                         "skipReport": False,

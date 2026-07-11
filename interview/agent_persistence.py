@@ -172,19 +172,19 @@ async def get_interview_context(app_id: str) -> dict:
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL is not set")
     _QUERY = """
-    SELECT a."fullName", a."resumeText", a."resumeData", d.title, d.role AS "role",
-           d."extractedDetails", d."screeningCriteria", d."orgId" AS "orgId",
-           d."interviewQuestions",
-           COALESCE(d."voiceId", o."voiceId") AS "voiceId",
-           COALESCE(d."aiName", 'Ishitha') AS "aiName", o.name AS "orgName",
-           o."proctoringSignals",
+    SELECT a."candidateFullName" AS "fullName", a."resumeRawText" AS "resumeText", a."resumeParsedData" AS "resumeData", d.title, d."jobRole" AS "role",
+           d."jdExtractedDetails" AS "extractedDetails", d."resumeScreeningCriteria" AS "screeningCriteria", d."organizationId" AS "orgId",
+           d."aiGeneratedInterviewQuestions" AS "interviewQuestions",
+           COALESCE(d."aiInterviewerVoiceId", o."defaultVoiceId") AS "voiceId",
+           COALESCE(d."aiInterviewerName", 'Ishitha') AS "aiName", o.name AS "orgName",
+           o."enabledProctoringSignals" AS "proctoringSignals",
            o."sttModel", o."ttsProvider", o."ttsModel",
            o."llmInterviewLive", o."llmInterviewEval", o."llmInterviewBrief", o."llmInterviewReport",
-           i.status AS "interviewStatus",
-           i."interviewBrief"
+           i."interviewStatus" AS "interviewStatus",
+           i."aiInterviewBrief" AS "interviewBrief"
     FROM "Application" a
     JOIN "Job" d ON a."jobId" = d.id
-    LEFT JOIN "Organization" o ON d."orgId" = o.id
+    LEFT JOIN "OrganizationDetails" o ON d."organizationId" = o.id
     LEFT JOIN "Interview" i ON i."applicationId" = a.id
     WHERE a.id = $1
     LIMIT 1
@@ -268,9 +268,9 @@ async def persist_transcript(
             if partial:
                 await conn.execute(
                     """UPDATE "Interview" SET
-                         "interviewTranscript" = $1,
-                         "interviewDuration"   = $2,
-                         "updatedAt"           = NOW()
+                         "fullTranscript"     = $1,
+                         "durationInSeconds"  = $2,
+                         "interviewUpdatedAt" = NOW()
                        WHERE "applicationId" = $3""",
                     full_text, duration, app_id,
                 )
@@ -283,11 +283,11 @@ async def persist_transcript(
                 browser_events: list = []
                 try:
                     row = await conn.fetchrow(
-                        'SELECT "integritySignals" FROM "Interview" WHERE "applicationId" = $1 LIMIT 1',
+                        'SELECT "proctoringEvents" FROM "Interview" WHERE "applicationId" = $1 LIMIT 1',
                         app_id,
                     )
-                    if row and row["integritySignals"]:
-                        raw = row["integritySignals"]
+                    if row and row["proctoringEvents"]:
+                        raw = row["proctoringEvents"]
                         browser_events = raw if isinstance(raw, list) else (
                             json.loads(raw) if isinstance(raw, str) else []
                         )
@@ -295,12 +295,12 @@ async def persist_transcript(
                     browser_events = []
                 await conn.execute(
                     """UPDATE "Interview" SET
-                         "interviewTranscript" = $1,
-                         "interviewDuration"   = $2,
-                         status                = $3,
-                         "integritySignals"    = $4,
-                         "completedAt"         = NOW(),
-                         "updatedAt"           = NOW()
+                         "fullTranscript"       = $1,
+                         "durationInSeconds"    = $2,
+                         "interviewStatus"      = $3,
+                         "proctoringEvents"     = $4,
+                         "interviewCompletedAt" = NOW(),
+                         "interviewUpdatedAt"   = NOW()
                        WHERE "applicationId" = $5""",
                     full_text, duration, final_status,
                     json.dumps(browser_events),
@@ -321,9 +321,9 @@ async def mark_interview_started(app_id: str) -> None:
     async with pool.acquire() as conn:
         result = await conn.execute(
             """UPDATE "Interview"
-               SET status = $1, "startedAt" = NOW(), "updatedAt" = NOW()
+               SET "interviewStatus" = $1, "interviewStartedAt" = NOW(), "interviewUpdatedAt" = NOW()
                WHERE "applicationId" = $2
-                 AND status NOT IN ('IN_PROGRESS', 'COMPLETED')""",
+                 AND "interviewStatus" NOT IN ('IN_PROGRESS', 'COMPLETED')""",
             "IN_PROGRESS", app_id,
         )
         # result is a status string like "UPDATE 1" or "UPDATE 0"
@@ -334,7 +334,7 @@ async def mark_interview_started(app_id: str) -> None:
                 f"(another agent instance may be running). Aborting to prevent duplicate agents."
             )
         await conn.execute(
-            'UPDATE "Application" SET "interviewStatus" = $1, "updatedAt" = NOW() WHERE id = $2',
+            'UPDATE "Application" SET "interviewPhaseStatus" = $1, "applicationUpdatedAt" = NOW() WHERE id = $2',
             "IN_PROGRESS", app_id,
         )
     logger.info(f"[INTERVIEW] App {app_id} marked as IN_PROGRESS.")
@@ -351,13 +351,13 @@ async def mark_interview_failed(app_id: str, reason: str = "technical_error") ->
         async with pool.acquire() as conn:
             await conn.execute(
                 """UPDATE "Interview"
-                   SET status = 'FAILED', "updatedAt" = NOW()
+                   SET "interviewStatus" = 'FAILED', "interviewUpdatedAt" = NOW()
                    WHERE "applicationId" = $1""",
                 app_id,
             )
             await conn.execute(
                 """UPDATE "Application"
-                   SET "interviewStatus" = 'FAILED', "updatedAt" = NOW()
+                   SET "interviewPhaseStatus" = 'FAILED', "applicationUpdatedAt" = NOW()
                    WHERE id = $1""",
                 app_id,
             )
@@ -417,18 +417,18 @@ async def persist_latency_signals(app_id: str, answer_scores: list[dict]) -> Non
         pool = await DatabasePool.get()
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
-                'SELECT "integritySignals" FROM "Interview" WHERE "applicationId" = $1 LIMIT 1',
+                'SELECT "proctoringEvents" FROM "Interview" WHERE "applicationId" = $1 LIMIT 1',
                 app_id,
             )
             existing: list = []
-            if row and row["integritySignals"]:
-                raw = row["integritySignals"]
+            if row and row["proctoringEvents"]:
+                raw = row["proctoringEvents"]
                 existing = raw if isinstance(raw, list) else (
                     json.loads(raw) if isinstance(raw, str) else []
                 )
             merged = existing + [latency_event]
             await conn.execute(
-                """UPDATE "Interview" SET "integritySignals" = $1, "updatedAt" = NOW()
+                """UPDATE "Interview" SET "proctoringEvents" = $1, "interviewUpdatedAt" = NOW()
                    WHERE "applicationId" = $2""",
                 json.dumps(merged),
                 app_id,
@@ -453,12 +453,12 @@ async def persist_session_fingerprint(app_id: str) -> None:
         pool = await DatabasePool.get()
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
-                'SELECT "integritySignals" FROM "Interview" WHERE "applicationId" = $1 LIMIT 1',
+                'SELECT "proctoringEvents" FROM "Interview" WHERE "applicationId" = $1 LIMIT 1',
                 app_id,
             )
-            if not row or not row["integritySignals"]:
+            if not row or not row["proctoringEvents"]:
                 return
-            raw = row["integritySignals"]
+            raw = row["proctoringEvents"]
             events: list = raw if isinstance(raw, list) else (
                 json.loads(raw) if isinstance(raw, str) else []
             )
@@ -515,7 +515,7 @@ async def persist_session_fingerprint(app_id: str) -> None:
                 }
                 events.append(fingerprint_event)
                 await conn.execute(
-                    """UPDATE "Interview" SET "integritySignals" = $1, "updatedAt" = NOW()
+                    """UPDATE "Interview" SET "proctoringEvents" = $1, "interviewUpdatedAt" = NOW()
                        WHERE "applicationId" = $2""",
                     json.dumps(events),
                     app_id,
@@ -572,7 +572,7 @@ async def persist_question_by_question_analysis(app_id: str, answer_scores: list
             async with pool.acquire() as conn:
                 await conn.execute(
                     """UPDATE "Interview"
-                       SET "questionByQuestionAnalysis" = $1::jsonb, "updatedAt" = NOW()
+                       SET "perQuestionAnalysis" = $1::jsonb, "interviewUpdatedAt" = NOW()
                        WHERE "applicationId" = $2""",
                     payload, app_id,
                 )
@@ -605,27 +605,27 @@ async def update_interview_status(app_id: str, duration_seconds: Optional[float]
         async with pool.acquire() as conn:
             await conn.execute(
                 """UPDATE "Interview"
-                   SET status = 'COMPLETED', "completedAt" = NOW(), "updatedAt" = NOW()
+                   SET "interviewStatus" = 'COMPLETED', "interviewCompletedAt" = NOW(), "interviewUpdatedAt" = NOW()
                    WHERE "applicationId" = $1""",
                 app_id,
             )
             await conn.execute(
                 """UPDATE "Application"
-                   SET "interviewStatus" = 'COMPLETED', "updatedAt" = NOW()
+                   SET "interviewPhaseStatus" = 'COMPLETED', "applicationUpdatedAt" = NOW()
                    WHERE id = $1""",
                 app_id,
             )
             if duration_seconds:
                 await conn.execute(
                     """UPDATE "Interview"
-                       SET "recording" = jsonb_set(
-                             COALESCE("recording", '{}'::jsonb),
+                       SET "sessionRecording" = jsonb_set(
+                             COALESCE("sessionRecording", '{}'::jsonb),
                              '{durationSec}',
                              to_jsonb($1::integer),
                              true
                            ),
-                           "interviewDuration" = $2,
-                           "updatedAt" = NOW()
+                           "durationInSeconds" = $2,
+                           "interviewUpdatedAt" = NOW()
                        WHERE "applicationId" = $3""",
                     int(duration_seconds), int(duration_seconds), app_id,
                 )

@@ -26,24 +26,24 @@ export async function GET(req: NextRequest) {
         }
         const interviews = await prisma.interview.findMany({
             where: {
-                status: "COMPLETED",
-                completedAt: { gte: startTime },
+                interviewStatus: "COMPLETED",
+                interviewCompletedAt: { gte: startTime },
                 application: {
-                    job: { orgId }
+                    job: { organizationId: orgId }
                 }
             },
             select: {
                 id: true,
                 applicationId: true,
-                status: true,
-                startedAt: true,
-                completedAt: true,
-                integritySignals: true,
-                snapshots: true,
+                interviewStatus: true,
+                interviewStartedAt: true,
+                interviewCompletedAt: true,
+                proctoringEvents: true,
+                proctoringSnapshotUrls: true,
                 application: {
                     select: {
-                        fullName: true,
-                        email: true,
+                        candidateFullName: true,
+                        candidateEmail: true,
                         job: {
                             select: {
                                 title: true
@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
                 }
             },
             orderBy: {
-                completedAt: "desc"
+                interviewCompletedAt: "desc"
             }
         });
         // Filter and format for the audit log
@@ -68,16 +68,16 @@ export async function GET(req: NextRequest) {
             events: any[];
         };
         const formattedLogs = interviews.map((iv: (typeof interviews)[number]): FormattedLog => {
-            const rawEvents = Array.isArray(iv.integritySignals) ? iv.integritySignals : [];
+            const rawEvents = Array.isArray(iv.proctoringEvents) ? iv.proctoringEvents : [];
             // Re-map event types using similar logic as main integrity API
             return {
                 id: iv.id,
-                candidateName: iv.application.fullName,
-                candidateEmail: iv.application.email,
+                candidateName: iv.application.candidateFullName,
+                candidateEmail: iv.application.candidateEmail,
                 role: iv.application.job?.title || "N/A",
-                startedAt: iv.startedAt,
-                completedAt: iv.completedAt,
-                snapshots: iv.snapshots,
+                startedAt: iv.interviewStartedAt,
+                completedAt: iv.interviewCompletedAt,
+                snapshots: iv.proctoringSnapshotUrls,
                 events: rawEvents
             };
         }).filter((log: FormattedLog) => log.events.length > 0 || log.snapshots.length > 0);

@@ -1,30 +1,33 @@
-import { PrismaClient } from '@prisma/client';
-const prisma = new PrismaClient();
+import "dotenv/config";
+import { prisma } from "../lib/prisma";
+
 async function main() {
   const appId = "app-vadla-vamsi-krishna-2525";
   console.log(`Resetting and extending session for ${appId}...`);
-  // Extend by 2 hours and reset to STARTED
+
   const updated = await prisma.interview.update({
     where: { applicationId: appId },
     data: {
-      status: "STARTED",
-      expiresAt: new Date(Date.now() + (2 * 60 * 60 * 1000)),
-      completedAt: null
+      interviewStatus: "STARTED",
+      inviteLinkExpiresAt: new Date(Date.now() + (2 * 60 * 60 * 1000)),
+      interviewCompletedAt: null,
     }
   });
-  // also update application status
+
   await prisma.application.update({
     where: { id: appId },
     data: {
-      interviewStatus: "PENDING"
+      interviewPhaseStatus: "PENDING"
     }
   });
+
   console.log("Updated record:", {
     appId: updated.applicationId,
-    status: updated.status,
-    expiresAt: updated.expiresAt
+    interviewStatus: updated.interviewStatus,
+    inviteLinkExpiresAt: updated.inviteLinkExpiresAt,
   });
 }
+
 main()
   .catch(e => console.error(e))
   .finally(async () => await prisma.$disconnect());

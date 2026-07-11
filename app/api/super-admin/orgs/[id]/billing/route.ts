@@ -32,15 +32,15 @@ export async function GET(
             testBillingMetrics: Record<string, any> | null;
             interviewDuration: number | null;
         }>>(Prisma.sql`
-            SELECT i."testBillingMetrics",
+            SELECT i."testSessionBillingMetrics" AS "testBillingMetrics",
                    COALESCE(
-                       i."interviewDuration",
-                       (i."billingSnapshot"->>'durationSec')::int
+                       i."durationInSeconds",
+                       (i."billingSnapshotAtCompletion"->>'durationSec')::int
                    ) AS "interviewDuration"
             FROM "Interview" i
             JOIN "Application" a ON a.id = i."applicationId"
             JOIN "Job" d ON d.id = a."jobId"
-            WHERE d."orgId" = ${id}
+            WHERE d."organizationId" = ${id}
             AND i."isDeleted" = false AND a."isDeleted" = false AND d."isDeleted" = false
         `);
 

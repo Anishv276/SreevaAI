@@ -33,7 +33,7 @@ export async function GET(
     const dateIST = url.searchParams.get("date"); // YYYY-MM-DD in IST
 
     const interview = await prisma.interview.findUnique({
-        where: { accessToken: token },
+        where: { candidateInviteToken: token },
         include: {
             application: {
                 include: {
@@ -46,10 +46,10 @@ export async function GET(
     });
 
     if (!interview) return NextResponse.json({ error: "Invalid link" }, { status: 404 });
-    if (interview.scheduledAt) {
-        return NextResponse.json({ error: "Slot already booked", alreadyBooked: true, scheduledAt: interview.scheduledAt }, { status: 409 });
+    if (interview.interviewScheduledAt) {
+        return NextResponse.json({ error: "Slot already booked", alreadyBooked: true, scheduledAt: interview.interviewScheduledAt }, { status: 409 });
     }
-    if (["COMPLETED", "IN_PROGRESS"].includes(interview.status)) {
+    if (["COMPLETED", "IN_PROGRESS"].includes(interview.interviewStatus)) {
         return NextResponse.json({ error: "Interview already started or completed" }, { status: 409 });
     }
 
@@ -58,8 +58,8 @@ export async function GET(
 
     const result: { info: object; deadline?: string; slots?: string[] } = {
         info: {
-            candidateName: interview.application.fullName,
-            jobTitle: interview.application.job?.role || interview.application.job?.title,
+            candidateName: interview.application.candidateFullName,
+            jobTitle: interview.application.job?.jobRole || interview.application.job?.title,
             orgName: org?.name,
             duration: 20,
             slotDuration: 30,
@@ -67,13 +67,13 @@ export async function GET(
         },
     };
 
-    if (interview.application.job?.deadline) {
-        result.deadline = interview.application.job.deadline.toISOString();
+    if (interview.application.job?.applicationDeadline) {
+        result.deadline = interview.application.job.applicationDeadline.toISOString();
     }
 
     if (dateIST) {
         const job = interview.application.job;
-        const deadlineMs = job?.deadline ? job.deadline.getTime() : null;
+        const deadlineMs = job?.applicationDeadline ? job.applicationDeadline.getTime() : null;
         const dateMs = new Date(dateIST + "T23:59:59+05:30").getTime(); // End of day in IST
 
         // If deadline is before this date, no slots available
@@ -88,17 +88,17 @@ export async function GET(
         // Count booked interviews per slot window for this org
         const orgId = org?.id;
         const bookedCounts = await prisma.interview.groupBy({
-            by: ["scheduledAt"],
+            by: ["interviewScheduledAt"],
             where: {
-                scheduledAt: { not: null },
+                interviewScheduledAt: { not: null },
                 isDeleted: false,
-                application: { job: { orgId } },
+                application: { job: { organizationId: orgId } },
             },
-            _count: { scheduledAt: true },
+            _count: { interviewScheduledAt: true },
         });
         const countMap = new Map<number, number>();
         for (const b of bookedCounts) {
-            if (b.scheduledAt) countMap.set(b.scheduledAt.getTime(), b._count.scheduledAt);
+            if (b.interviewScheduledAt) countMap.set(b.interviewScheduledAt.getTime(), b._count.interviewScheduledAt);
         }
 
         const available = allSlots.filter(s => (countMap.get(s.getTime()) ?? 0) < maxSlots);
@@ -124,7 +124,7 @@ export async function POST(
     }
 
     const interview = await prisma.interview.findUnique({
-        where: { accessToken: token },
+        where: { candidateInviteToken: token },
         include: {
             application: {
                 include: {
@@ -137,7 +137,7 @@ export async function POST(
     });
 
     if (!interview) return NextResponse.json({ error: "Invalid link" }, { status: 404 });
-    if (interview.scheduledAt) return NextResponse.json({ error: "Already booked", alreadyBooked: true }, { status: 409 });
+    if (interview.interviewScheduledAt) return NextResponse.json({ error: "Already booked", alreadyBooked: true }, { status: 409 });
 
     const org = interview.application.job?.organization;
     const maxSlots = org?.maxConcurrentInterviews ?? 5;
@@ -145,10 +145,10 @@ export async function POST(
 
     // Atomic concurrency check: count how many interviews share this exact slot for the org
     const count = await prisma.interview.count({
-        where: { 
-            scheduledAt: slotDate, 
+        where: {
+            interviewScheduledAt: slotDate,
             isDeleted: false,
-            application: { job: { orgId } } 
+            application: { job: { organizationId: orgId } }
         },
     });
     if (count >= maxSlots) {
@@ -158,12 +158,12 @@ export async function POST(
     // Book the slot
     await prisma.interview.update({
         where: { id: interview.id },
-        data: { scheduledAt: slotDate, timezone: TIMEZONE },
+        data: { interviewScheduledAt: slotDate, interviewTimezone: TIMEZONE },
     });
 
     // Enqueue background brief generation (slot flow only — NOT for test interviews)
     // The worker fetches resume + JD fresh from DB, generates the LLM brief, and
-    // saves it to Interview.interviewBrief so agent_runtime loads it instantly at launch.
+    // saves it to Interview.aiInterviewBrief so agent_runtime loads it instantly at launch.
     void briefGenerationQueue.add("generate-brief", {
         applicationId: interview.applicationId,
     }).catch((err) => {
@@ -173,13 +173,13 @@ export async function POST(
 
     // Build interview link
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://sreevaai.com";
-    const interviewLink = `${appUrl}/interview/${interview.applicationId}?token=${interview.accessToken}`;
+    const interviewLink = `${appUrl}/interview/${interview.applicationId}?token=${interview.candidateInviteToken}`;
 
     // Send confirmation email with interview link
     await sendInterviewScheduledEmail({
-        email: interview.application.email,
-        fullName: interview.application.fullName,
-        jobTitle: interview.application.job?.role || interview.application.job?.title || "Interview",
+        email: interview.application.candidateEmail,
+        fullName: interview.application.candidateFullName,
+        jobTitle: interview.application.job?.jobRole || interview.application.job?.title || "Interview",
         orgName: org?.name || "The Organization",
         interviewLink,
         scheduledAt: slotDate,

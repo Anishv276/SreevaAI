@@ -27,84 +27,84 @@ export async function GET(
 
         const where: any = {
             isDeleted: false,
-            job: { orgId, isDeleted: false },
+            job: { organizationId: orgId, isDeleted: false },
         };
 
         if (jobId && jobId !== "all") {
             where.jobId = jobId;
         }
         if (resumeStatus && resumeStatus !== "all") {
-            where.resumeStatus = { contains: resumeStatus, mode: "insensitive" };
+            where.resumeScreeningStatus = { contains: resumeStatus, mode: "insensitive" };
         }
         if (interviewStatus && interviewStatus !== "all") {
-            where.interviewStatus = { contains: interviewStatus, mode: "insensitive" };
+            where.interviewPhaseStatus = { contains: interviewStatus, mode: "insensitive" };
         }
         if (startDate || endDate) {
-            where.createdAt = {};
-            if (startDate) where.createdAt.gte = new Date(startDate);
-            if (endDate)   where.createdAt.lte = new Date(endDate + "T23:59:59.999Z");
+            where.appliedAt = {};
+            if (startDate) where.appliedAt.gte = new Date(startDate);
+            if (endDate)   where.appliedAt.lte = new Date(endDate + "T23:59:59.999Z");
         }
         if (search) {
             where.OR = [
-                { fullName: { contains: search, mode: "insensitive" } },
-                { email:    { contains: search, mode: "insensitive" } },
+                { candidateFullName: { contains: search, mode: "insensitive" } },
+                { candidateEmail:    { contains: search, mode: "insensitive" } },
                 { job: { title: { contains: search, mode: "insensitive" } } },
             ];
         }
 
-        const orgWhere = { isDeleted: false, job: { orgId, isDeleted: false } };
+        const orgWhere = { isDeleted: false, job: { organizationId: orgId, isDeleted: false } };
 
         const [candidates, total, jobs, shortlisted, rejected, interviewRunning, interviewPending, interviewCompleted] = await Promise.all([
             prisma.application.findMany({
                 where,
                 include: {
-                    job: { select: { id: true, title: true, role: true } },
+                    job: { select: { id: true, title: true, jobRole: true } },
                     interview: {
                         select: {
-                            status: true,
-                            completedAt: true,
-                            inviteSentAt: true,
-                            scoreBreakdown: true,
+                            interviewStatus: true,
+                            interviewCompletedAt: true,
+                            inviteEmailSentAt: true,
+                            aiScoreBreakdown: true,
                         },
                     },
                 },
-                orderBy: { updatedAt: "desc" },
+                orderBy: { applicationUpdatedAt: "desc" },
                 skip: offset,
                 take: limit,
             }),
             prisma.application.count({ where }),
             prisma.job.findMany({
-                where: { orgId, isDeleted: false },
-                select: { id: true, title: true, role: true },
-                orderBy: { createdAt: "desc" },
+                where: { organizationId: orgId, isDeleted: false },
+                select: { id: true, title: true, jobRole: true },
+                orderBy: { jobCreatedAt: "desc" },
             }),
-            prisma.application.count({ where: { ...orgWhere, resumeStatus: { contains: "shortlisted", mode: "insensitive" } } }),
-            prisma.application.count({ where: { ...orgWhere, resumeStatus: { contains: "rejected", mode: "insensitive" } } }),
-            prisma.application.count({ where: { ...orgWhere, interview: { status: { in: ["in_progress", "inprogress", "in progress"] } } } }),
+            prisma.application.count({ where: { ...orgWhere, resumeScreeningStatus: { contains: "shortlisted", mode: "insensitive" } } }),
+            prisma.application.count({ where: { ...orgWhere, resumeScreeningStatus: { contains: "rejected", mode: "insensitive" } } }),
+            prisma.application.count({ where: { ...orgWhere, interview: { interviewStatus: { in: ["in_progress", "inprogress", "in progress"] } } } }),
             prisma.application.count({ where: { ...orgWhere, interview: { is: null } } }),
-            prisma.application.count({ where: { ...orgWhere, interview: { status: { in: ["completed", "finished"] } } } }),
+            prisma.application.count({ where: { ...orgWhere, interview: { interviewStatus: { in: ["completed", "finished"] } } } }),
         ]);
 
         return NextResponse.json({
             candidates: candidates.map((a) => ({
                 id:              a.id,
-                fullName:        a.fullName,
-                email:           a.email,
-                phone:           a.phone,
-                resumeUrl:       a.resumeUrl,
-                aiScore:         a.aiScore,
-                resumeStatus:    a.resumeStatus,
-                interviewStatus: a.interviewStatus,
-                createdAt:       a.createdAt,
-                updatedAt:       a.updatedAt,
+                fullName:        a.candidateFullName,
+                email:           a.candidateEmail,
+                phone:           a.candidatePhone,
+                resumeUrl:       a.resumeFileUrl,
+                aiScore:         a.resumeAiScore,
+                resumeStatus:    a.resumeScreeningStatus,
+                interviewStatus: a.interviewPhaseStatus,
+                createdAt:       a.appliedAt,
+                updatedAt:       a.applicationUpdatedAt,
                 jobId:         a.jobId,
                 jobTitle:      a.job?.title ?? null,
-                jobRole:       a.job?.role  ?? null,
+                jobRole:       a.job?.jobRole  ?? null,
                 interview: a.interview ? {
-                    status:         a.interview.status,
-                    completedAt:    a.interview.completedAt,
-                    inviteSentAt:   a.interview.inviteSentAt,
-                    scoreBreakdown: a.interview.scoreBreakdown,
+                    status:         a.interview.interviewStatus,
+                    completedAt:    a.interview.interviewCompletedAt,
+                    inviteSentAt:   a.interview.inviteEmailSentAt,
+                    scoreBreakdown: a.interview.aiScoreBreakdown,
                 } : null,
             })),
             pagination: {

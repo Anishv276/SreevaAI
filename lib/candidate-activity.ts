@@ -24,10 +24,10 @@ export async function appendCandidateActivity(
 ) {
     const application = await prisma.application.findUnique({
         where: { id: applicationId },
-        select: { aiReport: true },
+        select: { resumeAiReport: true },
     });
     if (!application) return;
-    const parsed = parseJsonObject(application.aiReport);
+    const parsed = parseJsonObject(application.resumeAiReport);
     const auditTrail = normalizeAuditTrail(parsed.auditTrail);
     auditTrail.push({
         ...event,
@@ -38,6 +38,6 @@ export async function appendCandidateActivity(
     );
     await prisma.application.update({
         where: { id: applicationId },
-        data: { aiReport: JSON.stringify(parsed) },
+        data: { resumeAiReport: JSON.stringify(parsed) },
     });
 }

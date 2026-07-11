@@ -39,9 +39,9 @@ export async function POST(request: Request) {
 
         const job = await prisma.job.findUnique({
             where: { id: jobId },
-            select: { orgId: true, title: true, organization: { select: { urlSlug: true } } },
+            select: { organizationId: true, title: true, organization: { select: { urlSlug: true } } },
         });
-        if (!job || job.orgId !== orgId) {
+        if (!job || job.organizationId !== orgId) {
             return NextResponse.json({ error: "Job not found" }, { status: 404 });
         }
 
@@ -57,22 +57,20 @@ export async function POST(request: Request) {
         await prisma.application.create({
             data: {
                 id: appId,
-                fullName,
-                email,
-                phone,
-                resumeUrl,
-                fileName: file.name,
-                resumeData: JSON.stringify({
+                candidateFullName: fullName,
+                candidateEmail: email,
+                candidatePhone: phone,
+                resumeFileUrl: resumeUrl,
+                resumeFileName: file.name,
+                resumeParsedData: JSON.stringify({
                     source: { bucket: RESUME_BUCKET, key, url: resumeUrl },
                 }),
-                aiReport: JSON.stringify({ processing: { progress: 0, stage: "waiting" } }),
+                resumeAiReport: JSON.stringify({ processing: { progress: 0, stage: "waiting" } }),
                 jobId,
-                resumeStatus: "waiting",
-                interviewStatus: "pending",
+                resumeScreeningStatus: "waiting",
+                interviewPhaseStatus: "pending",
             },
         });
-
-
 
         await resumeQueue.add(
             "screen-resume",

@@ -38,8 +38,8 @@ export async function GET(
             creditsUsed: number | null;
         }>>(
             Prisma.sql`
-                SELECT "interviewQuotaTotal", "interviewQuotaUsed", "creditsUsed"
-                FROM "Organization"
+                SELECT "totalInterviewsAllowed" AS "interviewQuotaTotal", "totalInterviewsUsed" AS "interviewQuotaUsed", "billingCreditsUsed" AS "creditsUsed"
+                FROM "OrganizationDetails"
                 WHERE id = ${id}
                 LIMIT 1
             `
@@ -109,8 +109,8 @@ export async function PATCH(
         }
         const statusControlRows = await prisma.$queryRaw<Array<{ statusControl: string | null }>>(
             Prisma.sql`
-                SELECT "statusControl"
-                FROM "Organization"
+                SELECT "quotaControlMode" AS "statusControl"
+                FROM "OrganizationDetails"
                 WHERE id = ${id}
                 LIMIT 1
             `
@@ -159,9 +159,9 @@ export async function PATCH(
         if (statusOnlyFieldsPresent && !shouldSyncQuotaStatus) {
             await prisma.$executeRaw(
                 Prisma.sql`
-                    UPDATE "Organization"
-                    SET "status" = ${directStatus},
-                        "statusControl" = ${nextStatusControl ?? currentStatusControl}
+                    UPDATE "OrganizationDetails"
+                    SET "orgStatus" = ${directStatus},
+                        "quotaControlMode" = ${nextStatusControl ?? currentStatusControl}
                     WHERE id = ${id}
                 `
             );
@@ -222,16 +222,16 @@ export async function PATCH(
             if (typeof usageMetrics === "string") {
                 const trimmed = usageMetrics.trim();
                 if (!trimmed) {
-                    updateData.usageMetrics = {};
+                    updateData.platformUsageMetrics = {};
                 } else {
                     try {
-                        updateData.usageMetrics = JSON.parse(trimmed);
+                        updateData.platformUsageMetrics = JSON.parse(trimmed);
                     } catch {
                         return NextResponse.json({ error: "usageMetrics must be valid JSON" }, { status: 400 });
                     }
                 }
             } else {
-                updateData.usageMetrics = usageMetrics ?? {};
+                updateData.platformUsageMetrics = usageMetrics ?? {};
             }
         }
         // -- EMAIL CONFLICT CHECK ----------------------------
@@ -291,8 +291,8 @@ export async function PATCH(
             if (status !== undefined) {
                 await tx.$executeRaw(
                     Prisma.sql`
-                        UPDATE "Organization"
-                        SET "statusControl" = ${nextStatusControl ?? currentStatusControl}
+                        UPDATE "OrganizationDetails"
+                        SET "quotaControlMode" = ${nextStatusControl ?? currentStatusControl}
                         WHERE id = ${id}
                     `
                 );
@@ -300,8 +300,8 @@ export async function PATCH(
             if (shouldApplyInterviewQuotaTopUp) {
                 await tx.$executeRaw(
                     Prisma.sql`
-                        UPDATE "Organization"
-                        SET "interviewQuotaTotal" = COALESCE("interviewQuotaTotal", 0) + ${parsedInterviewQuotaTopUp}
+                        UPDATE "OrganizationDetails"
+                        SET "totalInterviewsAllowed" = COALESCE("totalInterviewsAllowed", 0) + ${parsedInterviewQuotaTopUp}
                         WHERE id = ${id}
                     `
                 );
@@ -334,8 +334,8 @@ export async function PATCH(
                 creditsUsed: number | null;
             }>>(
                 Prisma.sql`
-                    SELECT "interviewQuotaTotal", "interviewQuotaUsed", "creditsUsed"
-                    FROM "Organization"
+                    SELECT "totalInterviewsAllowed" AS "interviewQuotaTotal", "totalInterviewsUsed" AS "interviewQuotaUsed", "billingCreditsUsed" AS "creditsUsed"
+                    FROM "OrganizationDetails"
                     WHERE id = ${id}
                     LIMIT 1
                 `
@@ -382,41 +382,41 @@ export async function DELETE(
         // We use raw SQL to handle appending timestamps to unique columns safely.
         await prisma.$transaction(async (tx) => {
             const timestamp = Date.now().toString();
-            // 1. Soft Delete Organization (rename slug)
-            await tx.$executeRaw`UPDATE "Organization" SET "isDeleted" = true, "slug" = 'del_' || ${timestamp} || '_' || "slug" WHERE "id" = ${id}`;
+            // 1. Soft Delete Organization (rename urlSlug)
+            await tx.$executeRaw`UPDATE "OrganizationDetails" SET "isDeleted" = true, "urlSlug" = 'del_' || ${timestamp} || '_' || "urlSlug" WHERE "id" = ${id}`;
             // 2. Soft Delete Users (rename email)
             await tx.$executeRaw`UPDATE "OrganizationCredentials" SET "isDeleted" = true, "email" = 'del_' || ${timestamp} || '_' || "email" WHERE "organizationId" = ${id}`;
             // 3. Soft Delete Jobs
-            await tx.$executeRaw`UPDATE "Job" SET "isDeleted" = true WHERE "orgId" = ${id}`;
+            await tx.$executeRaw`UPDATE "Job" SET "isDeleted" = true WHERE "organizationId" = ${id}`;
             // 4. Soft Delete Resume Candidates
             await tx.$executeRaw`
-                UPDATE "ResumeCandidate" SET "isDeleted" = true 
-                WHERE "jobId" IN (SELECT "id" FROM "Job" WHERE "orgId" = ${id})
+                UPDATE "ResumeCandidate" SET "isDeleted" = true
+                WHERE "jobId" IN (SELECT "id" FROM "Job" WHERE "organizationId" = ${id})
             `;
             // 6. Soft Delete Applications
             await tx.$executeRaw`
-                UPDATE "Application" SET "isDeleted" = true 
-                WHERE "jobId" IN (SELECT "id" FROM "Job" WHERE "orgId" = ${id})
+                UPDATE "Application" SET "isDeleted" = true
+                WHERE "jobId" IN (SELECT "id" FROM "Job" WHERE "organizationId" = ${id})
             `;
-            // 7. Soft Delete Interviews (rename applicationId and accessToken)
+            // 7. Soft Delete Interviews (rename applicationId and candidateInviteToken)
             await tx.$executeRaw`
-                UPDATE "Interview" 
-                SET "isDeleted" = true, 
-                    "applicationId" = 'del_' || ${timestamp} || '_' || "applicationId", 
-                    "accessToken" = 'del_' || ${timestamp} || '_' || "accessToken"
+                UPDATE "Interview"
+                SET "isDeleted" = true,
+                    "applicationId" = 'del_' || ${timestamp} || '_' || "applicationId",
+                    "candidateInviteToken" = 'del_' || ${timestamp} || '_' || "candidateInviteToken"
                 WHERE "applicationId" IN (
                     SELECT "id" FROM "Application" WHERE "jobId" IN (
-                        SELECT "id" FROM "Job" WHERE "orgId" = ${id}
+                        SELECT "id" FROM "Job" WHERE "organizationId" = ${id}
                     )
                 )
             `;
             // 8. Soft Delete Support Tickets
             await tx.$executeRaw`
-                UPDATE "SupportTicket" SET "status" = 'DELETED'
+                UPDATE "SupportTicket" SET "ticketStatus" = 'DELETED'
                 WHERE "interviewId" IN (
                     SELECT "id" FROM "Interview" WHERE "applicationId" IN (
                         SELECT "id" FROM "Application" WHERE "jobId" IN (
-                            SELECT "id" FROM "Job" WHERE "orgId" = ${id}
+                            SELECT "id" FROM "Job" WHERE "organizationId" = ${id}
                         )
                     )
                 )

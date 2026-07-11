@@ -38,8 +38,8 @@ function CreateJobForm() {
   const { addJob, jobs, updateJob, organization } = useJobs();
   const adminOrg = useAdminOrg();
   const fallbackVoiceId = adminOrg?.voiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc";
-  const adminAllowedVoices = adminOrg?.allowedVoices || [];
-  const fallbackAllowedVoices = useMemo(() => adminAllowedVoices, [adminAllowedVoices]);
+  const adminAllowedVoices = adminOrg?.allowedVoices;
+  const fallbackAllowedVoices = useMemo(() => adminAllowedVoices ?? [], [adminAllowedVoices]);
 
   const [formData, setFormData] = useState<any>({
     title: "", role: "", deadline: "",

@@ -4,21 +4,21 @@ export const jobIdSchema = z.object({
 });
 export const createJobSchema = z.object({
   title: z.preprocess((val) => (typeof val === 'string' && val.trim() !== '') ? val : "Untitled Job", z.string().min(1).max(200)),
-  role: z.string().optional(),
-  deadline: z.preprocess((val) => {
+  jobRole: z.string().optional(),
+  applicationDeadline: z.preprocess((val) => {
     if (typeof val !== "string") return val ?? undefined;
     const trimmed = val.trim();
     return trimmed ? trimmed : null;
   }, z.union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.null()]).optional()),
   jdFileName: z.string().nullable().optional(),
   jdPreviewUrl: z.string().nullable().optional(),
-  extractedDetails: z.string().nullable().optional(),
+  jdExtractedDetails: z.string().nullable().optional(),
   timeLimit: z.number().int().min(5).max(120).default(30),
-  interviewQuestions: z.array(z.any()).optional(),
-  voiceId: z.string().nullable().optional(),
-  aiName: z.string().optional(),
-  screeningThreshold: z.coerce.number().int().optional(),
-  screeningCriteria: z.union([z.string(), z.record(z.string(), z.any())]).optional(),
+  aiGeneratedInterviewQuestions: z.array(z.any()).optional(),
+  aiInterviewerVoiceId: z.string().nullable().optional(),
+  aiInterviewerName: z.string().optional(),
+  resumeScreeningThreshold: z.coerce.number().int().optional(),
+  resumeScreeningCriteria: z.union([z.string(), z.record(z.string(), z.any())]).optional(),
   interviewMode: z.enum(["ats", "interview-only"]).optional(),
 });
 export const updateJobSchema = createJobSchema.partial();
@@ -30,9 +30,9 @@ export const candidateIdSchema = z.object({
 });
 export const createCandidateSchema = z.object({
   jobId: z.string().min(1, "Valid job ID required"),
-  fullName: z.string().min(1, "Full name is required").max(100),
-  email: z.string().email("Valid email required"),
-  phone: z.string()
+  candidateFullName: z.string().min(1, "Full name is required").max(100),
+  candidateEmail: z.string().email("Valid email required"),
+  candidatePhone: z.string()
     .min(1, "Phone is required")
     .max(25)
     .transform((val) => val.replace(/[\s\-().]/g, "")) // strip formatting chars
@@ -40,8 +40,8 @@ export const createCandidateSchema = z.object({
       (val) => /^\+?[1-9]\d{6,14}$/.test(val),
       "Please enter a valid international phone number (e.g. +919876543210 or +1 555-000-0000)"
     ),
-  resumeUrl: z.string().optional(), // Relaxed for mocks/internal paths
-  resumeText: z.string().optional(),
+  resumeFileUrl: z.string().optional(), // Relaxed for mocks/internal paths
+  resumeRawText: z.string().optional(),
   structuredResume: z.any().optional(),
   portfolio: z.string().optional(), // Relaxed
   currentCompany: z.string().optional(),
@@ -60,8 +60,8 @@ export const bulkDeleteCandidatesSchema = z.object({
 // values are capped in length to prevent junk being persisted; the route applies
 // its own canonicalization on top of this.
 export const updateCandidateStatusSchema = z.object({
-  resumeStatus: z.string().min(1).max(40).optional(),
-  interviewStatus: z.string().min(1).max(40).optional(),
+  resumeScreeningStatus: z.string().min(1).max(40).optional(),
+  interviewPhaseStatus: z.string().min(1).max(40).optional(),
 }).strict();
 export const interviewTokenSchema = z.object({
   applicationId: z.string().min(1, "Application ID required"),
@@ -97,7 +97,7 @@ export const interviewFinalizeSchema = z.object({
   recordingUrl: z.string().optional(),
   transcript: z.string().optional(),
   duration: z.coerce.number().optional(),
-  snapshots: z.array(z.string()).optional(),
+  proctoringSnapshotUrls: z.array(z.string()).optional(),
   billing: z.object({
     llmCostUsd: z.coerce.number().optional(),
     ttsCostUsd: z.coerce.number().optional(),

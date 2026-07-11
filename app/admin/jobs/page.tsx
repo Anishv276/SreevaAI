@@ -148,11 +148,11 @@ export default function JobsPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                         {jobs.map((job) => {
                             const applicants = Number(job.applicants || 0);
-                            const deadlineText = job.deadline
-                                ? new Date(job.deadline).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+                            const deadlineText = job.applicationDeadline
+                                ? new Date(job.applicationDeadline).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
                                 : null;
-                            const isExpired = job.deadline ? new Date(job.deadline) < new Date() : false;
-                            const voice = ALL_VOICES.find(v => v.id === job.voiceId);
+                            const isExpired = job.applicationDeadline ? new Date(job.applicationDeadline) < new Date() : false;
+                            const voice = ALL_VOICES.find(v => v.id === job.aiInterviewerVoiceId);
                             const isInterviewOnly = (job as any).interviewMode === "interview-only";
 
                             return (
@@ -188,8 +188,8 @@ export default function JobsPage() {
                                                 <h3 className="text-[15px] font-semibold text-gray-900 leading-snug tracking-tight line-clamp-2">
                                                     {job.title}
                                                 </h3>
-                                                {job.role && job.role !== job.title && (
-                                                    <p className="text-xs text-gray-400 font-medium mt-0.5 truncate">{job.role}</p>
+                                                {job.jobRole && job.jobRole !== job.title && (
+                                                    <p className="text-xs text-gray-400 font-medium mt-0.5 truncate">{job.jobRole}</p>
                                                 )}
                                             </div>
                                         </div>

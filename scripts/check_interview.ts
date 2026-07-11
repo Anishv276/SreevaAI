@@ -13,11 +13,11 @@ async function main() {
   }
   console.log("Application detail:", {
     id: app.id,
-    interviewStatus: app.interviewStatus,
+    interviewPhaseStatus: app.interviewPhaseStatus,
     interview: app.interview ? {
-      status: app.interview.status,
-      accessToken: app.interview.accessToken,
-      expiresAt: app.interview.expiresAt
+      interviewStatus: app.interview.interviewStatus,
+      candidateInviteToken: app.interview.candidateInviteToken,
+      inviteLinkExpiresAt: app.interview.inviteLinkExpiresAt
     } : "No interview record"
   });
 }

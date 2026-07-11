@@ -15,13 +15,13 @@ export async function POST(request: Request) {
         }
         // Security: only operate on applications belonging to this org
         const applications = await prisma.application.findMany({
-            where: { id: { in: ids }, job: { orgId } },
+            where: { id: { in: ids }, job: { organizationId: orgId } },
             select: {
                 id: true,
-                fullName: true,
-                email: true,
-                resumeUrl: true,
-                job: { select: { id: true, title: true, orgId: true } },
+                candidateFullName: true,
+                candidateEmail: true,
+                resumeFileUrl: true,
+                job: { select: { id: true, title: true, organizationId: true } },
             },
         });
         if (!applications.length) {
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
                     const idList = Prisma.join(validIds);
                     // 1. Nullify FK on Interview before deleting Application rows
                     await tx.$executeRaw`
-                        UPDATE "SupportTicket" SET "status" = 'DELETED'
+                        UPDATE "SupportTicket" SET "ticketStatus" = 'DELETED'
                         WHERE "interviewId" IN (
                             SELECT "id" FROM "Interview" WHERE "applicationId" IN (${idList})
                         )
@@ -69,8 +69,8 @@ export async function POST(request: Request) {
             await prisma.application.updateMany({
                 where: { id: { in: validIds } },
                 data: {
-                    resumeStatus: "shortlisted",
-                    interviewStatus: "pending",
+                    resumeScreeningStatus: "shortlisted",
+                    interviewPhaseStatus: "pending",
                 },
             });
             await Promise.all(validIds.map((id) => appendCandidateActivity(id, {
@@ -86,8 +86,8 @@ export async function POST(request: Request) {
             await prisma.application.updateMany({
                 where: { id: { in: validIds } },
                 data: {
-                    resumeStatus: "rejected",
-                    interviewStatus: "Not Qualified",
+                    resumeScreeningStatus: "rejected",
+                    interviewPhaseStatus: "Not Qualified",
                 },
             });
             await Promise.all(validIds.map((id) => appendCandidateActivity(id, {

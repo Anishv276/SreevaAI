@@ -17,9 +17,9 @@ export async function POST(
             where: {
                 OR: [{ id: id }, { applicationId: id }]
             },
-            select: { accessToken: true }
+            select: { candidateInviteToken: true }
         });
-        if (requireInterviewToken && (!interview || interview.accessToken !== interviewToken)) {
+        if (requireInterviewToken && (!interview || interview.candidateInviteToken !== interviewToken)) {
             return NextResponse.json({ error: "Unauthorized: Invalid feedback token" }, { status: 401 });
         }
         // We check both by ID and applicationId just in case, 
@@ -32,8 +32,8 @@ export async function POST(
                 ]
             },
             data: {
-                candidateRating: rating && typeof rating === "object" && !Array.isArray(rating) ? rating : {},
-                candidateFeedback: typeof feedback === "string" ? feedback : "",
+                candidateSelfRating: rating && typeof rating === "object" && !Array.isArray(rating) ? rating : {},
+                candidateFeedbackText: typeof feedback === "string" ? feedback : "",
             },
         });
         return NextResponse.json({ success: true });

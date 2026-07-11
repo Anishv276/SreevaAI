@@ -7,17 +7,17 @@ async function main() {
         console.log(`Applications: ${appCount}`);
         if (appCount > 0) {
             const latestApp = await prisma.application.findFirst({
-                orderBy: { createdAt: 'desc' },
-                select: { id: true, email: true }
+                orderBy: { appliedAt: 'desc' },
+                select: { id: true, candidateEmail: true }
             });
             console.log("Latest Application:", latestApp);
             const interview = await prisma.interview.findUnique({
                 where: { applicationId: latestApp?.id }
             });
             console.log("Interview record:", interview ? {
-                status: interview.status,
-                expiresAt: interview.expiresAt,
-                accessToken: interview.accessToken,
+                interviewStatus: interview.interviewStatus,
+                inviteLinkExpiresAt: interview.inviteLinkExpiresAt,
+                candidateInviteToken: interview.candidateInviteToken,
                 applicationId: interview.applicationId
             } : "Missing");
         } else {

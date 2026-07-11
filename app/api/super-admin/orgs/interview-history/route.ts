@@ -15,46 +15,46 @@ export async function GET(request: Request) {
     const rows = await prisma.$queryRaw<
       Array<{
         id: string;
-        status: string;
-        interviewDuration: number | null;
+        interviewStatus: string;
+        durationInSeconds: number | null;
         recordingDurationSec: number | null;
-        completedAt: Date | null;
-        updatedAt: Date;
-        fullName: string | null;
+        interviewCompletedAt: Date | null;
+        interviewUpdatedAt: Date;
+        candidateFullName: string | null;
         jobRole: string | null;
         jobTitle: string | null;
-        billingSnapshot: unknown;
+        billingSnapshotAtCompletion: unknown;
       }>
     >`
       SELECT
         i.id,
-        i.status,
-        i."interviewDuration",
-        NULLIF(i."recording"->>'durationSec', '')::integer AS "recordingDurationSec",
-        i."completedAt",
-        i."updatedAt",
-        a."fullName",
-        d.role AS "jobRole",
+        i."interviewStatus",
+        i."durationInSeconds",
+        NULLIF(i."sessionRecording"->>'durationSec', '')::integer AS "recordingDurationSec",
+        i."interviewCompletedAt",
+        i."interviewUpdatedAt",
+        a."candidateFullName",
+        d."jobRole",
         d.title AS "jobTitle",
-        COALESCE(i."billingSnapshot", '{}'::jsonb) AS "billingSnapshot"
+        COALESCE(i."billingSnapshotAtCompletion", '{}'::jsonb) AS "billingSnapshotAtCompletion"
       FROM "Interview" i
       JOIN "Application" a ON a.id = i."applicationId"
       JOIN "Job" d ON d.id = a."jobId"
-      WHERE d."orgId" = ${orgId}
+      WHERE d."organizationId" = ${orgId}
         AND i."isDeleted" = false
         AND a."isDeleted" = false
         AND d."isDeleted" = false
-      ORDER BY COALESCE(i."completedAt", i."updatedAt") DESC
+      ORDER BY COALESCE(i."interviewCompletedAt", i."interviewUpdatedAt") DESC
       LIMIT 100
     `;
     const result = rows
       .map((row) => {
-        const snapshot = (row.billingSnapshot && typeof row.billingSnapshot === "object" ? row.billingSnapshot : {}) as Record<string, unknown>;
-        // Interview.interviewDuration is the single source of truth for duration
+        const snapshot = (row.billingSnapshotAtCompletion && typeof row.billingSnapshotAtCompletion === "object" ? row.billingSnapshotAtCompletion : {}) as Record<string, unknown>;
+        // Interview.durationInSeconds is the single source of truth for duration
         // (see app/api/admin/billing/history/route.ts) — only fall back to the
         // recording file length for rows saved before that column existed.
-        const durationSec = Number(row.interviewDuration ?? row.recordingDurationSec ?? 0);
-        const date = (row.completedAt ?? row.updatedAt).toISOString();
+        const durationSec = Number(row.durationInSeconds ?? row.recordingDurationSec ?? 0);
+        const date = (row.interviewCompletedAt ?? row.interviewUpdatedAt).toISOString();
         const hasExactBreakdown =
           String(snapshot.costSource || "").toLowerCase() === "exact" ||
           snapshot.llmCostUsd !== undefined ||
@@ -69,15 +69,15 @@ export async function GET(request: Request) {
           : null;
         return {
           id: row.id,
-          interviewName: String(snapshot.interviewName || `${row.fullName || "Unknown Candidate"} - ${row.jobTitle || row.jobRole || "Interview"}`),
-          candidate: String(snapshot.candidateName || row.fullName || "Unknown Candidate"),
+          interviewName: String(snapshot.interviewName || `${row.candidateFullName || "Unknown Candidate"} - ${row.jobTitle || row.jobRole || "Interview"}`),
+          candidate: String(snapshot.candidateName || row.candidateFullName || "Unknown Candidate"),
           role: String(snapshot.jobTitle || row.jobRole || row.jobTitle || "Unknown Role"),
           durationSec,
           llmCostUsd,
           ttsCostUsd,
           sttCostUsd,
           totalCostUsd,
-          status: row.status,
+          status: row.interviewStatus,
           date,
           hasBillingSnapshot,
         };

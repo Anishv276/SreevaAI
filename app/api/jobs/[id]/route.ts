@@ -33,20 +33,20 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             select: {
                 id: true,
                 title: true,
-                role: true,
-                screeningThreshold: true,
-                screeningCriteria: true,
-                extractedDetails: true,
-                creatorId: true,
-                createdAt: true,
-                updatedAt: true,
-                deadline: true,
-                interviewQuestions: true,
+                jobRole: true,
+                resumeScreeningThreshold: true,
+                resumeScreeningCriteria: true,
+                jdExtractedDetails: true,
+                createdByCredentialId: true,
+                jobCreatedAt: true,
+                jobUpdatedAt: true,
+                applicationDeadline: true,
+                aiGeneratedInterviewQuestions: true,
                 jdFileName: true,
                 jdPreviewUrl: true,
-                orgId: true,
-                aiName: true,
-                voiceId: true,
+                organizationId: true,
+                aiInterviewerName: true,
+                aiInterviewerVoiceId: true,
                 interviewMode: true,
                 organization: {
                     select: {
@@ -65,9 +65,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         if (job.organization && isOrgRestrictedStatus(job.organization.orgStatus)) {
             return NextResponse.json({ error: "This organization is currently suspended. Access is restricted." }, { status: 403 });
         }
-        const screeningThreshold = Number(job.screeningThreshold ?? 60);
+        const screeningThreshold = Number(job.resumeScreeningThreshold ?? 60);
         const parsedCriteria = parseJobScreeningSettings(
-            job.screeningCriteria,
+            job.resumeScreeningCriteria,
             screeningThreshold,
         );
         const screeningCriteria = JSON.stringify({
@@ -76,7 +76,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         });
         const interviewQuestions = (() => {
             try {
-                const raw = job.interviewQuestions;
+                const raw = job.aiGeneratedInterviewQuestions;
                 return raw ? JSON.parse(raw) : [];
             } catch {
                 return [];
@@ -84,14 +84,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         })();
         return NextResponse.json({
             ...job,
-            orgId: job.orgId,
+            organizationId: job.organizationId,
             screeningThreshold,
             screeningCriteria,
             interviewQuestions,
             applicants: job._count?.applications || 0,
             aiScreening: {
                 enabled: true,
-                weights: {} // Schema doesn't have a weights field yet
+                weights: {}
             },
         }, {
             headers: {
@@ -148,23 +148,23 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         const existingJob = await prisma.job.findUnique({
             where: { id: jobId },
             select: {
-                orgId: true,
-                extractedDetails: true,
+                organizationId: true,
+                jdExtractedDetails: true,
                 jdPreviewUrl: true,
-                voiceId: true,
+                aiInterviewerVoiceId: true,
             },
         });
         if (!existingJob) {
             return NextResponse.json({ error: "Job not found" }, { status: 404 });
         }
         const isSuperAdmin = session.role === "SUPER_ADMIN";
-        if (!isSuperAdmin && existingJob.orgId !== session.orgId) {
+        if (!isSuperAdmin && existingJob.organizationId !== session.orgId) {
             return NextResponse.json({ error: "Access Denied: Ownership required to modify job" }, { status: 403 });
         }
         const updateData: Record<string, unknown> = {};
         if (data.title !== undefined) updateData.title = data.title;
-        if (data.role !== undefined) updateData.role = data.role;
-        if (data.deadline !== undefined) updateData.deadline = normalizeDeadlineDate(data.deadline as string | null | undefined);
+        if (data.jobRole !== undefined) updateData.jobRole = data.jobRole;
+        if (data.applicationDeadline !== undefined) updateData.applicationDeadline = normalizeDeadlineDate(data.applicationDeadline as string | null | undefined);
         if (data.jdFileName !== undefined) updateData.jdFileName = data.jdFileName;
         if (data.jdPreviewUrl !== undefined) {
             const persistedJdUrl = data.jdPreviewUrl?.startsWith("blob:")
@@ -174,39 +174,39 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
                 updateData.jdPreviewUrl = persistedJdUrl;
             }
         }
-        // When extractedDetails changes, re-derive all text fields from it
-        if (data.extractedDetails !== undefined) {
-            const extractedStr = typeof data.extractedDetails === "string"
-                ? data.extractedDetails
-                : JSON.stringify(data.extractedDetails);
-            updateData.extractedDetails = extractedStr;
+        // When jdExtractedDetails changes, re-derive all text fields from it
+        if (data.jdExtractedDetails !== undefined) {
+            const extractedStr = typeof data.jdExtractedDetails === "string"
+                ? data.jdExtractedDetails
+                : JSON.stringify(data.jdExtractedDetails);
+            updateData.jdExtractedDetails = extractedStr;
             try {
                 const parsed = JSON.parse(extractedStr);
-                // derived fields removed -- extractedDetails is source of truth
+                // derived fields removed -- jdExtractedDetails is source of truth
             } catch { /* keep existing values if parse fails */ }
         }
-        if (data.screeningThreshold !== undefined || data.screeningCriteria !== undefined) {
-            if (data.screeningThreshold !== undefined) updateData.screeningThreshold = data.screeningThreshold;
-            const rawCriteria = data.screeningCriteria;
+        if (data.resumeScreeningThreshold !== undefined || data.resumeScreeningCriteria !== undefined) {
+            if (data.resumeScreeningThreshold !== undefined) updateData.resumeScreeningThreshold = data.resumeScreeningThreshold;
+            const rawCriteria = data.resumeScreeningCriteria;
             const parsedCriteria = typeof rawCriteria === "string"
                 ? safeJsonParse(rawCriteria, {})
                 : (rawCriteria || {});
             const normalizedCriteria = sanitizeScreeningCriteria(parsedCriteria);
             const mergedCriteria = {
                 ...normalizedCriteria,
-                ...(data.screeningThreshold !== undefined ? { threshold: data.screeningThreshold } : {}),
+                ...(data.resumeScreeningThreshold !== undefined ? { threshold: data.resumeScreeningThreshold } : {}),
             };
-            updateData.screeningCriteria = JSON.stringify(mergedCriteria);
+            updateData.resumeScreeningCriteria = JSON.stringify(mergedCriteria);
         }
-        if (data.interviewQuestions !== undefined) updateData.interviewQuestions = data.interviewQuestions ? JSON.stringify(data.interviewQuestions) : undefined;
+        if (data.aiGeneratedInterviewQuestions !== undefined) updateData.aiGeneratedInterviewQuestions = data.aiGeneratedInterviewQuestions ? JSON.stringify(data.aiGeneratedInterviewQuestions) : undefined;
         Object.assign(
             updateData,
             normalizeJobAiConfig({
-                current: existingJob,
-                next: { voiceId: data.voiceId },
+                current: { aiInterviewerVoiceId: existingJob.aiInterviewerVoiceId },
+                next: { aiInterviewerVoiceId: data.aiInterviewerVoiceId },
             })
         );
-        if (data.aiName !== undefined) updateData.aiName = data.aiName;
+        if (data.aiInterviewerName !== undefined) updateData.aiInterviewerName = data.aiInterviewerName;
         if (data.interviewMode !== undefined) updateData.interviewMode = data.interviewMode;
         if (Object.keys(updateData).length === 0) {
             return NextResponse.json(
@@ -241,13 +241,13 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
         const jobId = id;
         const job = await prisma.job.findUnique({
             where: { id: jobId },
-            select: { orgId: true }
+            select: { organizationId: true }
         });
         if (!job) {
             return NextResponse.json({ error: "Job not found" }, { status: 404 });
         }
         const isSuperAdmin = session.role === "SUPER_ADMIN";
-        if (!isSuperAdmin && job.orgId !== session.orgId) {
+        if (!isSuperAdmin && job.organizationId !== session.orgId) {
             return NextResponse.json({ error: "Access Denied: Ownership required to remove job" }, { status: 403 });
         }
         // -- SOFT DELETE: DATABASE CLEANUP (Cascading) ---------------------------
@@ -265,12 +265,12 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
                 UPDATE "Interview" 
                 SET "isDeleted" = true, 
                     "applicationId" = 'del_' || ${timestamp} || '_' || "applicationId", 
-                    "accessToken" = 'del_' || ${timestamp} || '_' || "accessToken"
+                    "candidateInviteToken" = 'del_' || ${timestamp} || '_' || "candidateInviteToken"
                 WHERE "applicationId" IN (SELECT "id" FROM "Application" WHERE "jobId" = ${jobId})
             `;
             // 6. Soft Delete Support Tickets
             await tx.$executeRaw`
-                UPDATE "SupportTicket" SET "status" = 'DELETED'
+                UPDATE "SupportTicket" SET "ticketStatus" = 'DELETED'
                 WHERE "interviewId" IN (
                     SELECT "id" FROM "Interview" WHERE "applicationId" IN (
                         SELECT "id" FROM "Application" WHERE "jobId" = ${jobId}

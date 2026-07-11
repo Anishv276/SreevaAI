@@ -1,43 +1,40 @@
 /**
  * One-off script: Reset a rejected candidate's status to 'pending'
  * so they can be re-scanned with the correct threshold logic.
- * Run: npx ts-node scripts/reset_candidate_status.ts
+ * Run: npx tsx scripts/reset_candidate_status.ts
  */
-import { PrismaClient } from "@prisma/client";
-import * as dotenv from "dotenv";
-dotenv.config();
-const prisma = new PrismaClient();
+import "dotenv/config";
+import { prisma } from "../lib/prisma";
+
 async function main() {
-    // Find all candidates incorrectly rejected (has a score but status is REJECTED)
-    // Adjust jobId filter if you want to target a specific job
     const rejected = await prisma.application.findMany({
-        where: { resumeStatus: "REJECTED" },
-        include: { job: { select: { title: true, screeningThreshold: true } } },
+        where: { resumeScreeningStatus: "REJECTED" },
+        include: { job: { select: { title: true, resumeScreeningThreshold: true } } },
     });
+
     console.log(`Found ${rejected.length} rejected candidate(s):`);
+
     for (const app of rejected) {
-        const threshold = Number(app.job?.screeningThreshold ?? 0);
-        const score = app.aiScore ?? 0;
+        const threshold = Number(app.job?.resumeScreeningThreshold ?? 0);
+        const score = app.resumeAiScore ?? 0;
         console.log(
-            `  - ${app.fullName} | score=${score} | threshold=${threshold} | job="${app.job?.title}"`
+            `  - ${app.candidateFullName} | score=${score} | threshold=${threshold} | job="${app.job?.title}"`
         );
         if (score >= threshold) {
-            // This candidate SHOULD have been shortlisted - fix it now
             await prisma.application.update({
                 where: { id: app.id },
-                data: {
-                    resumeStatus: "SHORTLISTED",
-                    interviewStatus: undefined,
-                },
+                data: { resumeScreeningStatus: "SHORTLISTED" },
             });
             console.log(`    ✅ Fixed: REJECTED -> SHORTLISTED`);
         } else {
             console.log(`    ⏭ Skipped: score ${score} is genuinely below threshold ${threshold}`);
         }
     }
+
     console.log("\nDone.");
     await prisma.$disconnect();
 }
+
 main().catch((e) => {
     console.error(e);
     process.exit(1);

@@ -32,19 +32,19 @@ from interview.interview_brief import generate_interview_brief  # noqa: E402
 
 _FIND_QUERY = """
 SELECT
-    a.id           AS "applicationId",
-    a."fullName",
-    a."resumeData",
-    d."role",
+    a.id                                        AS "applicationId",
+    a."candidateFullName"                       AS "fullName",
+    a."resumeParsedData"                        AS "resumeData",
+    d."jobRole"                                 AS "role",
     d."title",
-    d."extractedDetails",
-    d."interviewQuestions",
+    d."jdExtractedDetails"                      AS "extractedDetails",
+    d."aiGeneratedInterviewQuestions"           AS "interviewQuestions",
     o."llmInterviewBrief"
 FROM "Application" a
 JOIN "Job" d ON a."jobId" = d.id
-LEFT JOIN "Organization" o ON d."orgId" = o.id
-WHERE a."fullName" ILIKE $1
-ORDER BY a."createdAt" DESC
+LEFT JOIN "OrganizationDetails" o ON d."organizationId" = o.id
+WHERE a."candidateFullName" ILIKE $1
+ORDER BY a."appliedAt" DESC
 LIMIT 1
 """
 

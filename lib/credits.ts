@@ -44,10 +44,10 @@ export async function getOrgBillingStatus(orgId: string): Promise<BillingStatus>
     }>>(
         Prisma.sql`
             SELECT
-                "interviewQuotaTotal",
-                "interviewQuotaUsed",
-                "creditsUsed"
-            FROM "Organization"
+                "totalInterviewsAllowed" AS "interviewQuotaTotal",
+                "totalInterviewsUsed"    AS "interviewQuotaUsed",
+                "billingCreditsUsed"     AS "creditsUsed"
+            FROM "OrganizationDetails"
             WHERE id = ${orgId} AND "isDeleted" = false
             LIMIT 1
         `
@@ -76,8 +76,12 @@ export async function syncOrgStatusWithInterviewQuota(orgId: string): Promise<st
         statusControl: string | null;
     }>>(
         Prisma.sql`
-            SELECT "status", "interviewQuotaTotal", "interviewQuotaUsed", "statusControl"
-            FROM "Organization"
+            SELECT
+                "orgStatus"              AS "status",
+                "totalInterviewsAllowed" AS "interviewQuotaTotal",
+                "totalInterviewsUsed"    AS "interviewQuotaUsed",
+                "quotaControlMode"       AS "statusControl"
+            FROM "OrganizationDetails"
             WHERE id = ${orgId} AND "isDeleted" = false
             LIMIT 1
         `
@@ -128,8 +132,12 @@ export async function getEffectiveOrgStatus(orgId: string): Promise<string | nul
         statusControl: string | null;
     }>>(
         Prisma.sql`
-            SELECT "status", "interviewQuotaTotal", "interviewQuotaUsed", "statusControl"
-            FROM "Organization"
+            SELECT
+                "orgStatus"              AS "status",
+                "totalInterviewsAllowed" AS "interviewQuotaTotal",
+                "totalInterviewsUsed"    AS "interviewQuotaUsed",
+                "quotaControlMode"       AS "statusControl"
+            FROM "OrganizationDetails"
             WHERE id = ${orgId} AND "isDeleted" = false
             LIMIT 1
         `

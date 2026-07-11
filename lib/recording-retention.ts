@@ -170,7 +170,7 @@ export async function scheduleRecordingRetentionDeletion(params: {
   }
   const interview = await prisma.interview.findUnique({
     where: { applicationId: params.applicationId },
-    select: { recording: true },
+    select: { sessionRecording: true },
   }).catch(() => null);
   const manifest = parseJsonRecord(params.recordingManifest);
   const recordingPatch: RecordingState = {
@@ -188,11 +188,11 @@ export async function scheduleRecordingRetentionDeletion(params: {
       deletedAt: null,
     },
   };
-  const nextRecording = mergeRecordingState(interview?.recording, recordingPatch);
+  const nextRecording = mergeRecordingState(interview?.sessionRecording, recordingPatch);
   await prisma.interview.update({
     where: { applicationId: params.applicationId },
     data: {
-      recording: nextRecording,
+      sessionRecording: nextRecording,
     },
   }).catch((error: unknown) => {
     console.warn(

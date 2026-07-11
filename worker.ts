@@ -184,47 +184,47 @@ async function processInterviewStartJob(job: any) {
   const existingInterview = await prisma.interview.findUnique({
     where: { applicationId },
     select: {
-      startedAt: true,
-      status: true,
-      accessToken: true,
-      linkStatus: true,
+      interviewStartedAt: true,
+      interviewStatus: true,
+      candidateInviteToken: true,
+      inviteLinkStatus: true,
     },
   });
-  if (existingInterview?.startedAt) {
+  if (existingInterview?.interviewStartedAt) {
     console.log(
-      `[INTERVIEW-START] Interview already started for ${applicationId} at ${existingInterview.startedAt.toISOString()}`
+      `[INTERVIEW-START] Interview already started for ${applicationId} at ${existingInterview.interviewStartedAt.toISOString()}`
     );
     await prisma.application.update({
       where: { id: applicationId },
-      data: { interviewStatus: "IN_PROGRESS" },
+      data: { interviewPhaseStatus: "IN_PROGRESS" },
     }).catch(() => { });
     return {
       success: true,
       alreadyStarted: true,
       applicationId,
-      startedAt: existingInterview.startedAt.toISOString(),
+      startedAt: existingInterview.interviewStartedAt.toISOString(),
     };
   }
-  const interviewAccessToken = existingInterview?.accessToken || accessToken || crypto.randomUUID();
+  const interviewAccessToken = existingInterview?.candidateInviteToken || accessToken || crypto.randomUUID();
   await prisma.interview.upsert({
     where: { applicationId },
     update: {
-      status: "IN_PROGRESS",
-      startedAt: startedAtCandidate,
-      linkStatus: "EXPIRED",
+      interviewStatus: "IN_PROGRESS",
+      interviewStartedAt: startedAtCandidate,
+      inviteLinkStatus: "EXPIRED",
     },
     create: {
       id: generateId("int", applicationId),
       applicationId,
-      accessToken: interviewAccessToken,
-      status: "IN_PROGRESS",
-      startedAt: startedAtCandidate,
-      linkStatus: "EXPIRED",
+      candidateInviteToken: interviewAccessToken,
+      interviewStatus: "IN_PROGRESS",
+      interviewStartedAt: startedAtCandidate,
+      inviteLinkStatus: "EXPIRED",
     },
   });
   await prisma.application.update({
     where: { id: applicationId },
-    data: { interviewStatus: "IN_PROGRESS" },
+    data: { interviewPhaseStatus: "IN_PROGRESS" },
   });
   console.log(
     `[INTERVIEW-START] Persisted start time for ${applicationId} at ${startedAtCandidate.toISOString()}`
@@ -240,57 +240,57 @@ async function processInterviewStartJob(job: any) {
 async function processRecordingRetentionSweepJob(job: any) {
   const rows = await prisma.$queryRaw<Array<{
     applicationId: string;
-    recording: unknown;
+    sessionRecording: unknown;
   }>>(
     Prisma.sql`
       SELECT
         i."applicationId",
-        i."recording"
+        i."sessionRecording"
       FROM "Interview" i
       JOIN "Application" a ON a.id = i."applicationId"
       JOIN "Job" d ON d.id = a."jobId"
-      JOIN "Organization" o ON o.id = d."orgId"
+      JOIN "OrganizationDetails" o ON o.id = d."organizationId"
       WHERE COALESCE(
-          NULLIF(i."recording"->>'url', ''),
-          NULLIF(i."recording"->'manifest'->>'recordingUrl', '')
+          NULLIF(i."sessionRecording"->>'url', ''),
+          NULLIF(i."sessionRecording"->'manifest'->>'recordingUrl', '')
         ) IS NOT NULL
-        AND COALESCE(i."recording"->'retention'->>'deletedAt', '') = ''
+        AND COALESCE(i."sessionRecording"->'retention'->>'deletedAt', '') = ''
         AND (
-          (NULLIF(i."recording"->'retention'->>'dueAt', '')::timestamp IS NOT NULL
-            AND NULLIF(i."recording"->'retention'->>'dueAt', '')::timestamp <= NOW())
+          (NULLIF(i."sessionRecording"->'retention'->>'dueAt', '')::timestamp IS NOT NULL
+            AND NULLIF(i."sessionRecording"->'retention'->>'dueAt', '')::timestamp <= NOW())
           OR (
-            NULLIF(i."recording"->'retention'->>'dueAt', '') IS NULL
+            NULLIF(i."sessionRecording"->'retention'->>'dueAt', '') IS NULL
             AND COALESCE(
-              NULLIF(i."recording"->>'completedAt', '')::timestamp,
-              NULLIF(i."recording"->>'recordedAt', '')::timestamp,
+              NULLIF(i."sessionRecording"->>'completedAt', '')::timestamp,
+              NULLIF(i."sessionRecording"->>'recordedAt', '')::timestamp,
               CASE
-                WHEN NULLIF(i."recording"->>'startedAt', '') IS NOT NULL
-                  AND NULLIF(i."recording"->>'durationSec', '') IS NOT NULL
-                THEN NULLIF(i."recording"->>'startedAt', '')::timestamp
-                  + (NULLIF(i."recording"->>'durationSec', '')::integer * INTERVAL '1 second')
+                WHEN NULLIF(i."sessionRecording"->>'startedAt', '') IS NOT NULL
+                  AND NULLIF(i."sessionRecording"->>'durationSec', '') IS NOT NULL
+                THEN NULLIF(i."sessionRecording"->>'startedAt', '')::timestamp
+                  + (NULLIF(i."sessionRecording"->>'durationSec', '')::integer * INTERVAL '1 second')
                 ELSE NULL
               END,
-              NULLIF(i."recording"->'manifest'->>'startedAt', '')::timestamp,
-              i."completedAt"
+              NULLIF(i."sessionRecording"->'manifest'->>'startedAt', '')::timestamp,
+              i."interviewCompletedAt"
             ) + (
-              GREATEST(COALESCE(NULLIF(i."recording"->'retention'->>'days', '')::integer, o."recordingRetentionDays"), 1) * INTERVAL '1 day'
+              GREATEST(COALESCE(NULLIF(i."sessionRecording"->'retention'->>'days', '')::integer, o."recordingKeepForDays"), 1) * INTERVAL '1 day'
             ) <= NOW()
           )
         )
       ORDER BY COALESCE(
-        NULLIF(i."recording"->'retention'->>'dueAt', '')::timestamp,
-        NULLIF(i."recording"->>'completedAt', '')::timestamp,
-        NULLIF(i."recording"->>'recordedAt', '')::timestamp,
+        NULLIF(i."sessionRecording"->'retention'->>'dueAt', '')::timestamp,
+        NULLIF(i."sessionRecording"->>'completedAt', '')::timestamp,
+        NULLIF(i."sessionRecording"->>'recordedAt', '')::timestamp,
         CASE
-          WHEN NULLIF(i."recording"->>'startedAt', '') IS NOT NULL
-            AND NULLIF(i."recording"->>'durationSec', '') IS NOT NULL
-          THEN NULLIF(i."recording"->>'startedAt', '')::timestamp
-            + (NULLIF(i."recording"->>'durationSec', '')::integer * INTERVAL '1 second')
+          WHEN NULLIF(i."sessionRecording"->>'startedAt', '') IS NOT NULL
+            AND NULLIF(i."sessionRecording"->>'durationSec', '') IS NOT NULL
+          THEN NULLIF(i."sessionRecording"->>'startedAt', '')::timestamp
+            + (NULLIF(i."sessionRecording"->>'durationSec', '')::integer * INTERVAL '1 second')
           ELSE NULL
         END,
-        NULLIF(i."recording"->'manifest'->>'startedAt', '')::timestamp,
-        i."completedAt",
-        i."updatedAt"
+        NULLIF(i."sessionRecording"->'manifest'->>'startedAt', '')::timestamp,
+        i."interviewCompletedAt",
+        i."interviewUpdatedAt"
       ) ASC
       LIMIT 100
     `
@@ -298,7 +298,7 @@ async function processRecordingRetentionSweepJob(job: any) {
   let deleted = 0;
   let failed = 0;
   for (const row of rows) {
-    const recordingState = normalizeRecordingState(row.recording);
+    const recordingState = normalizeRecordingState(row.sessionRecording);
     const attempt = Math.max(1, Number(recordingState.retention?.cleanupAttempts || 0) + 1);
     const manifestRecord = parseJsonRecord(recordingState.manifest);
     const recordingUrl = String(recordingState.url || manifestRecord.recordingUrl || "").trim() || null;
@@ -306,12 +306,12 @@ async function processRecordingRetentionSweepJob(job: any) {
     const recordingKey = extractRecordingKey({
       recordingUrl,
       recordingManifest,
-      recording: row.recording,
+      recording: row.sessionRecording,
     });
     await prisma.interview.update({
       where: { applicationId: row.applicationId },
       data: {
-        recording: mergeRecordingState(row.recording, {
+        sessionRecording: mergeRecordingState(row.sessionRecording, {
           retention: {
             cleanupStatus: "PROCESSING",
             cleanupAttempts: attempt,
@@ -324,7 +324,7 @@ async function processRecordingRetentionSweepJob(job: any) {
       recordingUrl,
       recordingKey,
       recordingManifest,
-      recording: row.recording,
+      recording: row.sessionRecording,
       bucket: process.env.R2_INTERVIEW_BUCKET || "interview",
       attempts: 2,
       baseDelayMs: 1000,
@@ -335,7 +335,7 @@ async function processRecordingRetentionSweepJob(job: any) {
       await prisma.interview.update({
         where: { applicationId: row.applicationId },
         data: {
-          recording: mergeRecordingState(row.recording, {
+          sessionRecording: mergeRecordingState(row.sessionRecording, {
             retention: {
               cleanupStatus: "FAILED",
               cleanupAttempts: attempt,
@@ -352,7 +352,7 @@ async function processRecordingRetentionSweepJob(job: any) {
     await prisma.interview.update({
       where: { applicationId: row.applicationId },
       data: {
-        recording: mergeRecordingState(row.recording, {
+        sessionRecording: mergeRecordingState(row.sessionRecording, {
           status: "DELETED",
           url: null,
           key: recordingKey || deleteResult.key || null,
@@ -392,15 +392,15 @@ async function persistInterviewUpdateRaw(params: {
   const fallbackId = generateId("int", "fallback");
   const existingInterview = await prisma.interview.findUnique({
     where: { applicationId },
-    select: { interviewTranscript: true, recording: true },
+    select: { fullTranscript: true, sessionRecording: true },
   });
-  const existingTranscript = String(existingInterview?.interviewTranscript || "").trim();
+  const existingTranscript = String(existingInterview?.fullTranscript || "").trim();
   const incomingTranscript = String(transcript || "").trim();
   const transcriptToPersist = incomingTranscript && incomingTranscript.length >= existingTranscript.length
     ? incomingTranscript
     : existingTranscript;
   const recordingToPersist = recordingUrl
-    ? mergeRecordingState(existingInterview?.recording, {
+    ? mergeRecordingState(existingInterview?.sessionRecording, {
       status: interviewStatus === "COMPLETED" ? "COMPLETED" : "IN_PROGRESS",
       url: recordingUrl,
       recordedAt: now.toISOString(),
@@ -408,16 +408,16 @@ async function persistInterviewUpdateRaw(params: {
     : null;
   await prisma.$executeRawUnsafe(
     `
-    INSERT INTO "Interview" ("id", "applicationId", "accessToken", status, "interviewTranscript", "recording", "completedAt", "createdAt", "updatedAt")
+    INSERT INTO "Interview" ("id", "applicationId", "candidateInviteToken", "interviewStatus", "fullTranscript", "sessionRecording", "interviewCompletedAt", "interviewCreatedAt", "interviewUpdatedAt")
     VALUES ($6::text, $1::text, $7::text, COALESCE($2::text, 'IN_PROGRESS'), $4::text, COALESCE($8::jsonb, '{}'::jsonb), CASE WHEN $2::text = 'COMPLETED' THEN $5::timestamp ELSE NULL END, $5::timestamp, $5::timestamp)
     ON CONFLICT ("applicationId")
     DO UPDATE SET
-      status = COALESCE($2::text, "Interview".status),
-      "accessToken" = COALESCE("Interview"."accessToken", EXCLUDED."accessToken"),
-      "interviewTranscript" = COALESCE($4::text, "Interview"."interviewTranscript"),
-      "recording" = CASE WHEN $3::text IS NOT NULL THEN $8::jsonb ELSE "Interview"."recording" END,
-      "completedAt" = CASE WHEN $2::text = 'COMPLETED' THEN $5::timestamp ELSE "Interview"."completedAt" END,
-      "updatedAt" = $5::timestamp
+      "interviewStatus" = COALESCE($2::text, "Interview"."interviewStatus"),
+      "candidateInviteToken" = COALESCE("Interview"."candidateInviteToken", EXCLUDED."candidateInviteToken"),
+      "fullTranscript" = COALESCE($4::text, "Interview"."fullTranscript"),
+      "sessionRecording" = CASE WHEN $3::text IS NOT NULL THEN $8::jsonb ELSE "Interview"."sessionRecording" END,
+      "interviewCompletedAt" = CASE WHEN $2::text = 'COMPLETED' THEN $5::timestamp ELSE "Interview"."interviewCompletedAt" END,
+      "interviewUpdatedAt" = $5::timestamp
     `,
     applicationId,
     interviewStatus || null,
@@ -559,7 +559,7 @@ async function processResumeScreeningJob(job: any) {
     console.log(`[RESUME-WORKER] [10%] Upload received`);
     await prisma.application.update({
       where: { id: applicationId },
-      data: { resumeStatus: "extracting", updatedAt: new Date() },
+      data: { resumeScreeningStatus: "extracting", applicationUpdatedAt: new Date() },
     }).catch((e: any) => console.warn(`[RESUME-WORKER] status update failed: ${e.message}`));
 
     // -- 20% Download from R2 -----------------------------------------------
@@ -572,7 +572,7 @@ async function processResumeScreeningJob(job: any) {
     await job.updateProgress(30);
     await prisma.application.update({
       where: { id: applicationId },
-      data: { resumeStatus: "extracting", updatedAt: new Date() },
+      data: { resumeScreeningStatus: "extracting", applicationUpdatedAt: new Date() },
     }).catch(() => {});
     const [application, org] = await Promise.all([
       prisma.application.findUnique({
@@ -580,9 +580,9 @@ async function processResumeScreeningJob(job: any) {
         select: {
           job: {
             select: {
-              extractedDetails: true,
-              screeningCriteria: true,
-              screeningThreshold: true,
+              jdExtractedDetails: true,
+              resumeScreeningCriteria: true,
+              resumeScreeningThreshold: true,
             },
           },
         },
@@ -597,12 +597,12 @@ async function processResumeScreeningJob(job: any) {
     }
 
     const extractedDetails = (() => {
-      try { return JSON.parse(application?.job?.extractedDetails || "{}"); } catch { return {}; }
+      try { return JSON.parse(application?.job?.jdExtractedDetails || "{}"); } catch { return {}; }
     })();
     const screeningCriteria = (() => {
-      try { return JSON.parse(application?.job?.screeningCriteria || "{}"); } catch { return {}; }
+      try { return JSON.parse(application?.job?.resumeScreeningCriteria || "{}"); } catch { return {}; }
     })();
-    const dbThreshold = application?.job?.screeningThreshold;
+    const dbThreshold = application?.job?.resumeScreeningThreshold;
     const threshold = dbThreshold || 60;
     const hasJd = Object.keys(extractedDetails).length > 0;
 
@@ -613,7 +613,7 @@ async function processResumeScreeningJob(job: any) {
     console.log(`[RESUME-WORKER] [40%] Extracting resume...`);
     await prisma.application.update({
       where: { id: applicationId },
-      data: { resumeStatus: "scoring", updatedAt: new Date() },
+      data: { resumeScreeningStatus: "scoring", applicationUpdatedAt: new Date() },
     }).catch((e: any) => console.warn(`[RESUME-WORKER] Failed to update scoring status: ${e.message}`));
     await new Promise(r => setTimeout(r, 500)); // Give DB time to sync + frontend to poll
     console.log(`[RESUME-WORKER] [50%] Scoring against JD (hasJd=${hasJd})...`);
@@ -671,20 +671,20 @@ async function processResumeScreeningJob(job: any) {
     const updateResult = await prisma.application.update({
       where: { id: applicationId },
       data: {
-        resumeText,
-        resumeData: JSON.stringify({ source: { bucket, key }, parsed: resumeData }),
-        ...(aiScore   !== null && { aiScore }),
-        ...(reportJson && { fullScanReport: reportJson, aiReport: reportJson }),
-        ...(parsedName  && { fullName: parsedName }),
-        ...(parsedEmail && { email: parsedEmail }),
-        ...(parsedPhone && { phone: parsedPhone }),
-        resumeStatus,
-        updatedAt: new Date(),
+        resumeRawText: resumeText,
+        resumeParsedData: JSON.stringify({ source: { bucket, key }, parsed: resumeData }),
+        ...(aiScore   !== null && { resumeAiScore: aiScore }),
+        ...(reportJson && { resumeFullScanReport: reportJson, resumeAiReport: reportJson }),
+        ...(parsedName  && { candidateFullName: parsedName }),
+        ...(parsedEmail && { candidateEmail: parsedEmail }),
+        ...(parsedPhone && { candidatePhone: parsedPhone }),
+        resumeScreeningStatus: resumeStatus,
+        applicationUpdatedAt: new Date(),
       },
-      select: { id: true, aiScore: true, resumeStatus: true, updatedAt: true },
+      select: { id: true, resumeAiScore: true, resumeScreeningStatus: true, applicationUpdatedAt: true },
     });
 
-    console.log(`[RESUME-WORKER] DB Update Success: app=${updateResult.id} aiScore=${updateResult.aiScore} resumeStatus=${updateResult.resumeStatus}`);
+    console.log(`[RESUME-WORKER] DB Update Success: app=${updateResult.id} aiScore=${updateResult.resumeAiScore} resumeStatus=${updateResult.resumeScreeningStatus}`);
 
     // -- 90% Billing -------------------------------------------------------
     await job.updateProgress(90);
@@ -733,7 +733,7 @@ async function processResumeScreeningJob(job: any) {
     console.error(`[RESUME-WORKER] Job ${job.id} failed for ${applicationId}: ${err.message}`);
     await prisma.application.update({
       where: { id: applicationId },
-      data: { resumeStatus: "failed", updatedAt: new Date() },
+      data: { resumeScreeningStatus: "failed", applicationUpdatedAt: new Date() },
     }).catch(() => {});
     throw err;
   }
@@ -843,12 +843,12 @@ if (isQueueEnabled("resume-processing")) {
     if (applicationId) {
       prisma.application.findUnique({
         where: { id: applicationId },
-        select: { fullName: true, job: { select: { title: true, organization: { select: { name: true } } } } },
+        select: { candidateFullName: true, job: { select: { title: true, organization: { select: { name: true } } } } },
       }).then((app) => {
         logResumeUploadError({
           orgName: app?.job?.organization?.name || "unknown",
           jobName: app?.job?.title || "unknown",
-          candidateName: app?.fullName || undefined,
+          candidateName: app?.candidateFullName || undefined,
           error: err.message,
           reason: `Resume screening worker job failed (name="${job?.name}")`,
         });
@@ -922,10 +922,10 @@ async function reconcileResumeQueue() {
     const cutoff = new Date(Date.now() - GRACE_MS);
     const stuck = await prisma.application.findMany({
       where: {
-        resumeStatus: { in: ["waiting", "processing", "extracting", "scoring", "starting"] },
-        updatedAt: { lt: cutoff },
+        resumeScreeningStatus: { in: ["waiting", "processing", "extracting", "scoring", "starting"] },
+        applicationUpdatedAt: { lt: cutoff },
       },
-      select: { id: true, resumeStatus: true },
+      select: { id: true, resumeScreeningStatus: true },
     });
 
     const orphaned = stuck.filter((row) => !liveAppIds.has(row.id));
@@ -935,9 +935,9 @@ async function reconcileResumeQueue() {
       await prisma.application.update({
         where: { id: row.id },
         data: {
-          resumeStatus: "failed",
-          aiReport: JSON.stringify({ processing: { progress: 0, stage: "failed", error: "No active screening job (reconciled)" } }),
-          updatedAt: new Date(),
+          resumeScreeningStatus: "failed",
+          resumeAiReport: JSON.stringify({ processing: { progress: 0, stage: "failed", error: "No active screening job (reconciled)" } }),
+          applicationUpdatedAt: new Date(),
         },
       }).catch(() => {});
     }
@@ -967,20 +967,20 @@ if (isQueueEnabled("invitation-delivery-queue")) {
         where: { id: applicationId },
         select: {
           id: true,
-          email: true,
-          fullName: true,
-          aiScore: true,
+          candidateEmail: true,
+          candidateFullName: true,
+          resumeAiScore: true,
           job: {
             select: {
               id: true,
               title: true,
-              orgId: true,
+              organizationId: true,
               organization: {
                 select: {
                   name: true,
                 },
               },
-              deadline: true,
+              applicationDeadline: true,
             },
           },
         },
@@ -989,56 +989,56 @@ if (isQueueEnabled("invitation-delivery-queue")) {
         console.warn(`[Invitation Worker] Application ${applicationId} no longer exists. Skipping.`);
         return { skipped: true, reason: "missing_application" };
       }
-      if (!application.email) {
+      if (!application.candidateEmail) {
         console.warn(`[Invitation Worker] Application ${applicationId} has no email address. Skipping.`);
         return { skipped: true, reason: "missing_email" };
       }
 
-      const orgId = application.job?.orgId;
+      const orgId = application.job?.organizationId;
       return runWithOrgSlot("invitation-delivery-queue", job, token, orgId, ORG_CONCURRENCY.invitationDelivery, async () => {
         const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://sreevaai.com';
         const now = new Date();
         let scheduleLink: string | undefined;
         if (action === "shortlist") {
-          const jobDeadline = application.job?.deadline ? new Date(application.job.deadline) : null;
+          const jobDeadline = application.job?.applicationDeadline ? new Date(application.job.applicationDeadline) : null;
           const interviewRecord = await prisma.interview.upsert({
             where: { applicationId },
             update: {
-              inviteSentAt: now,
-              status: "PENDING",
-              scheduledAt: null,
-              startedAt: null,
-              completedAt: null,
-              expiresAt: jobDeadline,
-              linkStatus: "ACTIVE",
+              inviteEmailSentAt: now,
+              interviewStatus: "PENDING",
+              interviewScheduledAt: null,
+              interviewStartedAt: null,
+              interviewCompletedAt: null,
+              inviteLinkExpiresAt: jobDeadline,
+              inviteLinkStatus: "ACTIVE",
             },
             create: {
-              id: generateId("int", application.fullName || applicationId),
+              id: generateId("int", application.candidateFullName || applicationId),
               applicationId,
-              accessToken: crypto.randomUUID(),
-              inviteSentAt: now,
-              status: "PENDING",
-              expiresAt: jobDeadline,
-              linkStatus: "ACTIVE",
+              candidateInviteToken: crypto.randomUUID(),
+              inviteEmailSentAt: now,
+              interviewStatus: "PENDING",
+              inviteLinkExpiresAt: jobDeadline,
+              inviteLinkStatus: "ACTIVE",
             },
           });
-          scheduleLink = `${appUrl}/schedule/${interviewRecord.accessToken}`;
+          scheduleLink = `${appUrl}/schedule/${interviewRecord.candidateInviteToken}`;
         }
         const { sendScheduleInviteEmail, sendRejectionEmail } = await import('./lib/mail');
         let mailResult: { success: boolean; error?: string };
         if (action === "shortlist") {
           if (!scheduleLink) throw new Error(`scheduleLink required for action=shortlist`);
           mailResult = await sendScheduleInviteEmail({
-            email: application.email,
-            fullName: application.fullName || "Candidate",
+            email: application.candidateEmail,
+            fullName: application.candidateFullName || "Candidate",
             jobTitle: application.job?.title || "Unknown Role",
             orgName: application.job?.organization?.name || "Sreeva AI",
             scheduleLink,
           });
         } else if (action === "reject") {
           mailResult = await sendRejectionEmail({
-            email: application.email,
-            fullName: application.fullName || "Candidate",
+            email: application.candidateEmail,
+            fullName: application.candidateFullName || "Candidate",
             jobTitle: application.job?.title || "Unknown Role",
             orgName: application.job?.organization?.name || "Sreeva AI",
           });
@@ -1061,7 +1061,7 @@ if (isQueueEnabled("invitation-delivery-queue")) {
         if (action === "shortlist") {
           await prisma.application.update({
             where: { id: applicationId },
-            data: { interviewStatus: "pending", updatedAt: new Date() },
+            data: { interviewPhaseStatus: "pending", applicationUpdatedAt: new Date() },
           }).catch(() => { });
         }
         await appendCandidateActivity(applicationId, {
@@ -1216,12 +1216,12 @@ if (isQueueEnabled("interview-finalization")) {
           select: {
             job: {
               select: {
-                orgId: true,
+                organizationId: true,
               },
             },
           },
         });
-        const policyOrgId = String(appForPolicy?.job?.orgId || "");
+        const policyOrgId = String(appForPolicy?.job?.organizationId || "");
         const recordingSettings = policyOrgId
           ? await getOrgRecordingSettings(policyOrgId)
           : { recordingEnabled: false, recordingRetentionDays: null };
@@ -1241,22 +1241,22 @@ if (isQueueEnabled("interview-finalization")) {
             );
           });
         }
-        const updateData: Record<string, unknown> = { updatedAt: new Date() };
+        const updateData: Record<string, unknown> = { interviewUpdatedAt: new Date() };
         const existingInterview = await prisma.interview.findUnique({
           where: { applicationId },
-          select: { interviewTranscript: true, recording: true },
+          select: { fullTranscript: true, sessionRecording: true },
         });
-        const existingTranscript = String(existingInterview?.interviewTranscript || "").trim();
+        const existingTranscript = String(existingInterview?.fullTranscript || "").trim();
         const incomingTranscript = String(job.data?.transcript || "").trim();
         if (recordingUrlToPersist) {
-          updateData.recording = mergeRecordingState(existingInterview?.recording, {
+          updateData.sessionRecording = mergeRecordingState(existingInterview?.sessionRecording, {
             status: job.data?.interviewStatus === "COMPLETED" ? "COMPLETED" : "IN_PROGRESS",
             url: recordingUrlToPersist,
             recordedAt: new Date().toISOString(),
           });
         } else if (recordingDisabled) {
           const deletedAt = new Date();
-          updateData.recording = mergeRecordingState(existingInterview?.recording, {
+          updateData.sessionRecording = mergeRecordingState(existingInterview?.sessionRecording, {
             status: "DISABLED",
             url: null,
             retention: {
@@ -1268,7 +1268,7 @@ if (isQueueEnabled("interview-finalization")) {
           });
         }
         if (incomingTranscript && incomingTranscript.length >= existingTranscript.length) {
-          updateData.interviewTranscript = incomingTranscript;
+          updateData.fullTranscript = incomingTranscript;
         } else if (incomingTranscript) {
           console.log(
             `[FINALIZE] Skipping shorter transcript overwrite for ${applicationId} ` +
@@ -1276,21 +1276,21 @@ if (isQueueEnabled("interview-finalization")) {
           );
         }
         if (job.data?.interviewStatus) {
-          updateData.status = job.data?.interviewStatus;
+          updateData.interviewStatus = job.data?.interviewStatus;
         }
         if (job.data?.interviewStatus === "COMPLETED") {
-          updateData.completedAt = new Date();
+          updateData.interviewCompletedAt = new Date();
         }
         try {
-          const appForId = await prisma.application.findUnique({ where: { id: applicationId }, select: { fullName: true } });
+          const appForId = await prisma.application.findUnique({ where: { id: applicationId }, select: { candidateFullName: true } });
           await prisma.interview.upsert({
             where: { applicationId },
             update: updateData,
             create: {
-              id: generateId("int", appForId?.fullName || applicationId),
+              id: generateId("int", appForId?.candidateFullName || applicationId),
               applicationId,
-              accessToken: crypto.randomUUID(),
-              status: job.data?.interviewStatus || "IN_PROGRESS",
+              candidateInviteToken: crypto.randomUUID(),
+              interviewStatus: job.data?.interviewStatus || "IN_PROGRESS",
               ...updateData,
             },
           });
@@ -1308,11 +1308,11 @@ if (isQueueEnabled("interview-finalization")) {
         if (recordingUrlToPersist && job.data?.interviewStatus === "COMPLETED") {
           const persistedInterview = await prisma.interview.findUnique({
             where: { applicationId },
-            select: { completedAt: true },
+            select: { interviewCompletedAt: true },
           });
           await scheduleRecordingRetentionDeletion({
             applicationId,
-            completedAt: persistedInterview?.completedAt || new Date(),
+            completedAt: persistedInterview?.interviewCompletedAt || new Date(),
             retentionDays: recordingSettings.recordingRetentionDays,
             recordingUrl: recordingUrlToPersist,
           }).catch((error) => {
@@ -1321,7 +1321,7 @@ if (isQueueEnabled("interview-finalization")) {
         }
         if (job.data?.appStatus) {
           await prisma.$executeRawUnsafe(
-            'UPDATE "Application" SET "resumeStatus" = $1, "updatedAt" = NOW() WHERE id = $2',
+            'UPDATE "Application" SET "resumeScreeningStatus" = $1, "applicationUpdatedAt" = NOW() WHERE id = $2',
             job.data?.appStatus,
             applicationId
           );
@@ -1333,18 +1333,18 @@ if (isQueueEnabled("interview-finalization")) {
             const appForNotify = await prisma.application.findUnique({
               where: { id: applicationId },
               select: {
-                fullName: true,
+                candidateFullName: true,
                 job: {
                   select: {
                     title: true,
-                    orgId: true,
+                    organizationId: true,
                     organization: { select: { name: true } },
                   },
                 },
-                interview: { select: { completedAt: true } },
+                interview: { select: { interviewCompletedAt: true } },
               },
             });
-            const notifyOrgId = appForNotify?.job?.orgId;
+            const notifyOrgId = appForNotify?.job?.organizationId;
             if (notifyOrgId) {
               const admins = await prisma.organizationCredentials.findMany({
                 where: { organizationId: notifyOrgId },
@@ -1357,10 +1357,10 @@ if (isQueueEnabled("interview-finalization")) {
                 admins.map((admin: { email: string; name: string | null }) =>
                   sendInterviewCompletedEmail({
                     adminEmail: admin.email,
-                    candidateName: appForNotify?.fullName || "Candidate",
+                    candidateName: appForNotify?.candidateFullName || "Candidate",
                     jobTitle: appForNotify?.job?.title || "Unknown Role",
                     orgName: appForNotify?.job?.organization?.name || "Sreeva AI",
-                    completedAt: appForNotify?.interview?.completedAt ?? undefined,
+                    completedAt: appForNotify?.interview?.interviewCompletedAt ?? undefined,
                     reportLink,
                   })
                 )
@@ -1430,27 +1430,27 @@ if (isQueueEnabled("interview-recording")) {
       const application = await prisma.application.findUnique({
         where: { id: applicationId },
         select: {
-          fullName: true,
+          candidateFullName: true,
           job: {
             select: {
-              orgId: true,
+              organizationId: true,
               title: true,
-              role: true,
+              jobRole: true,
             },
           },
         },
       });
-      const orgId = String(application?.job?.orgId || "");
+      const orgId = String(application?.job?.organizationId || "");
       const recordingSettings = orgId
         ? await getOrgRecordingSettings(orgId)
         : { recordingEnabled: false, recordingRetentionDays: null };
       const interviewRow = await prisma.interview.findUnique({
         where: { applicationId },
         select: {
-          recording: true,
+          sessionRecording: true,
         },
       });
-      const existingRecording = normalizeRecordingState(interviewRow?.recording);
+      const existingRecording = normalizeRecordingState(interviewRow?.sessionRecording);
       const manifest = parseJsonRecord(existingRecording.manifest);
       const resolvedKey = String(recordingKey || existingRecording.key || manifest.recordingKey || "").trim();
       const resolvedUrl = String(
@@ -1519,10 +1519,10 @@ if (isQueueEnabled("interview-recording")) {
       const recordingCleanupAttemptsToPersist = shouldStoreRecording ? 0 : 1;
       const recordingCleanupLastErrorToPersist = null;
       const recordingDeletedAtToPersist = shouldStoreRecording ? null : completedAt;
-      const recordingName = [application?.fullName, application?.job?.title || application?.job?.role]
+      const recordingName = [application?.candidateFullName, application?.job?.title || application?.job?.jobRole]
         .filter(Boolean)
         .join(" ") || applicationId;
-      const recordingToPersist = mergeRecordingState(interviewRow?.recording, {
+      const recordingToPersist = mergeRecordingState(interviewRow?.sessionRecording, {
         name: recordingName,
         mode: "livekit_egress",
         status: shouldStoreRecording ? "COMPLETED" : "ABORTED",
@@ -1545,9 +1545,9 @@ if (isQueueEnabled("interview-recording")) {
       });
       await prisma.$executeRawUnsafe(
         `UPDATE "Interview"
-         SET "interviewDuration" = CASE WHEN $1::integer IS NOT NULL THEN $1::integer ELSE "interviewDuration" END,
-             "recording" = $2::jsonb,
-             "updatedAt" = NOW()
+         SET "durationInSeconds" = CASE WHEN $1::integer IS NOT NULL THEN $1::integer ELSE "durationInSeconds" END,
+             "sessionRecording" = $2::jsonb,
+             "interviewUpdatedAt" = NOW()
          WHERE "applicationId" = $3::text`,
         durationSec,
         JSON.stringify(recordingToPersist),
@@ -1636,14 +1636,14 @@ if (isQueueEnabled("interview-snapshots")) {
         const application = await prisma.application.findUnique({
           where: { id: applicationId },
           select: {
-            fullName: true,
+            candidateFullName: true,
             job: { select: { title: true, organization: { select: { urlSlug: true } } } },
           },
         });
         // 3. Resolve Folder & Key
         const orgSlug = application?.job?.organization?.urlSlug || "unknown-org";
         const jobTitle = (application?.job?.title || "unknown-job").replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-        const candName = (application?.fullName || candidateName || applicationId)
+        const candName = (application?.candidateFullName || candidateName || applicationId)
           .replace(/[^a-zA-Z0-9_\- ]/g, "")
           .trim()
           .replace(/\s+/g, "_")
@@ -1657,7 +1657,7 @@ if (isQueueEnabled("interview-snapshots")) {
         // 5. Update Database (Atomic Push)
         const appForSnapshot = await prisma.application.findUnique({
           where: { id: String(applicationId) },
-          select: { id: true, fullName: true }
+          select: { id: true, candidateFullName: true }
         });
         if (!appForSnapshot) {
           console.warn(`[SKIP] Application ${applicationId} not found. Candidate may have been deleted.`);
@@ -1666,16 +1666,16 @@ if (isQueueEnabled("interview-snapshots")) {
         await prisma.interview.upsert({
           where: { applicationId: String(applicationId) },
           update: {
-            snapshots: {
+            proctoringSnapshotUrls: {
               push: url
             }
           },
           create: {
-            id: generateId("int", appForSnapshot?.fullName || String(applicationId)),
+            id: generateId("int", appForSnapshot?.candidateFullName || String(applicationId)),
             applicationId: String(applicationId),
-            accessToken: crypto.randomUUID(),
-            snapshots: [url],
-            status: "PENDING"
+            candidateInviteToken: crypto.randomUUID(),
+            proctoringSnapshotUrls: [url],
+            interviewStatus: "PENDING"
           }
         });
         console.log(`[SUCCESS] Snapshot persisted for ${applicationId} -> ${url}`);
@@ -1890,8 +1890,8 @@ if (isQueueEnabled("brief-generation")) {
       const interview = await prisma.interview.findUnique({
         where: { applicationId },
         select: {
-          id: true, isTest: true, scheduledAt: true, interviewBrief: true,
-          application: { select: { job: { select: { orgId: true } } } },
+          id: true, isTestSession: true, interviewScheduledAt: true, aiInterviewBrief: true,
+          application: { select: { job: { select: { organizationId: true } } } },
         },
       });
 
@@ -1899,18 +1899,18 @@ if (isQueueEnabled("brief-generation")) {
         console.warn(`[BRIEF-WORKER] Interview not found for ${applicationId} — skipping`);
         return { skipped: true, reason: "interview_not_found" };
       }
-      if (interview.isTest) {
+      if (interview.isTestSession) {
         // Safety guard: should never happen since test token route doesn't enqueue this,
         // but guard explicitly so we never overwrite a test session's brief.
-        console.warn(`[BRIEF-WORKER] Skipping — isTest=true for ${applicationId}`);
+        console.warn(`[BRIEF-WORKER] Skipping — isTestSession=true for ${applicationId}`);
         return { skipped: true, reason: "is_test_session" };
       }
-      if (interview.interviewBrief) {
+      if (interview.aiInterviewBrief) {
         console.log(`[BRIEF-WORKER] Brief already exists for ${applicationId} — skipping re-generation`);
         return { skipped: true, reason: "brief_already_exists" };
       }
 
-      const orgId = interview.application?.job?.orgId;
+      const orgId = interview.application?.job?.organizationId;
       return runWithOrgSlot("brief-generation", job, token, orgId, ORG_CONCURRENCY.briefGeneration, async () => {
         console.log(`[BRIEF-WORKER] Starting brief generation for ${applicationId}`);
         const t0 = Date.now();
@@ -1967,9 +1967,9 @@ if (isQueueEnabled("interview-report")) {
 
       const app = await prisma.application.findUnique({
         where: { id: appId },
-        select: { job: { select: { orgId: true } } },
+        select: { job: { select: { organizationId: true } } },
       });
-      const orgId = app?.job?.orgId;
+      const orgId = app?.job?.organizationId;
 
       return runWithOrgSlot("interview-report", job, token, orgId, ORG_CONCURRENCY.interviewReport, async () => {
         const result = await runPythonJsonWithStdin(

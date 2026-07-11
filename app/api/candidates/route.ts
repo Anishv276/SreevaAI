@@ -74,30 +74,30 @@ export async function GET(request: Request) {
         }
         // -- PRISMA QUERY BUILDER -------------------
         const where: any = {
-            job: { orgId }
+            job: { organizationId: orgId }
         };
         if (jobId && jobId !== "all") {
             where.jobId = jobId;
         }
         if (startDate || endDate) {
-            where.createdAt = {};
-            if (startDate) where.createdAt.gte = new Date(startDate);
+            where.appliedAt = {};
+            if (startDate) where.appliedAt.gte = new Date(startDate);
             if (endDate) {
                 const end = new Date(endDate);
                 end.setHours(23, 59, 59, 999);
-                where.createdAt.lte = end;
+                where.appliedAt.lte = end;
             }
         }
         if (resumeStatus && resumeStatus !== "all") {
-            where.resumeStatus = { in: statusVariants(resumeStatus) };
+            where.resumeScreeningStatus = { in: statusVariants(resumeStatus) };
         }
         if (interviewStatus && interviewStatus !== "all") {
-            where.interviewStatus = { in: statusVariants(interviewStatus) };
+            where.interviewPhaseStatus = { in: statusVariants(interviewStatus) };
         }
         if (search) {
             where.OR = [
-                { fullName: { contains: search, mode: "insensitive" } },
-                { email: { contains: search, mode: "insensitive" } },
+                { candidateFullName: { contains: search, mode: "insensitive" } },
+                { candidateEmail: { contains: search, mode: "insensitive" } },
                 { job: { title: { contains: search, mode: "insensitive" } } }
             ];
         }
@@ -105,24 +105,24 @@ export async function GET(request: Request) {
             prisma.application.findMany({
                 where,
                 include: {
-                    job: { select: { title: true, role: true } },
-                    interview: { select: { inviteSentAt: true, status: true, completedAt: true, isTest: true } },
+                    job: { select: { title: true, jobRole: true } },
+                    interview: { select: { inviteEmailSentAt: true, interviewStatus: true, interviewCompletedAt: true, isTestSession: true } },
                 },
                 orderBy:
                     sortBy === "score"
                         ? [
-                            { aiScore: { sort: sortDir, nulls: "last" } },
-                            { updatedAt: "desc" }
+                            { resumeAiScore: { sort: sortDir, nulls: "last" } },
+                            { applicationUpdatedAt: "desc" }
                         ]
-                        : { updatedAt: "desc" },
+                        : { applicationUpdatedAt: "desc" },
                 skip: offset,
                 take: limit,
             }),
             prisma.application.count({ where }),
             prisma.application.groupBy({
-                by: ['resumeStatus', 'interviewStatus'],
+                by: ['resumeScreeningStatus', 'interviewPhaseStatus'],
                 where: {
-                    job: { orgId, ...(jobId && jobId !== "all" ? { id: jobId } : {}) }
+                    job: { organizationId: orgId, ...(jobId && jobId !== "all" ? { id: jobId } : {}) }
                 },
                 _count: { _all: true }
             }),
@@ -138,8 +138,8 @@ export async function GET(request: Request) {
         };
         statsResult.forEach((group: any) => {
             const count = group._count._all;
-            const resStatus = (group.resumeStatus || "").toLowerCase();
-            const intStatus = String(group.interviewStatus || "").toLowerCase().replace(/[_-]+/g, " ");
+            const resStatus = (group.resumeScreeningStatus || "").toLowerCase();
+            const intStatus = String(group.interviewPhaseStatus || "").toLowerCase().replace(/[_-]+/g, " ");
             if (resStatus === 'shortlisted') statsRow.shortlisted += count;
             if (resStatus === 'rejected') statsRow.rejected += count;
             if (intStatus === 'inprogress' || intStatus === 'in progress') statsRow.interviewRunning += count;
@@ -153,7 +153,7 @@ export async function GET(request: Request) {
             let progress = null as number | null;
             let stage = null as string | null;
             try {
-                const report = app.aiReport ? JSON.parse(app.aiReport) : null;
+                const report = app.resumeAiReport ? JSON.parse(app.resumeAiReport) : null;
                 const p = Number(report?.processing?.progress);
                 progress = Number.isFinite(p) ? p : null;
                 stage = typeof report?.processing?.stage === "string" ? report.processing.stage : null;
@@ -164,22 +164,22 @@ export async function GET(request: Request) {
             return {
                 id: app.id,
                 jobId: app.jobId,
-                fullName: app.fullName,
-                name: app.fullName,
-                email: app.email,
-                role: app.job?.role || app.job?.title || "Unknown Role",
-                score: app.aiScore || 0,
-                status: app.resumeStatus,
-                interviewStatus: app.interview?.status || app.interviewStatus,
+                fullName: app.candidateFullName,
+                name: app.candidateFullName,
+                email: app.candidateEmail,
+                role: app.job?.jobRole || app.job?.title || "Unknown Role",
+                score: app.resumeAiScore || 0,
+                status: app.resumeScreeningStatus,
+                interviewStatus: app.interview?.interviewStatus || app.interviewPhaseStatus,
                 screeningProgress: progress,
                 screeningStage: stage,
-                inviteSentAt: app.interview?.inviteSentAt ?? null,
+                inviteSentAt: app.interview?.inviteEmailSentAt ?? null,
                 interview: app.interview ? {
-                    completedAt: app.interview.completedAt,
-                    isTest: app.interview.isTest,
+                    completedAt: app.interview.interviewCompletedAt,
+                    isTest: app.interview.isTestSession,
                 } : null,
-                createdAt: app.createdAt,
-                date: new Date(app.createdAt).toLocaleDateString(),
+                createdAt: app.appliedAt,
+                date: new Date(app.appliedAt).toLocaleDateString(),
             };
         });
         return NextResponse.json({
@@ -241,7 +241,7 @@ export async function DELETE(request: Request) {
             return NextResponse.json({ error: "No candidates or organization specified for deletion" }, { status: 400 });
         }
         const whereClause: any = {
-            job: { orgId }
+            job: { organizationId: orgId }
         };
         if (ids.length > 0) {
             whereClause.id = { in: ids };
@@ -250,11 +250,11 @@ export async function DELETE(request: Request) {
             where: whereClause,
             select: {
                 id: true,
-                resumeUrl: true,
+                resumeFileUrl: true,
                 interview: {
                     select: {
-                        recording: true,
-                        snapshots: true
+                        sessionRecording: true,
+                        proctoringSnapshotUrls: true
                     }
                 }
             }
@@ -281,7 +281,7 @@ export async function DELETE(request: Request) {
                 const idList = Prisma.join(validIds);
                 // 1. Soft Delete Support Tickets FIRST (before Interview applicationId is renamed)
                 await tx.$executeRaw`
-                    UPDATE "SupportTicket" SET "status" = 'DELETED'
+                    UPDATE "SupportTicket" SET "ticketStatus" = 'DELETED'
                     WHERE "interviewId" IN (
                         SELECT "id" FROM "Interview" WHERE "applicationId" IN (${idList})
                     )
@@ -291,7 +291,7 @@ export async function DELETE(request: Request) {
                     UPDATE "Interview"
                     SET "isDeleted" = true,
                         "applicationId" = 'del_' || ${timestamp} || '_' || "applicationId",
-                        "accessToken" = 'del_' || ${timestamp} || '_' || "accessToken"
+                        "candidateInviteToken" = 'del_' || ${timestamp} || '_' || "candidateInviteToken"
                     WHERE "applicationId" IN (${idList})
                 `;
                 // 3. Soft delete applications
