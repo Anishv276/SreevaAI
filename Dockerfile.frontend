@@ -40,20 +40,13 @@ RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     python3-venv \
-    tesseract-ocr \
-    poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Install python dependencies for resume extraction
-RUN pip3 install --no-cache-dir --break-system-packages \
-    pymupdf4llm \
-    pdfplumber \
-    pytesseract \
-    pdf2image \
-    Pillow \
-    openai \
-    python-dotenv \
-    pydantic
+# Install python dependencies for resume/JD extraction + billing subprocess.
+# Reuses livekit-python-agent's requirements.txt (superset) instead of a
+# separate trimmed list -- one file to keep in sync, not two.
+COPY livekit-python-agent/requirements.txt ./requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
 # Set to production
 ENV NODE_ENV=production
@@ -65,6 +58,10 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/extraction_resume_JD_score_report ./extraction_resume_JD_score_report
+COPY --from=builder /app/livekit-python-agent/billing ./billing
+# billing.py imports from interview.agent_runtime_support / interview.agent_utils --
+# both lightweight (dotenv + pydantic only), no heavy livekit-agents/asyncpg deps pulled in.
+COPY --from=builder /app/livekit-python-agent/interview ./interview
 COPY --from=builder /app/lib ./lib
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
@@ -73,5 +70,7 @@ COPY --from=builder /app/tsconfig.json ./tsconfig.json
 
 EXPOSE 3000
 
-# Start the application
-CMD ["npm", "start"]
+# Apply any pending migrations against the real DB, then start.
+# migrate deploy only runs already-committed migration files (prisma/migrations/) --
+# never db push in prod, and never migrate dev (that can prompt/reset).
+CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]

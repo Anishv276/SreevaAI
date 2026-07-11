@@ -6,12 +6,14 @@ Updates aiScore and aiReport in the DB.
 """
 import json, os, sys
 from dotenv import load_dotenv; load_dotenv()
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _ROOT)
+sys.path.insert(0, os.path.join(_ROOT, "livekit-python-agent"))  # billing/billing.py lives here
 
 import psycopg2
 from openai import OpenAI
-from extraction_resume_JD_score_report_v2.scorer import compute_score
-from extraction_resume_JD_score_report_v2.parser import DocumentParser, _normalise_jd
+from extraction_resume_JD_score_report.scorer import compute_score
+from extraction_resume_JD_score_report.parser import DocumentParser, _normalise_jd
 
 def rescore(identifier: str, dry_run: bool = False):
     url = os.environ["DATABASE_URL"].replace("?pgbouncer=true","")
@@ -63,7 +65,7 @@ def rescore(identifier: str, dry_run: bool = False):
         return
 
     # Generate report too
-    from extraction_resume_JD_score_report_v2.reporter import generate_report
+    from extraction_resume_JD_score_report.reporter import generate_report
     from billing.billing import record_external_billing_usage
     import asyncio
     try:
@@ -79,7 +81,7 @@ def rescore(identifier: str, dry_run: bool = False):
         if org_row and org_row[0] and report_usage.get("inputTokens"):
             asyncio.run(record_external_billing_usage(org_row[0], "resumeReport", report_usage))
             print(f"[BILLING] Recorded resumeReport usage: {report_usage.get('inputTokens')} in / {report_usage.get('outputTokens')} out tokens")
-        from extraction_resume_JD_score_report_v2.parser import DocumentParser
+        from extraction_resume_JD_score_report.parser import DocumentParser
         LOCKED = {"score","status","breakdown","skill_matching","exp_status","hard_rejected","rejection_reasons","candidate_years","jd_min_years","fit_radar","work_history","education","core_claims","uncertain_areas","skill_depth"}
         for k in LOCKED: report.pop(k, None)
         final = {

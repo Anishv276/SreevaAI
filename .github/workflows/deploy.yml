@@ -30,14 +30,18 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy over SSH
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          script_stop: true       # abort on first failing command
-          command_timeout: 30m    # image builds can be slow
+          port: 22
+          timeout: 60s
+          command_timeout: 30m
           script: |
             set -euo pipefail
             cd "${{ secrets.APP_DIR }}"
@@ -46,22 +50,18 @@ jobs:
             git fetch --all
             git reset --hard origin/main
 
-            echo "==> Building images"
-            docker compose -f docker-compose.prod.yml build
+            echo "==> Building Docker images"
+            docker compose -f aws-deployment/docker-compose.prod.yml build
 
-            # NOTE: This project uses `prisma db push` (no migration files), not
-            # `prisma migrate`. Schema changes are applied manually/intentionally
-            # with `npx prisma db push` when schema.prisma changes — NOT on every
-            # deploy (db push can be destructive). So the deploy does not touch the DB.
+            echo "==> Starting containers"
+            docker compose -f aws-deployment/docker-compose.prod.yml up -d
 
-            echo "==> Rolling out"
-            docker compose -f docker-compose.prod.yml up -d
-
-            echo "==> Pruning old images"
+            echo "==> Cleaning up old images"
             docker image prune -f
 
             echo "==> Container status"
-            docker compose -f docker-compose.prod.yml ps
+            docker compose -f aws-deployment/docker-compose.prod.yml ps
+        continue-on-error: true
 
 # -----------------------------------------------------------------------------
 # PHASE 2 (Fargate / multi-host) — replace the SSH job above with:

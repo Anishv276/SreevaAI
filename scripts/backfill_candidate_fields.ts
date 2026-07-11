@@ -5,13 +5,13 @@ async function main() {
     const candidates = await prisma.application.findMany({
         where: {
             isDeleted: false,
-            resumeData: { not: null },
+            resumeParsedData: { not: null },
             OR: [
-                { email: "" },
-                { phone: "" },
+                { candidateEmail: "" },
+                { candidatePhone: "" },
             ],
         },
-        select: { id: true, fullName: true, email: true, phone: true, resumeData: true },
+        select: { id: true, candidateFullName: true, candidateEmail: true, candidatePhone: true, resumeParsedData: true },
     });
 
     console.log(`Found ${candidates.length} candidates to backfill`);
@@ -22,7 +22,7 @@ async function main() {
     for (const c of candidates) {
         let parsed: any = null;
         try {
-            const rd = JSON.parse(c.resumeData!);
+            const rd = JSON.parse(c.resumeParsedData!);
             parsed = rd?.parsed ?? null;
         } catch {
             skipped++;
@@ -36,9 +36,9 @@ async function main() {
         const newPhone = parsed.phone?.trim()     || "";
 
         const data: any = {};
-        if (newName  && c.fullName !== newName)  data.fullName = newName;
-        if (newEmail && c.email   !== newEmail)  data.email    = newEmail;
-        if (newPhone && c.phone   !== newPhone)  data.phone    = newPhone;
+        if (newName  && c.candidateFullName !== newName)  data.candidateFullName = newName;
+        if (newEmail && c.candidateEmail   !== newEmail)  data.candidateEmail    = newEmail;
+        if (newPhone && c.candidatePhone   !== newPhone)  data.candidatePhone    = newPhone;
 
         if (Object.keys(data).length === 0) { skipped++; continue; }
 

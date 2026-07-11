@@ -32,8 +32,18 @@ This document lists all proposed renames for the Prisma schema — from current 
 | `createdAt` | `orgCreatedAt` | What was created? The org |
 | `updatedAt` | `orgUpdatedAt` | Same |
 | `onboardingComplete` | `isOnboardingComplete` | Boolean clarity |
+| `sttModel` | `speechToTextModel` | Spelled out fully |
+| `ttsProvider` | `textToSpeechProvider` | Spelled out fully |
+| `ttsModel` | `textToSpeechModel` | Spelled out fully |
 | `voiceId` | `defaultVoiceId` | It's the default voice for the whole org |
 | `allowedVoices` | `allowedVoiceIds` | Clarifies it's a list of voice IDs |
+| `llmResumeExtraction` | `llmModelResumeExtraction` | Consistent `llmModel*` prefix across all model-selection fields |
+| `llmJdExtraction` | `llmModelJdExtraction` | Same |
+| `llmResumeReport` | `llmModelResumeReport` | Same |
+| `llmInterviewLive` | `llmModelInterviewLive` | Same |
+| `llmInterviewEval` | `llmModelInterviewEval` | Same |
+| `llmInterviewBrief` | `llmModelInterviewBrief` | Same |
+| `llmInterviewReport` | `llmModelInterviewReport` | Same |
 | `interviewQuotaTotal` | `totalInterviewsAllowed` | Plain English |
 | `interviewQuotaUsed` | `totalInterviewsUsed` | Plain English |
 | `creditsUsed` | `billingCreditsUsed` | Scoped to billing |
@@ -54,6 +64,7 @@ This document lists all proposed renames for the Prisma schema — from current 
 | `resetOtpExpires` | `passwordResetOtpExpiresAt` | Makes clear it's a timestamp of expiry |
 | `createdAt` | `accountCreatedAt` | What was created? The admin account |
 | `updatedAt` | `accountUpdatedAt` | Same |
+| `isDeleted` | `isDeleted` | No change — already clear |
 
 ---
 

@@ -5,9 +5,8 @@ import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/job-limits";
 import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
 
-// Grace: candidate must join within 5 min after slot start, and can enter 5 min before
-const PRE_OPEN_MS  = 5 * 60 * 1000;  // waiting room opens 5 min before slot
-const LATE_CLOSE_MS = 5 * 60 * 1000; // link expires 5 min after slot start
+// Window is exactly [scheduledAt, scheduledAt + 5min] -- no pre-open, no waiting room before slot.
+const LATE_CLOSE_MS = 5 * 60 * 1000; // window closes 5 min after slot start
 
 async function resolveInterview(applicationId: string) {
     return prisma.application.findUnique({
@@ -40,7 +39,7 @@ function checkJobExpiration(job: { closedAt?: Date | null; applicationDeadline?:
 }
 
 function checkSchedulingGate(interview: { interviewScheduledAt: Date | null; interviewStatus: string; interviewStartedAt: Date | null; inviteLinkStatus?: string | null }): {
-    ok: boolean; code?: string; error?: string; status?: number; remainingMs?: number;
+    ok: boolean; code?: string; error?: string; status?: number; remainingMs?: number; shouldFail?: boolean;
 } {
     const interviewStatus = String(interview.interviewStatus || "").toUpperCase();
     const linkStatus = String(interview.inviteLinkStatus || "").toUpperCase();
@@ -49,8 +48,8 @@ function checkSchedulingGate(interview: { interviewScheduledAt: Date | null; int
         return { ok: false, code: "INTERVIEW_COMPLETED", error: "Interview completed. Please contact support@sreevaai.com for assistance.", status: 409 };
     }
 
-    if (linkStatus === "EXPIRED") {
-        return { ok: false, code: "LINK_EXPIRED", error: "Interview link has expired. Please contact support@sreevaai.com", status: 403 };
+    if (interviewStatus === "FAILED") {
+        return { ok: false, code: "INTERVIEW_FAILED", error: "This interview session has ended. Please contact support@sreevaai.com to reschedule.", status: 409 };
     }
 
 
@@ -62,22 +61,38 @@ function checkSchedulingGate(interview: { interviewScheduledAt: Date | null; int
     const slotMs = interview.interviewScheduledAt.getTime();
     const remainingMs = slotMs - now;
 
-    if (remainingMs > PRE_OPEN_MS) {
+    if (remainingMs > 0) {
         return {
             ok: false,
             code: "TOO_EARLY",
-            error: "Waiting room is not open yet. Please return 5 minutes before your scheduled time.",
+            error: "Waiting room is not open yet. Please return at your scheduled time.",
             status: 403,
             remainingMs,
         };
     }
 
-    if (remainingMs < -LATE_CLOSE_MS) {
+    // Past the window close: fail if the greeting was never reached (interviewStartedAt unset).
+    if (remainingMs < -LATE_CLOSE_MS && !interview.interviewStartedAt) {
+        const neverJoined = interviewStatus === "SCHEDULED";
         return {
             ok: false,
             code: "SLOT_EXPIRED",
-            error: "Your slot has expired. Please contact your recruiter to reschedule.",
+            error: neverJoined
+                ? "Your slot has expired. Please contact your recruiter to reschedule."
+                : "Your interview session did not complete in time. Please contact your recruiter to reschedule.",
             status: 403,
+            shouldFail: true,
+        };
+    }
+
+    // Greeting already spoken (interviewStartedAt set) -- a second /token call means
+    // another device/tab is trying to join a session that's already live.
+    if (interview.interviewStartedAt) {
+        return {
+            ok: false,
+            code: "INTERVIEW_IN_PROGRESS",
+            error: "Interview already in progress on another session.",
+            status: 409,
         };
     }
 
@@ -118,7 +133,7 @@ export async function POST(
                 await prisma.interview.update({
                     where: { applicationId },
                     data: { inviteLinkStatus: "EXPIRED" }
-                }).catch(() => {});
+                }).catch(() => { });
             }
             return NextResponse.json(
                 { error: gate.error, code: gate.code, scheduledAt: interview.interviewScheduledAt?.toISOString(), remainingMs: gate.remainingMs },
@@ -137,7 +152,7 @@ export async function POST(
             await prisma.interview.update({
                 where: { applicationId },
                 data: { interviewStatus: "IN_PROGRESS", interviewStartedAt: new Date(), inviteLinkStatus: "EXPIRED" },
-            }).catch(() => {});
+            }).catch(() => { });
         }
 
         // Best-effort agent warmup
@@ -158,8 +173,8 @@ export async function POST(
                 }
                 try {
                     const existing = await dispatchClient.listDispatch(roomName);
-                    for (const d of existing) await dispatchClient.deleteDispatch(d.id, roomName).catch(() => {});
-                } catch {}
+                    for (const d of existing) await dispatchClient.deleteDispatch(d.id, roomName).catch(() => { });
+                } catch { }
                 await dispatchClient.createDispatch(roomName, agentName, {
                     metadata: JSON.stringify({
                         applicationId,
@@ -238,7 +253,7 @@ export async function GET(
                 await prisma.interview.update({
                     where: { applicationId },
                     data: { inviteLinkStatus: "EXPIRED" }
-                }).catch(() => {});
+                }).catch(() => { });
             }
             return NextResponse.json(
                 { error: gate.error, code: gate.code, scheduledAt: interview.interviewScheduledAt?.toISOString(), remainingMs: gate.remainingMs },

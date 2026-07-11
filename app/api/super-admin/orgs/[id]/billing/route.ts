@@ -66,28 +66,15 @@ export async function GET(
             },
         };
 
-        // testBillingMetrics: only used for sub-feature token breakdowns (eval / brief / llmgen).
-        // Costs and interview-level data (TTS, STT, LLM tokens) come from billing bucket below.
+        // testBillingMetrics is only ever written for test sessions (is_test=true in
+        // report_worker.py), so it's NULL for every production interview. It's used
+        // here only to accumulate session wall-clock duration; runs/tokens/cost for
+        // eval/brief/llmgen all come from the billing bucket below (populated in prod too).
         for (const row of interviews) {
             const m = row.testBillingMetrics as Record<string, any> || {};
             if (m.skipReport) continue;
             // Accumulate actual session wall-clock time from billingSnapshot.durationSec or interviewDuration
             aggregates.interview.sessionDuration += Number(row.interviewDuration || 0);
-
-            // Evaluation runs/tokens (per-turn scoring) — cost comes from billing.interview
-            aggregates.interviewEvaluation.runs        += Number(m.evaluationRuns   || 0);
-            aggregates.interviewEvaluation.inputTokens += Number(m.evalInputTokens  || 0);
-            aggregates.interviewEvaluation.outputTokens+= Number(m.evalOutputTokens || 0);
-
-            // LLM generation runs/tokens — cost comes from billing.interviewLLMGeneration
-            aggregates.interviewLLMGeneration.runs        += Number(m.llmGenerations    || 0);
-            aggregates.interviewLLMGeneration.inputTokens += Number(m.llmgenInputTokens || 0);
-            aggregates.interviewLLMGeneration.outputTokens+= Number(m.llmgenOutputTokens|| 0);
-
-            // Brief runs/tokens — cost comes from billing.interviewBrief
-            aggregates.interviewBrief.runs        += Number(m.briefGenerations  || 0);
-            aggregates.interviewBrief.inputTokens += Number(m.briefInputTokens  || 0);
-            aggregates.interviewBrief.outputTokens+= Number(m.briefOutputTokens || 0);
         }
 
         // All costs and interview-level aggregates come from usageMetrics.billing (billing.py accurate data).
@@ -124,11 +111,14 @@ export async function GET(
             if (m) aggregates[phase].model = m;
         }
 
-        // Brief / LLM gen: runs+tokens from testBillingMetrics above, cost+model from billing bucket.
+        // Brief / LLM gen: runs+tokens+cost all from billing bucket (testBillingMetrics is test-only).
         for (const phase of ["interviewBrief", "interviewLLMGeneration"]) {
             const b = billingBucket[phase];
             if (!b || typeof b !== "object" || !aggregates[phase]) continue;
-            aggregates[phase].costUsd += Number(b.costUsd || 0);
+            aggregates[phase].runs         += Number(b.runs         || 0);
+            aggregates[phase].inputTokens  += Number(b.inputTokens  || 0);
+            aggregates[phase].outputTokens += Number(b.outputTokens || 0);
+            aggregates[phase].costUsd      += Number(b.costUsd      || 0);
             const m = primaryModel(b.byModel);
             if (m) aggregates[phase].model = m;
         }
@@ -140,6 +130,12 @@ export async function GET(
             aggregates.interview.inputTokens  += Number(ivb.inputTokens  || 0);
             aggregates.interview.outputTokens += Number(ivb.outputTokens || 0);
             aggregates.interview.costUsd      += Number(ivb.costUsd      || 0);
+
+            // Evaluation row shares the "interview" bucket with live-session usage
+            // (billing.py has no separate eval bucket) — approximation, not exact.
+            aggregates.interviewEvaluation.runs         += Number(ivb.runs         || 0);
+            aggregates.interviewEvaluation.inputTokens  += Number(ivb.inputTokens  || 0);
+            aggregates.interviewEvaluation.outputTokens += Number(ivb.outputTokens || 0);
 
             // TTS accurate totals
             aggregates.interview.ttsCharacters += Number(ivb.ttsCharacters || 0);

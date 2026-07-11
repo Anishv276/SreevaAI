@@ -29,7 +29,7 @@ async function uploadOne(label: string, filePath: string, jobRecord: any) {
 
   const buffer = readFileSync(filePath);
   const safeName = sanitizeFileName(fileName);
-  const orgSlug = jobRecord.organization?.urlSlug || jobRecord.orgId;
+  const orgSlug = jobRecord.organization?.urlSlug || jobRecord.organizationId;
   const jobSlug = jobRecord.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
   const key = `resume/${orgSlug}/${jobSlug}/${Date.now()}_0_${safeName}`;
   const uploadedUrl = await putObject(RESUME_BUCKET, key, buffer, 'application/pdf');
@@ -38,18 +38,18 @@ async function uploadOne(label: string, filePath: string, jobRecord: any) {
   await prisma.application.create({
     data: {
       id: applicationId,
-      fullName: guessName(fileName),
-      email: '',
-      phone: '',
-      resumeUrl: uploadedUrl,
-      aiScore: 0,
-      aiReport: buildProgressState(0, 'waiting'),
-      resumeText: null,
-      resumeData: JSON.stringify({ source: { bucket: RESUME_BUCKET, key } }),
+      candidateFullName: guessName(fileName),
+      candidateEmail: '',
+      candidatePhone: '',
+      resumeFileUrl: uploadedUrl,
+      resumeAiScore: 0,
+      resumeAiReport: buildProgressState(0, 'waiting'),
+      resumeRawText: null,
+      resumeParsedData: JSON.stringify({ source: { bucket: RESUME_BUCKET, key } }),
       jobId: JOB_ID,
-      fileName,
-      resumeStatus: 'waiting',
-      interviewStatus: 'pending',
+      resumeFileName: fileName,
+      resumeScreeningStatus: 'waiting',
+      interviewPhaseStatus: 'pending',
     },
   });
 
@@ -79,13 +79,13 @@ async function waitForDone(appIds: string[]) {
     for (const appId of appIds) {
       const row = await prisma.application.findUnique({
         where: { id: appId },
-        select: { resumeStatus: true, aiScore: true },
+        select: { resumeScreeningStatus: true, resumeAiScore: true },
       });
-      const status = row?.resumeStatus || 'unknown';
+      const status = row?.resumeScreeningStatus || 'unknown';
       const oldStatus = statuses.get(appId) || 'unknown';
 
       if (status !== oldStatus) {
-        console.log(`    📊 ${appId.slice(0, 20)}… "${oldStatus}" → "${status}" score=${row?.aiScore ?? '-'}`);
+        console.log(`    📊 ${appId.slice(0, 20)}… "${oldStatus}" → "${status}" score=${row?.resumeAiScore ?? '-'}`);
         statuses.set(appId, status);
       }
 
@@ -118,7 +118,7 @@ async function main() {
 
   const job = await prisma.job.findUnique({
     where: { id: JOB_ID },
-    select: { id: true, title: true, orgId: true, organization: { select: { urlSlug: true } } },
+    select: { id: true, title: true, organizationId: true, organization: { select: { urlSlug: true } } },
   });
   if (!job) throw new Error(`Job ${JOB_ID} not found`);
 
@@ -151,14 +151,14 @@ async function main() {
   for (const app of allApps) {
     const row = await prisma.application.findUnique({
       where: { id: app.applicationId },
-      select: { resumeStatus: true, aiScore: true },
+      select: { resumeScreeningStatus: true, resumeAiScore: true },
     });
-    console.log(`  ${row?.resumeStatus?.toUpperCase().padEnd(10)} aiScore=${row?.aiScore}  ${app.applicationId.slice(0, 30)}…`);
+    console.log(`  ${row?.resumeScreeningStatus?.toUpperCase().padEnd(10)} aiScore=${row?.resumeAiScore}  ${app.applicationId.slice(0, 30)}…`);
   }
 
   const allPassed = allApps.every(async (a) => {
-    const row = await prisma.application.findUnique({ where: { id: a.applicationId }, select: { resumeStatus: true } });
-    return row?.resumeStatus !== 'waiting' && row?.resumeStatus !== 'failed';
+    const row = await prisma.application.findUnique({ where: { id: a.applicationId }, select: { resumeScreeningStatus: true } });
+    return row?.resumeScreeningStatus !== 'waiting' && row?.resumeScreeningStatus !== 'failed';
   });
 
   console.log(`\n🟢 ALL 5 BATCHES PASSED\n`);

@@ -100,14 +100,23 @@ export async function POST(req: Request) {
     // -- AUTHENTICATION --------------------------------
     const interview = await prisma.interview.findUnique({
       where: { applicationId },
-      select: { candidateInviteToken: true, interviewCompletedAt: true }
+      select: { candidateInviteToken: true, interviewCompletedAt: true, durationInSeconds: true, interviewStartedAt: true }
     });
     if (requireInterviewToken && (!interview || interview.candidateInviteToken !== interviewToken)) {
       return NextResponse.json({ error: "Unauthorized: Invalid finalization token" }, { status: 401 });
     }
     const transcriptRaw = transcript;
     const finalTranscript = transcriptRaw?.trim();
-    const finalDuration = typeof duration === 'number' ? duration : (duration ? parseInt(String(duration)) : null);
+    // ponytail: the agent runtime (agent_persistence.update_interview_status) is the
+    // authoritative writer of interviewDuration -- it already applies the
+    // time_expired -> full time_limit cap and real-elapsed otherwise. Client-sent
+    // `duration` is untrusted (can be stale/inflated) and must never overwrite an
+    // already-persisted interviewDuration. Only used as a last-resort fallback when
+    // the agent hasn't written one yet (e.g. legacy/non-agent finalize callers).
+    const clientDuration = typeof duration === 'number' ? duration : (duration ? parseInt(String(duration)) : null);
+    const finalDuration = interview?.durationInSeconds != null
+      ? interview.durationInSeconds
+      : (clientDuration ?? (interview?.interviewStartedAt ? Math.round((Date.now() - new Date(interview.interviewStartedAt).getTime()) / 1000) : null));
     let recordingUrlForPersist = recordingUrl;
     let recordingSettingsForOrg: { recordingEnabled: boolean; recordingRetentionDays: number | null } | null = null;
     try {
@@ -153,7 +162,7 @@ export async function POST(req: Request) {
         WHERE "applicationId" = $1
         `,
         applicationId
-      ).catch(() => {});
+      ).catch(() => { });
     }
     const interviewAfterPersist = await prisma.interview.findUnique({
       where: { applicationId },
@@ -217,9 +226,9 @@ export async function POST(req: Request) {
         if (orgId) {
           await deductInterviewQuotaForApplication({
             applicationId,
-            durationSeconds: Number.isFinite(Number(resolvedDuration)) ? Number(resolvedDuration) : null,
+            durationSeconds: Number.isFinite(Number(finalDuration)) ? Number(finalDuration) : null,
           });
-          console.log(`[FINALIZE] Billing finalized for ${applicationId} org=${orgId} dur=${resolvedDuration}s`);
+          console.log(`[FINALIZE] Billing finalized for ${applicationId} org=${orgId} dur=${finalDuration}s`);
         }
       } catch (creditError) {
         console.error("[FINALIZE] Billing deduction failed:", creditError);
@@ -227,25 +236,25 @@ export async function POST(req: Request) {
     }
     // Report generation is handled by the interview-finalization worker via Redis.
     // No synchronous LLM call here -- the candidate is not blocked and no timeout occurs.
-  let jobId: string | number | undefined;
-  try {
+    let jobId: string | number | undefined;
+    try {
       const job = await interviewFinalizationQueue.add(
         "finalize-interview",
         { applicationId, recordingUrl, transcript: finalTranscript, interviewStatus: finalInterviewStatus, appStatus },
         {
-        attempts: 3,
-        backoff: { type: "exponential", delay: 1000 },
-        removeOnComplete: true,
-        removeOnFail: 200,
-      }
-    );
-    jobId = job.id;
-  } catch (e) {
-    console.warn("[INTERVIEW FINALIZE] Queue unavailable, persisted synchronously", e);
+          attempts: 3,
+          backoff: { type: "exponential", delay: 1000 },
+          removeOnComplete: true,
+          removeOnFail: 200,
+        }
+      );
+      jobId = job.id;
+    } catch (e) {
+      console.warn("[INTERVIEW FINALIZE] Queue unavailable, persisted synchronously", e);
+    }
+    return NextResponse.json({ success: true, persisted: true, queued: !!jobId, jobId });
+  } catch (error) {
+    console.error("[INTERVIEW FINALIZE QUEUE ERROR]", error);
+    return NextResponse.json({ error: "Failed to finalize interview" }, { status: 500 });
   }
-  return NextResponse.json({ success: true, persisted: true, queued: !!jobId, jobId });
-} catch (error) {
-  console.error("[INTERVIEW FINALIZE QUEUE ERROR]", error);
-  return NextResponse.json({ error: "Failed to finalize interview" }, { status: 500 });
-}
 }

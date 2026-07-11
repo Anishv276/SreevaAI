@@ -21,7 +21,7 @@ const LLM_PIPELINE_FIELDS = [
 
 type OrgSummary = {
   id: string; name: string; slug: string;
-  sttModel: string; ttsProvider: string; ttsModel: string; voiceId: string;
+  sttModel: string; ttsProvider: string; ttsModel: string; ttsSpeed: number; voiceId: string;
   allowedVoices: string[];
   llmResumeExtraction: string; llmJdExtraction: string; llmResumeReport: string;
   llmInterviewLive: string; llmInterviewEval: string; llmInterviewBrief: string; llmInterviewReport: string;
@@ -94,7 +94,7 @@ export default function ModelsPage() {
   const [search, setSearch] = useState("");
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
   const [config, setConfig] = useState<OrgConfig | null>(null);
-  const [dirty, setDirty] = useState<Partial<OrgConfig & { allowedVoices: string[] }>>({});
+  const [dirty, setDirty] = useState<Partial<OrgConfig & { allowedVoices: string[]; ttsSpeed: number }>>({});
   const [saving, setSaving] = useState(false);
   const [selectableVoices, setSelectableVoices] = useState<typeof ALL_VOICES>(ALL_VOICES);
 
@@ -117,7 +117,7 @@ export default function ModelsPage() {
     setConfig(d.org ?? null);
   }, []);
 
-  const patch = (key: keyof OrgConfig, value: string | string[]) => {
+  const patch = (key: keyof OrgConfig, value: string | string[] | number) => {
     setDirty(prev => ({ ...prev, [key]: value }));
     setConfig(prev => prev ? { ...prev, [key]: value } : prev);
     if (key === "ttsProvider") {
@@ -351,6 +351,26 @@ export default function ModelsPage() {
                         </button>
                       );
                     })}
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Speed</p>
+                    <span className="text-sm font-semibold text-violet-700">{(config.ttsSpeed ?? 1).toFixed(2)}x</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.5}
+                    max={2.0}
+                    step={0.05}
+                    value={config.ttsSpeed ?? 1}
+                    onChange={e => patch("ttsSpeed", parseFloat(e.target.value))}
+                    className="w-full accent-violet-600"
+                  />
+                  <div className="flex justify-between text-[10px] text-gray-400 mt-1">
+                    <span>0.5x (slower)</span>
+                    <span>1.0x (normal)</span>
+                    <span>2.0x (faster)</span>
                   </div>
                 </div>
               </Section>

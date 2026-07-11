@@ -2,10 +2,11 @@ import { sendEmail } from "./resend";
 export type MailResult =
     | { success: true }
     | { success: false; error: string };
-const FONT = `-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif`;
+const FONT = `'Geist Sans', 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`;
 const VIOLET = "#7C3AED";
 const VIOLET_LIGHT = "#F5F3FF";   // violet-50
 const VIOLET_BORDER = "#DDD6FE";  // violet-200
+
 function wrapper(content: string) {
     return `<!DOCTYPE html>
 <html lang="en">
@@ -14,79 +15,78 @@ function wrapper(content: string) {
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>Sreeva AI</title>
 </head>
-<body style="margin:0;padding:0;background:#f5f5f5;font-family:${FONT};-webkit-font-smoothing:antialiased;">
-  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f5f5;padding:40px 16px;">
+<body style="margin:0;padding:0;background-color:#fafafa;font-family:${FONT};-webkit-font-smoothing:antialiased;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fafafa;padding:40px 16px;">
     <tr><td align="center">
-      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.08);">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background-color:#ffffff;border:1px solid #eaeaea;border-radius:24px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.04);">
         ${content}
       </table>
-      <p style="margin:20px 0 0;font-size:12px;color:#a3a3a3;text-align:center;">© ${new Date().getFullYear()} Sreeva AI · AI-Powered Recruitment</p>
+      <p style="margin:24px 0 0;font-size:13px;color:#6B7280;text-align:center;">© ${new Date().getFullYear()} Sreeva AI</p>
     </td></tr>
   </table>
 </body>
 </html>`;
 }
-// White header with orange accent bar on left + orange eyebrow text
+
+// Minimal header with SREEVA AI text logo
 function header(eyebrow: string, title: string) {
     return `
 <tr>
-  <td style="background:#ffffff;border-bottom:1px solid #f0f0f0;padding:0;">
-    <table width="100%" cellpadding="0" cellspacing="0" border="0">
-      <tr>
-        <td style="width:4px;background:${VIOLET};padding:0;"></td>
-        <td style="padding:28px 36px;">
-          <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:${VIOLET};letter-spacing:0.12em;text-transform:uppercase;">${eyebrow}</p>
-          <p style="margin:0;font-size:24px;font-weight:800;color:#111111;letter-spacing:-0.02em;line-height:1.25;">${title}</p>
-        </td>
-        <td style="padding:28px 36px 28px 0;text-align:right;vertical-align:middle;">
-          <span style="font-size:11px;font-weight:700;color:#d4d4d4;letter-spacing:0.1em;text-transform:uppercase;">SREEVA AI</span>
-        </td>
-      </tr>
-    </table>
+  <td style="padding:40px 40px 24px;">
+    <div style="margin-bottom:24px;">
+        <span style="font-size:14px;font-weight:800;color:#111827;letter-spacing:0.05em;">SREEVA AI<span style="color:#7C3AED">.</span></span>
+    </div>
+    <p style="margin:0 0 8px;font-size:12px;font-weight:700;color:${VIOLET};letter-spacing:0.1em;text-transform:uppercase;">${eyebrow}</p>
+    <h1 style="margin:0;font-size:24px;font-weight:700;color:#111827;letter-spacing:-0.03em;line-height:1.2;">${title}</h1>
   </td>
 </tr>`;
 }
+
 function infoCard(items: { label: string; value: string }[]) {
     return `
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${VIOLET_LIGHT};border:1px solid ${VIOLET_BORDER};border-left:4px solid ${VIOLET};border-radius:10px;margin:20px 0;">
-  <tr><td style="padding:18px 22px;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f5f3ff;border-radius:16px;margin:24px 0;">
+  <tr><td style="padding:24px;">
     <table width="100%" cellpadding="0" cellspacing="0" border="0">
       ${items.map(({ label, value }, i) => `
       <tr>
-        <td style="padding:${i === 0 ? "0" : "8px"} 0 0;vertical-align:top;width:130px;">
-          <span style="font-size:11px;font-weight:700;color:#5b21b6;text-transform:uppercase;letter-spacing:0.07em;">${label}</span>
+        <td style="padding:${i === 0 ? "0" : "16px"} 0 0;vertical-align:top;width:120px;">
+          <span style="font-size:11px;font-weight:600;color:#8b5cf6;text-transform:uppercase;letter-spacing:0.06em;">${label}</span>
         </td>
-        <td style="padding:${i === 0 ? "0" : "8px"} 0 0;vertical-align:top;">
-          <span style="font-size:14px;font-weight:600;color:#1a1a1a;">${value}</span>
+        <td style="padding:${i === 0 ? "0" : "16px"} 0 0;vertical-align:top;">
+          <span style="font-size:14px;font-weight:600;color:#111827;">${value}</span>
         </td>
       </tr>`).join("")}
     </table>
   </td></tr>
 </table>`;
 }
+
 function ctaButton(href: string, label: string) {
-    return `<a href="${href}" style="display:inline-block;background:${VIOLET};color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;padding:14px 36px;border-radius:10px;letter-spacing:0.01em;box-shadow:0 2px 12px rgba(124,58,237,0.30);">${label} &rarr;</a>`;
+    return `<a href="${href}" style="display:inline-block;background-color:#7c3aed;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:14px 32px;border-radius:9999px;box-shadow:0 4px 14px 0 rgba(124,58,237,0.25);">${label}</a>`;
 }
+
 function tipBox(html: string) {
     return `
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${VIOLET_LIGHT};border:1px solid ${VIOLET_BORDER};border-radius:10px;margin:16px 0;">
-  <tr><td style="padding:16px 20px;font-size:13px;color:#5b21b6;line-height:1.75;">${html}</td></tr>
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FAFAFC;border:1px solid #E9E7FF;border-radius:12px;margin:24px 0;">
+  <tr><td style="padding:20px;font-size:14px;color:#6B7280;line-height:1.6;">${html}</td></tr>
 </table>`;
 }
+
 function noteBox(html: string) {
     return `
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#fafafa;border:1px solid #e5e5e5;border-radius:10px;margin:16px 0;">
-  <tr><td style="padding:16px 20px;font-size:13px;color:#525252;line-height:1.75;">${html}</td></tr>
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fffbeb;border:1px solid #fde68a;border-radius:12px;margin:24px 0;">
+  <tr><td style="padding:20px;font-size:14px;color:#B45309;line-height:1.6;">${html}</td></tr>
 </table>`;
 }
+
 function footerRow(text: string) {
     return `
 <tr>
-  <td style="padding:0 36px;"><div style="height:1px;background:#f0f0f0;"></div></td>
+  <td style="padding:0 40px;"><div style="height:1px;background-color:#F0EEF8;"></div></td>
 </tr>
 <tr>
-  <td style="padding:20px 36px 28px;">
-    <p style="margin:0;font-size:12px;color:#b0b0b0;line-height:1.7;">${text}</p>
+  <td style="padding:24px 40px 40px;">
+    <p style="margin:0;font-size:13px;color:#6B7280;line-height:1.6;">${text}</p>
   </td>
 </tr>`;
 }
@@ -209,6 +209,33 @@ export async function sendInterviewCompletedEmail({
     `);
     try {
         await sendEmail({ to: adminEmail, subject, html, type: "interview" });
+        return { success: true };
+    } catch (error) {
+        return { success: false, error: (error as Error)?.message || "Failed to send email" };
+    }
+}
+// --- 3b. Interview Completed (candidate notification) ------------------------
+export async function sendCandidateInterviewCompletedEmail({
+    email, fullName, jobTitle, orgName,
+}: {
+    email: string;
+    fullName: string;
+    jobTitle: string;
+    orgName: string;
+}): Promise<MailResult> {
+    const subject = `Thanks for interviewing — ${jobTitle} at ${orgName}`;
+    const html = wrapper(`
+        ${header("Interview Completed", `Hi ${fullName},`)}
+        <tr><td style="padding:32px 36px 0;">
+          <p style="margin:0;font-size:15px;color:#404040;line-height:1.75;">
+            Thank you for completing your AI interview for the <strong style="color:#111;">${jobTitle}</strong> role at <strong style="color:#111;">${orgName}</strong>.
+          </p>
+          ${noteBox(`Our hiring team will review your interview and reach out to you shortly with next steps.`)}
+        </td></tr>
+        ${footerRow(`Sent by ${orgName} via Sreeva AI · ${email}`)}
+    `);
+    try {
+        await sendEmail({ to: email, subject, html, type: "interview" });
         return { success: true };
     } catch (error) {
         return { success: false, error: (error as Error)?.message || "Failed to send email" };

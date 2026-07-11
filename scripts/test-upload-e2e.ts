@@ -51,19 +51,19 @@ async function uploadOne(label: string, filePath: string, jobRecord: any) {
   const applicationId = `${generateId('app', guessName(fileName))}-${randomUUID().slice(0, 8)}`;
   await prisma.application.create({
     data: {
-      id:              applicationId,
-      fullName:        guessName(fileName),
-      email:           '',
-      phone:           '',
-      resumeUrl:       uploadedUrl,
-      aiScore:         0,
-      aiReport:        buildProgressState(0, 'waiting'),
-      resumeText:      null,
-      resumeData:      JSON.stringify({ source: { bucket: RESUME_BUCKET, key } }),
-      jobId:         JOB_ID,
-      fileName,
-      resumeStatus:    'waiting',
-      interviewStatus: 'pending',
+      id:                    applicationId,
+      candidateFullName:     guessName(fileName),
+      candidateEmail:        '',
+      candidatePhone:        '',
+      resumeFileUrl:         uploadedUrl,
+      resumeAiScore:         0,
+      resumeAiReport:        buildProgressState(0, 'waiting'),
+      resumeRawText:         null,
+      resumeParsedData:      JSON.stringify({ source: { bucket: RESUME_BUCKET, key } }),
+      jobId:                 JOB_ID,
+      resumeFileName:        fileName,
+      resumeScreeningStatus: 'waiting',
+      interviewPhaseStatus:  'pending',
     },
   });
   console.log(`${ts()}   ✓ DB row created  applicationId="${applicationId}"  resumeStatus="waiting"`);
@@ -73,7 +73,7 @@ async function uploadOne(label: string, filePath: string, jobRecord: any) {
   try {
     job = await resumeQueue.add(
       'screen-resume',
-      { applicationId, bucket: RESUME_BUCKET, key, fileName, orgId: jobRecord.orgId },
+      { applicationId, bucket: RESUME_BUCKET, key, fileName, orgId: jobRecord.organizationId },
       { attempts: 2, backoff: { type: 'exponential', delay: 5000 } }
     );
     console.log(`${ts()}   ✓ Enqueued  job.id="${job.id}"  applicationId="${applicationId}"`);
@@ -81,7 +81,7 @@ async function uploadOne(label: string, filePath: string, jobRecord: any) {
     // Fix #2: flip status to "failed" if enqueue itself fails
     await prisma.application.update({
       where: { id: applicationId },
-      data: { resumeStatus: 'failed', aiReport: buildProgressState(0, 'failed'), updatedAt: new Date() },
+      data: { resumeScreeningStatus: 'failed', resumeAiReport: buildProgressState(0, 'failed'), applicationUpdatedAt: new Date() },
     });
     throw new Error(`Enqueue failed — row marked "failed": ${e.message}`);
   }
@@ -97,20 +97,20 @@ async function uploadOne(label: string, filePath: string, jobRecord: any) {
     await new Promise(r => setTimeout(r, POLL_MS));
     const row = await prisma.application.findUnique({
       where: { id: applicationId },
-      select: { resumeStatus: true, aiScore: true },
+      select: { resumeScreeningStatus: true, resumeAiScore: true },
     });
-    const status = row?.resumeStatus || 'unknown';
+    const status = row?.resumeScreeningStatus || 'unknown';
     if (status !== lastStatus) {
-      console.log(`${ts()}   📊 Status changed: "${lastStatus}" → "${status}"  aiScore=${row?.aiScore ?? 'n/a'}`);
+      console.log(`${ts()}   📊 Status changed: "${lastStatus}" → "${status}"  aiScore=${row?.resumeAiScore ?? 'n/a'}`);
       lastStatus = status;
     }
     if (TERMINAL.has(status)) {
-      console.log(`${ts()}   ✅ DONE  applicationId="${applicationId}"  finalStatus="${status}"  aiScore=${row?.aiScore}`);
-      return { applicationId, status, aiScore: row?.aiScore };
+      console.log(`${ts()}   ✅ DONE  applicationId="${applicationId}"  finalStatus="${status}"  aiScore=${row?.resumeAiScore}`);
+      return { applicationId, status, aiScore: row?.resumeAiScore };
     }
     if (!IN_PROGRESS.has(status)) {
       console.log(`${ts()}   ⚠ Unexpected status "${status}" — treating as done`);
-      return { applicationId, status, aiScore: row?.aiScore };
+      return { applicationId, status, aiScore: row?.resumeAiScore };
     }
   }
   throw new Error(`TIMEOUT after ${TIMEOUT_MS / 1000}s — last status="${lastStatus}" for ${applicationId}`);
@@ -145,7 +145,7 @@ async function main() {
 
   const job = await prisma.job.findUnique({
     where: { id: JOB_ID },
-    select: { id: true, title: true, orgId: true, organization: { select: { urlSlug: true } } },
+    select: { id: true, title: true, organizationId: true, organization: { select: { urlSlug: true } } },
   });
   if (!job) throw new Error(`Job ${JOB_ID} not found`);
   console.log(`${ts()} Job: "${job.title}" (${job.id})`);

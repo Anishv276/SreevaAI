@@ -330,7 +330,7 @@ export default function SuperAdminFeedbackPage() {
                             {viewFeedback && (() => {
                                 const parsed = parseCandidateRating(viewFeedback.candidateSelfRating);
                                 const meta = overallMeta(parsed.overallFeeling);
-                                const notes = (parsed.notes || viewFeedback.candidateFeedback || "").trim();
+                                const notes = (parsed.notes || viewFeedback.candidateFeedbackText || "").trim();
                                 return (
                                     <div className="space-y-6">
                                         <div className="grid gap-3 sm:grid-cols-2">
@@ -338,7 +338,7 @@ export default function SuperAdminFeedbackPage() {
                                                 <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Candidate</p>
                                                 <p className="mt-1 text-sm font-bold text-gray-900">{candidateName(viewFeedback)}</p>
                                                 <p className="text-xs text-gray-500">{candidateEmail(viewFeedback)}</p>
-                                                <p className="mt-2 text-xs text-gray-500">{viewFeedback.application?.phone?.trim() || "No phone on file"}</p>
+                                                <p className="mt-2 text-xs text-gray-500">{viewFeedback.application?.candidatePhone?.trim() || "No phone on file"}</p>
                                             </div>
                                             <div className="rounded-2xl border border-gray-100 bg-gray-50/60 p-4">
                                                 <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Interview Context</p>
@@ -363,10 +363,10 @@ export default function SuperAdminFeedbackPage() {
                                             <div className="rounded-2xl border border-gray-100 bg-white p-4">
                                                 <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Timing</p>
                                                 <p className="mt-2 text-sm font-bold text-gray-900">
-                                                    {formatDateTime(viewFeedback.updatedAt)}
+                                                    {formatDateTime(viewFeedback.interviewUpdatedAt)}
                                                 </p>
                                                 <p className="text-xs text-gray-500">
-                                                    {viewFeedback.completedAt ? `Completed at ${formatDateTime(viewFeedback.completedAt)}` : "Completed time not recorded"}
+                                                    {viewFeedback.interviewCompletedAt ? `Completed at ${formatDateTime(viewFeedback.interviewCompletedAt)}` : "Completed time not recorded"}
                                                 </p>
                                             </div>
                                         </div>
@@ -402,7 +402,7 @@ export default function SuperAdminFeedbackPage() {
                                             </div>
                                             <div className="rounded-2xl border border-gray-100 bg-white p-4">
                                                 <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Interview Status</p>
-                                                <p className="mt-2 text-sm font-bold text-gray-900">{viewFeedback.status || "UNKNOWN"}</p>
+                                                <p className="mt-2 text-sm font-bold text-gray-900">{viewFeedback.interviewStatus || "UNKNOWN"}</p>
                                             </div>
                                             <div className="rounded-2xl border border-gray-100 bg-white p-4">
                                                 <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Duration</p>
