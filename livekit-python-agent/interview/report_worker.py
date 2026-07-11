@@ -216,12 +216,12 @@ async def _run(payload: dict) -> None:
             # single-model guess, so this matches production exactly.
             def _cost_and_tokens(model: str, input_t: int, cached_t: int, output_t: int) -> tuple[float, int, int]:
                 if not model or (not input_t and not output_t):
-                    return 0.0, int(input_t or 0), int(output_t or 0)
+                    return 0.0, input_t or 0, output_t or 0
                 try:
                     cost = CostCalculator.openai(model, input_t, cached_t, output_t)
                 except ValueError:
                     cost = 0.0
-                return cost, int(input_t or 0), int(output_t or 0)
+                return cost, input_t or 0, output_t or 0
 
             # Session usage carries one entry per (type, provider, model) in
             # model_usage -- sum cost per LLM entry individually since a
@@ -290,8 +290,8 @@ async def _run(payload: dict) -> None:
                         "llmCost": llm_cost,
                         "ttsCost": tts_cost,
                         "sttCost": stt_cost,
-                        "llmInputTokens": int(llm_in),
-                        "llmOutputTokens": int(llm_out),
+                        "llmInputTokens": llm_in,
+                        "llmOutputTokens": llm_out,
                         "ttsChars": billable_tts_characters,
                         "sttSeconds": round(plugin_stt_audio_seconds, 1),
                         "ttsProvider": tts_provider or None,

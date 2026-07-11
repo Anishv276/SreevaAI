@@ -1,4 +1,4 @@
-﻿"""
+"""
 report_pipeline.py
 ==================
 Self-contained post-interview report pipeline.
@@ -67,7 +67,7 @@ class LLMEvalDimension(BaseModel):
     @classmethod
     def _clamp(cls, v: Any) -> int:
         try:
-            return max(0, min(100, int(round(float(v)))))
+            return max(0, min(100, round(float(v))))
         except (TypeError, ValueError):
             return 0
 
@@ -91,7 +91,7 @@ class LLMSkillEntry(BaseModel):
     @classmethod
     def _clamp(cls, v: Any) -> int:
         try:
-            return max(1, min(10, int(round(float(v)))))
+            return max(1, min(10, round(float(v))))
         except (TypeError, ValueError):
             return 5
 
@@ -193,7 +193,7 @@ class IntegrityEngine:
                 score += cls._NEG[sig] * min(count, 3)
                 fired.append(sig)
 
-        final = max(0, min(100, int(round(score))))
+        final = max(0, min(100, round(score)))
         band  = "HIGH" if final >= 80 else "MODERATE" if final >= 55 else "LOW"
         return {
             "score":        final,
@@ -229,7 +229,7 @@ class SkillFilter:
         """
         seen: set[str] = set()
         result: list[str] = []
-        for topic in (str(s).strip() for s in raw if str(s).strip()):
+        for topic in (s.strip() for s in raw if s.strip()):
             if topic.lower() in cls._NOISE:
                 continue
             if len(topic.split()) == 1 and len(topic) < 10:
@@ -340,7 +340,7 @@ class ReportLLMClient:
 
                 async with asyncio.timeout(spec.timeout):
                     stream = await self.client.chat.completions.create(**kwargs)
-                    async for chunk in stream:
+                    async for chunk in stream:  # type: ignore
                         if chunk.choices and chunk.choices[0].delta.content:
                             chunks.append(chunk.choices[0].delta.content)
                         if getattr(chunk, "usage", None):
@@ -1769,9 +1769,9 @@ async def _node_assemble(state: ReportState) -> dict:
 
     # Weighted overall: JD Knowledge 30% + Problem Solving 25% + Experience Credibility 20%
     #                   + Communication 15% + Ownership 10%
-    overall_score = max(0, min(100, int(round(
+    overall_score = max(0, min(100, round(
         jk * 0.30 + ps * 0.25 + ec * 0.20 + cm * 0.15 + od * 0.10
-    ))))
+    )))
 
     skill_ratings_list = [
         {"skill": r.skill, "score": r.score, "evidence": r.evidence}
@@ -1891,7 +1891,7 @@ async def _node_assemble(state: ReportState) -> dict:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 def _build_report_graph() -> Any:
-    builder = StateGraph(ReportState)
+    builder = StateGraph(ReportState)  # type: ignore
     builder.add_node("signals",   _node_signals)
     builder.add_node("llm_calls", _node_llm_calls)
     builder.add_node("assemble",  _node_assemble)

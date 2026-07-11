@@ -22,7 +22,6 @@ import {
   Star,
   BarChart2,
   Folder,
-  Tag,
 } from "lucide-react";
 const Plyr = dynamic(
   () => import("plyr-react").then((m) => {
@@ -47,7 +46,7 @@ export type IntelSignalRow = {
   tone: IntelBadgeTone;
   details?: string[];
 };
-type IntelId = "raw_signals" | "signal_analysis";
+
 type QBadge = "FAIR" | "AVERAGE" | "STRONG" | "PENDING";
 export type SreevaAIInterviewViewModel = {
   backHref: string;
@@ -334,7 +333,7 @@ function buildTopStrengthsRisks(args: {
 }
 export function buildSreevaAIInterviewViewModel(i: {
   backHref?: string;
-  candidate: { fullName?: string; createdAt?: string; location?: string; interview?: any; assessment?: any; drive?: { role?: string; title?: string } };
+  candidate: { fullName?: string; createdAt?: string; location?: string; interview?: any; assessment?: any; job?: { role?: string; title?: string } };
   mounted: boolean;
   displayAvatar: string;
   interviewReportScores: Record<string, any>;
@@ -1197,7 +1196,7 @@ function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscrip
     </div>
   );
 }
-// TabStrip removed
+
 export const SREEVAAI_REPORT_PAGE_BG = "bg-[#EEF0F3]";
 export const SREEVAAI_REPORT_CARD = "rounded-2xl border border-[#DDE1E5] bg-white shadow-sm";
 const bgPage = SREEVAAI_REPORT_PAGE_BG;
@@ -1221,8 +1220,7 @@ export function InterviewReportSreevaAI({
 }) {
   const plyrRef = useRef<any>(null);
   const [expandedVerdict, setExpandedVerdict] = useState(false);
-  const [openStrengths, setOpenStrengths] = useState(true);
-  const [openRisks, setOpenRisks] = useState(true);
+
   useEffect(() => {
     document.body.classList.add("reports-mode");
     return () => {
