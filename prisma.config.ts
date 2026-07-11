@@ -6,7 +6,4 @@ export default defineConfig({
   datasource: {
     url: env('DIRECT_URL'),
   },
-  migrations: {
-    path: path.join('prisma', 'migrations'),
-  },
 })
