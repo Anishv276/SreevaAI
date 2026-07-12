@@ -63,12 +63,8 @@ process.on('unhandledRejection', (reason) => {
   });
 });
 
-void redisConnection.connect().catch((e) => {
-  logRedisError({
-    error: e instanceof Error ? e.message : String(e),
-    reason: "Redis connection failed on worker startup",
-  });
-}); // force-connect before BullMQ workers start
+// Removed manual .connect() call because ioredis connects automatically (lazyConnect: false).
+// Calling it manually causes "Redis is already connecting/connected" errors.
 // BullMQ key prefix -- MUST match lib/queue.ts so this worker consumes the same
 // queues the API enqueues to. Set BULLMQ_PREFIX to isolate dev/prod on shared Redis.
 const BULL_PREFIX = getBullPrefix();
