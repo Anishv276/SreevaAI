@@ -64,6 +64,7 @@ COPY --from=builder /app/livekit-python-agent/billing ./billing
 COPY --from=builder /app/livekit-python-agent/interview ./interview
 COPY --from=builder /app/lib ./lib
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/certs ./certs
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder /app/worker.ts ./worker.ts
 COPY --from=builder /app/tsconfig.json ./tsconfig.json
