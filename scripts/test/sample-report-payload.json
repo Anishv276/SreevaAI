@@ -1,0 +1,59 @@
+{
+  "appId": "app-vamsi-resume-gtm-8264-5959604e",
+  "orgId": "org-lumoscale-8836",
+  "jobTitle": "GTM Engineer (Fresher)",
+  "candidateName": "Vadla Vamsi Krishna",
+  "isTest": true,
+  "transcriptLines": [
+    "Interviewer: Tell me about a time you built an automation workflow.",
+    "Candidate: I built a multi-channel lead qualification system using n8n. It pulled leads from Instagram, Facebook, and email, then scored them based on engagement signals before routing hot leads to a booking flow.",
+    "Interviewer: What was the hardest part of that project?",
+    "Candidate: Handling deduplication across channels was tricky since the same lead could come in from multiple sources with slightly different contact info.",
+    "Interviewer: How did you decide which leads counted as 'hot'?",
+    "Candidate: I scored leads based on engagement signals -- email opens, link clicks, reply sentiment -- and anything above a threshold triggered a booking reminder automatically.",
+    "Interviewer: What would you do differently if you rebuilt this today?",
+    "Candidate: I'd add a proper dedup step earlier in the pipeline instead of patching it after the fact, and I'd separate the scoring logic from the routing logic so they could be tested independently."
+  ],
+  "answerScores": [
+    {
+      "topic": "Multi Channel Lead Qualification System",
+      "question": "Tell me about a time you built an automation workflow.",
+      "answer": "I built a multi-channel lead qualification system using n8n, pulling leads from Instagram, Facebook, and email, scoring them by engagement, then routing hot leads to a booking flow.",
+      "depth": "high",
+      "specificity": "high",
+      "grounding": "high",
+      "is_warmup": false,
+      "turn": 1,
+      "question_asked_at_wall_ms": 1000
+    },
+    {
+      "topic": "Multi Channel Lead Qualification System",
+      "question": "What was the hardest part of that project?",
+      "answer": "Handling deduplication across channels was tricky since the same lead could come in from multiple sources with slightly different contact info.",
+      "depth": "medium",
+      "specificity": "high",
+      "grounding": "high",
+      "is_warmup": false,
+      "turn": 2,
+      "question_asked_at_wall_ms": 60000
+    }
+  ],
+  "topicRecords": [],
+  "llmInterviewReport": "gpt-5.4-mini",
+  "proctoringData": {},
+  "jdJson": {"job_title": "GTM Engineer (Fresher)", "criteria": []},
+  "resumeJson": {"full_name": "Vadla Vamsi Krishna", "work_history": []},
+  "answerIntegrityEnabled": false,
+  "usage": {"evalUsages": [], "briefUsages": [], "llmgenUsages": []},
+  "billing": {
+    "sessionUsage": null,
+    "durationSeconds": 300,
+    "ttsProvider": "",
+    "ttsModel": "",
+    "sttProvider": "DEEPGRAM",
+    "sttModel": "",
+    "ttsCharacters": 0,
+    "ttsAudioSeconds": 0.0,
+    "sttAudioSeconds": 0.0
+  }
+}

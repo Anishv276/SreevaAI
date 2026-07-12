@@ -1,21 +1,21 @@
 /**
- * start-worker.mjs â€” Single-instance worker launcher for Windows + Unix.
+ * start-worker.mjs — Single-instance worker launcher for Windows + Unix.
  *
- * Problem: `tsx` on Windows spawns: cmd.exe â†’ node(tsx) â†’ node(worker)
+ * Problem: `tsx` on Windows spawns: cmd.exe → node(tsx) → node(worker)
  * Ctrl+C only kills the top shell, leaving the grandchild node process alive.
  * Those ghosts connect to Redis and consume BullMQ jobs silently.
  *
  * Solution:
  * 1. Kill every node.exe that has "worker.ts" in its command line before starting.
- * 2. Spawn tsx directly (not via npx) so the process tree is: node(tsx) â†’ node(worker).
+ * 2. Spawn tsx directly (not via npx) so the process tree is: node(tsx) → node(worker).
  * 3. On Ctrl+C, use taskkill /T to kill the entire process tree.
  * 4. Store the spawned PID in .worker.pid so the next run can clean up.
  *
- * Also launches the Python extract-service (FastAPI on :8100) as a sibling child
- * so a single `npm run worker` boots BOTH the BullMQ worker and the extraction
- * backend the JD/resume workers fetch() against. Both are torn down together on
- * exit. Set SKIP_EXTRACT_SERVICE=1 to run only the worker (e.g. when the service
- * is already running elsewhere / in its own container).
+ * The Python extract-service (FastAPI on :8100) is no longer spawned here --
+ * resume/JD extraction, brief generation, and interview report generation all
+ * run on Modal now (see modal_app/*.py, lib/modal-dispatch.ts). This worker
+ * only handles the remaining lightweight BullMQ jobs (email, DB state, R2
+ * uploads, cron).
  */
 import { execSync, spawn } from "child_process";
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from "fs";
@@ -30,13 +30,7 @@ const TSX_BIN = process.platform === "win32"
 const ENV_FILE = join(ROOT, ".env");
 
 const QUEUES = process.env.WORKER_QUEUES
-  || "resume-processing,invitation-delivery-queue,interview-start,interview-finalization,interview-snapshots,interview-recording,recording-retention-cleanup,jd-upload,jd-extraction,interview-report";
-
-// Python interpreter for the extract-service (mirrors lib/python-exec.ts).
-const PYTHON_BIN = process.env.PYTHON_BIN?.trim()
-  || (process.platform === "win32" ? "python" : "python3");
-const EXTRACT_SERVICE_PORT = process.env.EXTRACT_SERVICE_PORT || "8100";
-const SKIP_EXTRACT_SERVICE = /^(1|true|yes)$/i.test(process.env.SKIP_EXTRACT_SERVICE || "");
+  || "resume-processing,invitation-delivery-queue,interview-start,interview-finalization,interview-snapshots,interview-recording,recording-retention-cleanup,jd-upload,jd-extraction,brief-generation,interview-report";
 
 function killTree(pid) {
   try {
@@ -69,14 +63,14 @@ function killAllWorkerProcesses() {
       }
     }
   } catch {
-    // wmic unavailable â€” fall back to PID file only
+    // wmic unavailable — fall back to PID file only
   }
 }
 
-// â”€â”€ Step 1: Kill all ghost worker.ts node processes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Step 1: Kill all ghost worker.ts node processes ─────────────────────────
 killAllWorkerProcesses();
 
-// â”€â”€ Step 2: Kill previous PID from file (belt-and-suspenders) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Step 2: Kill previous PID from file (belt-and-suspenders) ───────────────
 if (existsSync(PID_FILE)) {
   const oldPid = readFileSync(PID_FILE, "utf8").trim();
   if (oldPid && /^\d+$/.test(oldPid)) {
@@ -86,33 +80,8 @@ if (existsSync(PID_FILE)) {
   unlinkSync(PID_FILE);
 }
 
-// â”€â”€ Step 3: Spawn the Python extract-service (FastAPI on :8100) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// The JD/resume workers fetch() this service; without it every job fails with
-// "fetch failed". Booting it here means one command starts everything.
-let extractChild = null;
-if (!SKIP_EXTRACT_SERVICE) {
-  extractChild = spawn(
-    PYTHON_BIN,
-    ["-m", "uvicorn", "extraction_resume_JD_score_report.service:app", "--host", "0.0.0.0", "--port", EXTRACT_SERVICE_PORT],
-    {
-      cwd: ROOT,
-      env: { ...process.env },
-      stdio: "inherit",
-      shell: process.platform === "win32",
-      detached: false,
-    }
-  );
-  if (extractChild.pid) {
-    console.log(`[start-worker] Extract-service spawned PID=${extractChild.pid} (port ${EXTRACT_SERVICE_PORT})`);
-  } else {
-    console.error("[start-worker] Failed to spawn extract-service");
-  }
-} else {
-  console.log("[start-worker] SKIP_EXTRACT_SERVICE set â€” not starting extract-service");
-}
-
-// â”€â”€ Step 4: Spawn tsx directly from node_modules/.bin â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Direct tsx binary avoids the npx â†’ cmd chain that prevents Ctrl+C from propagating.
+// ── Step 3: Spawn tsx directly from node_modules/.bin ────────────────────────
+// Direct tsx binary avoids the npx → cmd chain that prevents Ctrl+C from propagating.
 // On Windows, .cmd files require shell:true to execute.
 // We compensate by using taskkill /T on shutdown so the whole cmd+node tree dies.
 const tsxArgs = existsSync(ENV_FILE) ? ["--env-file", ENV_FILE, "worker.ts"] : ["worker.ts"];
@@ -126,21 +95,19 @@ const child = spawn(TSX_BIN, tsxArgs, {
 
 if (!child.pid) {
   console.error("[start-worker] Failed to spawn worker process");
-  if (extractChild?.pid) killTree(extractChild.pid);
   process.exit(1);
 }
 
 writeFileSync(PID_FILE, String(child.pid), "utf8");
 console.log(`[start-worker] Worker spawned PID=${child.pid}`);
 
-// â”€â”€ Step 5: Forward signals â†’ kill entire process tree â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Step 4: Forward signals → kill entire process tree ───────────────────────
 let exiting = false;
 function shutdown(signal) {
   if (exiting) return;
   exiting = true;
-  console.log(`\n[start-worker] ${signal} received â€” killing worker tree PID=${child.pid}${extractChild?.pid ? ` + extract-service PID=${extractChild.pid}` : ""}`);
+  console.log(`\n[start-worker] ${signal} received — killing worker tree PID=${child.pid}`);
   killTree(child.pid);
-  if (extractChild?.pid) killTree(extractChild.pid);
   try { if (existsSync(PID_FILE)) unlinkSync(PID_FILE); } catch { }
   setTimeout(() => process.exit(0), 300);
 }
@@ -148,20 +115,9 @@ function shutdown(signal) {
 process.on("SIGINT",  () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 
-// If either child dies, take the whole launcher down so they never run half-up.
 child.on("exit", (code, signal) => {
   try { if (existsSync(PID_FILE)) unlinkSync(PID_FILE); } catch { }
   if (!exiting) {
-    if (extractChild?.pid) killTree(extractChild.pid);
     process.exit(code ?? 0);
   }
 });
-
-if (extractChild) {
-  extractChild.on("exit", (code) => {
-    if (!exiting) {
-      console.error(`[start-worker] Extract-service exited (code=${code}) â€” shutting down worker too.`);
-      shutdown("extract-service-exit");
-    }
-  });
-}
