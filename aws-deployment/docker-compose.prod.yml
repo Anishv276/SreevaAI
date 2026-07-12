@@ -26,7 +26,9 @@ services:
   # up new (e.g. privileged) containers via the daemon.
   # ---------------------------------------------------------------------------
   socket-proxy:
-    image: tecnativa/docker-socket-proxy:0.4.2
+    # 0.4.2 tag stopped resolving on Docker Hub (2026-07-12) -- pinned to the
+    # digest behind :latest at the time instead, same rationale as traefik's pin.
+    image: tecnativa/docker-socket-proxy@sha256:1f3a6f303320723d199d2316a3e82b2e2685d86c275d5e3deeaf182573b47476
     container_name: docker-socket-proxy
     restart: always
     environment:
