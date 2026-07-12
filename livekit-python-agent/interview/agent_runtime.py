@@ -58,7 +58,7 @@ from enum import Enum
 # --- Test Event Logger (for /test page debugging) ------------------------------
 _TEST_EVENT_LOG_URL = os.environ.get("TEST_EVENT_LOG_URL", "").strip()
 
-async def log_test_event(app_id: str, event_type: str, message: str, data: dict = None) -> None:
+async def log_test_event(app_id: str, event_type: str, message: str, data: dict | None = None) -> None:
     """Send event to /api/test/events for live debugging on /test page.
     No-op unless TEST_EVENT_LOG_URL is set -- prod agents don't run a local
     Next.js app, so this used to fire (and fail) on every interview event.
@@ -187,7 +187,7 @@ class CoveredTopics:
 
     @staticmethod
     def _norm(key: str) -> str:
-        short = str(key or "").split(" - ")[0].strip()
+        short = (key or "").split(" - ")[0].strip()
         return re.sub(r"[^a-z0-9]+", " ", short.lower()).strip()
 
     # ------------------------------------------------------------------
@@ -330,12 +330,15 @@ _STT_VOWEL_RE = re.compile(r"[aeiou]")
 _TTS_SENT_END_RE = re.compile(r'(?<=[.?!…])\s+|(?<=—)\s+')
 _TTS_MAX_BUFFER_CHARS = 200  # push to TTS if no sentence boundary found after this many chars
 def _normalize_custom_question_text(raw: str) -> str:
-    text = re.sub(r"\s+", " ", str(raw or "").strip().lower())
+    text = re.sub(r"\s+", " ", (raw or "").strip().lower())
     for p in _CUSTOM_Q_PREFIXES:
         if text.startswith(p):
             text = text[len(p):].strip()
             break
     return re.sub(r"[^a-z0-9\s]", " ", text).strip()
+def _expand_custom_q_tokens(text: str) -> set[str]:
+    """Expand tokens from a question string for fuzzy custom-question coverage matching."""
+    return {t for t in text.split() if len(t) >= 4}
 def _clean_stt_text(raw_text: str) -> str:
     """Remove STT noise/hallucination artifacts from a candidate transcript turn."""
     text = _STT_WHITESPACE_RE.sub(" ", (raw_text or "").strip())
@@ -453,7 +456,7 @@ def _build_probe_directive(
     _mandatory_subconcept: str = ""
     _remaining_subconcepts: list[str] = []
     if _focus_list:
-        _idx = max(0, int(probe_rotation_index)) % len(_focus_list)
+        _idx = max(0, probe_rotation_index) % len(_focus_list)
         _mandatory_subconcept = _focus_list[_idx]
         _remaining_subconcepts = [f for i, f in enumerate(_focus_list) if i != _idx]
 
@@ -986,7 +989,7 @@ class InterviewAgent(Agent):
         # LiveKit calls llm_node as soon as a user item lands. During the real
         # interview we block only while the previous question is awaiting eval.
         # Prompt-text inference is too brittle here; the runtime owns this flag.
-        _must_wait_for_eval = bool(self._waiting_for_eval)
+        _must_wait_for_eval = self._waiting_for_eval
         if _must_wait_for_eval:
             self._directive_ready.clear()
             logger.debug("[LLM_GATE] waiting for eval directive")
@@ -1398,7 +1401,7 @@ async def entrypoint(ctx: JobContext):
         await _fail_interview("context_parse_failed")
         return
     # GUARD: Prevent re-entry if interview is already completed
-    if ctx_data.interviewStatus and str(ctx_data.interviewStatus).strip().upper() in ("COMPLETED", "NO_SHOW", "FAILED"):
+    if ctx_data.interviewStatus and ctx_data.interviewStatus.strip().upper() in ("COMPLETED", "NO_SHOW", "FAILED"):
         logger.warning(
             f"[GUARD] Interview {app_id} is already {ctx_data.interviewStatus}. "
             f"Rejecting duplicate job dispatch. Exiting immediately."
@@ -1621,7 +1624,7 @@ async def entrypoint(ctx: JobContext):
         )
     # Compact text block for eval layer prompt
     # Register all session keywords with the phonetic processor
-    tts_phonetic_processor.add_keywords(_tts_keywords)
+    tts_phonetic_processor.add_keywords(_tts_keywords)  # type: ignore[union-attr]
     logger.info("[TTS_PHONETIC] Registered %d keywords for this session", len(_tts_keywords))
     interview_directive_cached = build_interview_directive(
         band=candidate_band,
@@ -1700,8 +1703,8 @@ async def entrypoint(ctx: JobContext):
             *(_jd_skills or []),
             *_brief_projects,
             *_brief_work,
-            str(job_title or ""),
-            str(ctx_data.orgName or ""),
+            job_title or "",
+            (ctx_data.orgName or ""),
         ]
         stopwords = {
             "and", "are", "for", "from", "into", "that", "the", "this", "with",
@@ -1710,7 +1713,7 @@ async def entrypoint(ctx: JobContext):
         terms: list[str] = []
         seen: set[str] = set()
         def _add(term: str) -> None:
-            cleaned = re.sub(r"\s+", " ", str(term or "").strip(" -:;,.()[]{}"))
+            cleaned = re.sub(r"\s+", " ", (term or "").strip(" -:;,.()[]{}"))
             if len(cleaned) < 2 or len(cleaned) > 60:
                 return
             key = cleaned.casefold()
@@ -1719,7 +1722,7 @@ async def entrypoint(ctx: JobContext):
             seen.add(key)
             terms.append(cleaned)
         for raw in raw_topics:
-            text = str(raw or "").strip()
+            text = (raw or "").strip()
             if not text:
                 continue
             _add(_topic_short_title(text))
@@ -1811,9 +1814,9 @@ async def entrypoint(ctx: JobContext):
             language=_TTS_LANGUAGE_CODE,
             model=org_tts_model,
             voice_id=voice_id,
-            **({"speed": org_tts_speed} if org_tts_speed else {}),
-            **({"dict_id": _sarvam_dict_id} if _sarvam_dict_id else {}),
-            **({"pronunciation_dict_locators": _elevenlabs_pronunciation_locators} if _elevenlabs_pronunciation_locators else {}),
+            **({"speed": org_tts_speed} if org_tts_speed else {}),  # type: ignore[arg-type]
+            **({"dict_id": _sarvam_dict_id} if _sarvam_dict_id else {}),  # type: ignore[arg-type]
+            **({"pronunciation_dict_locators": _elevenlabs_pronunciation_locators} if _elevenlabs_pronunciation_locators else {}),  # type: ignore[arg-type]
         )
     except Exception as _tts_build_err:
         try:
@@ -1943,7 +1946,7 @@ async def entrypoint(ctx: JobContext):
         "aec_warmup_duration": 0.5,
     }
     latest_session_usage: Optional[AgentSessionUsage] = None
-    session = AgentSession(**session_kwargs)
+    session = AgentSession(**session_kwargs)  # type: ignore[arg-type]
     @session.on("session_usage_updated")
     def on_session_usage_updated(event) -> None:
         nonlocal latest_session_usage
@@ -2483,7 +2486,7 @@ async def entrypoint(ctx: JobContext):
         }
         return data
     def _normalize_topic_key(text: str) -> str:
-        return re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).strip()
+        return re.sub(r"[^a-z0-9]+", " ", (text or "").lower()).strip()
     def _remaining_total_seconds_now() -> float:
         if not session_start_time:
             return float(time_limit_mins * 60)
@@ -2735,7 +2738,7 @@ async def entrypoint(ctx: JobContext):
                 f"transcript_save_turn_{turn_snapshot}",
             )
             # Inject structured recent Q&A context for callbacks and follow-up context.
-            if _last_interviewer_question and turn_snapshot > 1:
+            if bool(_last_interviewer_question) and turn_snapshot > 1:
                 # Limit the lookback to the current topic to prevent leaking previous topics
                 _n_exchanges = min(3, len(_current_topic_answers))
                 recent_context = _build_recent_context_block(
@@ -2758,7 +2761,7 @@ async def entrypoint(ctx: JobContext):
             # Greeting = turn 1, warmup question = turn 2, interview starts at turn 3.
             # Warmup turns (before warmup_complete) are recorded as zero-scored placeholders
             # so they never pollute the technical or communication score averages.
-            is_warmup_turn = not warmup_complete and _last_interviewer_question and turn_snapshot > 1
+            is_warmup_turn: bool = not warmup_complete and bool(_last_interviewer_question) and turn_snapshot > 1
             if is_warmup_turn:
                 async with _session_state_lock:
                     answer_scores.append({
@@ -2798,7 +2801,7 @@ async def entrypoint(ctx: JobContext):
                 "PASS" if _can_eval_turn
                 else (
                     f"BLOCK(interview_started={_interview_has_started},turn={turn_snapshot}>2={turn_snapshot>2},"
-                    f"question={'Y' if question_snap else 'EMPTY'})"
+                    f"question={'Y' if question_snap else 'EMPTY'})"  # type: ignore[str-bytes-safe]
                 )
             )
             logger.info("[EVAL_GATE] turn=%d -> %s", turn_snapshot, _gate_reason)
@@ -2846,7 +2849,7 @@ async def entrypoint(ctx: JobContext):
                             re.IGNORECASE,
                         )
                         for _line in reversed(lines):
-                            _txt = str(_line or "").strip()
+                            _txt = (_line or "").strip()
                             if not _txt:
                                 continue
                             if _txt.lower().startswith("interviewer:"):
@@ -2897,7 +2900,7 @@ async def entrypoint(ctx: JobContext):
                         "topic_why_relevant": _active_brief_item.why_relevant if _active_brief_item else "",
 
                         "job_title": job_title,
-                        "remaining_seconds": float(_remaining_total_seconds_now()),
+                        "remaining_seconds": _remaining_total_seconds_now(),
                         "band": candidate_band,
                         "ai_question_this_turn": (_last_interviewer_question or "").strip(),
                     }
@@ -3171,10 +3174,14 @@ async def entrypoint(ctx: JobContext):
                     except Exception as _tr_err:
                         logger.warning("[TOPIC_RECORD] Failed to record topic: %s", _tr_err)
                     _next_topic = _next_uncovered_topic(exclude=_old_topic)
+                    # _prev_a is needed by the non-prefired MOVE_ON directive path; initialize
+                    # here so it's always defined regardless of which branch runs below.
+                    _prev_a = (payload.get("answer") or "").strip()
                     # Pre-fire MOVE_ON directive generation in parallel -- by the time
                     # we reach the await below it will already be done (or nearly so),
                     # eliminating the 5s serial wait after the eval completes.
                     _move_on_directive_task: Optional[asyncio.Task] = None
+                    _pre_next_key: str = ""  # initialized before the conditional so it's always defined
                     if _next_topic is not None:
                         _pre_next_key = _topic_short_key(_next_topic).lower()
                         _pre_next_item = next(
