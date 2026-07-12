@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 export async function POST(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
@@ -38,7 +39,13 @@ export async function POST(
         });
         return NextResponse.json({ success: true });
     } catch (error) {
-        console.error("Feedback error:", error);
-        return NextResponse.json({ error: "Failed to save feedback" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/interview/[id]/feedback",
+            method: "POST",
+            error,
+            body: { error: "Failed to save feedback" },
+            status: 500,
+            logLabel: "Feedback error:",
+        });
     }
 }

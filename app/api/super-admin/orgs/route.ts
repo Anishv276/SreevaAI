@@ -12,6 +12,7 @@ import { normalizeOrgLimitInput } from "@/lib/org-limits";
 import { normalizeOrgStatusControl, ORG_STATUS_CONTROL_MANUAL } from "@/lib/credits";
 import { normalizeEmail } from "@/lib/email";
 import { normalizeRecordingRetentionDays } from "@/lib/recording-retention";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 // GET /api/super-admin/orgs - list organizations with stats, pagination, and search
 export async function GET(request: Request) {
     try {
@@ -274,8 +275,14 @@ export async function GET(request: Request) {
             stats,
         });
     } catch (error) {
-        console.error("Error fetching orgs:", error);
-        return NextResponse.json({ error: "Failed to fetch organizations" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/super-admin/orgs",
+            method: "GET",
+            error,
+            body: { error: "Failed to fetch organizations" },
+            status: 500,
+            logLabel: "Error fetching orgs:",
+        });
     }
 }
 // POST /api/super-admin/orgs - create new org + HR admin user

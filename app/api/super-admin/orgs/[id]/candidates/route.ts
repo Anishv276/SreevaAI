@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession, isSuperAdminRole } from "@/lib/auth";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 export async function GET(
     request: Request,
@@ -123,7 +124,13 @@ export async function GET(
             },
         });
     } catch (error) {
-        console.error("[super-admin candidates] GET error:", error);
-        return NextResponse.json({ error: "Failed to fetch candidates" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/super-admin/orgs/[id]/candidates",
+            method: "GET",
+            error,
+            body: { error: "Failed to fetch candidates" },
+            status: 500,
+            logLabel: "[super-admin candidates] GET error:",
+        });
     }
 }

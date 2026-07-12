@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession, createSession, isAdminRole, invalidateUserSessions } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 import { validatePasswordStrength } from "@/lib/validation";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 export async function POST(req: Request) {
     try {
         const session = await getSession();
@@ -56,7 +57,13 @@ export async function POST(req: Request) {
         });
         return response;
     } catch (error: any) {
-        console.error("[ONBOARDING_API_ERROR]", error);
-        return NextResponse.json({ error: "Onboarding failed." }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/admin/setup",
+            method: "POST",
+            error,
+            body: { error: "Onboarding failed." },
+            status: 500,
+            logLabel: "[ONBOARDING_API_ERROR]",
+        });
     }
 }

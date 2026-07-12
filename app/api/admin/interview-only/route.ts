@@ -5,6 +5,7 @@ import { generateId } from "@/lib/ids";
 import { sendScheduleInviteEmail } from "@/lib/mail";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { resumeQueue } from "@/lib/queue";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 // POST /api/admin/interview-only
 // Interview Only mode -- two paths:
@@ -124,7 +125,13 @@ export async function POST(request: Request) {
 
         return NextResponse.json({ success: true, results });
     } catch (err) {
-        console.error("[interview-only] POST error:", err);
-        return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/admin/interview-only",
+            method: "POST",
+            error: err,
+            body: { error: "Internal server error" },
+            status: 500,
+            logLabel: "[interview-only] POST error:",
+        });
     }
 }

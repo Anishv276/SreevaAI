@@ -85,12 +85,14 @@ image = (
         "livekit-python-agent/certs/supabase-root-ca.pem",
         remote_path="/root/certs/supabase-root-ca.pem",
     )
+    .add_local_file("modal_app/_modal_shared.py", remote_path="/root/_modal_shared.py")
 )
 
 secrets = [
     modal.Secret.from_name("sreevaai-openai"),
     modal.Secret.from_name("sreevaai-database"),
     modal.Secret.from_name("sreevaai-extract-api-key"),
+    modal.Secret.from_name("sreevaai-slack"),
 ]
 
 
@@ -101,9 +103,14 @@ def generate_brief(application_id: str) -> dict:
     import sys
     sys.path.insert(0, "/root")
     from interview.generate_brief import _main
+    from _modal_shared import report_crash_to_slack
 
     print(f"[MODAL] generate_brief started applicationId={application_id}")
-    result = asyncio.run(_main(application_id))
+    try:
+        result = asyncio.run(_main(application_id))
+    except Exception as e:
+        report_crash_to_slack("generate_brief", e, applicationId=application_id)
+        raise
     print(f"[MODAL] generate_brief done applicationId={application_id} success={result.success}")
     return result.model_dump()
 

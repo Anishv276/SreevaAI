@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 export async function GET(request: Request) {
     try {
@@ -187,7 +188,13 @@ export async function GET(request: Request) {
             }
         });
     } catch (error) {
-        console.error("Billing overview error:", error);
-        return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/billing",
+            method: "GET",
+            error,
+            body: { error: "Internal server error" },
+            status: 500,
+            logLabel: "Billing overview error:",
+        });
     }
 }

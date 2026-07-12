@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 function getRequestedOrgId(request: Request) {
     // Only an explicit query param -- the Referer header is client-controlled
     // and easily spoofed/stripped, so it's not a trustworthy source for
@@ -77,8 +78,14 @@ export async function GET(request: Request) {
             headers: { 'Cache-Control': 'private, max-age=120' }
         });
     } catch (error) {
-        console.error("Error fetching organization:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/admin/organization",
+            method: "GET",
+            error,
+            body: { error: "Internal Server Error" },
+            status: 500,
+            logLabel: "Error fetching organization:",
+        });
     }
 }
 export async function PATCH(req: Request) {
@@ -97,7 +104,13 @@ export async function PATCH(req: Request) {
         });
         return NextResponse.json(updatedOrg);
     } catch (error) {
-        console.error("Error updating organization:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/admin/organization",
+            method: "PATCH",
+            error,
+            body: { error: "Internal Server Error" },
+            status: 500,
+            logLabel: "Error updating organization:",
+        });
     }
 }

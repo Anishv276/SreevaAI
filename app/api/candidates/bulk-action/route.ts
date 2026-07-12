@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { getSession } from "@/lib/auth";
 import { appendCandidateActivity } from "@/lib/candidate-activity";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 export async function POST(request: Request) {
     try {
         const session = await getSession();
@@ -101,7 +102,13 @@ export async function POST(request: Request) {
         }
         return NextResponse.json({ error: "Invalid action" }, { status: 400 });
     } catch (error) {
-        console.error("[bulk-action] error:", error);
-        return NextResponse.json({ error: "Failed to perform bulk action" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/candidates/bulk-action",
+            method: "POST",
+            error,
+            body: { error: "Failed to perform bulk action" },
+            status: 500,
+            logLabel: "[bulk-action] error:",
+        });
     }
 }

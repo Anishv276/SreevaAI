@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession, isSuperAdminRole } from "@/lib/auth";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 // Returns aggregated test billing metrics per org for super-admin billing page
 export async function GET(request: Request) {
@@ -73,7 +74,13 @@ export async function GET(request: Request) {
             count: testInterviews.length,
         });
     } catch (e) {
-        console.error("[TEST_BILLING]", e);
-        return NextResponse.json({ error: "Failed" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/test/billing",
+            method: "GET",
+            error: e,
+            body: { error: "Failed" },
+            status: 500,
+            logLabel: "[TEST_BILLING]",
+        });
     }
 }

@@ -8,6 +8,7 @@ import { safeJsonParse } from "@/lib/utils";
 import { getSession } from "@/lib/auth";
 import { parseJobScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
 import { isOrgRestrictedStatus } from "@/lib/interview-quota";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 function normalizeDeadlineDate(deadline?: string | null) {
     if (!deadline) return null;
     const parsed = new Date(`${deadline}T23:59:59.999`);
@@ -104,10 +105,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             }
         });
     } catch (error: any) {
-        console.error("[GET_JOB_ERROR]:", error);
-        return NextResponse.json({
-            error: "Failed to fetch job",
-        }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/jobs/[id]",
+            method: "GET",
+            error,
+            body: { error: "Failed to fetch job" },
+            status: 500,
+            logLabel: "[GET_JOB_ERROR]:",
+        });
     }
 }
 /**
@@ -282,7 +287,13 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
         });
         return NextResponse.json({ message: "Job soft-deleted successfully" });
     } catch (error) {
-        console.error("Error deleting job:", error);
-        return NextResponse.json({ error: "Failed to delete job" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/jobs/[id]",
+            method: "DELETE",
+            error,
+            body: { error: "Failed to delete job" },
+            status: 500,
+            logLabel: "Error deleting job:",
+        });
     }
 }

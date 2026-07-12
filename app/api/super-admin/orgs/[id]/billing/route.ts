@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 export async function GET(
     _request: Request,
@@ -193,7 +194,13 @@ export async function GET(
 
         return NextResponse.json(aggregates);
     } catch (error) {
-        console.error("Error fetching org billing:", error);
-        return NextResponse.json({ error: "Failed to fetch billing data" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/super-admin/orgs/[id]/billing",
+            method: "GET",
+            error,
+            body: { error: "Failed to fetch billing data" },
+            status: 500,
+            logLabel: "Error fetching org billing:",
+        });
     }
 }

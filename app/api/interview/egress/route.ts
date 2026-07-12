@@ -9,6 +9,7 @@ import {
     normalizeRecordingRetentionDays,
 } from "@/lib/recording-retention";
 import { mergeRecordingState, normalizeRecordingState, parseJsonRecord, type RecordingState } from "@/lib/recording-state";
+import { apiErrorResponse, logLiveKitError } from "@/lib/slack-error-logger";
 export const runtime = "nodejs";
 type EgressAction = "start" | "stop" | "status";
 type EgressManifest = {
@@ -430,6 +431,12 @@ export async function POST(req: Request) {
                         lastError: message,
                     },
                 }).catch(() => {});
+                await logLiveKitError({
+                    applicationId,
+                    error: message,
+                    phase: "egress_start",
+                    reason: "Failed to start LiveKit egress",
+                });
                 return NextResponse.json({
                     error: "Failed to start LiveKit egress",
                 }, { status: 500 });
@@ -535,12 +542,24 @@ export async function POST(req: Request) {
                     lastError: message,
                 },
             }).catch(() => {});
+            await logLiveKitError({
+                applicationId,
+                error: message,
+                phase: "egress_stop",
+                reason: "Failed to stop LiveKit egress",
+            });
             return NextResponse.json({
                 error: "Failed to stop LiveKit egress",
             }, { status: 500 });
         }
     } catch (error: unknown) {
-        console.error("[INTERVIEW_EGRESS_API_ERROR]:", error);
-        return NextResponse.json({ error: "Failed to process egress request" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/interview/egress",
+            method: "POST",
+            error,
+            body: { error: "Failed to process egress request" },
+            status: 500,
+            logLabel: "[INTERVIEW_EGRESS_API_ERROR]:",
+        });
     }
 }

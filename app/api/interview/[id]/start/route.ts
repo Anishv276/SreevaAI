@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { interviewStartQueue } from "@/lib/queue";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 export const runtime = "nodejs";
 type StartInterviewBody = {
   token?: string;
@@ -69,7 +70,13 @@ export async function POST(
       startedAt: new Date(startedAtMs).toISOString(),
     });
   } catch (error) {
-    console.error("[INTERVIEW START ERROR]:", error);
-    return NextResponse.json({ error: "Failed to record interview start" }, { status: 500 });
+    return apiErrorResponse({
+      route: "/api/interview/[id]/start",
+      method: "POST",
+      error,
+      body: { error: "Failed to record interview start" },
+      status: 500,
+      logLabel: "[INTERVIEW START ERROR]:",
+    });
   }
 }

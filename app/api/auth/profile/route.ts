@@ -4,6 +4,7 @@ import { getSession, invalidateUserSessions } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 import { validatePasswordStrength } from "@/lib/validation";
 import { verifyOtp } from "@/lib/otp";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 export async function GET() {
     try {
         const session = await getSession();
@@ -28,8 +29,14 @@ export async function GET() {
         }
         return NextResponse.json(user);
     } catch (error) {
-        console.error("[Profile API GET Error]:", error);
-        return NextResponse.json({ error: "Failed to fetch profile" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/auth/profile",
+            method: "GET",
+            error,
+            body: { error: "Failed to fetch profile" },
+            status: 500,
+            logLabel: "[Profile API GET Error]:",
+        });
     }
 }
 export async function PATCH(request: Request) {
@@ -101,7 +108,13 @@ export async function PATCH(request: Request) {
         }
         return NextResponse.json({ success: true, message: "Profile updated successfully" });
     } catch (error) {
-        console.error("[Profile API PATCH Error]:", error);
-        return NextResponse.json({ error: "Update failed" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/auth/profile",
+            method: "PATCH",
+            error,
+            body: { error: "Update failed" },
+            status: 500,
+            logLabel: "[Profile API PATCH Error]:",
+        });
     }
 }

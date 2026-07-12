@@ -5,6 +5,7 @@ import { bulkDeleteCandidatesSchema } from "@/lib/validation";
 import { getSession } from "@/lib/auth";
 import { deleteUrlTargets } from "@/lib/delete-utils";
 import { getRecordingUrl } from "@/lib/recording-state";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 /**
  * GET handler to fetch and filter candidates for a specific job.
  * Supports various query filters like status variants, date ranges, and sorting rules.
@@ -204,8 +205,14 @@ export async function GET(request: Request) {
             }
         });
     } catch (error) {
-        console.error("Error fetching candidates:", error);
-        return NextResponse.json({ error: "Failed to fetch candidates" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/candidates",
+            method: "GET",
+            error,
+            body: { error: "Failed to fetch candidates" },
+            status: 500,
+            logLabel: "Error fetching candidates:",
+        });
     }
 }
 /**
@@ -303,7 +310,13 @@ export async function DELETE(request: Request) {
         });
         return NextResponse.json({ message: `${validIds.length} candidates deleted successfully` });
     } catch (error) {
-        console.error("Error bulk deleting candidates:", error);
-        return NextResponse.json({ error: "Failed to delete candidates" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/candidates",
+            method: "DELETE",
+            error,
+            body: { error: "Failed to delete candidates" },
+            status: 500,
+            logLabel: "Error bulk deleting candidates:",
+        });
     }
 }

@@ -5,6 +5,7 @@ import { GET as getScoreDistribution } from "@/app/api/admin/score-distribution/
 import { GET as getTopCandidates } from "@/app/api/admin/top-candidates/route";
 import { GET as getNeedsAction } from "@/app/api/admin/needs-action/route";
 import { GET as getActivity } from "@/app/api/admin/activity/route";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 export async function GET(req: NextRequest) {
     try {
@@ -56,10 +57,13 @@ export async function GET(req: NextRequest) {
         response.headers.set("Cache-Control", "private, max-age=30, stale-while-revalidate=60");
         return response;
     } catch (error) {
-        console.error("Dashboard aggregate error:", error);
-        return NextResponse.json(
-            { error: "Failed to fetch dashboard data" },
-            { status: 500 }
-        );
+        return apiErrorResponse({
+            route: "/api/admin/dashboard",
+            method: "GET",
+            error,
+            body: { error: "Failed to fetch dashboard data" },
+            status: 500,
+            logLabel: "Dashboard aggregate error:",
+        });
     }
 }

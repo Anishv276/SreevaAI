@@ -253,9 +253,7 @@ class CoveredTopics:
             for rec in self._store.values()
         ]
 
-    def get_memory_block(self) -> str:
-        """Coverage memory always empty — removed from all directives."""
-        return ""
+
 
 # Module-level singleton -- reuses the HTTP/2 connection pool and TLS session
 # across all eval, directive, and brief calls for every interview session.
@@ -309,19 +307,10 @@ _CUSTOM_Q_PREFIXES: tuple[str, ...] = (
     "please ask about",
     "question:",
 )
-_CUSTOM_Q_TOKEN_SYNONYMS: dict[str, set[str]] = {
-    "education": {"education", "educational", "study", "studied", "degree", "college", "university", "school", "background", "academics", "academic"},
-    "experience": {"experience", "worked", "work", "role", "roles", "internship", "intern"},
-}
 # ponytail: English-only. Re-add a language table if multi-language support returns.
 _STT_LANGUAGE_CODE = "en-US"
 _TTS_LANGUAGE_CODE = "en"
 # ponytail: _TTS_DEFAULT_MODELS deleted -- all model values come from org DB row now
-# Compiled once  matches greeting echo fragments that leak back into STT after AI speaks.
-_GREETING_ECHO_RE = re.compile(
-    r"^\s*(?:hi|hello|hey|okay|ok|yeah|yes|yep|mmhmm|mhm|good morning|good afternoon)\s*$",
-    re.IGNORECASE,
-)
 _MEANINGFUL_SHORT_ANSWERS = {
     "no",
     "yes",
@@ -347,15 +336,6 @@ def _normalize_custom_question_text(raw: str) -> str:
             text = text[len(p):].strip()
             break
     return re.sub(r"[^a-z0-9\s]", " ", text).strip()
-def _expand_custom_q_tokens(text: str) -> set[str]:
-    tokens = {t for t in text.split() if len(t) >= 4}
-    expanded = set(tokens)
-    for t in list(tokens):
-        for root, family in _CUSTOM_Q_TOKEN_SYNONYMS.items():
-            if t in family:
-                expanded |= family
-                expanded.add(root)
-    return expanded
 def _clean_stt_text(raw_text: str) -> str:
     """Remove STT noise/hallucination artifacts from a candidate transcript turn."""
     text = _STT_WHITESPACE_RE.sub(" ", (raw_text or "").strip())
@@ -1549,13 +1529,10 @@ async def entrypoint(ctx: JobContext):
     # ── BRIEF: slot confirmation flow loads from DB; test flow always generates live ──
     _brief_openai_client: AsyncOpenAI = _SHARED_OPENAI_CLIENT
 
-    # Band seed: resume-only classification (seniority_level + total_years).
-    # Always computed regardless of brief source — band jobs prompt logic downstream.
-    _band_seed, _total_years, _seniority = classify_band(structured_resume)
-    logger.info(
-        "[BAND] seed=%s | total_years=%.1f | seniority=%s",
-        _band_seed, _total_years, _seniority or "unknown",
-    )
+    # Band seed: resume-only classification passed to generate_interview_brief.
+    # _total_years and _seniority are not used downstream — discarded.
+    _band_seed, _, _ = classify_band(structured_resume)
+    logger.info("[BAND] seed=%s", _band_seed)
 
     _stored_brief_raw = ctx_data.interviewBrief if not _is_test_session else None
     _stored_brief_dict: dict | None = (
@@ -3621,11 +3598,10 @@ async def entrypoint(ctx: JobContext):
         )
         _content_lc = content.strip().lower()
         # Match markers as whole words/phrases, not substrings
-        import re as _re_warmup
         _candidate_signals_ready = (
             turn_snapshot >= 2
             and not warmup_complete
-            and any(_re_warmup.search(r'\b' + m + r'\b', _content_lc) for m in _warmup_readiness_markers)
+            and any(re.search(r'\b' + m + r'\b', _content_lc) for m in _warmup_readiness_markers)
         )
         # ponytail: candidate already got one re-prompt (turn>=3) and gave another
         # substantive reply (not silence/noise) without an explicit marker word --

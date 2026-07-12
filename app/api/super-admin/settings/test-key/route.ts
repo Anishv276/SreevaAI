@@ -6,6 +6,7 @@ import { isRateLimited } from "@/lib/rate-limit";
 import { sendPasswordChangeOtpEmail } from "@/lib/mail";
 import { normalizeEmail } from "@/lib/email";
 import { hashOtp, verifyOtp } from "@/lib/otp";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 async function requireSuperAdmin() {
     const session = await getSession();
@@ -47,8 +48,14 @@ export async function POST() {
     try {
         await sendPasswordChangeOtpEmail({ to: targetEmail, otp });
     } catch (error) {
-        console.error("[TEST_KEY_OTP_SEND] Email send failed:", error);
-        return NextResponse.json({ error: "Failed to send security code. Please try again." }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/super-admin/settings/test-key",
+            method: "POST",
+            error,
+            body: { error: "Failed to send security code. Please try again." },
+            status: 500,
+            logLabel: "[TEST_KEY_OTP_SEND] Email send failed:",
+        });
     }
     return NextResponse.json({ success: true, message: `Security code sent to ${targetEmail}` });
 }

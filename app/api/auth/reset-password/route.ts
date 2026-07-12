@@ -6,6 +6,7 @@ import { invalidateUserSessions } from "@/lib/auth";
 import { normalizeEmail } from "@/lib/email";
 import { validatePasswordStrength } from "@/lib/validation";
 import { verifyOtp } from "@/lib/otp";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 export async function POST(request: Request) {
     try {
         const { email, otp, newPassword } = await request.json();
@@ -93,7 +94,13 @@ export async function POST(request: Request) {
         }
         return NextResponse.json({ success: true, message: "Password updated successfully." });
     } catch (error) {
-        console.error("[RESET_PASSWORD_API_ERROR]", error);
-        return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/auth/reset-password",
+            method: "POST",
+            error,
+            body: { error: "Internal server error" },
+            status: 500,
+            logLabel: "[RESET_PASSWORD_API_ERROR]",
+        });
     }
 }

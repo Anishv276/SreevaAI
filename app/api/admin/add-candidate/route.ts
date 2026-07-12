@@ -6,6 +6,7 @@ import { putObject } from "@/lib/s3";
 import { randomUUID } from "crypto";
 import { resumeQueue } from "@/lib/queue";
 import { validatePdfUpload } from "@/lib/file-validation";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 const RESUME_BUCKET = process.env.R2_RESUMES_BUCKET || "resumes";
 
@@ -92,7 +93,13 @@ export async function POST(request: Request) {
 
         return NextResponse.json({ success: true, applicationId: appId });
     } catch (err: any) {
-        console.error("[add-candidate] POST error:", err);
-        return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/admin/add-candidate",
+            method: "POST",
+            error: err,
+            body: { error: "Internal server error" },
+            status: 500,
+            logLabel: "[add-candidate] POST error:",
+        });
     }
 }

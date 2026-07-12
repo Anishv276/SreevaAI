@@ -13,6 +13,7 @@ import { normalizeJobAiConfig } from "@/lib/ai-provider-config";
 import { getInterviewQuotaSupportMessage, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { parseOrgLimitValue } from "@/lib/org-limits";
 import { parseJobScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 function normalizeDeadlineDate(deadline?: string | null) {
     if (!deadline) return null;
     const parsed = new Date(`${deadline}T23:59:59.999`);
@@ -118,8 +119,14 @@ export async function GET(request: Request) {
             }
         });
     } catch (error) {
-        console.error("Error fetching jobs:", error);
-        return NextResponse.json({ error: "Failed to fetch jobs" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/jobs",
+            method: "GET",
+            error,
+            body: { error: "Failed to fetch jobs" },
+            status: 500,
+            logLabel: "Error fetching jobs:",
+        });
     }
 }
 export async function POST(request: Request) {
@@ -215,10 +222,14 @@ export async function POST(request: Request) {
         });
         return NextResponse.json(job);
     } catch (error: any) {
-        console.error("Error creating job:", error);
-        return NextResponse.json({
-            error: "Failed to create job",
-        }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/jobs",
+            method: "POST",
+            error,
+            body: { error: "Failed to create job" },
+            status: 500,
+            logLabel: "Error creating job:",
+        });
     }
 }
 export async function DELETE(request: Request) {
@@ -277,7 +288,13 @@ export async function DELETE(request: Request) {
         });
         return NextResponse.json({ message: `${validIds.length} jobs soft-deleted successfully` });
     } catch (error) {
-        console.error("Error bulk deleting jobs:", error);
-        return NextResponse.json({ error: "Failed to delete jobs" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/jobs",
+            method: "DELETE",
+            error,
+            body: { error: "Failed to delete jobs" },
+            status: 500,
+            logLabel: "Error bulk deleting jobs:",
+        });
     }
 }

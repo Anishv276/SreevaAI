@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { createVoicePreviewResponse } from "@/lib/voice-preview";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 export async function POST(req: NextRequest) {
   try {
     const session = await getSession();
@@ -16,10 +17,13 @@ export async function POST(req: NextRequest) {
       : typeof orgId === "string" ? orgId.trim() : null;
     return await createVoicePreviewResponse({ voiceId, transcript, orgId: billingOrgId });
   } catch (err) {
-    console.error("[SarvamVoicePreview] Internal error:", err);
-    return new Response(JSON.stringify({ error: "Internal Server Error" }), {
+    return apiErrorResponse({
+      route: "/api/admin/voice/preview/sarvam",
+      method: "POST",
+      error: err,
+      body: { error: "Internal Server Error" },
       status: 500,
-      headers: { "Content-Type": "application/json" },
+      logLabel: "[SarvamVoicePreview] Internal error:",
     });
   }
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { getRangeStart } from "@/lib/date-utils";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 function timeAgo(date: Date): string {
     const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
     if (seconds < 60) return `${seconds}s ago`;
@@ -159,10 +160,13 @@ export async function GET(req: Request) {
             headers: { 'Cache-Control': 'private, max-age=60' }
         });
     } catch (error: unknown) {
-        console.error("Activity feed error:", error);
-        return NextResponse.json(
-            { error: "Failed to fetch activity feed" },
-            { status: 500 }
-        );
+        return apiErrorResponse({
+            route: "/api/admin/activity",
+            method: "GET",
+            error,
+            body: { error: "Failed to fetch activity feed" },
+            status: 500,
+            logLabel: "Activity feed error:",
+        });
     }
 }

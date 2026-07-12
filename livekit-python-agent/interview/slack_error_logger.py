@@ -60,6 +60,17 @@ if not SLACK_ERROR_WEBHOOK:
     logger.error("[SLACK_ERROR_LOGGER] SLACK_ERROR_WEBHOOK_URL is not set — error alerts will NOT be sent.")
 SLACK_ERROR_CHANNEL = os.environ.get("SLACK_ERROR_CHANNEL", "#debug-alerts")
 
+# Dedup: same (error_type, error message) within this window posts once
+# immediately, then repeats are counted and flushed as a single "happened N
+# times" summary when the window closes, instead of one Slack message per
+# occurrence.
+_DEDUP_WINDOW_SECONDS = 10 * 60
+_dedup_cache: dict[str, dict[str, Any]] = {}
+
+
+def _dedup_key(error_type: str, error: str) -> str:
+    return f"{error_type}:{error}"
+
 TYPE_EMOJIS = {
     "login": "🔐",
     "resume_upload": "📄",
@@ -126,7 +137,29 @@ def _build_error_message(
     return details
 
 
-async def _post_to_slack(message: str, error_type: str) -> None:
+async def _flush_dedup_after_window(key: str) -> None:
+    await asyncio.sleep(_DEDUP_WINDOW_SECONDS)
+    entry = _dedup_cache.pop(key, None)
+    if entry and entry["count"] > 1:
+        await _send_to_slack(entry["message"] + f"\n\n🔁 *This error happened {entry['count']} times in the last 10 minutes.*", entry["error_type"])
+
+
+async def _post_to_slack(message: str, error_type: str, error: str) -> None:
+    """Dedup gate: same (error_type, error) posts once immediately, repeats
+    within the window are counted and flushed as a single summary instead of
+    spamming one Slack message per occurrence."""
+    key = _dedup_key(error_type, error)
+    entry = _dedup_cache.get(key)
+    if entry:
+        entry["count"] += 1
+        return
+
+    _dedup_cache[key] = {"count": 1, "message": message, "error_type": error_type}
+    asyncio.create_task(_flush_dedup_after_window(key))
+    await _send_to_slack(message, error_type)
+
+
+async def _send_to_slack(message: str, error_type: str) -> None:
     """Post error message to Slack via webhook."""
     if not SLACK_ERROR_WEBHOOK:
         logger.error("[SLACK_ERROR_LOG] Webhook not configured. Error type: %s", error_type)
@@ -199,7 +232,7 @@ async def log_livekit_error(
         candidate_name=candidate_name,
         context=context,
     )
-    await _post_to_slack(message, "livekit")
+    await _post_to_slack(message, "livekit", error)
 
 
 async def log_interview_error(
@@ -221,7 +254,7 @@ async def log_interview_error(
         candidate_name=candidate_name,
         context=context,
     )
-    await _post_to_slack(message, "interview")
+    await _post_to_slack(message, "interview", error)
 
 
 async def log_database_error(
@@ -239,7 +272,7 @@ async def log_database_error(
         reason=reason or f"Database {operation} failed",
         context=context,
     )
-    await _post_to_slack(message, "database")
+    await _post_to_slack(message, "database", error)
 
 
 async def log_resume_upload_error(
@@ -262,7 +295,7 @@ async def log_resume_upload_error(
         candidate_name=candidate_name,
         context=context,
     )
-    await _post_to_slack(message, "resume_upload")
+    await _post_to_slack(message, "resume_upload", error)
 
 
 async def log_job_error(
@@ -283,7 +316,7 @@ async def log_job_error(
         job_name=job_name,
         context=context,
     )
-    await _post_to_slack(message, "job")
+    await _post_to_slack(message, "job", error)
 
 
 async def log_tts_error(
@@ -305,7 +338,7 @@ async def log_tts_error(
         candidate_name=candidate_name,
         context=ctx,
     )
-    await _post_to_slack(message, "tts")
+    await _post_to_slack(message, "tts", error)
 
 
 async def log_stt_error(
@@ -327,7 +360,7 @@ async def log_stt_error(
         candidate_name=candidate_name,
         context=ctx,
     )
-    await _post_to_slack(message, "stt")
+    await _post_to_slack(message, "stt", error)
 
 
 async def log_llm_error(
@@ -350,7 +383,7 @@ async def log_llm_error(
         candidate_name=candidate_name,
         context=ctx,
     )
-    await _post_to_slack(message, "llm")
+    await _post_to_slack(message, "llm", error)
 
 
 async def log_redis_error(
@@ -366,7 +399,7 @@ async def log_redis_error(
         reason=reason or "Redis connection/operation failed",
         context=context,
     )
-    await _post_to_slack(message, "redis")
+    await _post_to_slack(message, "redis", error)
 
 
 async def log_worker_error(
@@ -382,4 +415,4 @@ async def log_worker_error(
         reason=reason or "Background worker job failed",
         context=context,
     )
-    await _post_to_slack(message, "worker")
+    await _post_to_slack(message, "worker", error)

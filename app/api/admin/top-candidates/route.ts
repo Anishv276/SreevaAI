@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { getRangeStart } from "@/lib/date-utils";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 function normalizeStatus(value: unknown) {
     if (typeof value !== "string") return "";
     return value.trim().toLowerCase();
@@ -71,10 +72,13 @@ export async function GET(req: Request) {
             headers: { 'Cache-Control': 'private, max-age=120' }
         });
     } catch (error: unknown) {
-        console.error("Top candidates error:", error);
-        return NextResponse.json(
-            { error: "Failed to fetch top candidates" },
-            { status: 500 }
-        );
+        return apiErrorResponse({
+            route: "/api/admin/top-candidates",
+            method: "GET",
+            error,
+            body: { error: "Failed to fetch top candidates" },
+            status: 500,
+            logLabel: "Top candidates error:",
+        });
     }
 }

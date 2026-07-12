@@ -5,6 +5,7 @@ import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/job-limits";
 import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { interviewLaunchTimeoutQueue } from "@/lib/queue";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 // Window is exactly [scheduledAt, scheduledAt + 5min] -- no pre-open, no waiting room before slot.
 const LATE_CLOSE_MS = 5 * 60 * 1000; // window closes 5 min after slot start
@@ -222,8 +223,14 @@ export async function POST(
             scheduledAt: interview.interviewScheduledAt?.toISOString(),
         });
     } catch (error) {
-        console.error("LiveKit token error:", error);
-        return NextResponse.json({ error: "Failed to generate token" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/interview/[id]/token",
+            method: "POST",
+            error,
+            body: { error: "Failed to generate token" },
+            status: 500,
+            logLabel: "LiveKit token error:",
+        });
     }
 }
 
@@ -285,7 +292,13 @@ export async function GET(
             orgName: application.job?.organization?.name || "",
         });
     } catch (error) {
-        console.error("Status check error:", error);
-        return NextResponse.json({ error: "Failed to check status" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/interview/[id]/token",
+            method: "GET",
+            error,
+            body: { error: "Failed to check status" },
+            status: 500,
+            logLabel: "Status check error:",
+        });
     }
 }

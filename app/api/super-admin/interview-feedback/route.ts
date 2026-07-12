@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { getRecordingUrl, normalizeRecordingState } from "@/lib/recording-state";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 function buildSearchClause(query: string): Prisma.InterviewWhereInput {
     return {
         OR: [
@@ -172,7 +173,13 @@ export async function GET(request: Request) {
             },
         });
     } catch (error) {
-        console.error("Interview feedback fetch error:", error);
-        return NextResponse.json({ error: "Failed to fetch interview feedback" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/super-admin/interview-feedback",
+            method: "GET",
+            error,
+            body: { error: "Failed to fetch interview feedback" },
+            status: 500,
+            logLabel: "Interview feedback fetch error:",
+        });
     }
 }

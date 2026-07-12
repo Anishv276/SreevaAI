@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 type OrgStatusRow = {
     status: string;
     statusControl: string | null;
@@ -259,7 +260,13 @@ export async function GET() {
             headers: { "Cache-Control": "private, max-age=60" },
         });
     } catch (error: unknown) {
-        console.error("super-admin stats error:", error);
-        return NextResponse.json({ error: "Failed to load stats" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/super-admin/stats",
+            method: "GET",
+            error,
+            body: { error: "Failed to load stats" },
+            status: 500,
+            logLabel: "super-admin stats error:",
+        });
     }
 }

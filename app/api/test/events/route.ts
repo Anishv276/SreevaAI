@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { isTestAccessAuthorized } from "@/lib/test-key";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 export const dynamic = "force-dynamic";
 
@@ -44,8 +45,14 @@ export async function POST(request: Request) {
 
         return NextResponse.json({ ok: true });
     } catch (e) {
-        console.error("[TEST_EVENTS_POST]", e);
-        return NextResponse.json({ error: "Failed" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/test/events",
+            method: "POST",
+            error: e,
+            body: { error: "Failed" },
+            status: 500,
+            logLabel: "[TEST_EVENTS_POST]",
+        });
     }
 }
 
@@ -67,8 +74,14 @@ export async function GET(request: Request) {
 
         return NextResponse.json({ events });
     } catch (e) {
-        console.error("[TEST_EVENTS_GET]", e);
-        return NextResponse.json({ error: "Failed" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/test/events",
+            method: "GET",
+            error: e,
+            body: { error: "Failed" },
+            status: 500,
+            logLabel: "[TEST_EVENTS_GET]",
+        });
     }
 }
 
@@ -89,7 +102,13 @@ export async function DELETE(request: Request) {
 
         return NextResponse.json({ ok: true });
     } catch (e) {
-        console.error("[TEST_EVENTS_DELETE]", e);
-        return NextResponse.json({ error: "Failed" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/test/events",
+            method: "DELETE",
+            error: e,
+            body: { error: "Failed" },
+            status: 500,
+            logLabel: "[TEST_EVENTS_DELETE]",
+        });
     }
 }

@@ -5,6 +5,7 @@ import { enqueueJdExtraction } from "@/lib/jd-extraction";
 import { resumeQueue } from "@/lib/queue";
 import { safeFetch, SsrfBlockedError } from "@/lib/safe-fetch";
 import { prisma } from "@/lib/prisma";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 export async function POST(request: Request) {
     try {
         // -- AUTH: this route enqueues billable extraction work and (for JDs)
@@ -226,10 +227,16 @@ export async function POST(request: Request) {
             status: "queued",
         }, { status: 202 });
     } catch (error: any) {
-        console.error("General Extraction Error:", error);
-        return NextResponse.json({
-            error: "An unexpected error occurred while processing your request.",
-            code: "INTERNAL_SERVER_ERROR",
-        }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/extract",
+            method: "POST",
+            error,
+            body: {
+                error: "An unexpected error occurred while processing your request.",
+                code: "INTERNAL_SERVER_ERROR",
+            },
+            status: 500,
+            logLabel: "General Extraction Error:",
+        });
     }
 }

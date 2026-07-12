@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession, isAdminRole } from "@/lib/auth";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 export async function GET() {
     try {
         const session = await getSession();
@@ -19,8 +20,14 @@ export async function GET() {
             email: user.email || "",
         });
     } catch (error) {
-        console.error("Error fetching profile:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/admin/profile",
+            method: "GET",
+            error,
+            body: { error: "Internal Server Error" },
+            status: 500,
+            logLabel: "Error fetching profile:",
+        });
     }
 }
 export async function PATCH(req: Request) {
@@ -37,7 +44,13 @@ export async function PATCH(req: Request) {
         });
         return NextResponse.json(updatedUser);
     } catch (error) {
-        console.error("Error updating profile:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/admin/profile",
+            method: "PATCH",
+            error,
+            body: { error: "Internal Server Error" },
+            status: 500,
+            logLabel: "Error updating profile:",
+        });
     }
 }

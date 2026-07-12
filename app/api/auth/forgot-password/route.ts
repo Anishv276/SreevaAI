@@ -5,6 +5,7 @@ import { sendOtpEmail } from "@/lib/mail";
 import { isRateLimited } from "@/lib/rate-limit";
 import { normalizeEmail } from "@/lib/email";
 import { hashOtp } from "@/lib/otp";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 export async function POST(request: Request) {
     try {
         const { email } = await request.json();
@@ -59,12 +60,24 @@ export async function POST(request: Request) {
         try {
             await sendOtpEmail({ to: normalizedEmail, name, otp });
         } catch (error) {
-            console.error("[FORGOT_PASSWORD] Email send failed:", error);
-            return NextResponse.json({ error: "Failed to send recovery email. Please try again." }, { status: 500 });
+            return apiErrorResponse({
+                route: "/api/auth/forgot-password",
+                method: "POST",
+                error,
+                body: { error: "Failed to send recovery email. Please try again." },
+                status: 500,
+                logLabel: "[FORGOT_PASSWORD] Email send failed:",
+            });
         }
         return NextResponse.json({ success: true, message: "Verification code sent to your mail." });
     } catch (error) {
-        console.error("[FORGOT_PASSWORD_API_ERROR]", error);
-        return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/auth/forgot-password",
+            method: "POST",
+            error,
+            body: { error: "Internal server error" },
+            status: 500,
+            logLabel: "[FORGOT_PASSWORD_API_ERROR]",
+        });
     }
 }

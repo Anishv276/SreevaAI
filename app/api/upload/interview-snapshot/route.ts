@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { interviewSnapshotQueue } from "@/lib/queue";
 import { prisma } from "@/lib/prisma";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 export async function POST(request: Request) {
     try {
         const body = await request.json();
@@ -36,8 +37,13 @@ export async function POST(request: Request) {
         // Return 202 Accepted immediately to free the frontend thread
         return NextResponse.json({ status: "queued", applicationId }, { status: 202 });
     } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.error("[SNAPSHOT_QUEUE_ERROR]:", message);
-        return NextResponse.json({ error: "Failed to queue snapshot" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/upload/interview-snapshot",
+            method: "POST",
+            error,
+            body: { error: "Failed to queue snapshot" },
+            status: 500,
+            logLabel: "[SNAPSHOT_QUEUE_ERROR]:",
+        });
     }
 }

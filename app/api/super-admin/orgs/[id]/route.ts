@@ -13,6 +13,7 @@ import { normalizeOrgLimitInput } from "@/lib/org-limits";
 import { normalizeEmail } from "@/lib/email";
 import { validatePasswordStrength } from "@/lib/validation";
 import { normalizeRecordingRetentionDays } from "@/lib/recording-retention";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 // GET /api/super-admin/orgs/[id] - fetch org for editing
 export async function GET(
     _request: Request,
@@ -56,8 +57,14 @@ export async function GET(
             billingCreditsUsed: billingRows[0]?.billingCreditsUsed ?? 0,
         });
     } catch (error) {
-        console.error("Error fetching org:", error);
-        return NextResponse.json({ error: "Failed to fetch organization" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/super-admin/orgs/[id]",
+            method: "GET",
+            error,
+            body: { error: "Failed to fetch organization" },
+            status: 500,
+            logLabel: "Error fetching org:",
+        });
     }
 }
 // PATCH /api/super-admin/orgs/[id] - update org (suspend, change plan, etc.)
@@ -363,8 +370,14 @@ export async function PATCH(
         }
         return NextResponse.json(result);
     } catch (error) {
-        console.error("Error updating org:", error);
-        return NextResponse.json({ error: "Failed to update organization" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/super-admin/orgs/[id]",
+            method: "PATCH",
+            error,
+            body: { error: "Failed to update organization" },
+            status: 500,
+            logLabel: "Error updating org:",
+        });
     }
 }
 // DELETE /api/super-admin/orgs/[id] - soft remove org and all its data
@@ -424,7 +437,13 @@ export async function DELETE(
         });
         return NextResponse.json({ success: true });
     } catch (error) {
-        console.error("Error deleting org:", error);
-        return NextResponse.json({ error: "Failed to delete organization" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/super-admin/orgs/[id]",
+            method: "DELETE",
+            error,
+            body: { error: "Failed to delete organization" },
+            status: 500,
+            logLabel: "Error deleting org:",
+        });
     }
 }

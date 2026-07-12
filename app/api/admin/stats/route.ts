@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { getRangeWindow } from "@/lib/date-utils";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 export async function GET(req: NextRequest) {
     try {
         const session = await getSession();
@@ -138,10 +139,13 @@ export async function GET(req: NextRequest) {
         response.headers.set("Cache-Control", "private, max-age=30, stale-while-revalidate=60");
         return response;
     } catch (error: unknown) {
-        console.error("Dashboard stats error:", error);
-        return NextResponse.json(
-            { error: "Failed to fetch stats" },
-            { status: 500 }
-        );
+        return apiErrorResponse({
+            route: "/api/admin/stats",
+            method: "GET",
+            error,
+            body: { error: "Failed to fetch stats" },
+            status: 500,
+            logLabel: "Dashboard stats error:",
+        });
     }
 }

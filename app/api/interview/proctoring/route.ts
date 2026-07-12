@@ -6,6 +6,7 @@ import { getProctoringCategory, normalizeProctoringEvents, type ProctoringEvent 
 import { DEFAULT_PROCTORING_SIGNALS, isProctoringSignalEnabled, normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { z } from "zod";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 export const runtime = "nodejs";
 const JOIN_WINDOW_MS = 5 * 60 * 1000;
 const proctoringSignalSchema = z.object({
@@ -148,10 +149,13 @@ export async function POST(req: Request) {
       total: mergedEvents.length,
     });
   } catch (error) {
-    console.error("[PROCTORING_QUEUE_ERROR]", error);
-    return NextResponse.json(
-      { error: "Failed to save proctoring events" },
-      { status: 500 }
-    );
+    return apiErrorResponse({
+      route: "/api/interview/proctoring",
+      method: "POST",
+      error,
+      body: { error: "Failed to save proctoring events" },
+      status: 500,
+      logLabel: "[PROCTORING_QUEUE_ERROR]",
+    });
   }
 }

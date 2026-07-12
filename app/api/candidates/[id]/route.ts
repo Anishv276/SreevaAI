@@ -6,6 +6,7 @@ import { updateCandidateStatusSchema } from "@/lib/validation";
 import { deleteUrlTargets } from "@/lib/delete-utils";
 import { appendCandidateActivity } from "@/lib/candidate-activity";
 import { getRecordingDurationSec, getRecordingMimeType, getRecordingUrl } from "@/lib/recording-state";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 export async function GET(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
@@ -104,8 +105,14 @@ export async function GET(
             }
         });
     } catch (error) {
-        console.error("Error fetching candidate:", error);
-        return NextResponse.json({ error: "Failed to fetch candidate" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/candidates/[id]",
+            method: "GET",
+            error,
+            body: { error: "Failed to fetch candidate" },
+            status: 500,
+            logLabel: "Error fetching candidate:",
+        });
     }
 }
 export async function DELETE(
@@ -176,8 +183,14 @@ export async function DELETE(
         });
         return NextResponse.json({ message: "Candidate deleted successfully" });
     } catch (error) {
-        console.error("Error deleting candidate:", error);
-        return NextResponse.json({ error: "Failed to delete candidate" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/candidates/[id]",
+            method: "DELETE",
+            error,
+            body: { error: "Failed to delete candidate" },
+            status: 500,
+            logLabel: "Error deleting candidate:",
+        });
     }
 }
 export async function PATCH(
@@ -249,7 +262,13 @@ export async function PATCH(
         }
         return NextResponse.json(updated);
     } catch (error) {
-        console.error("Error updating candidate:", error);
-        return NextResponse.json({ error: "Failed to update candidate" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/candidates/[id]",
+            method: "PATCH",
+            error,
+            body: { error: "Failed to update candidate" },
+            status: 500,
+            logLabel: "Error updating candidate:",
+        });
     }
 }

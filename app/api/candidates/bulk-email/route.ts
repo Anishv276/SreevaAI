@@ -6,6 +6,7 @@ import { getOrgBillingStatus } from "@/lib/credits";
 import { getInterviewActionBlockedMessage, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { invitationDeliveryQueue } from "@/lib/queue";
 import { appendCandidateActivity } from "@/lib/candidate-activity";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 type EmailAction = "shortlist" | "reject";
 type BulkEmailTarget = {
     id: string;
@@ -145,7 +146,13 @@ export async function POST(request: Request) {
             failures,
         });
     } catch (error) {
-        console.error("[bulk-email] error:", error);
-        return NextResponse.json({ error: "Failed to send emails" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/candidates/bulk-email",
+            method: "POST",
+            error,
+            body: { error: "Failed to send emails" },
+            status: 500,
+            logLabel: "[bulk-email] error:",
+        });
     }
 }

@@ -67,6 +67,8 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder /app/worker.ts ./worker.ts
 COPY --from=builder /app/tsconfig.json ./tsconfig.json
+COPY --from=builder /app/next.config.ts ./next.config.ts
+COPY --from=builder /app/instrumentation.ts ./instrumentation.ts
 
 # Run as a non-root user -- code execution inside the container should not
 # equal root on the container (and by extension, root-equivalent capabilities

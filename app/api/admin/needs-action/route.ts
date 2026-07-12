@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 function daysSince(date: Date): number {
     return Math.floor((Date.now() - date.getTime()) / 86_400_000);
 }
@@ -124,7 +125,13 @@ export async function GET() {
             headers: { "Cache-Control": "private, max-age=60" },
         });
     } catch (error: any) {
-        console.error("needs-action error:", error);
-        return NextResponse.json({ error: "Failed to load action items" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/admin/needs-action",
+            method: "GET",
+            error,
+            body: { error: "Failed to load action items" },
+            status: 500,
+            logLabel: "needs-action error:",
+        });
     }
 }

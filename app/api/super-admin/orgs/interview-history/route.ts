@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession, isSuperAdminRole } from "@/lib/auth";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 export async function GET(request: Request) {
   try {
     const session = await getSession();
@@ -85,7 +86,13 @@ export async function GET(request: Request) {
       .filter((row) => row.status.toUpperCase() !== "PENDING");
     return NextResponse.json({ rows: result });
   } catch (error) {
-    console.error("[SUPER_ADMIN_INTERVIEW_HISTORY] GET error:", error);
-    return NextResponse.json({ error: "Failed to fetch interview history" }, { status: 500 });
+    return apiErrorResponse({
+      route: "/api/super-admin/orgs/interview-history",
+      method: "GET",
+      error,
+      body: { error: "Failed to fetch interview history" },
+      status: 500,
+      logLabel: "[SUPER_ADMIN_INTERVIEW_HISTORY] GET error:",
+    });
   }
 }

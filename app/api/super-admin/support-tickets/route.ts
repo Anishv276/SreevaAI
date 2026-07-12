@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 export async function GET(request: Request) {
     try {
         const session = await getSession();
@@ -114,8 +115,14 @@ export async function GET(request: Request) {
             },
         });
     } catch (error) {
-        console.error("Support ticket fetch error:", error);
-        return NextResponse.json({ error: "Failed to fetch support tickets" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/super-admin/support-tickets",
+            method: "GET",
+            error,
+            body: { error: "Failed to fetch support tickets" },
+            status: 500,
+            logLabel: "Support ticket fetch error:",
+        });
     }
 }
 export async function PATCH(request: Request) {
@@ -142,7 +149,13 @@ export async function PATCH(request: Request) {
         });
         return NextResponse.json(ticket);
     } catch (error) {
-        console.error("Support ticket update error:", error);
-        return NextResponse.json({ error: "Failed to update support ticket" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/super-admin/support-tickets",
+            method: "PATCH",
+            error,
+            body: { error: "Failed to update support ticket" },
+            status: 500,
+            logLabel: "Support ticket update error:",
+        });
     }
 }

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/job-limits";
 import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { isTestAccessAuthorized } from "@/lib/test-key";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 export async function POST(request: Request) {
     try {
@@ -119,7 +120,13 @@ export async function POST(request: Request) {
             proctoringSignals,
         });
     } catch (error) {
-        console.error("[TEST_TOKEN] Error:", error);
-        return NextResponse.json({ error: "Failed to generate test token" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/test/token",
+            method: "POST",
+            error,
+            body: { error: "Failed to generate test token" },
+            status: 500,
+            logLabel: "[TEST_TOKEN] Error:",
+        });
     }
 }

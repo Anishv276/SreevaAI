@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession, isAdminRole } from "@/lib/auth";
 import { sendRejectionEmail } from "@/lib/mail";
 import { appendCandidateActivity } from "@/lib/candidate-activity";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 export async function POST(_request: Request, context: { params: Promise<{ id: string }> }) {
     try {
         const session = await getSession();
@@ -45,7 +46,13 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
         });
         return NextResponse.json({ success: true, message: "Rejection email sent successfully" });
     } catch (error) {
-        console.error("[send-rejection-email]", error);
-        return NextResponse.json({ error: "Failed to send rejection email" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/candidates/[id]/send-rejection-email",
+            method: "POST",
+            error,
+            body: { error: "Failed to send rejection email" },
+            status: 500,
+            logLabel: "[send-rejection-email]",
+        });
     }
 }

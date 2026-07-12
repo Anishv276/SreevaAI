@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ALL_VOICES } from "@/lib/constants/voices";
 import { listSelectableVoices } from "@/lib/engine-voices";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 function asProvider(value: unknown): "CARTESIA" | "SARVAM" | "ELEVENLABS" | null {
   const normalized = String(value || "").trim().toUpperCase();
   if (normalized === "CARTESIA" || normalized === "SARVAM" || normalized === "ELEVENLABS") return normalized;
@@ -141,8 +142,14 @@ export async function GET() {
       builtInVoices: ALL_VOICES.map((voice) => ({ ...voice, isSelectable: selectableIds.has(voice.id) })),
     });
   } catch (error) {
-    console.error("Voice admin list error:", error);
-    return NextResponse.json({ error: "Failed to load voice registry" }, { status: 500 });
+    return apiErrorResponse({
+      route: "/api/super-admin/voices",
+      method: "GET",
+      error,
+      body: { error: "Failed to load voice registry" },
+      status: 500,
+      logLabel: "Voice admin list error:",
+    });
   }
 }
 export async function POST(request: Request) {

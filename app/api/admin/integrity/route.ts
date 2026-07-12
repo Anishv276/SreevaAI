@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 interface ProctoringEvent {
     eventType: string;
     severity?: string;
@@ -221,7 +222,13 @@ export async function GET(req: NextRequest) {
             violations,
         });
     } catch (error: any) {
-        console.error("Integrity API error:", error);
-        return NextResponse.json({ error: "Failed to fetch integrity data" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/admin/integrity",
+            method: "GET",
+            error,
+            body: { error: "Failed to fetch integrity data" },
+            status: 500,
+            logLabel: "Integrity API error:",
+        });
     }
 }

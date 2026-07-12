@@ -6,6 +6,7 @@ import { isRateLimited } from "@/lib/rate-limit";
 import { sendPasswordChangeOtpEmail } from "@/lib/mail";
 import { normalizeEmail } from "@/lib/email";
 import { hashOtp } from "@/lib/otp";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 export async function POST() {
     try {
         const session = await getSession();
@@ -50,12 +51,24 @@ export async function POST() {
         try {
             await sendPasswordChangeOtpEmail({ to: targetEmail, otp });
         } catch (error) {
-            console.error("[OTP_SEND] Email send failed:", error);
-            return NextResponse.json({ error: "Failed to send security code. Please try again." }, { status: 500 });
+            return apiErrorResponse({
+                route: "/api/auth/otp/send",
+                method: "POST",
+                error,
+                body: { error: "Failed to send security code. Please try again." },
+                status: 500,
+                logLabel: "[OTP_SEND] Email send failed:",
+            });
         }
         return NextResponse.json({ success: true, message: `Security code sent to ${targetEmail}` });
     } catch (error) {
-        console.error("Critical OTP Send Error:", error);
-        return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/auth/otp/send",
+            method: "POST",
+            error,
+            body: { error: "Internal server error" },
+            status: 500,
+            logLabel: "Critical OTP Send Error:",
+        });
     }
 }

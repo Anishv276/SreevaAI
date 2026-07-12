@@ -92,6 +92,7 @@ image = (
         "livekit-python-agent/certs/supabase-root-ca.pem",
         remote_path="/root/certs/supabase-root-ca.pem",
     )
+    .add_local_file("modal_app/_modal_shared.py", remote_path="/root/_modal_shared.py")
 )
 
 secrets = [
@@ -110,10 +111,15 @@ def generate_report(payload: dict) -> dict:
     import sys
     sys.path.insert(0, "/root")
     from interview.report_worker import _run
+    from _modal_shared import report_crash_to_slack
 
     app_id = payload.get("appId", "?")
     print(f"[MODAL] generate_report started appId={app_id}")
-    asyncio.run(_run(payload))
+    try:
+        asyncio.run(_run(payload))
+    except Exception as e:
+        report_crash_to_slack("generate_report", e, appId=app_id)
+        raise
     print(f"[MODAL] generate_report done appId={app_id}")
     return {"success": True, "appId": app_id}
 

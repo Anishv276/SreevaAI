@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { normalizeEmail } from "@/lib/email";
 import { isRateLimited } from "@/lib/rate-limit";
 import { verifyOtp } from "@/lib/otp";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 export async function POST(request: Request) {
     try {
         const { email, otp } = await request.json();
@@ -65,7 +66,13 @@ export async function POST(request: Request) {
         }
         return NextResponse.json({ success: true, message: "Code verified." });
     } catch (error) {
-        console.error("[VERIFY_OTP_API_ERROR]", error);
-        return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/auth/verify-otp",
+            method: "POST",
+            error,
+            body: { error: "Internal server error" },
+            status: 500,
+            logLabel: "[VERIFY_OTP_API_ERROR]",
+        });
     }
 }

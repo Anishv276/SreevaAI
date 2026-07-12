@@ -8,6 +8,7 @@ import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
 import { authorizeJobAccess } from "@/lib/job-access";
 import { resumeQueue } from "@/lib/queue";
 import { isPdfExtension, MAX_RESUME_FILE_BYTES } from "@/lib/file-validation";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 const RESUME_BUCKET = process.env.R2_RESUMES_BUCKET || "resumes";
 
@@ -85,8 +86,14 @@ export async function PUT(
 
     return NextResponse.json({ uploads });
   } catch (err) {
-    console.error("[RESUME-SCREENING] PUT error:", err);
-    return NextResponse.json({ error: "Failed to generate upload URLs" }, { status: 500 });
+    return apiErrorResponse({
+      route: "/api/jobs/[id]/resume-screening",
+      method: "PUT",
+      error: err,
+      body: { error: "Failed to generate upload URLs" },
+      status: 500,
+      logLabel: "[RESUME-SCREENING] PUT error:",
+    });
   }
 }
 
@@ -253,8 +260,14 @@ export async function POST(
       ...(uploadFailures.length > 0 ? { failedFiles: uploadFailures } : {}),
     });
   } catch (err) {
-    console.error("[RESUME-SCREENING] POST error:", err);
-    return NextResponse.json({ error: "Failed to process resume upload" }, { status: 500 });
+    return apiErrorResponse({
+      route: "/api/jobs/[id]/resume-screening",
+      method: "POST",
+      error: err,
+      body: { error: "Failed to process resume upload" },
+      status: 500,
+      logLabel: "[RESUME-SCREENING] POST error:",
+    });
   }
 }
 
@@ -293,7 +306,13 @@ export async function GET(
       { headers: { "Cache-Control": "private, no-store" } }
     );
   } catch (err) {
-    console.error("[RESUME-SCREENING] GET error:", err);
-    return NextResponse.json({ error: "Failed to fetch candidates" }, { status: 500 });
+    return apiErrorResponse({
+      route: "/api/jobs/[id]/resume-screening",
+      method: "GET",
+      error: err,
+      body: { error: "Failed to fetch candidates" },
+      status: 500,
+      logLabel: "[RESUME-SCREENING] GET error:",
+    });
   }
 }

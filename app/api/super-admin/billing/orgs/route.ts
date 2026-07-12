@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 export async function GET() {
   try {
     const session = await getSession();
@@ -30,7 +31,13 @@ export async function GET() {
       })),
     });
   } catch (error) {
-    console.error("[SUPER_ADMIN_BILLING_ORGS] GET error:", error);
-    return NextResponse.json({ error: "Failed to fetch organizations" }, { status: 500 });
+    return apiErrorResponse({
+      route: "/api/super-admin/billing/orgs",
+      method: "GET",
+      error,
+      body: { error: "Failed to fetch organizations" },
+      status: 500,
+      logLabel: "[SUPER_ADMIN_BILLING_ORGS] GET error:",
+    });
   }
 }

@@ -26,6 +26,46 @@ export interface ErrorAlert {
 const SLACK_ERROR_WEBHOOK = process.env.SLACK_ERROR_WEBHOOK_URL || '';
 const SLACK_ERROR_CHANNEL = process.env.SLACK_ERROR_CHANNEL || '#debug-alerts';
 
+// Dedup: same (type, error message) within this window posts once immediately,
+// then repeats are counted and flushed as a single "happened N times" summary
+// when the window closes, instead of spamming one Slack message per occurrence.
+const DEDUP_WINDOW_MS = 10 * 60 * 1000;
+type DedupEntry = { count: number; firstAlert: ErrorAlert; timer: ReturnType<typeof setTimeout> };
+const dedupCache = new Map<string, DedupEntry>();
+
+function dedupKey(alert: ErrorAlert): string {
+  const msg = alert.error instanceof Error ? alert.error.message : String(alert.error);
+  return `${alert.type}:${msg}`;
+}
+
+async function sendToSlack(alert: ErrorAlert, repeatCount?: number): Promise<void> {
+  try {
+    const message = buildErrorMessage(alert);
+    const suffix = repeatCount ? `\n\n🔁 *This error happened ${repeatCount} times in the last 10 minutes.*` : '';
+
+    const payload = {
+      channel: SLACK_ERROR_CHANNEL,
+      text: `${alert.type.toUpperCase()} ERROR`,
+      blocks: [
+        { type: 'section', text: { type: 'mrkdwn', text: message + suffix } },
+        { type: 'context', elements: [{ type: 'mrkdwn', text: `Error logged at ${new Date().toISOString()}` }] },
+      ],
+    };
+
+    const response = await fetch(SLACK_ERROR_WEBHOOK, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      console.error('[SLACK_ERROR_LOG] Failed to send to Slack:', response.statusText);
+    }
+  } catch (e) {
+    console.error('[SLACK_ERROR_LOG] Exception sending error alert:', e);
+  }
+}
+
 type ErrorEmoji = {
   [key: string]: string;
 };
@@ -102,44 +142,27 @@ export async function alertError(alert: ErrorAlert): Promise<void> {
     return;
   }
 
-  try {
-    const message = buildErrorMessage(alert);
+  const key = dedupKey(alert);
+  const existing = dedupCache.get(key);
 
-    const payload = {
-      channel: SLACK_ERROR_CHANNEL,
-      text: `${alert.type.toUpperCase()} ERROR`,
-      blocks: [
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: message,
-          },
-        },
-        {
-          type: 'context',
-          elements: [
-            {
-              type: 'mrkdwn',
-              text: `Error logged at ${new Date().toISOString()}`,
-            },
-          ],
-        },
-      ],
-    };
-
-    const response = await fetch(SLACK_ERROR_WEBHOOK, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      console.error('[SLACK_ERROR_LOG] Failed to send to Slack:', response.statusText);
-    }
-  } catch (e) {
-    console.error('[SLACK_ERROR_LOG] Exception sending error alert:', e);
+  if (existing) {
+    existing.count += 1;
+    return; // suppressed -- counted, flushed as a summary when the window closes
   }
+
+  dedupCache.set(key, {
+    count: 1,
+    firstAlert: alert,
+    timer: setTimeout(async () => {
+      const entry = dedupCache.get(key);
+      dedupCache.delete(key);
+      if (entry && entry.count > 1) {
+        await sendToSlack(entry.firstAlert, entry.count);
+      }
+    }, DEDUP_WINDOW_MS),
+  });
+
+  await sendToSlack(alert);
 }
 
 /**
@@ -362,4 +385,33 @@ export async function logAPIError(params: {
     },
     timestamp: new Date(),
   });
+}
+
+/**
+ * One-liner for route handler catch blocks: logs to console, alerts Slack
+ * (via the same dedup path as alertError), and returns the NextResponse --
+ * so `catch (error) { console.error(...); return NextResponse.json(...) }`
+ * becomes `catch (error) { return apiErrorResponse(...) }`.
+ *
+ * Only call this for real failures (5xx) -- expected 4xx (validation, auth,
+ * not-found) should keep returning NextResponse.json directly, not go through
+ * here, or Slack fills up with routine client errors.
+ */
+export async function apiErrorResponse(params: {
+  route: string;
+  method: string;
+  error: unknown;
+  body: Record<string, any>;
+  status?: number;
+  logLabel?: string;
+}): Promise<Response> {
+  const { NextResponse } = await import('next/server');
+  console.error(params.logLabel || `[${params.method} ${params.route}]`, params.error);
+  await logAPIError({
+    route: params.route,
+    method: params.method,
+    statusCode: params.status ?? 500,
+    error: params.error instanceof Error ? params.error : String(params.error),
+  });
+  return NextResponse.json(params.body, { status: params.status ?? 500 });
 }

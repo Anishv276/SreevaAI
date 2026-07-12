@@ -63,7 +63,11 @@ image = (
     )
 )
 
-secrets = [modal.Secret.from_name("sreevaai-openai"), modal.Secret.from_name("sreevaai-extract-api-key")]
+secrets = [
+    modal.Secret.from_name("sreevaai-openai"),
+    modal.Secret.from_name("sreevaai-extract-api-key"),
+    modal.Secret.from_name("sreevaai-slack"),
+]
 
 
 def _check_api_key(x_api_key: str | None) -> None:
@@ -81,10 +85,14 @@ def extract_resume(file_bytes: bytes, file_name: str, model: str) -> dict:
     import sys
     sys.path.insert(0, "/root")
     from extraction_resume_JD_score_report.pipeline import Pipeline
-    from _modal_shared import write_temp_and_run
+    from _modal_shared import write_temp_and_run, report_crash_to_slack
 
     print(f"[MODAL] extract_resume started file={file_name} model={model}")
-    result = write_temp_and_run(file_bytes, file_name, lambda path: Pipeline().run_resume(path, model))
+    try:
+        result = write_temp_and_run(file_bytes, file_name, lambda path: Pipeline().run_resume(path, model))
+    except Exception as e:
+        report_crash_to_slack("extract_resume", e, file=file_name, model=model)
+        raise
     print(f"[MODAL] extract_resume done file={file_name} error={result.get('error')}")
     return result
 
@@ -95,10 +103,14 @@ def extract_jd(file_bytes: bytes, file_name: str, model: str) -> dict:
     import sys
     sys.path.insert(0, "/root")
     from extraction_resume_JD_score_report.pipeline import Pipeline
-    from _modal_shared import write_temp_and_run
+    from _modal_shared import write_temp_and_run, report_crash_to_slack
 
     print(f"[MODAL] extract_jd started file={file_name} model={model}")
-    result = write_temp_and_run(file_bytes, file_name, lambda path: Pipeline().run_jd(path, model))
+    try:
+        result = write_temp_and_run(file_bytes, file_name, lambda path: Pipeline().run_jd(path, model))
+    except Exception as e:
+        report_crash_to_slack("extract_jd", e, file=file_name, model=model)
+        raise
     print(f"[MODAL] extract_jd done file={file_name} error={result.get('error')}")
     return result
 
@@ -115,14 +127,18 @@ def extract_resume_and_score(
     import sys
     sys.path.insert(0, "/root")
     from extraction_resume_JD_score_report.pipeline import Pipeline
-    from _modal_shared import write_temp_and_run
+    from _modal_shared import write_temp_and_run, report_crash_to_slack
 
     print(f"[MODAL] extract_resume_and_score started file={file_name} extract_model={extract_model} score_model={score_model}")
-    result = write_temp_and_run(
-        file_bytes,
-        file_name,
-        lambda path: Pipeline().run_resume_and_score(path, jd_payload, extract_model, score_model),
-    )
+    try:
+        result = write_temp_and_run(
+            file_bytes,
+            file_name,
+            lambda path: Pipeline().run_resume_and_score(path, jd_payload, extract_model, score_model),
+        )
+    except Exception as e:
+        report_crash_to_slack("extract_resume_and_score", e, file=file_name, extract_model=extract_model, score_model=score_model)
+        raise
     print(f"[MODAL] extract_resume_and_score done file={file_name} error={result.get('error')}")
     return result
 

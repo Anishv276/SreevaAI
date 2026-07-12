@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 // --- Types --------------------------------------------------------------------
 
@@ -449,7 +450,13 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error("[GitHub Webhook] Unhandled error:", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return apiErrorResponse({
+      route: "/api/webhooks/github",
+      method: "POST",
+      error: err,
+      body: { error: "Internal server error" },
+      status: 500,
+      logLabel: "[GitHub Webhook] Unhandled error:",
+    });
   }
 }

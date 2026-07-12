@@ -48,6 +48,21 @@ if (!process.env.REDIS_URL) {
   process.exit(1);
 }
 
+// Global safety net: anything that escapes every try/catch in the worker
+// (a bug in a queue processor, an unawaited rejected promise) still reaches
+// Slack instead of just crashing the process silently in prod.
+process.on('uncaughtException', (err) => {
+  console.error('[Worker] uncaughtException:', err);
+  void logWorkerError({ error: err, reason: 'Uncaught exception in worker process' });
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[Worker] unhandledRejection:', reason);
+  void logWorkerError({
+    error: reason instanceof Error ? reason : String(reason),
+    reason: 'Unhandled promise rejection in worker process',
+  });
+});
+
 void redisConnection.connect().catch((e) => {
   logRedisError({
     error: e instanceof Error ? e.message : String(e),

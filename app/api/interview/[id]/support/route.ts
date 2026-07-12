@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 export async function POST(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
@@ -53,7 +54,13 @@ export async function POST(
         });
         return NextResponse.json({ success: true, ticketId: ticket.id });
     } catch (error) {
-        console.error("Interview support request error:", error);
-        return NextResponse.json({ error: "Failed to submit support request" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/interview/[id]/support",
+            method: "POST",
+            error,
+            body: { error: "Failed to submit support request" },
+            status: 500,
+            logLabel: "Interview support request error:",
+        });
     }
 }

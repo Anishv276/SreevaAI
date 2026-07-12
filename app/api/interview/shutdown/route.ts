@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { interviewShutdownSchema } from "@/lib/validation";
 import { prisma } from "@/lib/prisma";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 function toHttpUrl(rawUrl: string) {
     if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://") && !rawUrl.startsWith("ws://") && !rawUrl.startsWith("wss://")) {
         return `https://${rawUrl}`;
@@ -89,7 +90,13 @@ export async function POST(req: NextRequest) {
         }
         return NextResponse.json({ success: true, roomName });
     } catch (err) {
-        console.error("[SHUTDOWN] Internal error:", err);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/interview/shutdown",
+            method: "POST",
+            error: err,
+            body: { error: "Internal Server Error" },
+            status: 500,
+            logLabel: "[SHUTDOWN] Internal error:",
+        });
     }
 }

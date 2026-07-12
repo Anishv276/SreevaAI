@@ -1,4 +1,5 @@
 """Entrypoint for the AI interview agent worker."""
+import asyncio
 import os
 import sys
 from pathlib import Path
@@ -8,7 +9,22 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from interview.agent_runtime import _entrypoint_guarded, prewarm
 from interview.agent_runtime_support import AGENT_NAME
+from interview.slack_error_logger import log_worker_error
 from livekit.agents import WorkerOptions, cli
+
+# Global safety net: catches anything outside a session's own
+# _entrypoint_guarded (which already handles per-interview crashes) --
+# prewarm failures, worker-process startup errors, unhandled task exceptions.
+def _report_uncaught(exc_type, exc_value, exc_tb) -> None:
+    sys.__excepthook__(exc_type, exc_value, exc_tb)
+    try:
+        asyncio.run(log_worker_error(error=str(exc_value), reason=f"Uncaught {exc_type.__name__} in agent process"))
+    except Exception:
+        pass
+
+
+sys.excepthook = _report_uncaught
+
 if __name__ == "__main__":
     cli.run_app(
         WorkerOptions(

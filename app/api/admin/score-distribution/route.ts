@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 function getRangeStart(range: string, from?: string): Date {
     const now = new Date();
     if (range === "all") return new Date(0);
@@ -63,10 +64,13 @@ export async function GET(req: NextRequest) {
         });
         return NextResponse.json({ total, distribution });
     } catch (error: unknown) {
-        console.error("Score distribution error:", error);
-        return NextResponse.json(
-            { error: "Failed to load score distribution" },
-            { status: 500 }
-        );
+        return apiErrorResponse({
+            route: "/api/admin/score-distribution",
+            method: "GET",
+            error,
+            body: { error: "Failed to load score distribution" },
+            status: 500,
+            logLabel: "Score distribution error:",
+        });
     }
 }

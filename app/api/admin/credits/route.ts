@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession, isAdminRole } from "@/lib/auth";
 import { isSuperAdminRole } from "@/lib/auth";
 import { getOrgBillingStatus } from "@/lib/credits";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 export async function GET(request: Request) {
     try {
         const session = await getSession();
@@ -32,7 +33,13 @@ export async function GET(request: Request) {
             headers: { 'Cache-Control': 'private, max-age=60' }
         });
     } catch (error) {
-        console.error("[CREDITS] GET error:", error);
-        return NextResponse.json({ error: "Failed to fetch credits" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/admin/credits",
+            method: "GET",
+            error,
+            body: { error: "Failed to fetch credits" },
+            status: 500,
+            logLabel: "[CREDITS] GET error:",
+        });
     }
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 export async function GET(req: Request) {
     try {
@@ -81,10 +82,13 @@ export async function GET(req: Request) {
 
         return NextResponse.json({ events });
     } catch (error: unknown) {
-        console.error("Schedule API error:", error);
-        return NextResponse.json(
-            { error: "Failed to fetch schedule" },
-            { status: 500 }
-        );
+        return apiErrorResponse({
+            route: "/api/admin/schedule",
+            method: "GET",
+            error,
+            body: { error: "Failed to fetch schedule" },
+            status: 500,
+            logLabel: "Schedule API error:",
+        });
     }
 }

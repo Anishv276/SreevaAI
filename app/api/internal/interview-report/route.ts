@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { interviewReportQueue } from "@/lib/queue";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +61,13 @@ export async function POST(request: Request) {
 
         return NextResponse.json({ ok: true }, { status: 202 });
     } catch (e) {
-        console.error("[INTERNAL_INTERVIEW_REPORT_POST]", e);
-        return NextResponse.json({ error: "Failed to enqueue report job" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/internal/interview-report",
+            method: "POST",
+            error: e,
+            body: { error: "Failed to enqueue report job" },
+            status: 500,
+            logLabel: "[INTERNAL_INTERVIEW_REPORT_POST]",
+        });
     }
 }

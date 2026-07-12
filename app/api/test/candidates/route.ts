@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isTestAccessAuthorized } from "@/lib/test-key";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 export async function GET(request: Request) {
     try {
@@ -28,7 +29,13 @@ export async function GET(request: Request) {
 
         return NextResponse.json({ candidates: applications });
     } catch (e) {
-        console.error("[TEST_CANDIDATES]", e);
-        return NextResponse.json({ error: "Failed" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/test/candidates",
+            method: "GET",
+            error: e,
+            body: { error: "Failed" },
+            status: 500,
+            logLabel: "[TEST_CANDIDATES]",
+        });
     }
 }

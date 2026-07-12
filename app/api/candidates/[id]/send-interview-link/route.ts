@@ -8,6 +8,7 @@ import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
 import { appendCandidateActivity } from "@/lib/candidate-activity";
 import { generateId } from "@/lib/ids";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
     try {
         const session = await getSession();
@@ -120,7 +121,13 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             message: "Schedule link sent successfully"
         });
     } catch (error) {
-        console.error("[INTERVIEW LINK ERROR]:", error);
-        return NextResponse.json({ error: "Failed to send interview link" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/candidates/[id]/send-interview-link",
+            method: "POST",
+            error,
+            body: { error: "Failed to send interview link" },
+            status: 500,
+            logLabel: "[INTERVIEW LINK ERROR]:",
+        });
     }
 }
