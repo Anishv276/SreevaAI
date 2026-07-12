@@ -10,13 +10,14 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
-
 # Run as a non-root user -- code execution inside the container should not
-# equal root on the container.
+# equal root on the container. Created before COPY so --chown= sets ownership
+# inline instead of a separate `chown -R` pass over the whole tree afterward.
 RUN groupadd --system --gid 1001 agent \
-    && useradd --system --uid 1001 --gid agent agent \
-    && chown -R agent:agent /app
+    && useradd --system --uid 1001 --gid agent agent
+
+COPY --chown=agent:agent . .
+
 USER agent
 
 # Pre-download LiveKit models
