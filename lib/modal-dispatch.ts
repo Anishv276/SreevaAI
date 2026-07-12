@@ -322,7 +322,7 @@ export async function processResumeFileExtractViaModal(job: Job, token: string |
 
 /** jd-extraction-modal job body, same pattern, lower default concurrency. */
 export async function processJdExtractionViaModal(job: Job, token: string | undefined): Promise<any> {
-  const { fileBuffer, fileName, text, kind, orgId, orgOpenAIModel } = job.data || {};
+  const { buffer: fileBuffer, fileName, text, kind, orgId, orgOpenAIModel } = job.data || {};
   console.log(`[MODAL-DISPATCH] Job ${job.id} picked up (jd-extraction, kind=${kind})`);
 
   const outcome = await withModalOrgSlot(
