@@ -46,7 +46,7 @@ if str(_repo_root) not in sys.path:
 
 from interview.band_classifier import classify_band
 from interview.interview_brief import InterviewBrief, generate_interview_brief
-from billing.billing import record_manual_usage, flush_billing
+from billing.billing import record_manual_usage, flush_billing, BillingRepository
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -169,6 +169,7 @@ class BriefRepository:
         d."title",
         d."jdExtractedDetails"                      AS "extractedDetails",
         d."aiGeneratedInterviewQuestions"           AS "interviewQuestions",
+        d."organizationId"                          AS "orgId",
         o."llmInterviewBrief"
     FROM "Application" a
     JOIN "Job" d ON a."jobId" = d.id
@@ -479,12 +480,17 @@ async def _main(application_id: str) -> BriefWorkerResult:
         raise RuntimeError("OPENAI_API_KEY environment variable is not set")
 
     pool = await _create_pool(database_url)
+    # billing.py's BillingRepository defaults to agent_persistence.DatabasePool,
+    # which isn't bundled into this Modal image (it re-exports report_pipeline.py
+    # and its much larger dependency chain). Reuse this worker's own pool instead.
+    BillingRepository.set_external_pool(pool)
     try:
         repo = BriefRepository(pool)
         openai_client = AsyncOpenAI(api_key=openai_api_key)
         pipeline = BriefPipeline(repo=repo, openai_client=openai_client)
         return await pipeline.run(application_id)
     finally:
+        BillingRepository.set_external_pool(None)
         await pool.close()
 
 

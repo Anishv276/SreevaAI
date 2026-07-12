@@ -62,6 +62,11 @@ function formatCandidateStatusLabel(value?: string) {
 function normalizeStatusKey(value?: string) {
     return String(value || "").trim().toLowerCase().replace(/[_-]+/g, " ");
 }
+// Send is only offered while interview status is PENDING (not yet scheduled); SCHEDULED/COMPLETED/FAILED/NO_SHOW are all Resend only.
+function isCandidateInterviewPending(candidate: any) {
+    const status = normalizeStatusKey(candidate.interviewStatus);
+    return !status || status === "pending";
+}
 function ScoreRangeFilter({
     min, max, onChange,
 }: {
@@ -353,7 +358,7 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
             return;
         }
         const unsentIds = filteredCandidates
-            .filter((c: any) => selectedIds.has(c.id) && !c.inviteSentAt)
+            .filter((c: any) => selectedIds.has(c.id) && isCandidateInterviewPending(c))
             .map((c: any) => c.id);
         if (unsentIds.length === 0) {
             toast.error("All selected candidates have already received the invite link.");
@@ -386,7 +391,7 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
             return;
         }
         const sentIds = filteredCandidates
-            .filter((c: any) => selectedIds.has(c.id) && !!c.inviteSentAt)
+            .filter((c: any) => selectedIds.has(c.id) && !isCandidateInterviewPending(c))
             .map((c: any) => c.id);
         if (sentIds.length === 0) {
             toast.error("No selected candidates have been sent the link yet.");
@@ -671,7 +676,7 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
                                     </TableHead>
                                 )}
                                 <TableHead className="px-6 py-4 text-[12px] font-black uppercase tracking-widest text-gray-400">CANDIDATE</TableHead>
-                                <TableHead className="px-4 py-4 text-[12px] font-black uppercase tracking-widest text-gray-400">
+                                <TableHead className="px-4 py-4 min-w-[160px] w-[160px] text-[12px] font-black uppercase tracking-widest text-gray-400">
                                     <div className="flex items-center gap-1 cursor-pointer hover:text-gray-600 transition-colors">
                                         RESUME SCORE <ChevronDown className="h-3.5 w-3.5" />
                                     </div>
@@ -715,8 +720,8 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
                                     const score = Number(candidate.score ?? candidate.aiScore ?? 0);
                                     const stageLabelRaw = String(candidate.screeningStage || "").trim().toLowerCase();
                                     const stageLabel = stageLabelRaw === "extracting" ? "Extracting" : stageLabelRaw === "scoring" ? "Scoring" : stageLabelRaw === "finalizing" ? "Finalizing" : isWaiting ? "Waiting" : isProcessing ? "Processing" : "";
-                                    // True if invite email has already been sent at least once
-                                    const hasSentInvite = !!candidate.inviteSentAt;
+                                    // True once interview status has moved past PENDING (scheduled/completed/failed/no-show)
+                                    const hasSentInvite = !isCandidateInterviewPending(candidate);
                                     return (
                                         <TableRow
                                             key={candidate.id}

@@ -103,80 +103,99 @@ export function HardwareCheck({
         if (cameraStatus !== "granted") return;
         let cancelled = false;
         const initVisualIntegrity = async () => {
+            const { FaceLandmarker: FL, FilesetResolver } = await import("@mediapipe/tasks-vision");
+            const vision = await FilesetResolver.forVisionTasks("/mediapipe");
+            if (cancelled) return;
+            const landmarkerOptions = {
+                outputFaceBlendshapes: false,
+                outputFacialTransformationMatrixes: false,
+                runningMode: "VIDEO" as const,
+                numFaces: 1,
+                minFaceDetectionConfidence: 0.7,
+                minFacePresenceConfidence: 0.7,
+                minTrackingConfidence: 0.6,
+            };
+            let landmarker;
             try {
-                const { FaceLandmarker: FL, FilesetResolver } = await import("@mediapipe/tasks-vision");
-                const vision = await FilesetResolver.forVisionTasks("/mediapipe");
-                if (cancelled) return;
-                const landmarker = await FL.createFromOptions(vision, {
+                landmarker = await FL.createFromOptions(vision, {
                     baseOptions: { modelAssetPath: "/models/face_landmarker.task", delegate: "GPU" },
-                    outputFaceBlendshapes: false,
-                    outputFacialTransformationMatrixes: false,
-                    runningMode: "VIDEO",
-                    numFaces: 1,
-                    minFaceDetectionConfidence: 0.7,
-                    minFacePresenceConfidence: 0.7,
-                    minTrackingConfidence: 0.6,
+                    ...landmarkerOptions,
                 });
-                if (cancelled) { landmarker.close(); return; }
-                visualLandmarkerRef.current = landmarker;
-                // Throttle lighting to avoid canvas layout thrashing every frame
-                let lastLightingCheck = 0;
-                let lastLightGood = false;
-                const checkVisuals = () => {
-                    if (cancelled) return;
-                    visualRafRef.current = requestAnimationFrame(checkVisuals);
-                    const video = videoRef.current;
-                    if (!video || video.readyState < 2 || video.paused || !visualLandmarkerRef.current) return;
-                    let result;
-                    try { result = visualLandmarkerRef.current.detectForVideo(video, performance.now()); }
-                    catch { return; }
-                    const numFaces = result.faceLandmarks?.length ?? 0;
-                    faceCountHistoryRef.current.push(numFaces);
-                    if (faceCountHistoryRef.current.length > 5) faceCountHistoryRef.current.shift();
-                    const validFrames = faceCountHistoryRef.current.filter(c => c === 1).length;
-                    const isIdentityLocked = validFrames >= 3;
-                    if (!isIdentityLocked || numFaces !== 1) {
-                        setVisualSignals({ lighting: lastLightGood });
-                        if (numFaces === 0) setVisualStatusMsg("No face detected. Please look at the camera.");
-                        else if (numFaces > 1) setVisualStatusMsg("Multiple faces detected. Please ensure you are alone.");
-                        else setVisualStatusMsg("Stabilizing...");
-                        return;
-                    }
-                    // Lighting check -- sample from face bounding box
-                    const landmarks = result.faceLandmarks[0];
-                    if (landmarks && Array.isArray(landmarks) && landmarks.length > 0) {
-                        const xs = landmarks.filter(l => l && typeof l.x === 'number').map(l => l.x);
-                        const ys = landmarks.filter(l => l && typeof l.y === 'number').map(l => l.y);
-                        if (xs.length > 0 && ys.length > 0) {
-                            const minX = Math.min(...xs), maxX = Math.max(...xs);
-                            const minY = Math.min(...ys), maxY = Math.max(...ys);
-                            const widthRatio = maxX - minX;
-                            const now = performance.now();
-                            if (now - lastLightingCheck > 500) {
-                                lastLightingCheck = now;
-                                try {
-                                    const lc = document.createElement("canvas");
-                                    lc.width = 1; lc.height = 1;
-                                    const lctx = lc.getContext("2d");
-                                    if (lctx && video.videoWidth > 0) {
-                                        lctx.drawImage(video, minX * video.videoWidth, minY * video.videoHeight, widthRatio * video.videoWidth, (maxY - minY) * video.videoHeight, 0, 0, 1, 1);
-                                        const data = lctx.getImageData(0, 0, 1, 1).data;
-                                        const brightness = 0.299 * data[0] + 0.587 * data[1] + 0.114 * data[2];
-                                        lastLightGood = brightness >= 70 && brightness <= 200;
-                                    }
-                                } catch { }
-                            }
+            } catch (gpuErr) {
+                // GPU delegate needs WebGL2; falls back to CPU on machines/browsers
+                // without accel (was silently leaving candidates stuck on "Initializing...").
+                console.warn("[FaceLandmarker] GPU delegate failed, falling back to CPU:", gpuErr);
+                try {
+                    landmarker = await FL.createFromOptions(vision, {
+                        baseOptions: { modelAssetPath: "/models/face_landmarker.task", delegate: "CPU" },
+                        ...landmarkerOptions,
+                    });
+                } catch (cpuErr) {
+                    setVisualStatusMsg("Visual check unavailable.");
+                    console.error("[FaceLandmarker] CPU delegate also failed:", cpuErr);
+                    return;
+                }
+            }
+            if (cancelled) { landmarker.close(); return; }
+            visualLandmarkerRef.current = landmarker;
+            // Throttle lighting to avoid canvas layout thrashing every frame
+            let lastLightingCheck = 0;
+            let lastLightGood = false;
+            const checkVisuals = () => {
+                if (cancelled) return;
+                visualRafRef.current = requestAnimationFrame(checkVisuals);
+                const video = videoRef.current;
+                if (!video || video.readyState < 2 || video.paused || !visualLandmarkerRef.current) return;
+                let result;
+                try { result = visualLandmarkerRef.current.detectForVideo(video, performance.now()); }
+                catch { return; }
+                const numFaces = result.faceLandmarks?.length ?? 0;
+                faceCountHistoryRef.current.push(numFaces);
+                if (faceCountHistoryRef.current.length > 5) faceCountHistoryRef.current.shift();
+                const validFrames = faceCountHistoryRef.current.filter(c => c === 1).length;
+                const isIdentityLocked = validFrames >= 3;
+                if (!isIdentityLocked || numFaces !== 1) {
+                    setVisualSignals({ lighting: lastLightGood });
+                    if (numFaces === 0) setVisualStatusMsg("No face detected. Please look at the camera.");
+                    else if (numFaces > 1) setVisualStatusMsg("Multiple faces detected. Please ensure you are alone.");
+                    else setVisualStatusMsg("Stabilizing...");
+                    return;
+                }
+                // Lighting check -- sample from face bounding box
+                const landmarks = result.faceLandmarks[0];
+                if (landmarks && Array.isArray(landmarks) && landmarks.length > 0) {
+                    const xs = landmarks.filter(l => l && typeof l.x === 'number').map(l => l.x);
+                    const ys = landmarks.filter(l => l && typeof l.y === 'number').map(l => l.y);
+                    if (xs.length > 0 && ys.length > 0) {
+                        const minX = Math.min(...xs), maxX = Math.max(...xs);
+                        const minY = Math.min(...ys), maxY = Math.max(...ys);
+                        const widthRatio = maxX - minX;
+                        const now = performance.now();
+                        if (now - lastLightingCheck > 500) {
+                            lastLightingCheck = now;
+                            try {
+                                const lc = document.createElement("canvas");
+                                lc.width = 1; lc.height = 1;
+                                const lctx = lc.getContext("2d");
+                                if (lctx && video.videoWidth > 0) {
+                                    lctx.drawImage(video, minX * video.videoWidth, minY * video.videoHeight, widthRatio * video.videoWidth, (maxY - minY) * video.videoHeight, 0, 0, 1, 1);
+                                    const data = lctx.getImageData(0, 0, 1, 1).data;
+                                    const brightness = 0.299 * data[0] + 0.587 * data[1] + 0.114 * data[2];
+                                    lastLightGood = brightness >= 70 && brightness <= 200;
+                                }
+                            } catch { }
                         }
                     }
-                    setVisualSignals({ lighting: lastLightGood });
-                    setVisualStatusMsg(lastLightGood ? "Face detected" : "Lighting is poor");
-                };
-                visualRafRef.current = requestAnimationFrame(checkVisuals);
-            } catch (err) {
-                setVisualStatusMsg("Visual check unavailable.");
-            }
+                }
+                setVisualSignals({ lighting: lastLightGood });
+                setVisualStatusMsg(lastLightGood ? "Face detected" : "Lighting is poor");
+            };
+            visualRafRef.current = requestAnimationFrame(checkVisuals);
         };
-        void initVisualIntegrity();
+        initVisualIntegrity().catch((err) => {
+            console.error("[FaceLandmarker] init failed:", err);
+            setVisualStatusMsg("Visual check unavailable.");
+        });
         return () => {
             cancelled = true;
             if (visualRafRef.current) cancelAnimationFrame(visualRafRef.current);

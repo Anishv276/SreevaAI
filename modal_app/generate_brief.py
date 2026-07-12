@@ -111,7 +111,7 @@ def generate_brief(application_id: str) -> dict:
     except Exception as e:
         report_crash_to_slack("generate_brief", e, applicationId=application_id)
         raise
-    print(f"[MODAL] generate_brief done applicationId={application_id} success={result.success}")
+    print(f"[MODAL] generate_brief done applicationId={application_id} success={result.success} error={result.error}")
     return result.model_dump()
 
 

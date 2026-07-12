@@ -865,8 +865,20 @@ def merge_manual_billing_usage(
 class BillingRepository:
     """All DB writes for billing. Stateless — no instance data, only classmethods."""
 
-    @staticmethod
-    async def _get_pool():
+    # Standalone Modal workers (e.g. generate_brief.py) own their own asyncpg
+    # pool and can't pull in agent_persistence.DatabasePool without dragging
+    # its report_pipeline re-export chain into their image. They inject their
+    # pool here instead; the default path (live agent runtime) is unaffected.
+    _external_pool: ClassVar[Any] = None
+
+    @classmethod
+    def set_external_pool(cls, pool) -> None:
+        cls._external_pool = pool
+
+    @classmethod
+    async def _get_pool(cls):
+        if cls._external_pool is not None:
+            return cls._external_pool
         from interview.agent_persistence import DatabasePool  # lazy — avoids circular at module load
         return await DatabasePool.get()
 

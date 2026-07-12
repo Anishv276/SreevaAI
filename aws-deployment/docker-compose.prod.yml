@@ -2,7 +2,9 @@
 # SreevaAI — Production stack for a single EC2 box (LiveKit on LiveKit Cloud)
 #
 # LiveKit server + egress (recording) now run on LiveKit Cloud — NOT on this box.
-# This box runs only: traefik (TLS) + redis (BullMQ) + app + worker + python agent.
+# This box runs: traefik (TLS) + redis (BullMQ) + app + worker.
+# The LiveKit python agent is NOT a container here -- it deploys separately to
+# LiveKit Cloud via `lk agent deploy` (see .github/workflows/deploy-agent.yml).
 #
 # All LiveKit/egress connections go to the Cloud URL from .env:
 #   NEXT_PUBLIC_LIVEKIT_URL = wss://<your-project>.livekit.cloud   (browser + server)
@@ -183,7 +185,6 @@ services:
       WORKER_QUEUES: "resume-processing,invitation-delivery-queue,interview-start,interview-launch-timeout,interview-finalization,interview-snapshots,interview-recording,recording-retention-cleanup,jd-upload,jd-extraction,brief-generation,interview-report"
     depends_on:
       - redis
-      - frontend
     networks:
       - web
     mem_limit: 2g
