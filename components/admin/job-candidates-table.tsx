@@ -15,7 +15,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import * as RadixSlider from "@radix-ui/react-slider";
 import {
     AlertCircle,
-    Mail,
     ChevronDown,
     Target,
     UserX,
@@ -152,12 +151,6 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
     const [isSelectionMode, setIsSelectionMode] = useState(true);
     const [isBulkLoading, setIsBulkLoading] = useState(false);
     const [isJobViewReady, setIsJobViewReady] = useState(false);
-    const [emailConfirm, setEmailConfirm] = useState<{
-        mode: "single" | "bulk";
-        candidateId?: string;
-        candidateName?: string;
-        resumeStatus?: string;
-    } | null>(null);
     const [deleteConfirm, setDeleteConfirm] = useState<{
         mode: "single" | "bulk";
         candidateId?: string;
@@ -238,6 +231,15 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
             });
             if (res.ok) {
                 toast.success(successMsg);
+                if (statusUpdate.resumeStatus === "shortlisted") {
+                    fetch(`/api/candidates/${applicationId}/send-interview-link`, { method: "POST" })
+                        .then((r) => r.ok && toast.success("Schedule link sent"))
+                        .catch(() => {});
+                } else if (statusUpdate.resumeStatus === "rejected") {
+                    fetch(`/api/candidates/${applicationId}/send-rejection-email`, { method: "POST" })
+                        .then((r) => r.ok && toast.success("Rejection email sent"))
+                        .catch(() => {});
+                }
                 fetchCandidates(pagination.page, pageSize, jobId, resumeFilter, interviewFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
             } else {
                 toast.error("Failed to update status");
@@ -316,6 +318,13 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
             const data = await res.json().catch(() => null);
             if (res.ok) {
                 toast.success(data?.message || "Bulk action completed");
+                if (action === "shortlist" || action === "reject") {
+                    fetch("/api/candidates/bulk-email", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ ids, action }),
+                    }).then((r) => r.ok && toast.success(action === "shortlist" ? `Schedule link sent to ${ids.length} candidate(s)` : `Rejection email sent to ${ids.length} candidate(s)`)).catch(() => {});
+                }
                 clearSelection();
                 fetchCandidates(pagination.page, pageSize, jobId, resumeFilter, interviewFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
                 return;
@@ -433,79 +442,6 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
         } catch { toast.error("Failed to resend interview link"); }
         finally { setSendingInterviewLinkId(null); setResendConfirm(null); }
     };
-    const handleSendEmailConfirmed = async () => {
-        if (!emailConfirm) return;
-        if (isSuspended) {
-            setEmailConfirm(null);
-            return;
-        }
-        setIsBulkLoading(true);
-        try {
-            if (emailConfirm.mode === "single" && emailConfirm.candidateId) {
-                const status = normalizeStatusKey(emailConfirm.resumeStatus);
-                if (status === "shortlisted") {
-                    const res = await fetch(`/api/candidates/${emailConfirm.candidateId}/send-interview-link`, { method: "POST" });
-                    const data = await res.json().catch(() => null);
-                    if (!res.ok) {
-                        toast.error(data?.error || "Failed to send interview link");
-                        return;
-                    }
-                    toast.success(`Schedule link sent to ${emailConfirm.candidateName}`);
-                } else if (status === "rejected") {
-                    const res = await fetch(`/api/candidates/${emailConfirm.candidateId}/send-rejection-email`, { method: "POST" });
-                    const data = await res.json().catch(() => null);
-                    if (!res.ok) { toast.error(data?.error || "Failed to send rejection email"); return; }
-                    toast.success(`Rejection email sent to ${emailConfirm.candidateName}`);
-                }
-            } else if (emailConfirm.mode === "bulk") {
-                const selected = filteredCandidates.filter((c: any) => selectedIds.has(c.id));
-                const shortlisted = selected.filter((c: any) => normalizeStatusKey(c.status) === "shortlisted").map((c: any) => c.id);
-                const rejected = selected.filter((c: any) => normalizeStatusKey(c.status) === "rejected").map((c: any) => c.id);
-                const results = await Promise.all([
-                    ...shortlisted.map((id: string) => fetch(`/api/candidates/${id}/send-interview-link`, { method: "POST" })),
-                    ...(rejected.length ? [fetch("/api/candidates/bulk-email", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ ids: rejected, emailType: "screening", targetAction: "reject" }),
-                    })] : []),
-                ]);
-                const failed = results.filter((r) => !r.ok).length;
-                const succeeded = results.length - failed;
-                if (succeeded > 0) toast.success(`Emails sent to ${shortlisted.length + rejected.length} candidate(s)`);
-                if (failed > 0) toast.error(`Failed to send to ${failed} candidate(s)`);
-                clearSelection();
-                fetchCandidates(pagination.page, pageSize, jobId, resumeFilter, interviewFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
-            }
-        } catch {
-            toast.error("Failed to send email");
-        } finally {
-            setIsBulkLoading(false);
-            setEmailConfirm(null);
-        }
-    };
-    const openSendEmailConfirm = (candidate: { id: string; name: string; resumeStatus?: string }) => {
-        if (isSuspended) {
-            toast.error(interviewActionBlockedMessage);
-            return;
-        }
-        const status = normalizeStatusKey(candidate.resumeStatus);
-        if (status !== "shortlisted" && status !== "rejected") {
-            toast.error("Candidate must be shortlisted or rejected to send an email.");
-            return;
-        }
-        setEmailConfirm({ mode: "single", candidateId: candidate.id, candidateName: candidate.name, resumeStatus: candidate.resumeStatus });
-    };
-    const openBulkSendEmailConfirm = () => {
-        if (!selectedCount) return;
-        const selected = filteredCandidates.filter((c: any) => selectedIds.has(c.id));
-        const shortlisted = selected.filter((c: any) => normalizeStatusKey(c.status) === "shortlisted").length;
-        const rejected = selected.filter((c: any) => normalizeStatusKey(c.status) === "rejected").length;
-        if (shortlisted === 0 && rejected === 0) {
-            toast.error("No selected candidates are shortlisted or rejected.");
-            return;
-        }
-        setEmailConfirm({ mode: "bulk" });
-    };
     if (!isJobViewReady) {
         return (
             <div className="flex min-h-[40vh] items-center justify-center rounded-2xl border border-white/40 bg-white/60 backdrop-blur-xl shadow-[0_8px_24px_rgba(15,23,42,0.03)]">
@@ -622,15 +558,7 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
                             selectedCount > 0 ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100" : "bg-gray-100 text-gray-400 border-gray-200")}>
                         <UserX className="h-3.5 w-3.5" /> <span className="hidden xl:inline">Reject</span>
                     </button>
-                    <button
-                        onClick={isSuspended ? undefined : openBulkSendEmailConfirm}
-                        disabled={selectedCount === 0 || isBulkLoading}
-                        title={isSuspended ? interviewActionBlockedMessage : undefined}
-                        className={cn("h-8 px-2.5 rounded-lg border font-semibold text-xs flex items-center gap-1.5 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
-                            selectedCount === 0 ? "bg-gray-100 text-gray-400 border-gray-200" : isSuspended ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed" : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100")}>
-                        {isSuspended ? <Lock className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />} <span className="hidden xl:inline">Schedule Link</span>
-                    </button>
-                    {/* Bulk Send: only sends to candidates without invite sent yet */}
+                    {/* Bulk Send: only sends to candidates whose interview status is still pending */}
                     <button
                         onClick={isInterviewActionBlocked ? undefined : handleBulkSendInterviewLink}
                         disabled={selectedCount === 0 || isBulkLoading}
@@ -910,18 +838,6 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
                                                             <UserX className="h-4 w-4 mr-2 shrink-0" />
                                                             Reject
                                                         </DropdownMenuItem>
-                                                        <DropdownMenuItem
-                                                            onClick={() => !isSuspended && openSendEmailConfirm({ id: candidate.id, name: displayName, resumeStatus: candidate.status })}
-                                                            className={cn(
-                                                                "rounded-xl px-2.5 py-2 text-sm font-semibold cursor-pointer transition-colors",
-                                                                isSuspended ? "text-gray-400 focus:bg-transparent" : "text-blue-600 focus:text-blue-700 focus:bg-blue-50"
-                                                            )}
-                                                            title={isSuspended ? interviewActionBlockedMessage : undefined}
-                                                        >
-                                                            {isSuspended ? <Lock className="h-4 w-4 mr-2 shrink-0" /> : <Mail className="h-4 w-4 mr-2 shrink-0" />}
-                                                            Send Schedule Link
-                                                        </DropdownMenuItem>
-
                                                         <>
                                                             <DropdownMenuLabel className="px-2.5 py-0.5.5 text-[9px] font-black uppercase tracking-widest text-gray-400">Manage</DropdownMenuLabel>
                                                             {/* Interview link: Send (first time) OR Resend (with confirmation) - never both */}
@@ -1005,46 +921,6 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
                     </div>
                 </div>
             </div>
-            {emailConfirm && (() => {
-                const isBulk = emailConfirm.mode === "bulk";
-                const selected = isBulk ? filteredCandidates.filter((c: any) => selectedIds.has(c.id)) : [];
-                const shortlistedCount = isBulk ? selected.filter((c: any) => normalizeStatusKey(c.status) === "shortlisted").length : 0;
-                const rejectedCount = isBulk ? selected.filter((c: any) => normalizeStatusKey(c.status) === "rejected").length : 0;
-                const singleStatus = !isBulk ? normalizeStatusKey(emailConfirm.resumeStatus) : null;
-                return (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
-                        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
-                            <div className="px-6 pt-6 pb-4">
-                                <h2 className="text-lg font-black text-gray-900 tracking-tight">Confirm Send Schedule Link</h2>
-                                {isBulk ? (
-                                    <div className="mt-2 space-y-1 text-sm text-gray-600">
-                                        {shortlistedCount > 0 && <p>• <span className="font-bold text-emerald-700">{shortlistedCount} shortlisted</span> → schedule link will be sent</p>}
-                                        {rejectedCount > 0 && <p>• <span className="font-bold text-rose-700">{rejectedCount} rejected</span> → rejection email will be sent</p>}
-                                    </div>
-                                ) : (
-                                    <p className="mt-2 text-sm text-gray-600">
-                                        {singleStatus === "shortlisted"
-                                            ? <><span className="font-bold text-emerald-700">Send schedule link</span> to <span className="font-bold">{emailConfirm.candidateName}</span>?</>
-                                            : <><span className="font-bold text-rose-700">Send rejection email</span> to <span className="font-bold">{emailConfirm.candidateName}</span>?</>}
-                                    </p>
-                                )}
-                            </div>
-                            <div className="flex items-center justify-end gap-1.5 px-6 py-4 bg-gray-50/50 border-t border-gray-100">
-                                <button onClick={() => setEmailConfirm(null)} className="h-10 px-5 rounded-2xl font-bold text-gray-500 hover:bg-gray-100 transition-colors">
-                                    No, Cancel
-                                </button>
-                                <button
-                                    onClick={handleSendEmailConfirmed}
-                                    disabled={isBulkLoading}
-                                    className="h-10 px-6 rounded-2xl bg-blue-600 text-white font-bold hover:bg-blue-700 transition-colors disabled:opacity-60"
-                                >
-                                    {isBulkLoading ? "Sending..." : "Yes, Send"}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                );
-            })()}
             {/* Resend Confirmation Modal */}
             {resendConfirm && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
