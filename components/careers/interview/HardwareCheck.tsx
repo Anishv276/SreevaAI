@@ -97,11 +97,15 @@ export function HardwareCheck({
         lighting: false,
     });
     const [visualStatusMsg, setVisualStatusMsg] = useState("Initializing visual integrity check...");
+    const [visualCheckFailed, setVisualCheckFailed] = useState(false);
+    const [visualRetryKey, setVisualRetryKey] = useState(0);
     const faceLocked = faceCountHistoryRef.current.filter(c => c === 1).length >= 3;
     const visualReady = faceLocked && visualSignals.lighting;
     useEffect(() => {
         if (cameraStatus !== "granted") return;
         let cancelled = false;
+        setVisualCheckFailed(false);
+        setVisualStatusMsg("Initializing visual integrity check...");
         const initVisualIntegrity = async () => {
             const { FaceLandmarker: FL, FilesetResolver } = await import("@mediapipe/tasks-vision");
             const vision = await FilesetResolver.forVisionTasks("/mediapipe");
@@ -131,7 +135,8 @@ export function HardwareCheck({
                         ...landmarkerOptions,
                     });
                 } catch (cpuErr) {
-                    setVisualStatusMsg("Visual check unavailable.");
+                    setVisualStatusMsg("Visual check unavailable. Please retry or switch browsers.");
+                    setVisualCheckFailed(true);
                     console.error("[FaceLandmarker] CPU delegate also failed:", cpuErr);
                     return;
                 }
@@ -194,7 +199,8 @@ export function HardwareCheck({
         };
         initVisualIntegrity().catch((err) => {
             console.error("[FaceLandmarker] init failed:", err);
-            setVisualStatusMsg("Visual check unavailable.");
+            setVisualStatusMsg("Visual check unavailable. Please retry or switch browsers.");
+            setVisualCheckFailed(true);
         });
         return () => {
             cancelled = true;
@@ -204,7 +210,7 @@ export function HardwareCheck({
                 visualLandmarkerRef.current = null;
             }
         };
-    }, [cameraStatus]);
+    }, [cameraStatus, visualRetryKey]);
     // Defensive: Ensure camera live feed stream is bound and never freezes on step transition/re-renders
     useEffect(() => {
         if (videoRef.current && streamRef.current && videoRef.current.srcObject !== streamRef.current) {
@@ -668,14 +674,26 @@ export function HardwareCheck({
                         "px-5 py-3 text-xs font-semibold text-center transition-all duration-300",
                         cameraStatus !== "granted"
                             ? "bg-gray-50 text-gray-400"
-                            : !cameraFullyReady && faceCountHistoryRef.current.filter(c => c === 1).length < 3
+                            : visualCheckFailed
                                 ? "bg-red-50 text-red-600"
-                                : cameraFullyReady
-                                    ? "bg-emerald-50 text-emerald-700"
-                                    : "bg-violet-50 text-violet-600"
+                                : !cameraFullyReady && faceCountHistoryRef.current.filter(c => c === 1).length < 3
+                                    ? "bg-red-50 text-red-600"
+                                    : cameraFullyReady
+                                        ? "bg-emerald-50 text-emerald-700"
+                                        : "bg-violet-50 text-violet-600"
                     )} style={{ borderTop: "1px solid #F0EEF8" }}>
                         {cameraStatus !== "granted" ? (
                             <span>Camera Access Required</span>
+                        ) : visualCheckFailed ? (
+                            <span className="inline-flex items-center gap-2">
+                                {visualStatusMsg}
+                                <button
+                                    onClick={() => { faceCountHistoryRef.current = []; setVisualRetryKey(k => k + 1); }}
+                                    className="underline font-bold hover:text-red-800"
+                                >
+                                    Retry
+                                </button>
+                            </span>
                         ) : !cameraFullyReady && faceCountHistoryRef.current.filter(c => c === 1).length < 3 ? (
                             <span>No face detected. Please center your face.</span>
                         ) : cameraFullyReady ? (

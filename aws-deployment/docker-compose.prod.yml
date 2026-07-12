@@ -92,7 +92,12 @@ services:
       # without wiring up per-request CSP nonces (next.config headers +
       # middleware) would break page load. Tightening further requires that
       # nonce work, not just deleting the token here.
-      - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.Content-Security-Policy=default-src 'self'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://static.cloudflareinsights.com https://www.clarity.ms; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' wss: https:; frame-ancestors 'none'"
+      # 'wasm-unsafe-eval' added -- MediaPipe FaceLandmarker (HardwareCheck.tsx
+      # camera face-detection) compiles/instantiates a WASM module, which needs
+      # this directive even with full 'unsafe-eval' dropped. Narrower than
+      # 'unsafe-eval': permits WASM compilation only, not eval()/Function() JS
+      # injection. Chrome/Edge 87+ only, which HardwareCheck.tsx already requires.
+      - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.Content-Security-Policy=default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://www.googletagmanager.com https://static.cloudflareinsights.com https://www.clarity.ms; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' wss: https:; frame-ancestors 'none'"
     ports:
       - "80:80"
       - "443:443"
