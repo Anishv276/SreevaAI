@@ -523,7 +523,13 @@
       "Bash(PYTHONIOENCODING=utf-8 modal deploy modal_app/generate_report.py)",
       "Bash(python -c \"import ast; ast.parse\\(open\\('livekit-python-agent/agent.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")",
       "Bash(node -e \"console.log\\(require\\('next/package.json'\\).version\\)\")",
-      "Bash(npx next *)"
+      "Bash(npx next *)",
+      "Bash(nc -zv -w5 3.7.42.105 22)",
+      "Bash(ping -n 2 3.7.42.105)",
+      "Bash(curl -s https://checkip.amazonaws.com)",
+      "Bash(ssh -o ConnectTimeout=10 -i \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\SreevaAI\\\\sreeva-prod-key.pem\" ubuntu@3.7.42.105 \"echo connected && docker ps\")",
+      "Bash(curl -s -o /dev/null -w \"HTTPS status: %{http_code}\\\\n\" --max-time 10 https://sreevaai.com)",
+      "Bash(ssh -o ConnectTimeout=8 -i \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\SreevaAI\\\\sreeva-prod-key.pem\" ubuntu@3.7.42.105 \"echo ok\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",
