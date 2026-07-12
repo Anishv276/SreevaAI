@@ -65,8 +65,8 @@ export async function releaseModalSlot(jobType: string, orgId: string): Promise<
  * just for the 4 jobs that now run on Modal instead of BullMQ workers.
  */
 export const MODAL_ORG_CONCURRENCY = {
-  resumeExtraction: Number(process.env.ORG_CONCURRENCY_MODAL_RESUME || 10),
-  jdExtraction: Number(process.env.ORG_CONCURRENCY_MODAL_JD || 5),
+  resumeExtraction: Number(process.env.ORG_CONCURRENCY_MODAL_RESUME || 5),
+  jdExtraction: Number(process.env.ORG_CONCURRENCY_MODAL_JD || 2),
   briefGeneration: Number(process.env.ORG_CONCURRENCY_MODAL_BRIEF || 5),
   interviewReport: Number(process.env.ORG_CONCURRENCY_MODAL_REPORT || 5),
 };

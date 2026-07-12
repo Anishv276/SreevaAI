@@ -46,9 +46,31 @@ export function JobResumeUploadModal({ open, onOpenChange, jobId, jobName, mode 
         if (!files.length || uploading) return;
         setUploading(true); setError(null);
         try {
-            const fd = new FormData();
-            files.forEach(f => fd.append("files", f));
-            const res = await fetch(`/api/jobs/${jobId}/resume-screening`, { method: "POST", body: fd });
+            // 1. Ask the server for a presigned R2 URL per file.
+            const presignRes = await fetch(`/api/jobs/${jobId}/resume-screening`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ files: files.map(f => ({ fileName: f.name, fileSize: f.size })) }),
+            });
+            if (!presignRes.ok) throw new Error((await presignRes.json().catch(() => ({}))).error || "Upload failed");
+            const { uploads } = await presignRes.json() as { uploads: { fileName: string; key?: string; putUrl?: string; error?: string }[] };
+
+            // 2. Upload each file directly to R2 (bypasses this server entirely).
+            const uploaded = await Promise.all(uploads.map(async (u, i) => {
+                if (!u.putUrl || !u.key) return { fileName: u.fileName, ok: false };
+                const putRes = await fetch(u.putUrl, { method: "PUT", body: files[i], headers: { "Content-Type": "application/pdf" } });
+                return { fileName: u.fileName, key: u.key, ok: putRes.ok };
+            }));
+            const succeeded = uploaded.filter((u): u is { fileName: string; key: string; ok: true } => u.ok);
+            if (!succeeded.length) throw new Error("All uploads to storage failed");
+
+            // 3. Confirm with the server: it verifies each object landed in R2,
+            // then creates candidate rows and queues screening.
+            const res = await fetch(`/api/jobs/${jobId}/resume-screening`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ files: succeeded.map(({ fileName, key }) => ({ fileName, key })) }),
+            });
             if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Upload failed");
             setDone(true);
             toast.success(mode === "interview-only"

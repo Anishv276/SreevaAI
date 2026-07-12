@@ -504,7 +504,19 @@
       "Bash(taskkill //F //IM node.exe)",
       "Bash(node --env-file=.env scripts/test/clear-brief.mjs \"app-vamsi-resume-gtm-8264-5959604e\")",
       "Bash(python -m modal app logs --help)",
-      "Bash(python -m modal app logs sreevaai-extract-and-score -n 30)"
+      "Bash(python -m modal app logs sreevaai-extract-and-score -n 30)",
+      "Bash(tasklist //FI \"IMAGENAME eq node.exe\")",
+      "Bash(grep -n \"R2_JDS_BUCKET\\\\|const key\\\\|fileName = \\\\`\" app/api/extract/route.ts)",
+      "Bash(grep -n \"const key\\\\|snapshotLabel\\\\|interview/\\\\${\" worker.ts)",
+      "Bash(grep -rn \"recordingKey\\\\|interview/.*\\\\\\\\\\\\$\\\\{\" worker.ts)",
+      "Bash(ls -la \"/c/Users/vamsi/OneDrive/Desktop/Vamsi resume - GTM.pdf\" 2>&1; rm \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\\\\scripts\\\\test\\\\_find-job.ts\")",
+      "Bash(echo \"WORKER_PID:$!\")",
+      "Bash(tasklist //FI \"IMAGENAME eq node.exe\" //FO CSV)",
+      "Bash(taskkill //PID 6136 //F)",
+      "Bash(taskkill //PID 35184 //F)",
+      "Bash(rm -f scripts/test/_metadata-verify.ts scripts/test/_metadata-check.ts scripts/test/_metadata-diff.ts scripts/test/_cleanup2.ts)",
+      "Bash(taskkill //PID 34992 //F)",
+      "Bash(rm -f scripts/test/_time-one-file.ts scripts/test/_cleanup3.ts)"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",

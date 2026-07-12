@@ -146,7 +146,12 @@ export async function POST(request: Request) {
                         const bucket = process.env.R2_JDS_BUCKET || "jds";
                         const orgForSlug = await prisma.organizationDetails.findUnique({ where: { id: orgId }, select: { urlSlug: true } });
                         const orgSlug = orgForSlug?.urlSlug || orgId;
-                        const fileName = `JDs/${orgSlug}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_').toLowerCase()}`;
+                        // No job exists yet at this point (this route runs DURING job
+                        // creation, to extract the JD that helps create the job) -- so
+                        // this can't follow the org/job/file structure other uploads
+                        // use. Staged under org/JDs/ instead; not moved after the job
+                        // is created since nothing currently re-associates it.
+                        const fileName = `${orgSlug}/JDs/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_').toLowerCase()}`;
                         console.log("[STORAGE_PUSH]: Uploading JD to R2", fileName);
                         const { putObject } = await import("@/lib/s3");
                         return await putObject(bucket, fileName, buffer, file.type);
@@ -192,7 +197,9 @@ export async function POST(request: Request) {
         const bucket = process.env.R2_RESUMES_BUCKET || "resumes";
         const orgForSlug = await prisma.organizationDetails.findUnique({ where: { id: orgId }, select: { urlSlug: true } });
         const orgSlug = orgForSlug?.urlSlug || orgId;
-        const fileName = `resume/${orgSlug}/general_extraction/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_').toLowerCase()}`;
+        // No job/candidate context here either (standalone extraction, not tied
+        // to a specific job posting) -- staged under org/resume/general_extraction/.
+        const fileName = `${orgSlug}/resume/general_extraction/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_').toLowerCase()}`;
         console.log("[STORAGE_PUSH]: Uploading to R2", fileName);
         const { putObject } = await import("@/lib/s3");
         const fileUrl = await putObject(bucket, fileName, buffer, file.type);

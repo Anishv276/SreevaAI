@@ -3,7 +3,7 @@ import { Worker, Queue } from 'bullmq';
 import crypto from 'crypto';
 import { prisma } from './lib/prisma';
 import redisConnection, { createRedisConnection, getBullPrefix } from './lib/redis';
-import { putObject, getObjectBuffer, headObjectStrict } from "./lib/s3";
+import { putObject, getObjectBuffer, headObjectStrict, deleteObjectStrict, getKeyFromUrl } from "./lib/s3";
 import { generateId } from "./lib/ids";
 import { isInterviewTokenRequired } from "./lib/interview-access";
 import { appendCandidateActivity } from "./lib/candidate-activity";
@@ -277,6 +277,70 @@ async function processRecordingRetentionSweepJob(job: any) {
   };
 }
 
+/**
+ * Proctoring snapshots have no per-item retention metadata (unlike recordings,
+ * which track dueAt/cleanupStatus in sessionRecording.retention) -- they're just
+ * a plain URL array on Interview.proctoringSnapshotUrls. Reuses the SAME
+ * org.recordingKeepForDays window as recordings so there's one retention knob
+ * to manage, not two. An org with no recording retention configured keeps its
+ * snapshots forever, same as recordings do today.
+ */
+async function processSnapshotRetentionSweepJob(job: any) {
+  const rows = await prisma.$queryRaw<Array<{
+    applicationId: string;
+    proctoringSnapshotUrls: string[];
+  }>>(
+    Prisma.sql`
+      SELECT
+        i."applicationId",
+        i."proctoringSnapshotUrls"
+      FROM "Interview" i
+      JOIN "Application" a ON a.id = i."applicationId"
+      JOIN "Job" d ON d.id = a."jobId"
+      JOIN "OrganizationDetails" o ON o.id = d."organizationId"
+      WHERE array_length(i."proctoringSnapshotUrls", 1) > 0
+        AND o."recordingKeepForDays" IS NOT NULL
+        AND i."interviewCompletedAt" IS NOT NULL
+        AND i."interviewCompletedAt" + (GREATEST(o."recordingKeepForDays", 1) * INTERVAL '1 day') <= NOW()
+      ORDER BY i."interviewCompletedAt" ASC
+      LIMIT 100
+    `
+  );
+  let deleted = 0;
+  let failed = 0;
+  const bucket = process.env.R2_INTERVIEW_BUCKET || "interview";
+  for (const row of rows) {
+    const urls = row.proctoringSnapshotUrls || [];
+    let allDeleted = true;
+    for (const url of urls) {
+      const key = getKeyFromUrl(url);
+      if (!key) continue;
+      try {
+        await deleteObjectStrict(bucket, key);
+      } catch (error: any) {
+        const code = String(error?.name || error?.Code || "").toLowerCase();
+        if (!code.includes("nosuchkey") && !code.includes("notfound")) {
+          allDeleted = false;
+          console.error(`[SNAPSHOT-RETENTION] Failed to delete ${key} for ${row.applicationId}: ${error?.message}`);
+        }
+      }
+    }
+    if (!allDeleted) {
+      failed += 1;
+      continue;
+    }
+    await prisma.interview.update({
+      where: { applicationId: row.applicationId },
+      data: { proctoringSnapshotUrls: [] },
+    }).catch(() => {});
+    deleted += 1;
+  }
+  if (deleted > 0 || failed > 0) {
+    console.log(`[SNAPSHOT-RETENTION] Sweep cleared snapshots for ${deleted} interview(s), failed ${failed}.`);
+  }
+  return { success: true, deleted, failed };
+}
+
 async function persistInterviewUpdateRaw(params: {
   applicationId: string;
   recordingUrl?: string;
@@ -452,7 +516,7 @@ if (isQueueEnabled("resume-processing")) {
   }, {
     connection: createRedisConnection(),
     prefix: BULL_PREFIX,
-    concurrency: 10, // global cap raised -- per-org cap (ORG_CONCURRENCY.resumeProcessing) now does the real limiting
+    concurrency: 70, // global cap -- Modal handles ~100 concurrent jobs; per-org cap (MODAL_ORG_CONCURRENCY.resumeExtraction) does the real per-org limiting
     lockDuration: 15 * 60 * 1000,
     stalledInterval: 60 * 1000,
     maxStalledCount: 2,
@@ -745,7 +809,9 @@ if (isQueueEnabled("recording-retention-cleanup")) {
       console.log(`▶ [RETENTION WORKER] Triggered! Cron job started...`);
       console.log(`=================================================\n`);
       if (job.name === RECORDING_RETENTION_SWEEP_JOB) {
-        return await processRecordingRetentionSweepJob(job);
+        const recordingResult = await processRecordingRetentionSweepJob(job);
+        const snapshotResult = await processSnapshotRetentionSweepJob(job);
+        return { recording: recordingResult, snapshots: snapshotResult };
       }
       console.warn(`[RETENTION] Skipping unsupported job name: ${job.name}`);
       return { skipped: true, reason: "unsupported_job_name" };
@@ -1511,7 +1577,7 @@ if (isQueueEnabled("jd-extraction")) {
     {
       connection: redisConnection,
       prefix: BULL_PREFIX,
-      concurrency: 10, // per-org cap enforced inside processJdExtractionViaModal (lib/modal-concurrency.ts)
+      concurrency: 70, // global cap -- Modal handles ~100 concurrent jobs; per-org cap enforced inside processJdExtractionViaModal (lib/modal-concurrency.ts)
       removeOnComplete: { count: 10 },
       removeOnFail: { count: 25 },
     }
@@ -1598,7 +1664,7 @@ if (isQueueEnabled("brief-generation")) {
     {
       connection: createRedisConnection(),
       prefix: BULL_PREFIX,
-      concurrency: 10, // per-org cap enforced inside processBriefGenerationViaModal (lib/modal-concurrency.ts)
+      concurrency: 70, // global cap -- Modal handles ~100 concurrent jobs; per-org cap enforced inside processBriefGenerationViaModal (lib/modal-concurrency.ts)
       lockDuration: 4 * 60 * 1000, // 4 min lock — longer than the 3-min timeout
       removeOnComplete: { age: 60 },
       removeOnFail:    { age: 3600 },
@@ -1644,7 +1710,7 @@ if (isQueueEnabled("interview-report")) {
     {
       connection: createRedisConnection(),
       prefix: BULL_PREFIX,
-      concurrency: 10, // per-org cap enforced inside processInterviewReportViaModal (lib/modal-concurrency.ts)
+      concurrency: 70, // global cap -- Modal handles ~100 concurrent jobs; per-org cap enforced inside processInterviewReportViaModal (lib/modal-concurrency.ts)
       lockDuration: 6 * 60 * 1000,  // 6 min, matches the 340s script timeout + margin
       stalledInterval: 5 * 60 * 1000,
       maxStalledCount: 1,

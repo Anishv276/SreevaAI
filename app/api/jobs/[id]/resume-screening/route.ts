@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
-import { putObject } from "@/lib/s3";
+import { getPresignedUploadUrl, headObjectStrict } from "@/lib/s3";
 import { generateId } from "@/lib/ids";
 import { getOrgBillingStatus } from "@/lib/credits";
 import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
-import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
 import { authorizeJobAccess } from "@/lib/job-access";
 import { resumeQueue } from "@/lib/queue";
-import { validatePdfUpload } from "@/lib/file-validation";
+import { isPdfExtension, MAX_RESUME_FILE_BYTES } from "@/lib/file-validation";
 
 const RESUME_BUCKET = process.env.R2_RESUMES_BUCKET || "resumes";
 
@@ -34,22 +33,82 @@ function buildProgressState(progress: number, stage: string, extra?: Record<stri
 
 const MAX_RESUMES = 500;
 
-// POST /api/jobs/[id]/resume-screening -> upload resumes and queue processing
+// PUT /api/jobs/[id]/resume-screening -> generate presigned R2 upload URLs
+// Client uploads files directly to R2 with these, then calls POST with the
+// resulting keys once uploads finish. Server never touches file bytes.
+export async function PUT(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: jobId } = await params;
+    const access = await authorizeJobAccess(jobId);
+    if (!access.ok) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
+    }
+
+    const job = await prisma.job.findUnique({
+      where: { id: jobId },
+      select: { title: true, organization: { select: { urlSlug: true } } },
+    });
+    if (!job) {
+      return NextResponse.json({ error: "Job not found" }, { status: 404 });
+    }
+
+    const body = await request.json().catch(() => null);
+    const files = (body?.files ?? []) as { fileName: string; fileSize: number }[];
+    if (!files.length) {
+      return NextResponse.json({ error: "No files provided" }, { status: 400 });
+    }
+    if (files.length > MAX_RESUMES) {
+      return NextResponse.json({ error: `Maximum ${MAX_RESUMES} resumes per upload` }, { status: 400 });
+    }
+
+    const orgSlug = job.organization?.urlSlug || access.orgId;
+    const safeJobTitle = job.title.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
+
+    const uploads = await Promise.all(
+      files.map(async (f, index) => {
+        if (!isPdfExtension(f.fileName)) {
+          return { fileName: f.fileName, error: "Only .pdf files are accepted" };
+        }
+        if (f.fileSize > MAX_RESUME_FILE_BYTES) {
+          return { fileName: f.fileName, error: `File too large (max ${MAX_RESUME_FILE_BYTES / (1024 * 1024)}MB)` };
+        }
+        const safeName = sanitizeFileName(f.fileName);
+        const candidateFolder = sanitizeFileName(guessNameFromFile(f.fileName)).toLowerCase() || "candidate";
+        const key = `resume/${orgSlug}/${safeJobTitle}/${candidateFolder}/${Date.now()}_${index}_${safeName}`;
+        const putUrl = await getPresignedUploadUrl(RESUME_BUCKET, key, "application/pdf");
+        return { fileName: f.fileName, key, putUrl };
+      })
+    );
+
+    return NextResponse.json({ uploads });
+  } catch (err) {
+    console.error("[RESUME-SCREENING] PUT error:", err);
+    return NextResponse.json({ error: "Failed to generate upload URLs" }, { status: 500 });
+  }
+}
+
+// POST /api/jobs/[id]/resume-screening -> confirm direct-to-R2 uploads and queue processing
+// Body: { files: [{ fileName, key }] } -- keys returned by the PUT step above.
+// Verifies each object actually landed in R2 (HEAD) before trusting it, so a
+// client that lies about a successful upload can't create a phantom job.
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getSession();
-    if (!session || (!isAdminRole(session.role) && !isSuperAdminRole(session.role))) {
-      return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+    const { id: jobId } = await params;
+    const access = await authorizeJobAccess(jobId);
+    if (!access.ok) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
     }
 
-    const { id: jobId } = await params;
-    const formData = await request.formData();
-    const files = formData.getAll("files") as File[];
+    const body = await request.json().catch(() => null);
+    const files = (body?.files ?? []) as { fileName: string; key: string }[];
 
-    console.log(`[RESUME-UPLOAD] Received ${files.length} file(s) for job=${jobId}`);
+    console.log(`[RESUME-UPLOAD] Confirming ${files.length} file(s) for job=${jobId}`);
 
     if (!files.length) {
       return NextResponse.json({ error: "No files provided" }, { status: 400 });
@@ -58,29 +117,7 @@ export async function POST(
       return NextResponse.json({ error: `Maximum ${MAX_RESUMES} resumes per upload` }, { status: 400 });
     }
 
-    const job = await prisma.job.findUnique({
-      where: { id: jobId },
-      select: {
-        id: true,
-        title: true,
-        organizationId: true,
-        organization: { select: { urlSlug: true } },
-      },
-    });
-    if (!job) {
-      return NextResponse.json({ error: "Job not found" }, { status: 404 });
-    }
-    if (!job.organizationId) {
-      return NextResponse.json({ error: "Job has no organisation" }, { status: 400 });
-    }
-    if (!isSuperAdminRole(session.role) && job.organizationId !== session.orgId) {
-      return NextResponse.json({ error: "Job belongs to a different organization" }, { status: 403 });
-    }
-
-    const orgSlug = job.organization?.urlSlug || job.organizationId;
-    const safeJobTitle = job.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-
-    const billingStatus = await getOrgBillingStatus(job.organizationId);
+    const billingStatus = await getOrgBillingStatus(access.orgId);
     if (billingStatus.totalInterviewsAllowed > 0 && !billingStatus.hasSufficientInterviews) {
       return NextResponse.json(
         {
@@ -91,7 +128,7 @@ export async function POST(
       );
     }
 
-    // -- PHASE 1: Upload every PDF to R2, collecting successes ----------------
+    // -- PHASE 1: Verify every claimed upload actually landed in R2 -----------
     type PreparedRow = {
       applicationId: string;
       fullName: string;
@@ -102,43 +139,33 @@ export async function POST(
       downloadUrl: string;
     };
 
+    const publicUrlBase = process.env.NEXT_PUBLIC_R2_RESUMES_URL || "";
     const prepared: PreparedRow[] = [];
     const uploadFailures: string[] = [];
 
-    for (let index = 0; index < files.length; index += 1) {
-      const file = files[index];
-      const fileName = file.name || `resume_${index + 1}.pdf`;
+    for (const file of files) {
       try {
-        const buffer = Buffer.from(await file.arrayBuffer());
-        const validationError = validatePdfUpload(file, buffer);
-        if (validationError) {
-          uploadFailures.push(fileName);
-          console.error(`[RESUME-UPLOAD] Rejected ${fileName}: ${validationError}`);
-          continue;
-        }
-        const safeName = sanitizeFileName(fileName);
-        const key = `resume/${orgSlug}/${safeJobTitle}/${Date.now()}_${index}_${safeName}`;
-        const uploadedUrl = await putObject(RESUME_BUCKET, key, buffer, "application/pdf");
-        const applicationId = `${generateId("app", guessNameFromFile(fileName))}-${randomUUID().slice(0, 8)}`;
+        await headObjectStrict(RESUME_BUCKET, file.key);
+        const applicationId = `${generateId("app", guessNameFromFile(file.fileName))}-${randomUUID().slice(0, 8)}`;
+        const uploadedUrl = `${publicUrlBase.replace(/\/$/, "")}/${file.key}`;
         prepared.push({
           applicationId,
-          fullName: guessNameFromFile(fileName),
-          fileName,
+          fullName: guessNameFromFile(file.fileName),
+          fileName: file.fileName,
           bucket: RESUME_BUCKET,
-          key,
+          key: file.key,
           uploadedUrl,
           downloadUrl: `/api/jobs/${jobId}/resume-screening/download?candidateId=${applicationId}`,
         });
-        console.log(`[RESUME-UPLOAD] Stored ${fileName} in R2 -> ${key}`);
-      } catch (uploadErr: any) {
-        uploadFailures.push(fileName);
-        console.error(`[RESUME-UPLOAD] R2 upload failed for ${fileName}: ${uploadErr?.message}`);
+      } catch (verifyErr: any) {
+        uploadFailures.push(file.fileName);
+        console.error(`[RESUME-UPLOAD] R2 verification failed for ${file.fileName} (key=${file.key}): ${verifyErr?.message}`);
       }
     }
 
     if (prepared.length === 0) {
       return NextResponse.json(
-        { error: "All resume uploads failed", failedFiles: uploadFailures },
+        { error: "All resume uploads failed verification", failedFiles: uploadFailures },
         { status: 502 }
       );
     }
@@ -184,7 +211,7 @@ export async function POST(
             bucket: row.bucket,
             key: row.key,
             fileName: row.fileName,
-            orgId: job.organizationId,
+            orgId: access.orgId,
           },
           {
             attempts: 2,

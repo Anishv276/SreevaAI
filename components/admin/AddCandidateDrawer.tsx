@@ -91,6 +91,7 @@ export function AddCandidateDrawer({ open, onClose, jobId, jobName, mode, onDone
                     const fd = new FormData();
                     fd.append("file", resumeFile);
                     fd.append("jobId", jobId);
+                    fd.append("fullName", fullName.trim());
                     const upRes = await fetch(`/api/admin/upload-resume`, { method: "POST", body: fd });
                     if (upRes.ok) {
                         const upData = await upRes.json();

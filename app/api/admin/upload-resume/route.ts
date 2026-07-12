@@ -27,6 +27,7 @@ export async function POST(request: Request) {
         const formData = await request.formData();
         const file = formData.get("file") as File | null;
         const jobId = formData.get("jobId") as string | null;
+        const fullName = (formData.get("fullName") as string | null)?.trim() || "";
 
         if (!file) return NextResponse.json({ error: "No file" }, { status: 400 });
         if (!jobId) return NextResponse.json({ error: "No jobId" }, { status: 400 });
@@ -49,8 +50,10 @@ export async function POST(request: Request) {
         }
 
         const orgSlug = job.organization?.urlSlug || "org";
+        const safeJobTitle = job.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+        const candidateFolder = sanitizeFileName(fullName || file.name.replace(/\.[^/.]+$/, "")).toLowerCase() || "candidate";
         const safeName = sanitizeFileName(file.name);
-        const key = `${orgSlug}/${jobId}/${randomUUID()}-${safeName}`;
+        const key = `resume/${orgSlug}/${safeJobTitle}/${candidateFolder}/${randomUUID()}-${safeName}`;
 
         const url = await putObject(RESUME_BUCKET, key, buffer, "application/pdf");
 

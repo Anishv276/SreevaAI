@@ -121,6 +121,7 @@ export const briefGenerationQueue = new Queue('brief-generation', {
 // the LiveKit agent job (which LiveKit Cloud recycles shortly after the room
 // closes) onto this durable worker. attempts: 1 -- billing-usage persistence
 // and the Slack PDF upload are not idempotent, so no automatic retry.
+const FIVE_MIN_REPORT = 5 * 60;
 export const interviewReportQueue = new Queue('interview-report', {
   connection: redisConnection,
   prefix,
@@ -130,9 +131,10 @@ export const interviewReportQueue = new Queue('interview-report', {
     // any future re-run for that SAME appId (BullMQ silently no-ops .add()
     // against an existing jobId); clearing it promptly keeps repeated /test
     // runs from needing manual Redis cleanup and stops one failed job from
-    // blocking every subsequent attempt for that interview.
-    removeOnComplete: { age: TWO_MIN },
-    removeOnFail:    { age: TWO_MIN },
+    // blocking every subsequent attempt for that interview. Raised to 5 min
+    // (from 2) since the report pipeline itself runs close to that long.
+    removeOnComplete: { age: FIVE_MIN_REPORT },
+    removeOnFail:    { age: FIVE_MIN_REPORT },
   },
 });
 export default redisConnection;

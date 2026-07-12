@@ -3,32 +3,32 @@ import redisConnection, { getBullPrefix } from "./redis";
 export const JD_EXTRACTION_QUEUE_NAME = "jd-extraction";
 export type JdExtractionJobData =
   | {
-      kind: "file";
-      fileName: string;
-      buffer: Buffer | { type?: string; data?: number[] };
-      orgOpenAIModel: string;
-      orgId?: string;
-    }
+    kind: "file";
+    fileName: string;
+    buffer: Buffer | { type?: string; data?: number[] };
+    orgOpenAIModel: string;
+    orgId?: string;
+  }
   | {
-      kind: "url";
-      url: string;
-      orgOpenAIModel: string;
-      orgId?: string;
-    }
+    kind: "url";
+    url: string;
+    orgOpenAIModel: string;
+    orgId?: string;
+  }
   | {
-      kind: "text";
-      text: string;
-      orgOpenAIModel: string;
-      orgId?: string;
-    };
+    kind: "text";
+    text: string;
+    orgOpenAIModel: string;
+    orgId?: string;
+  };
 export type JdExtractionJobResult = {
   data: Record<string, any>;
   text?: string;
   usage?: any;
 };
 const defaultJobOptions = {
-  removeOnComplete: { age: 300 }, // keep 5 min so frontend polling can read the result
-  removeOnFail: { age: 300 },
+  removeOnComplete: { age: 600 }, // keep 20 min so frontend polling can read the result
+  removeOnFail: { age: 600 },
 };
 let _queue: Queue | null = null;
 function getQueue(): Queue {
