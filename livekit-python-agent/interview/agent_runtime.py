@@ -297,7 +297,9 @@ from interview.prompt_layers import (
     build_evaluation_layer_prompt,
     build_system_prompt,
 )
-CLOSING_TRIGGER_SECS = 10   # fire goodbye at T-10s so interview ends exactly at time limit
+CLOSING_TRIGGER_SECS = 20   # begin the closing goodbye at T-20s. Wide enough that a
+                            # single slow loop iteration (candidate mid-answer, agent busy)
+                            # cannot skip past the window into the `remaining<=0` break.
 # Custom-question normalisation constants  module-level so they are allocated once.
 _CUSTOM_Q_PREFIXES: tuple[str, ...] = (
     "ask him about",
@@ -4225,6 +4227,41 @@ async def entrypoint(ctx: JobContext):
             logger.info(f"[NUDGE] Sent termination signal to frontend (reason={reason})")
         except Exception as e:
             logger.warning(f"Failed to send termination signal: {e}")
+    async def _speak_time_limit_goodbye(remaining: float) -> None:
+        # Deterministic "we're out of time" close. Set _closing_triggered FIRST so
+        # concurrent eval turns stop injecting new questions (see the guard at the
+        # top of the eval path) even if the say() below is slow or interrupted.
+        # Called from two places:
+        #   1. In-loop at T-CLOSING_TRIGGER_SECS (the normal path).
+        #   2. As a post-loop fallback if the loop exited via `remaining<=0`
+        #      without ever hitting the trigger window -- previously that case
+        #      ended the interview SILENTLY. This guarantees the candidate always
+        #      hears a closing line at the time limit.
+        nonlocal _closing_triggered
+        if _closing_triggered:
+            return
+        _closing_triggered = True
+        logger.info("[CLOSING] Triggered at remaining=%.1fs", remaining)
+        _name = candidate_first_name or candidate_name
+        _goodbye_candidate = (
+            f"Sorry to interrupt — we're coming up on time, so I'll wrap up here. "
+            f"It was great speaking with you, {_name}. "
+            "Thanks so much for your time, and we'll be in touch soon!"
+        )
+        _goodbye_silence = (
+            f"We're just about at time, so I'll wrap up here. "
+            f"It was great speaking with you, {_name}. "
+            "Thanks so much for your time, and we'll be in touch soon!"
+        )
+        try:
+            if is_candidate_speaking or is_agent_speaking:
+                session.interrupt()
+                await asyncio.sleep(0.3)
+                await session.say(_goodbye_candidate, allow_interruptions=False)
+            else:
+                await session.say(_goodbye_silence, allow_interruptions=False)
+        except Exception as e:
+            logger.warning("[CLOSING] Goodbye delivery failed: %s", e)
     # Use the greeting-begin timestamp so `remaining` counts from when greeting started,
     # NOT from when the greeting audio finished. This makes the 20-min window exact.
     session_loop_start = _interview_timer_start
@@ -4275,27 +4312,7 @@ async def entrypoint(ctx: JobContext):
                 _custom_q_reminder_fired = True
         # --- T-20s: closing trigger ---
         if remaining <= CLOSING_TRIGGER_SECS and not _closing_triggered:
-            _closing_triggered = True
-            logger.info("[CLOSING] Triggered at remaining=%.1fs", remaining)
-            _goodbye_candidate = (
-                f"Sorry to interrupt — we're coming up on time, so I'll wrap up here. "
-                f"It was great speaking with you, {candidate_first_name or candidate_name}. "
-                "Thanks so much for your time, and we'll be in touch soon!"
-            )
-            _goodbye_silence = (
-                f"We're just about at time, so I'll wrap up here. "
-                f"It was great speaking with you, {candidate_first_name or candidate_name}. "
-                "Thanks so much for your time, and we'll be in touch soon!"
-            )
-            try:
-                if is_candidate_speaking or is_agent_speaking:
-                    session.interrupt()
-                    await asyncio.sleep(0.3)
-                    await session.say(_goodbye_candidate, allow_interruptions=False)
-                else:
-                    await session.say(_goodbye_silence, allow_interruptions=False)
-            except Exception as e:
-                logger.warning("[CLOSING] Goodbye delivery failed: %s", e)
+            await _speak_time_limit_goodbye(remaining)
             break
         inactivity_elapsed = (
             (time.monotonic() - awaiting_candidate_since)
@@ -4368,7 +4385,15 @@ async def entrypoint(ctx: JobContext):
     # Check if we exited because of finish/disconnect or because time ran out
     time_expired = not finished_task.done() and not disconnected_task.done()
     if time_expired:
-        # Goodbye was already spoken at T-20s inside the loop. Just signal disconnect.
+        # FALLBACK: normally the goodbye was already spoken at T-CLOSING_TRIGGER_SECS
+        # inside the loop. But if the loop exited via `remaining<=0` without the
+        # trigger firing (a slow final iteration could carry `remaining` straight
+        # past the window), _closing_triggered is still False and the interview
+        # would otherwise end SILENTLY. Speak it now so the candidate always hears
+        # the "we're out of time" close before the disconnect.
+        if not _closing_triggered:
+            logger.warning("[CLOSING] Trigger was skipped inside loop -- speaking goodbye now (fallback)")
+            await _speak_time_limit_goodbye(0.0)
         logger.info(f"[CLOSING] Session ended at time limit ({time_limit_mins}m)")
         await asyncio.sleep(3.0)  # allow TTS to finish before disconnecting
         await _send_termination_signal("time_expired")
