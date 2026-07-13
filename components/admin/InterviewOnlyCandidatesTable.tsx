@@ -35,6 +35,18 @@ function interviewStatusLabel(v?: string) {
     if (k === "pending") return "Pending";
     return k.replace(/\b\w/g, c => c.toUpperCase()) || "Pending";
 }
+function resumeStatusKey(v?: string) {
+    return String(v || "").trim().toLowerCase();
+}
+function resumeStatusLabel(v?: string) {
+    const k = resumeStatusKey(v);
+    if (k === "waiting") return "Extracting";
+    if (k === "extracting") return "Extracting";
+    if (k === "parsing") return "Parsing";
+    if (k === "extracted") return "Done";
+    if (k === "failed") return "Failed";
+    return "Extracting";
+}
 
 const STATUS_TABS: { key: StatusTab; label: string }[] = [
     { key: "all", label: "All" },
@@ -249,6 +261,7 @@ export function InterviewOnlyCandidatesTable({ jobId, refreshKey }: { jobId: str
                                 <Checkbox checked={isAllSelected} onCheckedChange={toggleSelectAll} />
                             </th>
                             <th className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400">Candidate</th>
+                            <th className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400">Resume Status</th>
                             <th className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400">Status</th>
                             <th className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400">Report</th>
                             <th className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400 text-right">Action</th>
@@ -256,10 +269,10 @@ export function InterviewOnlyCandidatesTable({ jobId, refreshKey }: { jobId: str
                     </thead>
                     <tbody>
                         {isLoading ? (
-                            <tr><td colSpan={5} className="py-0.56 text-center text-[13px] font-semibold text-gray-400">Loading candidates...</td></tr>
+                            <tr><td colSpan={6} className="py-0.56 text-center text-[13px] font-semibold text-gray-400">Loading candidates...</td></tr>
                         ) : filteredCandidates.length === 0 ? (
                             <tr>
-                                <td colSpan={5} className="py-0.56 text-center">
+                                <td colSpan={6} className="py-0.56 text-center">
                                     <p className="text-[14px] font-bold text-gray-400">No candidates yet</p>
                                     <p className="text-[12px] text-gray-300 mt-1">Use Bulk Upload or + Add Candidate to get started</p>
                                 </td>
@@ -272,6 +285,11 @@ export function InterviewOnlyCandidatesTable({ jobId, refreshKey }: { jobId: str
                             const isDone = statusKey === "completed" || statusKey === "finished";
                             const isInProgress = statusKey === "in progress" || statusKey === "inprogress";
                             const initials = displayName.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase();
+                            const resStatusKey = resumeStatusKey(candidate.resumeStatus || candidate.status);
+                            const resStatusLbl = resumeStatusLabel(candidate.resumeStatus || candidate.status);
+                            const resIsExtracted = resStatusKey === "extracted";
+                            const resIsFailed = resStatusKey === "failed";
+                            const inviteSentAt = candidate.interview?.inviteEmailSentAt || candidate.inviteSentAt;
 
                             return (
                                 <tr
@@ -296,6 +314,30 @@ export function InterviewOnlyCandidatesTable({ jobId, refreshKey }: { jobId: str
                                                 <p className="text-[11px] text-gray-400">{displayEmail}</p>
                                             </div>
                                         </div>
+                                    </td>
+                                    {/* Resume Status */}
+                                    <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>
+                                        {resIsFailed ? (
+                                            <div className="flex items-center gap-1">
+                                                <div className="h-2 w-2 rounded-full shrink-0 bg-rose-500" />
+                                                <span className="text-[12px] font-semibold text-rose-600">Failed</span>
+                                            </div>
+                                        ) : !resIsExtracted ? (
+                                            <div className="flex items-center gap-1.5">
+                                                <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-500" />
+                                                <span className="text-[12px] font-semibold text-violet-700">{resStatusLbl}</span>
+                                            </div>
+                                        ) : inviteSentAt ? (
+                                            <div className="flex items-center gap-1">
+                                                <div className="h-2 w-2 rounded-full shrink-0 bg-emerald-500" />
+                                                <span className="text-[12px] font-semibold text-emerald-700">Email Sent</span>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center gap-1">
+                                                <div className="h-2 w-2 rounded-full shrink-0 bg-amber-400" />
+                                                <span className="text-[12px] font-semibold text-amber-600">Done</span>
+                                            </div>
+                                        )}
                                     </td>
                                     {/* Status */}
                                     <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>

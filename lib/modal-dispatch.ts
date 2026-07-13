@@ -154,7 +154,7 @@ export async function processResumeScreeningViaModal(job: Job, token: string | u
       console.log(`[MODAL-DISPATCH] Slot acquired for org=${orgId}, calling extraction${hasJd ? "+score" : ""} for ${applicationId}`);
       await prisma.application.update({
         where: { id: applicationId },
-        data: { resumeScreeningStatus: "scoring", applicationUpdatedAt: new Date() },
+        data: { resumeScreeningStatus: isInterviewOnly ? "parsing" : "scoring", applicationUpdatedAt: new Date() },
       }).catch(() => {});
 
       const form = new FormData();

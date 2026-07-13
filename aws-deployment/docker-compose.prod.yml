@@ -185,7 +185,7 @@ services:
     image: sreeva-app:latest        # same build+tag as hr-frontend -> built once, reused
     container_name: Normal-worker
     restart: always
-    command: ["node", "scripts/start-worker.mjs"]
+    command: ["node", "--import", "tsx", "worker.ts"]
     env_file:
       - .env
     environment:
