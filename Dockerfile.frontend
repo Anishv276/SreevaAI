@@ -64,10 +64,18 @@ COPY --chown=nextjs:nodejs --from=builder /app/node_modules ./node_modules
 COPY --chown=nextjs:nodejs --from=builder /app/package.json ./package.json
 COPY --chown=nextjs:nodejs --from=builder /app/scripts ./scripts
 COPY --chown=nextjs:nodejs --from=builder /app/extraction_resume_JD_score_report ./extraction_resume_JD_score_report
-COPY --chown=nextjs:nodejs --from=builder /app/livekit-python-agent/billing ./billing
+# The billing subprocess is spawned by lib/usage-metrics.ts with
+# cwd = <process.cwd()>/livekit-python-agent and invoked as `python -m billing.billing`.
+# These MUST therefore land under /app/livekit-python-agent/ (not flattened to /app),
+# otherwise the subprocess fails to launch and JD/resume extraction costs never get
+# recorded in the billing section.
+COPY --chown=nextjs:nodejs --from=builder /app/livekit-python-agent/billing ./livekit-python-agent/billing
 # billing.py imports from interview.agent_runtime_support / interview.agent_utils --
 # both lightweight (dotenv + pydantic only), no heavy livekit-agents/asyncpg deps pulled in.
-COPY --chown=nextjs:nodejs --from=builder /app/livekit-python-agent/interview ./interview
+COPY --chown=nextjs:nodejs --from=builder /app/livekit-python-agent/interview ./livekit-python-agent/interview
+# agent_persistence.py resolves the Supabase CA at <module>/../../certs/supabase-root-ca.pem,
+# i.e. /app/livekit-python-agent/certs/ once the modules live under livekit-python-agent/.
+COPY --chown=nextjs:nodejs --from=builder /app/certs ./livekit-python-agent/certs
 COPY --chown=nextjs:nodejs --from=builder /app/lib ./lib
 COPY --chown=nextjs:nodejs --from=builder /app/prisma ./prisma
 COPY --chown=nextjs:nodejs --from=builder /app/certs ./certs
