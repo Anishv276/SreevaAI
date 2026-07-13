@@ -20,6 +20,8 @@ name: Deploy (EC2 single-box)
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "livekit-python-agent/**"
   workflow_dispatch: {}   # allow manual "Run workflow" from the Actions tab
 
 concurrency:

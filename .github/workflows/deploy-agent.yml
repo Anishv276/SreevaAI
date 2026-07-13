@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+    paths:
+      - "livekit-python-agent/**"
+      - ".github/workflows/deploy-agent.yml"
   workflow_dispatch: {}
 
 jobs:
