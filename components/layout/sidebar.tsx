@@ -1,7 +1,7 @@
 "use client";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
-    LayoutDashboard, PlusCircle, Users, Settings,
+    LayoutDashboard, PlusCircle, Settings,
     FileText, PieChart, Sparkles, ChevronDown,
     LogOut, User, SlidersHorizontal,
     X, ShieldAlert, Loader2, ArrowLeft, Building2,
@@ -25,7 +25,6 @@ const NAV_GROUPS: { items: NavItem[] }[] = [
         items: [
             { icon: LayoutDashboard, label: "Overview", href: "/admin" },
             { icon: Briefcase, label: "Active Jobs", href: "/admin/jobs" },
-            { icon: Users, label: "Candidates", href: "/admin/candidates" },
             { icon: Calendar, label: "Calendar", href: "/admin/schedule" },
         ]
     },

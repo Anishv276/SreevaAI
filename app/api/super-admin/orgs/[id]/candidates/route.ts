@@ -81,9 +81,9 @@ export async function GET(
             }),
             prisma.application.count({ where: { ...orgWhere, resumeScreeningStatus: { contains: "shortlisted", mode: "insensitive" } } }),
             prisma.application.count({ where: { ...orgWhere, resumeScreeningStatus: { contains: "rejected", mode: "insensitive" } } }),
-            prisma.application.count({ where: { ...orgWhere, interview: { interviewStatus: { in: ["LAUNCHING", "PROGRESS"] } } } }),
+            prisma.application.count({ where: { ...orgWhere, interview: { interviewStatus: { in: ["LAUNCHING", "PROGRESS"] }, isDeleted: false } } }),
             prisma.application.count({ where: { ...orgWhere, interview: { is: null } } }),
-            prisma.application.count({ where: { ...orgWhere, interview: { interviewStatus: "COMPLETED" } } }),
+            prisma.application.count({ where: { ...orgWhere, interview: { interviewStatus: "COMPLETED", isDeleted: false } } }),
         ]);
 
         return NextResponse.json({

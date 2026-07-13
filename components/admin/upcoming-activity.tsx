@@ -6,10 +6,10 @@ import { ErrorState } from "./error-state";
 
 interface NeedsActionData {
     upcomingActivity: {
-        reportsReadyForReview: number;
-        candidatesYetToStart: number;
-        jobsExpiringSoon: number;
-        invitesSentLast24h: number;
+        scheduledToday: number;
+        scheduledThisWeek: number;
+        remainingToday: number;
+        completedLast24h: number;
     };
 }
 
@@ -61,29 +61,29 @@ export function UpcomingActivity({ initialData }: UpcomingActivityProps = {}) {
 
     const activities = data ? [
         {
-            label: "Reports ready for review",
-            value: data.upcomingActivity.reportsReadyForReview,
+            label: "Interviews scheduled today",
+            value: data.upcomingActivity.scheduledToday,
             icon: ClipboardList,
             bg: "bg-orange-50",
             text: "text-orange-500",
         },
         {
-            label: "Candidates yet to start interview",
-            value: data.upcomingActivity.candidatesYetToStart,
+            label: "Interviews scheduled this week",
+            value: data.upcomingActivity.scheduledThisWeek,
             icon: Users,
             bg: "bg-green-50",
             text: "text-green-500",
         },
         {
-            label: "Jobs expiring in 3 days",
-            value: data.upcomingActivity.jobsExpiringSoon,
+            label: "Remaining interviews today",
+            value: data.upcomingActivity.remainingToday,
             icon: Clock,
             bg: "bg-purple-50",
             text: "text-purple-500",
         },
         {
-            label: "Invites sent in last 24 hours",
-            value: data.upcomingActivity.invitesSentLast24h,
+            label: "Interviews completed in last 24 hours",
+            value: data.upcomingActivity.completedLast24h,
             icon: Send,
             bg: "bg-pink-50",
             text: "text-pink-500",
@@ -135,7 +135,7 @@ export function UpcomingActivity({ initialData }: UpcomingActivityProps = {}) {
             {/* Footer */}
             <div className="pt-5 mt-auto text-center border-t border-gray-100">
                 <Link
-                    href="/admin/candidates"
+                    href="/admin/jobs"
                     className="inline-flex items-center gap-1.5 text-xs font-bold text-purple-600 hover:text-purple-700 transition-colors"
                 >
                     View candidates <ArrowRight className="h-3.5 w-3.5" />

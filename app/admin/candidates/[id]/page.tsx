@@ -53,7 +53,7 @@ export default function CandidateProfilePage() {
     const searchParams = useSearchParams();
     const id = typeof params?.id === "string" ? params.id : Array.isArray(params?.id) ? params.id[0] : "";
     const reportMode = (searchParams.get("report") || "interview").toLowerCase();
-    const backHref = searchParams.get("back") || "/admin/candidates";
+    const backHref = searchParams.get("back") || "/admin/jobs";
     const orgIdParam = searchParams.get("orgId");
     const adminOrg = useAdminOrg();
     const [candidate, setCandidate] = useState<any>(null);

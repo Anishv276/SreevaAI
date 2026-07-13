@@ -10,8 +10,9 @@ import { apiErrorResponse } from "@/lib/slack-error-logger";
 // POST /api/admin/interview-only
 // Interview Only mode -- two paths:
 //   - No resume  → create candidate, send invite immediately
-//   - Resume URL → create candidate with resumeStatus="waiting", enqueue screening,
-//                   worker auto-sends invite after scoring is done
+//   - Resume URL → create candidate with resumeStatus="waiting", enqueue screening
+//                   (extraction only, no JD scoring); worker auto-sends invite
+//                   once name/email are extracted (see lib/modal-dispatch.ts)
 export async function POST(request: Request) {
     try {
         const session = await getSession();

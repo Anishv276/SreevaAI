@@ -657,7 +657,7 @@ export function buildSreevaAIInterviewViewModel(i: {
       : "--";
 
   return {
-    backHref: i.backHref || "/admin/candidates",
+    backHref: i.backHref || "/admin/jobs",
     fullName: c.fullName || "Candidate",
     displayAvatar: i.displayAvatar,
     roleLabel: String(c.job?.role || c.job?.title || "").trim() || "Role",

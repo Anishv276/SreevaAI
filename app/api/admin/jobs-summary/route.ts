@@ -23,12 +23,12 @@ export async function GET(req: Request) {
                 jobRole: true,
                 resumeScreeningThreshold: true,
                 applications: {
-                    where: { appliedAt: { gte: start } },
+                    where: { isDeleted: false, appliedAt: { gte: start } },
                     select: {
                         id: true,
                         resumeScreeningStatus: true,
                         resumeAiScore: true,
-                        interview: { select: { interviewStatus: true } },
+                        interview: { where: { isDeleted: false }, select: { interviewStatus: true } },
                     },
                 },
             },

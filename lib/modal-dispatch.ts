@@ -23,6 +23,8 @@ import { prisma } from "./prisma";
 import { getObjectBuffer } from "./s3";
 import { recordOrgBillingUsage } from "./usage-metrics";
 import { MODAL_ORG_CONCURRENCY, withModalOrgSlot } from "./modal-concurrency";
+import { generateId } from "./ids";
+import { sendScheduleInviteEmail } from "./mail";
 
 const RETRY_DELAY_MS = 3000;
 
@@ -121,7 +123,7 @@ export async function processResumeScreeningViaModal(job: Job, token: string | u
       where: { id: applicationId },
       select: {
         job: {
-          select: { jdExtractedDetails: true, resumeScreeningCriteria: true, resumeScreeningThreshold: true },
+          select: { id: true, title: true, interviewMode: true, jdExtractedDetails: true, resumeScreeningCriteria: true, resumeScreeningThreshold: true, organization: { select: { name: true } } },
         },
       },
     }),
@@ -132,6 +134,8 @@ export async function processResumeScreeningViaModal(job: Job, token: string | u
   ]);
   if (!org) throw new Error(`Org ${orgId} not found for screen-resume-modal job`);
 
+  const isInterviewOnly = application?.job?.interviewMode === "interview-only";
+
   const extractedDetails = (() => {
     try { return JSON.parse(application?.job?.jdExtractedDetails || "{}"); } catch { return {}; }
   })();
@@ -139,7 +143,8 @@ export async function processResumeScreeningViaModal(job: Job, token: string | u
     try { return JSON.parse(application?.job?.resumeScreeningCriteria || "{}"); } catch { return {}; }
   })();
   const threshold = application?.job?.resumeScreeningThreshold || 60;
-  const hasJd = Object.keys(extractedDetails).length > 0;
+  // Interview Only mode: extraction only, no JD scoring, no threshold.
+  const hasJd = !isInterviewOnly && Object.keys(extractedDetails).length > 0;
 
   const outcome = await withModalOrgSlot(
     "resumeExtraction",
@@ -196,7 +201,9 @@ export async function processResumeScreeningViaModal(job: Job, token: string | u
   const reportJson = scoreData ? JSON.stringify(scoreData) : null;
 
   let resumeStatus = "pending";
-  if (aiScore !== null) {
+  if (isInterviewOnly) {
+    resumeStatus = "extracted";
+  } else if (aiScore !== null) {
     resumeStatus = aiScore >= threshold ? "shortlisted" : "rejected";
   }
 
@@ -219,6 +226,40 @@ export async function processResumeScreeningViaModal(job: Job, token: string | u
     },
   });
   console.log(`[MODAL-DISPATCH] DB updated for ${applicationId}: aiScore=${aiScore} status=${resumeStatus}`);
+
+  if (isInterviewOnly) {
+    const inviteEmail = parsedEmail || undefined;
+    if (!inviteEmail) {
+      console.warn(`[MODAL-DISPATCH] Interview Only: no email extracted for ${applicationId}, skipping auto-invite`);
+    } else {
+      try {
+        const interviewId = generateId("ivw", parsedName || applicationId);
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 7);
+        await prisma.interview.create({
+          data: {
+            id: interviewId,
+            applicationId,
+            inviteEmailSentAt: new Date(),
+            inviteLinkExpiresAt: expiresAt,
+            interviewStatus: "PENDING",
+          },
+        });
+        const interview = await prisma.interview.findUnique({ where: { applicationId }, select: { candidateInviteToken: true } });
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.sreevaai.com";
+        await sendScheduleInviteEmail({
+          email: inviteEmail,
+          fullName: parsedName || "Candidate",
+          jobTitle: application?.job?.title || "",
+          scheduleLink: `${baseUrl}/schedule/${interview?.candidateInviteToken}`,
+          orgName: application?.job?.organization?.name || "The Company",
+        });
+        console.log(`[MODAL-DISPATCH] Interview Only: auto-invite sent to ${inviteEmail} for ${applicationId}`);
+      } catch (e) {
+        console.error(`[MODAL-DISPATCH] Interview Only: auto-invite failed for ${applicationId}:`, e);
+      }
+    }
+  }
 
   const usageExtract = result?.usage_extract ?? result?.usage ?? null;
   const usageScore = result?.usage_score ?? null;

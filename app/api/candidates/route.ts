@@ -75,7 +75,8 @@ export async function GET(request: Request) {
         }
         // -- PRISMA QUERY BUILDER -------------------
         const where: any = {
-            job: { organizationId: orgId }
+            isDeleted: false,
+            job: { organizationId: orgId, isDeleted: false }
         };
         if (jobId && jobId !== "all") {
             where.jobId = jobId;
@@ -123,7 +124,8 @@ export async function GET(request: Request) {
             prisma.application.groupBy({
                 by: ['resumeScreeningStatus', 'interviewPhaseStatus'],
                 where: {
-                    job: { organizationId: orgId, ...(jobId && jobId !== "all" ? { id: jobId } : {}) }
+                    isDeleted: false,
+                    job: { organizationId: orgId, isDeleted: false, ...(jobId && jobId !== "all" ? { id: jobId } : {}) }
                 },
                 _count: { _all: true }
             }),
@@ -248,6 +250,7 @@ export async function DELETE(request: Request) {
             return NextResponse.json({ error: "No candidates or organization specified for deletion" }, { status: 400 });
         }
         const whereClause: any = {
+            isDeleted: false,
             job: { organizationId: orgId }
         };
         if (ids.length > 0) {

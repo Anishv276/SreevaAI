@@ -72,6 +72,8 @@ export async function GET(request: Request) {
         const q = searchParams.get("q")?.trim() || "";
         const offset = (page - 1) * limit;
         const baseWhere: Prisma.InterviewWhereInput = {
+            isDeleted: false,
+            application: { isDeleted: false, job: { isDeleted: false } },
             OR: [
                 { candidateSelfRating: { not: Prisma.JsonNull } },
                 { candidateFeedbackText: { not: null } },

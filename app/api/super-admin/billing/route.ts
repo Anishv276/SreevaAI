@@ -43,7 +43,7 @@ export async function GET(request: Request) {
 
         const thisMonthInterviews = await prisma.interview.findMany({
             where: {
-                application: { job: { organizationId: orgId } },
+                application: { isDeleted: false, job: { organizationId: orgId, isDeleted: false } },
                 interviewCompletedAt: { gte: startOfMonth },
                 interviewStatus: "COMPLETED",
                 isDeleted: false
@@ -52,7 +52,7 @@ export async function GET(request: Request) {
 
         const lastMonthInterviews = await prisma.interview.findMany({
             where: {
-                application: { job: { organizationId: orgId } },
+                application: { isDeleted: false, job: { organizationId: orgId, isDeleted: false } },
                 interviewCompletedAt: { gte: startOfLastMonth, lte: endOfLastMonth },
                 interviewStatus: "COMPLETED",
                 isDeleted: false
@@ -84,7 +84,7 @@ export async function GET(request: Request) {
                 trendMap.set(hourLabel, 0);
             }
             trendInterviews = await prisma.interview.findMany({
-                where: { application: { job: { organizationId: orgId } }, interviewCompletedAt: { gte: startOfToday }, interviewStatus: "COMPLETED", isDeleted: false }
+                where: { application: { isDeleted: false, job: { organizationId: orgId, isDeleted: false } }, interviewCompletedAt: { gte: startOfToday }, interviewStatus: "COMPLETED", isDeleted: false }
             });
             trendInterviews.forEach(inv => {
                 if (inv.interviewCompletedAt) {
@@ -102,7 +102,7 @@ export async function GET(request: Request) {
                 d.setDate(d.getDate() + 1);
             }
             trendInterviews = await prisma.interview.findMany({
-                where: { application: { job: { organizationId: orgId } }, interviewCompletedAt: { gte: startOfWeek }, interviewStatus: "COMPLETED", isDeleted: false }
+                where: { application: { isDeleted: false, job: { organizationId: orgId, isDeleted: false } }, interviewCompletedAt: { gte: startOfWeek }, interviewStatus: "COMPLETED", isDeleted: false }
             });
             trendInterviews.forEach(inv => {
                 if (inv.interviewCompletedAt) {
@@ -123,7 +123,7 @@ export async function GET(request: Request) {
                     trendMap.set(hourLabel, 0);
                 }
                 trendInterviews = await prisma.interview.findMany({
-                    where: { application: { job: { organizationId: orgId } }, interviewCompletedAt: { gte: startDate, lte: endDate }, interviewStatus: "COMPLETED", isDeleted: false }
+                    where: { application: { isDeleted: false, job: { organizationId: orgId, isDeleted: false } }, interviewCompletedAt: { gte: startDate, lte: endDate }, interviewStatus: "COMPLETED", isDeleted: false }
                 });
                 trendInterviews.forEach(inv => {
                     if (inv.interviewCompletedAt) {
@@ -140,7 +140,7 @@ export async function GET(request: Request) {
                     d.setDate(d.getDate() + 1);
                 }
                 trendInterviews = await prisma.interview.findMany({
-                    where: { application: { job: { organizationId: orgId } }, interviewCompletedAt: { gte: startDate, lte: endDate }, interviewStatus: "COMPLETED", isDeleted: false }
+                    where: { application: { isDeleted: false, job: { organizationId: orgId, isDeleted: false } }, interviewCompletedAt: { gte: startDate, lte: endDate }, interviewStatus: "COMPLETED", isDeleted: false }
                 });
                 trendInterviews.forEach(inv => {
                     if (inv.interviewCompletedAt) {

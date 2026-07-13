@@ -150,10 +150,10 @@ export function TopCandidates({ dateRange, initialData }: TopCandidatesProps) {
             {/* Footer */}
             <div className="pt-5 mt-auto text-center border-t border-gray-100">
                 <Link
-                    href="/admin/candidates"
+                    href="/admin/jobs"
                     className="inline-flex items-center gap-1.5 text-xs font-bold text-purple-600 hover:text-purple-700 transition-colors"
                 >
-                    View all candidates <ArrowRight className="h-3.5 w-3.5" />
+                    View all jobs <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
             </div>
         </div>

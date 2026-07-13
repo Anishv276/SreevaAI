@@ -83,20 +83,6 @@ type AttachableTrack = {
 };
 // LiveKit TextStreamData type from @livekit/components-core
 // { text: string, participantInfo: { identity: string }, streamInfo: TextStreamInfo }
-/** Typewriter component: streams text word-by-word whenever text changes. */
-const StreamingText = memo(function StreamingText({ text, className }: { text: string; className?: string }) {
-    // With TTS-aligned transcripts enabled, the backend sends text exactly when it's spoken.
-    // We no longer need a manual 40ms timer to "guess" the speed.
-    return (
-        <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className={className}
-        >
-            {text}
-        </motion.p>
-    );
-});
 function getMediaStreamTrack(trackRef: TrackReference | null): MediaStreamTrack | null {
     if (!trackRef) return null;
     const carrier = trackRef as unknown as MediaTrackCarrier;
@@ -2008,7 +1994,11 @@ function InterviewRoomContent({
                     shouldBreak = true;
                 } else {
                     const lastTs = groupLatestTimestamp.get(lastGroupIdx) ?? segment.timestamp;
-                    if (segment.timestamp - lastTs > 3000) {
+                    // 8s (was 3s): a natural mid-sentence pause under 3s was fragmenting
+                    // continuous AI speech into a new group, which re-keys the caption's
+                    // AnimatePresence block below and causes a visible fade-out/fade-in
+                    // jump mid-sentence instead of a smooth, continuous reveal.
+                    if (segment.timestamp - lastTs > 8000) {
                         shouldBreak = true;
                     }
                 }

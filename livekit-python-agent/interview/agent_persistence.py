@@ -543,7 +543,7 @@ async def persist_session_fingerprint(app_id: str) -> None:
         logger.error("[FINGERPRINT] Failed to check session fingerprint for %s: %s", app_id, e)
 
 async def persist_question_by_question_analysis(app_id: str, answer_scores: list[dict]) -> None:
-    """Save full turn-by-turn interview analysis to Interview.questionByQuestionAnalysis JSONB."""
+    """Save full turn-by-turn interview analysis to Interview.perQuestionAnalysis JSONB."""
     if not app_id or not DATABASE_URL or not answer_scores:
         return
     normalized = [

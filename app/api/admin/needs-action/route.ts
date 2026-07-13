@@ -12,12 +12,21 @@ export async function GET() {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
         const orgId = session.orgId;
+        const now = new Date();
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+        const weekEnd = new Date(todayStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+        const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+        // -- Needs Your Attention (action required) --------------------------
+
+        // Interview finished, but no AI report/score has been generated yet.
         const awaitingReview = await prisma.application.findMany({
             where: {
                 isDeleted: false,
                 job: { organizationId: orgId, isDeleted: false },
                 interview: { interviewStatus: "COMPLETED", isDeleted: false },
-                resumeScreeningStatus: { notIn: ["SHORTLISTED", "shortlisted", "REJECTED", "rejected"] },
+                resumeAiScore: null,
             },
             select: {
                 id: true,
@@ -29,29 +38,15 @@ export async function GET() {
             },
             orderBy: { applicationUpdatedAt: "asc" },
         });
-        const inviteNotSent = await prisma.application.findMany({
-            where: {
-                isDeleted: false,
-                job: { organizationId: orgId, isDeleted: false },
-                OR: [
-                    { interview: null },
-                    { interview: { inviteEmailSentAt: null, interviewStatus: "PENDING", isDeleted: false } },
-                ],
-                resumeScreeningStatus: { notIn: ["REJECTED", "rejected"] },
-            },
-            select: {
-                id: true,
-                candidateFullName: true,
-                appliedAt: true,
-                job: { select: { title: true, jobRole: true } },
-            },
-            orderBy: { appliedAt: "asc" },
-        });
+
+        // Report exists (interview completed, score present) but no shortlist/reject decision made yet.
         const shortlistedNoDecision = await prisma.application.findMany({
             where: {
                 isDeleted: false,
                 job: { organizationId: orgId, isDeleted: false },
-                resumeScreeningStatus: { in: ["SHORTLISTED", "shortlisted"] },
+                interview: { interviewStatus: "COMPLETED", isDeleted: false },
+                resumeScreeningStatus: { notIn: ["SHORTLISTED", "shortlisted", "REJECTED", "rejected"] },
+                resumeAiScore: { not: null },
             },
             select: {
                 id: true,
@@ -62,33 +57,68 @@ export async function GET() {
             orderBy: { applicationUpdatedAt: "asc" },
         });
 
+        // No interview record at all, or one exists but no invite email has been sent yet.
+        const inviteNotSent = await prisma.application.findMany({
+            where: {
+                isDeleted: false,
+                job: { organizationId: orgId, isDeleted: false },
+                resumeScreeningStatus: { notIn: ["REJECTED", "rejected"] },
+                OR: [
+                    { interview: null },
+                    { interview: { inviteEmailSentAt: null, isDeleted: false } },
+                ],
+            },
+            select: {
+                id: true,
+                candidateFullName: true,
+                appliedAt: true,
+                job: { select: { title: true, jobRole: true } },
+            },
+            orderBy: { appliedAt: "asc" },
+        });
+
         const jobsExpiringSoon = await prisma.job.count({
             where: {
                 organizationId: orgId,
                 isDeleted: false,
-                applicationDeadline: {
-                    gte: new Date(),
-                    lte: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
-                },
+                applicationDeadline: { gte: now, lte: weekEnd },
             },
         });
 
-        const candidatesYetToStart = await prisma.interview.count({
+        // -- Upcoming Activity (forward-looking / recent) ---------------------
+
+        const scheduledToday = await prisma.interview.count({
             where: {
-                application: { job: { organizationId: orgId } },
                 isDeleted: false,
-                interviewStatus: "PENDING",
-                inviteEmailSentAt: { not: null },
+                application: { isDeleted: false, job: { organizationId: orgId, isDeleted: false } },
+                interviewScheduledAt: { gte: todayStart, lt: todayEnd },
             },
         });
 
-        const invitesSentLast24h = await prisma.interview.count({
+        const scheduledThisWeek = await prisma.interview.count({
             where: {
-                application: { job: { organizationId: orgId } },
                 isDeleted: false,
-                inviteEmailSentAt: {
-                    gte: new Date(Date.now() - 24 * 60 * 60 * 1000),
-                },
+                application: { isDeleted: false, job: { organizationId: orgId, isDeleted: false } },
+                interviewScheduledAt: { gte: todayStart, lt: weekEnd },
+            },
+        });
+
+        // Interviews scheduled for today that haven't happened yet.
+        const remainingToday = await prisma.interview.count({
+            where: {
+                isDeleted: false,
+                application: { isDeleted: false, job: { organizationId: orgId, isDeleted: false } },
+                interviewScheduledAt: { gte: todayStart, lt: todayEnd },
+                interviewStatus: { notIn: ["COMPLETED", "FAILED", "NO_SHOW"] },
+            },
+        });
+
+        const completedLast24h = await prisma.interview.count({
+            where: {
+                isDeleted: false,
+                application: { isDeleted: false, job: { organizationId: orgId, isDeleted: false } },
+                interviewStatus: "COMPLETED",
+                interviewCompletedAt: { gte: last24h },
             },
         });
 
@@ -101,13 +131,6 @@ export async function GET() {
                 score: a.resumeAiScore,
                 daysWaiting: daysSince(a.interview?.interviewCompletedAt ?? a.applicationUpdatedAt),
             })),
-            inviteNotSent: inviteNotSent.map((a) => ({
-                id: a.id,
-                name: a.candidateFullName,
-                role: a.job.jobRole || a.job.title,
-                jobTitle: a.job.title,
-                daysWaiting: daysSince(a.appliedAt),
-            })),
             shortlistedNoDecision: shortlistedNoDecision.map((a) => ({
                 id: a.id,
                 name: a.candidateFullName,
@@ -115,12 +138,20 @@ export async function GET() {
                 jobTitle: a.job.title,
                 daysWaiting: daysSince(a.applicationUpdatedAt),
             })),
+            inviteNotSent: inviteNotSent.map((a) => ({
+                id: a.id,
+                name: a.candidateFullName,
+                role: a.job.jobRole || a.job.title,
+                jobTitle: a.job.title,
+                daysWaiting: daysSince(a.appliedAt),
+            })),
+            jobsExpiringSoon,
             upcomingActivity: {
-                reportsReadyForReview: awaitingReview.length, // now full count, no take() cap
-                candidatesYetToStart,
-                jobsExpiringSoon,
-                invitesSentLast24h,
-            }
+                scheduledToday,
+                scheduledThisWeek,
+                remainingToday,
+                completedLast24h,
+            },
         }, {
             headers: { "Cache-Control": "private, max-age=60" },
         });

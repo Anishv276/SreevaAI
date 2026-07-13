@@ -82,9 +82,10 @@ export async function GET(req: NextRequest) {
         try {
             interviews = await prisma.interview.findMany({
                 where: {
+                    isDeleted: false,
                     interviewStatus: "COMPLETED",
                     interviewCompletedAt: { gte: start },
-                    application: { job: { organizationId: orgId } },
+                    application: { isDeleted: false, job: { organizationId: orgId, isDeleted: false } },
                 },
                 select: {
                     id: true,
@@ -95,7 +96,12 @@ export async function GET(req: NextRequest) {
         } catch {
             // proctoringEvents column may not exist yet - return zeros
             const total = await prisma.interview.count({
-                where: { interviewStatus: "COMPLETED", interviewCompletedAt: { gte: start }, application: { job: { organizationId: orgId } } },
+                where: {
+                    isDeleted: false,
+                    interviewStatus: "COMPLETED",
+                    interviewCompletedAt: { gte: start },
+                    application: { isDeleted: false, job: { organizationId: orgId, isDeleted: false } },
+                },
             });
             return NextResponse.json({
                 total,

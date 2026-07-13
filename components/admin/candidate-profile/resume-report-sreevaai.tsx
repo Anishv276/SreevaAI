@@ -646,7 +646,7 @@ export function buildSreevaAIResumeViewModel(i: {
   const weaknesses: SreevaAIResumeViewModel["weaknesses"] =
     i.aiWeaknesses && i.aiWeaknesses.length > 0 ? sanitizeItems(i.aiWeaknesses).slice(0, 3) : [];
   return {
-    backHref: i.backHref || "/admin/candidates",
+    backHref: i.backHref || "/admin/jobs",
     processing: !i.hasResumeText && !i.hasAiReport,
     fullName: c.fullName || "Candidate",
     displayAvatar: i.displayAvatar,

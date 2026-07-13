@@ -1110,6 +1110,7 @@ if (isQueueEnabled("interview-finalization")) {
               where: { id: applicationId },
               select: {
                 candidateFullName: true,
+                candidateEmail: true,
                 job: {
                   select: {
                     title: true,
@@ -1117,31 +1118,17 @@ if (isQueueEnabled("interview-finalization")) {
                     organization: { select: { name: true } },
                   },
                 },
-                interview: { select: { interviewCompletedAt: true } },
               },
             });
-            const notifyOrgId = appForNotify?.job?.organizationId;
-            if (notifyOrgId) {
-              const admins = await prisma.organizationCredentials.findMany({
-                where: { organizationId: notifyOrgId },
-                select: { email: true, name: true },
+            if (appForNotify?.candidateEmail) {
+              const { sendCandidateInterviewCompletedEmail } = await import('./lib/mail');
+              await sendCandidateInterviewCompletedEmail({
+                email: appForNotify.candidateEmail,
+                fullName: appForNotify.candidateFullName || "Candidate",
+                jobTitle: appForNotify.job?.title || "Unknown Role",
+                orgName: appForNotify.job?.organization?.name || "Sreeva AI",
               });
-              const { sendInterviewCompletedEmail } = await import('./lib/mail');
-              const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://sreevaai.com';
-              const reportLink = `${appUrl}/admin/candidates/${applicationId}`;
-              await Promise.allSettled(
-                admins.map((admin: { email: string; name: string | null }) =>
-                  sendInterviewCompletedEmail({
-                    adminEmail: admin.email,
-                    candidateName: appForNotify?.candidateFullName || "Candidate",
-                    jobTitle: appForNotify?.job?.title || "Unknown Role",
-                    orgName: appForNotify?.job?.organization?.name || "Sreeva AI",
-                    completedAt: appForNotify?.interview?.interviewCompletedAt ?? undefined,
-                    reportLink,
-                  })
-                )
-              );
-              console.log(`[MAIL] Interview completed notifications sent to ${admins.length} admin(s) for ${applicationId}`);
+              console.log(`[MAIL] Interview completed notification sent to candidate for ${applicationId}`);
             }
           } catch (notifyError) {
             console.warn(`[MAIL] Failed to send interview completed notifications for ${applicationId}:`, notifyError);

@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import { Sparkles, Calendar, ChevronLeft, ChevronRight, Download, Users, Briefcase, Clock, TrendingUp, Search, CheckCircle2, BarChart3 } from "lucide-react";
+import { Sparkles, Calendar, ChevronLeft, ChevronRight, Download, Users, Briefcase, TrendingUp, Search, CheckCircle2, BarChart3 } from "lucide-react";
 import { formatOrgPlan } from "@/lib/org-plans";
 import { getLandingPackageByName, getLandingPackageForOrgPlan } from "@/lib/landing-packages";
 import { getSupportComposeUrl } from "@/lib/interview-quota";
@@ -80,7 +80,7 @@ export function BillingContent(props?: any) {
     const handleExportCSV = () => {
         if (!historyData?.history || historyData.history.length === 0) return;
         const rows = historyData.history;
-        const headers = ["CANDIDATE", "ROLE", "INTERVIEWS", "DATE", "DURATION", "STATUS"];
+        const headers = ["CANDIDATE", "ROLE", "INTERVIEWS", "DATE", "STATUS"];
         const csvContent = [
             headers.join(","),
             ...rows.map((row: any) => [
@@ -88,7 +88,6 @@ export function BillingContent(props?: any) {
                 `"${row.role}"`,
                 row.interviewsCount,
                 `"${new Date(row.date).toLocaleDateString('en-US')} ${new Date(row.date).toLocaleTimeString('en-US')}"`,
-                formatDuration(row.duration),
                 row.status
             ].join(","))
         ].join("\n");
@@ -125,13 +124,6 @@ export function BillingContent(props?: any) {
 
     const resolvedPlan = getLandingPackageForOrgPlan(plan.name) || getLandingPackageByName(formatOrgPlan(plan.name)) || getLandingPackageByName("Starter");
 
-    const formatDuration = (sec: number) => {
-        if (!sec) return "0m 0s";
-        const m = Math.floor(sec / 60);
-        const s = sec % 60;
-        return `${m}m ${s}s`;
-    };
-
     // Calculate dynamic trend polyline points
     const maxCount = Math.max(...(usage.trend || []).map((t: any) => t.count), 1);
     const trendPoints = (usage.trend || []).map((t: any, i: number, arr: any[]) => {
@@ -162,7 +154,7 @@ export function BillingContent(props?: any) {
                             <h2 className="text-[15px] font-bold text-gray-900">Usage Overview</h2>
                             <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                         </div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                             {/* Card 1 */}
                             <div className="bg-violet-50/50 rounded-2xl p-4 border border-violet-100">
                                 <div className="h-8 w-8 rounded-full bg-violet-100 flex items-center justify-center mb-3">
@@ -196,25 +188,6 @@ export function BillingContent(props?: any) {
                             </div>
 
                             {/* Card 3 */}
-                            <div className="bg-amber-50/50 rounded-2xl p-4 border border-amber-100 relative">
-                                <div className="h-8 w-8 rounded-full bg-amber-100 flex items-center justify-center mb-3">
-                                    <Clock className="h-4 w-4 text-amber-600" />
-                                </div>
-                                <p className="text-[11px] font-semibold text-gray-500 mb-1">Total Interview Time</p>
-                                <div className="flex items-baseline gap-1 mb-1">
-                                    <span className="text-2xl font-black text-gray-900 leading-none">{formatDuration(usage.totalInterviewTime)}</span>
-                                </div>
-                                <p className="text-[10px] font-medium text-gray-400 mb-2">vs last month</p>
-                                <div className="flex justify-between items-end">
-                                    {/* Mock Sparkline */}
-                                    <svg width="40" height="15" viewBox="0 0 40 15">
-                                        <polyline points="0,15 10,10 20,12 30,5 40,2" fill="none" stroke="#F59E0B" strokeWidth="1.5" />
-                                    </svg>
-                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-700">↑ {usage.timeVsLastMonth}%</span>
-                                </div>
-                            </div>
-
-                            {/* Card 4 */}
                             <div className="bg-blue-50/50 rounded-2xl p-4 border border-blue-100 relative">
                                 <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center mb-3">
                                     <TrendingUp className="h-4 w-4 text-blue-600" />
@@ -330,7 +303,6 @@ export function BillingContent(props?: any) {
                                         <th className="pb-3 text-[10px] font-black uppercase tracking-widest text-gray-400">ROLE</th>
                                         <th className="pb-3 text-[10px] font-black uppercase tracking-widest text-gray-400">INTERVIEWS</th>
                                         <th className="pb-3 text-[10px] font-black uppercase tracking-widest text-gray-400">DATE</th>
-                                        <th className="pb-3 text-[10px] font-black uppercase tracking-widest text-gray-400">DURATION</th>
                                         <th className="pb-3 text-[10px] font-black uppercase tracking-widest text-gray-400">STATUS</th>
                                     </tr>
                                 </thead>
@@ -354,7 +326,6 @@ export function BillingContent(props?: any) {
                                                 <p className="text-[13px] font-bold text-gray-900">{new Date(row.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
                                                 <p className="text-[11px] text-gray-400">{new Date(row.date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</p>
                                             </td>
-                                            <td className="py-4 text-[13px] font-bold text-gray-700">{formatDuration(row.duration)}</td>
                                             <td className="py-4">
                                                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-50 text-[11px] font-bold text-emerald-700">
                                                     <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
@@ -364,7 +335,7 @@ export function BillingContent(props?: any) {
                                         </tr>
                                     )) : (
                                         <tr>
-                                            <td colSpan={6} className="py-8 text-center text-[13px] text-gray-400">No interviews found.</td>
+                                            <td colSpan={5} className="py-8 text-center text-[13px] text-gray-400">No interviews found.</td>
                                         </tr>
                                     )}
                                 </tbody>

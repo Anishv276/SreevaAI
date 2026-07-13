@@ -37,7 +37,8 @@ export async function GET(req: Request) {
             Array<{ id: string; applicationUpdatedAt: Date; job: { title: string | null } | null }>
         ]> {
             const applicationWhere = {
-                job: { organizationId: orgId },
+                isDeleted: false,
+                job: { organizationId: orgId, isDeleted: false },
                 ...(dateCutoff ? { appliedAt: { gte: dateCutoff } } : {}),
             };
             const recentApplications = await prisma.application.findMany({
@@ -49,7 +50,8 @@ export async function GET(req: Request) {
             const recentInterviews = await prisma.interview.findMany({
                 where: {
                     ...(dateCutoff ? { interviewUpdatedAt: { gte: dateCutoff } } : {}),
-                    application: { job: { organizationId: orgId } },
+                    isDeleted: false,
+                    application: { isDeleted: false, job: { organizationId: orgId, isDeleted: false } },
                     interviewStatus: { in: ["COMPLETED", "LAUNCHING", "PROGRESS"] },
                 },
                 select: {
@@ -62,7 +64,9 @@ export async function GET(req: Request) {
             const recentRejections = await prisma.application.findMany({
                 where: {
                     ...(dateCutoff ? { applicationUpdatedAt: { gte: dateCutoff } } : {}),
-                    resumeScreeningStatus: { in: ["rejected", "REJECTED"] }, job: { organizationId: orgId },
+                    isDeleted: false,
+                    resumeScreeningStatus: { in: ["rejected", "REJECTED"] },
+                    job: { organizationId: orgId, isDeleted: false },
                 },
                 select: { id: true, applicationUpdatedAt: true, job: { select: { title: true } } },
                 orderBy: { applicationUpdatedAt: "desc" },

@@ -9,11 +9,12 @@ interface NeedsActionData {
     awaitingReview: any[];
     inviteNotSent: any[];
     shortlistedNoDecision: any[];
+    jobsExpiringSoon: number;
     upcomingActivity: {
-        reportsReadyForReview: number;
-        candidatesYetToStart: number;
-        jobsExpiringSoon: number;
-        invitesSentLast24h: number;
+        scheduledToday: number;
+        scheduledThisWeek: number;
+        remainingToday: number;
+        completedLast24h: number;
     };
 }
 
@@ -66,31 +67,31 @@ export function NeedsAction({ initialData }: NeedsActionProps = {}) {
     const actions = data ? [
         {
             title: `${data.awaitingReview.length} interviews need review`,
-            sub: "Completed interviews awaiting your feedback",
+            sub: "Completed interviews with no AI report yet",
             icon: AlertTriangle,
             bg: "bg-red-50",
             text: "text-red-500",
-            href: "/admin/candidates?status=completed",
+            href: "/admin/jobs",
         },
         {
             title: `${data.shortlistedNoDecision.length} reports pending`,
-            sub: "AI reports ready for your review",
+            sub: "AI reports ready — shortlist or reject",
             icon: Clock,
             bg: "bg-orange-50",
             text: "text-orange-500",
-            href: "/admin/candidates?status=shortlisted",
+            href: "/admin/jobs",
         },
         {
-            title: `${data.inviteNotSent.length} candidates waiting`,
-            sub: "Invited candidates yet to start interview",
+            title: `${data.inviteNotSent.length} candidates not yet invited`,
+            sub: "Shortlisted candidates with no invite sent",
             icon: Users,
             bg: "bg-blue-50",
             text: "text-blue-500",
-            href: "/admin/candidates?status=invited",
+            href: "/admin/jobs",
         },
         {
-            title: `${data.upcomingActivity.jobsExpiringSoon} jobs expiring soon`,
-            sub: "Jobs expiring in the next 3 days",
+            title: `${data.jobsExpiringSoon} jobs expiring soon`,
+            sub: "Jobs expiring in the next 7 days",
             icon: FileWarning,
             bg: "bg-purple-50",
             text: "text-purple-500",
@@ -127,7 +128,7 @@ export function NeedsAction({ initialData }: NeedsActionProps = {}) {
                             className="bg-transparent border-none shadow-none"
                         />
                     </div>
-                ) : total === 0 && data?.upcomingActivity.jobsExpiringSoon === 0 ? (
+                ) : total === 0 && data?.jobsExpiringSoon === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full min-h-[200px] gap-2 text-center">
                         <div className="h-10 w-10 rounded-2xl bg-emerald-50 flex items-center justify-center">
                             <Clock className="h-5 w-5 text-emerald-500" />
@@ -144,7 +145,7 @@ export function NeedsAction({ initialData }: NeedsActionProps = {}) {
                     >
                         {actions.map((item, idx) => {
                             if (idx < 3 && total === 0 && item.title.startsWith("0")) return null;
-                            if (idx === 3 && data?.upcomingActivity.jobsExpiringSoon === 0) return null;
+                            if (idx === 3 && data?.jobsExpiringSoon === 0) return null;
                             
                             return (
                                 <motion.div
@@ -180,7 +181,7 @@ export function NeedsAction({ initialData }: NeedsActionProps = {}) {
             {/* Footer */}
             <div className="pt-5 mt-auto text-center border-t border-gray-100">
                 <Link
-                    href="/admin/candidates"
+                    href="/admin/jobs"
                     className="inline-flex items-center gap-1.5 text-xs font-bold text-purple-600 hover:text-purple-700 transition-colors"
                 >
                     View all <ArrowRight className="h-3.5 w-3.5" />

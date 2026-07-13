@@ -8,10 +8,10 @@ interface FunnelData {
     activeJobs: number;
     totalCandidates: number;
     invited: number;
+    scheduled: number;
     interviewed: number;
     shortlisted: number;
     shortlistPassRate: number;
-    offered?: number;
 }
 interface HiringFunnelProps {
     dateRange: DateRange;
@@ -30,10 +30,10 @@ function rangeLabel(range: DateRange) {
 }
 const STAGES = [
     { key: "uploaded",     label: "Uploaded",     color: "#8B5CF6", darkColor: "#7C3AED" },
-    { key: "invited",      label: "Invited",      color: "#3B82F6", darkColor: "#2563EB" },
-    { key: "interviewed",  label: "Interviewed",  color: "#06B6D4", darkColor: "#0891B2" },
     { key: "shortlisted",  label: "Shortlisted",  color: "#10B981", darkColor: "#059669" },
-    { key: "offered",      label: "Offered",      color: "#F59E0B", darkColor: "#D97706" },
+    { key: "invited",      label: "Invited",      color: "#3B82F6", darkColor: "#2563EB" },
+    { key: "scheduled",    label: "Scheduled",    color: "#06B6D4", darkColor: "#0891B2" },
+    { key: "completed",    label: "Completed",    color: "#F59E0B", darkColor: "#D97706" },
 ] as const;
 export function HiringFunnel({ dateRange, initialData }: HiringFunnelProps) {
     const [data, setData] = useState<FunnelData | null>(null);
@@ -79,10 +79,10 @@ export function HiringFunnel({ dateRange, initialData }: HiringFunnelProps) {
     };
     const stages = data ? [
         { key: "uploaded",    label: "Uploaded",    value: data.totalCandidates },
-        { key: "invited",     label: "Invited",     value: data.invited },
-        { key: "interviewed", label: "Interviewed", value: data.interviewed },
         { key: "shortlisted", label: "Shortlisted", value: data.shortlisted },
-        { key: "offered",     label: "Offered",     value: data.offered || 0 },
+        { key: "invited",     label: "Invited",     value: data.invited },
+        { key: "scheduled",   label: "Scheduled",   value: data.scheduled },
+        { key: "completed",   label: "Completed",   value: data.interviewed },
     ] : [];
     const maxVal = stages.length ? Math.max(...stages.map(s => s.value), 1) : 1;
     const passRate = data

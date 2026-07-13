@@ -6,7 +6,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
 import { useCandidates } from "@/context/candidates-context";
-import { useJobs } from "@/context/jobs-context";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast-custom";
 import { getInterviewActionBlockedMessage, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
@@ -22,14 +21,6 @@ import {
 
 type StatusTab = "all" | "pending" | "inprogress" | "completed";
 
-function fmtDate(iso?: string | null) {
-    if (!iso) return "—";
-    return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-function fmtTime(iso?: string | null) {
-    if (!iso) return "";
-    return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-}
 function interviewStatusKey(v?: string) {
     return String(v || "").trim().toLowerCase().replace(/[_-]+/g, " ") || "pending";
 }
@@ -54,7 +45,6 @@ const STATUS_TABS: { key: StatusTab; label: string }[] = [
 
 export function InterviewOnlyCandidatesTable({ jobId, refreshKey }: { jobId: string; refreshKey?: number }) {
     const { candidates, pagination, isLoading, error, fetchCandidates, clearError } = useCandidates();
-    const { jobs } = useJobs();
     const [searchTerm, setSearchTerm] = useState("");
     const [activeTab, setActiveTab] = useState<StatusTab>("all");
     const [pageSize] = useState(20);
@@ -152,8 +142,6 @@ export function InterviewOnlyCandidatesTable({ jobId, refreshKey }: { jobId: str
         } catch { toast.error("Failed to delete"); }
         finally { setIsBulkLoading(false); setDeleteConfirm(null); }
     };
-
-    const jobTitle = jobs.find((j) => j.id === jobId)?.title || "Job";
 
     if (!isJobViewReady) {
         return (
@@ -261,9 +249,6 @@ export function InterviewOnlyCandidatesTable({ jobId, refreshKey }: { jobId: str
                                 <Checkbox checked={isAllSelected} onCheckedChange={toggleSelectAll} />
                             </th>
                             <th className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400">Candidate</th>
-                            <th className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400">Position</th>
-                            <th className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400">Created</th>
-                            <th className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400">Invited</th>
                             <th className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400">Status</th>
                             <th className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400">Report</th>
                             <th className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400 text-right">Action</th>
@@ -271,10 +256,10 @@ export function InterviewOnlyCandidatesTable({ jobId, refreshKey }: { jobId: str
                     </thead>
                     <tbody>
                         {isLoading ? (
-                            <tr><td colSpan={8} className="py-0.56 text-center text-[13px] font-semibold text-gray-400">Loading candidates...</td></tr>
+                            <tr><td colSpan={5} className="py-0.56 text-center text-[13px] font-semibold text-gray-400">Loading candidates...</td></tr>
                         ) : filteredCandidates.length === 0 ? (
                             <tr>
-                                <td colSpan={8} className="py-0.56 text-center">
+                                <td colSpan={5} className="py-0.56 text-center">
                                     <p className="text-[14px] font-bold text-gray-400">No candidates yet</p>
                                     <p className="text-[12px] text-gray-300 mt-1">Use Bulk Upload or + Add Candidate to get started</p>
                                 </td>
@@ -286,7 +271,6 @@ export function InterviewOnlyCandidatesTable({ jobId, refreshKey }: { jobId: str
                             const statusLbl = interviewStatusLabel(candidate.interviewStatus);
                             const isDone = statusKey === "completed" || statusKey === "finished";
                             const isInProgress = statusKey === "in progress" || statusKey === "inprogress";
-                            const inviteSentAt = candidate.interview?.inviteEmailSentAt || candidate.inviteSentAt;
                             const initials = displayName.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase();
 
                             return (
@@ -312,25 +296,6 @@ export function InterviewOnlyCandidatesTable({ jobId, refreshKey }: { jobId: str
                                                 <p className="text-[11px] text-gray-400">{displayEmail}</p>
                                             </div>
                                         </div>
-                                    </td>
-                                    {/* Position */}
-                                    <td className="px-4 py-3.5">
-                                        <span className="text-[12px] text-gray-600 font-medium">{jobTitle}</span>
-                                    </td>
-                                    {/* Created */}
-                                    <td className="px-4 py-3.5">
-                                        <span className="text-[12px] text-gray-500">{fmtDate(candidate.createdAt)}</span>
-                                    </td>
-                                    {/* Invited */}
-                                    <td className="px-4 py-3.5">
-                                        {inviteSentAt ? (
-                                            <div>
-                                                <p className="text-[12px] text-gray-700 font-medium">{fmtDate(inviteSentAt)}</p>
-                                                <p className="text-[11px] text-gray-400">{fmtTime(inviteSentAt)}</p>
-                                            </div>
-                                        ) : (
-                                            <span className="text-[12px] text-gray-300">Not sent</span>
-                                        )}
                                     </td>
                                     {/* Status */}
                                     <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>

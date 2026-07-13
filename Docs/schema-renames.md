@@ -231,7 +231,6 @@ This document lists all proposed renames for the Prisma schema — from current 
 | `interviewDuration` | `durationInSeconds` | `billing/history/route.ts`, `billing/route.ts`, `schedule/route.ts`, `candidates/[id]/route.ts` |
 | `integritySignals` | `proctoringEvents` | `integrity/logs/route.ts`, `integrity/route.ts` |
 | `signalAnalysis` | `proctoringAnalysis` | `candidates/[id]/route.ts` |
-| `questionByQuestionAnalysis` | `perQuestionAnalysis` | `candidates/[id]/route.ts` |
 | `scoreBreakdown` | `aiScoreBreakdown` | `candidates/[id]/route.ts` |
 | `interviewSummary` | `aiInterviewSummary` | `candidates/[id]/route.ts` |
 | `skillRatings` | `aiSkillRatings` | `candidates/[id]/route.ts` |
@@ -246,7 +245,7 @@ This document lists all proposed renames for the Prisma schema — from current 
 
 | File | Old names still in use |
 |---|---|
-| `interview/agent_persistence.py` | `"extractedDetails"`, `"screeningCriteria"`, `"orgId"`, `"aiName"`, `"interviewQuestions"`, `"interviewTranscript"`, `"interviewDuration"`, `"integritySignals"`, `"questionByQuestionAnalysis"`, `"interviewBrief"`, `"updatedAt"`, table `"Organization"`, table `"Drive"` |
+| `interview/agent_persistence.py` | `"extractedDetails"`, `"screeningCriteria"`, `"orgId"`, `"aiName"`, `"interviewQuestions"`, `"interviewTranscript"`, `"interviewDuration"`, `"integritySignals"`, `"interviewBrief"`, `"updatedAt"`, table `"Organization"`, table `"Drive"` |
 | `interview/agent_runtime.py` | `orgId`, `aiName`, `extractedDetails`, `screeningCriteria`, `interviewQuestions`, `interviewBrief`, `isTest` |
 | `interview/generate_brief.py` | `extractedDetails`, `interviewQuestions`, `"orgId"`, table `"Organization"`, table `"Drive"` |
 | `billing/billing.py` | `"interviewBrief"`, `"interviewDuration"`, `"testBillingMetrics"`, `"orgId"`, table `"Interview"` (old column names in raw SQL) |

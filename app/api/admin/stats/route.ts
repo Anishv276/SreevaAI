@@ -30,6 +30,7 @@ export async function GET(req: NextRequest) {
             liveInterviews: number;
             needsReview: number;
             invited: number;
+            scheduled: number;
             rejected: number;
             rejectedPrev: number;
         };
@@ -66,6 +67,10 @@ export async function GET(req: NextRequest) {
                     AND i."isDeleted" = false
                 )::INT AS invited,
                 COUNT(*) FILTER (
+                    WHERE i."interviewScheduledAt" >= ${start}
+                    AND i."isDeleted" = false
+                )::INT AS scheduled,
+                COUNT(*) FILTER (
                     WHERE a."applicationUpdatedAt" >= ${start}
                     AND (LOWER(a."resumeScreeningStatus") = 'rejected' OR LOWER(a."interviewPhaseStatus") = 'rejected')
                 )::INT AS rejected,
@@ -75,7 +80,7 @@ export async function GET(req: NextRequest) {
                 )::INT AS "rejectedPrev"
             FROM "Application" a
             JOIN "Job" d ON d.id = a."jobId"
-            LEFT JOIN "Interview" i ON i."applicationId" = a.id
+            LEFT JOIN "Interview" i ON i."applicationId" = a.id AND i."isDeleted" = false
             WHERE d."organizationId" = ${orgId}
               AND a."isDeleted" = false
               AND d."isDeleted" = false
@@ -135,6 +140,7 @@ export async function GET(req: NextRequest) {
             liveInterviews,
             avgScore: Math.round(avgScore),
             invited: Number(s.invited),
+            scheduled: Number(s.scheduled),
         });
         response.headers.set("Cache-Control", "private, max-age=30, stale-while-revalidate=60");
         return response;

@@ -97,7 +97,13 @@ services:
       # this directive even with full 'unsafe-eval' dropped. Narrower than
       # 'unsafe-eval': permits WASM compilation only, not eval()/Function() JS
       # injection. Chrome/Edge 87+ only, which HardwareCheck.tsx already requires.
-      - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.Content-Security-Policy=default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://www.googletagmanager.com https://static.cloudflareinsights.com https://www.clarity.ms; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' wss: https:; frame-ancestors 'none'"
+      # media-src added -- interview recording playback (Plyr player) needs its
+      # own blank.mp4 poster from cdn.plyr.io plus the actual recording served
+      # from the R2 bucket's public dev subdomain; without media-src, default-src
+      # 'self' silently blocks both.
+      # script-src clarity domain fixed -- the Clarity SDK loads its payload from
+      # scripts.clarity.ms (subdomain), not clarity.ms itself.
+      - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.Content-Security-Policy=default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://www.googletagmanager.com https://static.cloudflareinsights.com https://www.clarity.ms https://scripts.clarity.ms; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; media-src 'self' https://cdn.plyr.io https://*.r2.dev; connect-src 'self' wss: https:; frame-ancestors 'none'"
     ports:
       - "80:80"
       - "443:443"

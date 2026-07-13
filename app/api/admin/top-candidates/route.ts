@@ -21,10 +21,11 @@ export async function GET(req: Request) {
         // Top candidates this period = recently completed interviews with highest AI score
         const applications = await prisma.application.findMany({
             where: {
-                job: { organizationId: orgId },
+                isDeleted: false,
+                job: { organizationId: orgId, isDeleted: false },
                 resumeAiScore: { not: null },
                 applicationUpdatedAt: { gte: start },
-                interview: { interviewStatus: "COMPLETED" },
+                interview: { interviewStatus: "COMPLETED", isDeleted: false },
             },
             select: {
                 id: true,

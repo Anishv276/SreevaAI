@@ -3958,14 +3958,16 @@ async def entrypoint(ctx: JobContext):
     awaiting_candidate_response = False
     awaiting_candidate_since: float | None = None
     inactivity_nudge_sent_for_current_prompt = False
+    inactivity_warning_sent_for_current_prompt = False
+    inactivity_end_sent_for_current_prompt = False
     inactivity_nudge_speaking = False
     first_agent_turn_committed_at: float | None = None
     llm_spoke_event = asyncio.Event()
     greeting_delivered_at: float | None = None
     def reset_inactivity_clock(start_waiting: bool, preserve_nudge_flags: bool = False) -> None:
         nonlocal awaiting_candidate_response, awaiting_candidate_since, \
-            inactivity_nudge_sent_for_current_prompt, inactivity_warning_sent_for_current_prompt, \
-            inactivity_end_sent_for_current_prompt
+            inactivity_nudge_sent_for_current_prompt, \
+            inactivity_warning_sent_for_current_prompt, inactivity_end_sent_for_current_prompt
         awaiting_candidate_response = start_waiting
         if start_waiting:
             if preserve_nudge_flags and awaiting_candidate_since is not None:
@@ -4025,8 +4027,8 @@ async def entrypoint(ctx: JobContext):
                 _question_pending_timestamp = False
             # Start inactivity countdown immediately when AI finishes speaking.
             # If the turn that just ended was a nudge, preserve the sent-flags so
-            # the schedule escalates (7s -> 15s -> 25s) instead of the same nudge
-            # re-firing every ~7s forever.
+            # the schedule escalates (12s -> 20s -> 30s -> 40s) instead of the same
+            # nudge re-firing every ~12s forever.
             reset_inactivity_clock(start_waiting=True, preserve_nudge_flags=_last_speaking_turn_was_nudge)
             logger.debug("[NUDGE] AI finished speaking; inactivity countdown started")
     # Wait for participant to join so we have their identity for tracking.
@@ -4182,12 +4184,14 @@ async def entrypoint(ctx: JobContext):
     disconnected_task = asyncio.create_task(disconnect_event.wait())
     total_seconds = time_limit_mins * 60
     # Inactivity timing:
-    #   7s  silence -> soft nudge
-    #   15s silence -> warning
-    #   25s silence -> end call
-    INACTIVITY_NUDGE_SECS = 7
-    INACTIVITY_WARNING_SECS = 15
-    INACTIVITY_END_SECS = 25
+    #   12s silence -> soft nudge
+    #   20s silence -> warning
+    #   30s silence -> final goodbye line spoken
+    #   40s silence -> call actually ends (10s grace after the goodbye line)
+    INACTIVITY_NUDGE_SECS = 12
+    INACTIVITY_WARNING_SECS = 20
+    INACTIVITY_GOODBYE_SECS = 30
+    INACTIVITY_END_SECS = 40
     _name = candidate_first_name or candidate_name
     _SOFT_NUDGE_TEXT = f"Take your time, {_name}. I'm here when you're ready."
     _INACTIVITY_WARNING_TEXT = (
@@ -4197,16 +4201,14 @@ async def entrypoint(ctx: JobContext):
         f"I'll go ahead and end the session here. "
         f"It was great speaking with you, {_name}. All the best!"
     )
-    inactivity_warning_sent_for_current_prompt = False
-    inactivity_end_sent_for_current_prompt = False
     async def _deliver_nudge(text: str) -> None:
         # Scripted speech should not behave like a new interview question. Preserve
-        # the original silence timer across the nudge audio so 10/20/30/50/60s
+        # the original silence timer across the nudge audio so the 12/20/30/40s
         # thresholds are measured from the candidate's first chance to answer.
         # Also preserve the "already sent" flags across the nudge's own
         # agent_state_changed speaking->listening transition (below), otherwise
-        # each nudge wipes its own sent-flag and re-fires forever every ~7s
-        # instead of escalating to the 15s warning / 25s end.
+        # each nudge wipes its own sent-flag and re-fires forever every ~12s
+        # instead of escalating to the 20s warning / 30s goodbye / 40s end.
         nonlocal awaiting_candidate_response, awaiting_candidate_since, inactivity_nudge_speaking
         inactivity_nudge_speaking = True
         try:
@@ -4326,34 +4328,37 @@ async def entrypoint(ctx: JobContext):
         # Log timing every 5 seconds so we can verify nudge schedule
         if int(inactivity_elapsed) % 5 == 0 and inactivity_elapsed >= 5:
             logger.debug(f"[NUDGE_TIMING] elapsed={inactivity_elapsed:.1f}s silent={_silence_active} agent_speaking={is_agent_speaking} candidate_speaking={is_candidate_speaking}")
-        # 7s silence -> soft nudge (fires once per prompt)
+        # 12s silence -> soft nudge (fires once per prompt)
         if _silence_active and inactivity_elapsed >= INACTIVITY_NUDGE_SECS and inactivity_elapsed < INACTIVITY_WARNING_SECS and not inactivity_nudge_sent_for_current_prompt:
             try:
-                logger.info("[NUDGE_FIRE] 7s nudge at %.1fs elapsed", inactivity_elapsed)
+                logger.info("[NUDGE_FIRE] 12s nudge at %.1fs elapsed", inactivity_elapsed)
                 spawn_background_task(_deliver_nudge(_SOFT_NUDGE_TEXT), "inactivity_nudge")
                 inactivity_nudge_sent_for_current_prompt = True
                 logger.info("[NUDGE] Soft nudge sent at %.1fs silence", inactivity_elapsed)
             except Exception as e:
                 logger.warning(f"[NUDGE] Failed to deliver soft nudge: {e}")
-        # 15s silence -> warning (fires once per prompt)
-        if _silence_active and inactivity_elapsed >= INACTIVITY_WARNING_SECS and inactivity_elapsed < INACTIVITY_END_SECS and not inactivity_warning_sent_for_current_prompt:
+        # 20s silence -> warning (fires once per prompt)
+        if _silence_active and inactivity_elapsed >= INACTIVITY_WARNING_SECS and inactivity_elapsed < INACTIVITY_GOODBYE_SECS and not inactivity_warning_sent_for_current_prompt:
             try:
-                logger.info("[NUDGE_FIRE] 15s warning at %.1fs elapsed", inactivity_elapsed)
+                logger.info("[NUDGE_FIRE] 20s warning at %.1fs elapsed", inactivity_elapsed)
                 spawn_background_task(_deliver_nudge(_INACTIVITY_WARNING_TEXT), "inactivity_warning")
                 inactivity_warning_sent_for_current_prompt = True
                 logger.info("[NUDGE] Warning sent at %.1fs silence", inactivity_elapsed)
             except Exception as e:
                 logger.warning(f"[NUDGE] Failed to deliver warning: {e}")
-        # 25s silence -> end call (fires once per prompt)
-        if _silence_active and inactivity_elapsed >= INACTIVITY_END_SECS and not inactivity_end_sent_for_current_prompt:
-            logger.info("[NUDGE_FIRE] 25s END at %.1fs elapsed", inactivity_elapsed)
-            logger.info("[NUDGE] Ending interview due to inactivity (%.1fs)", inactivity_elapsed)
+        # 30s silence -> final goodbye line spoken (fires once per prompt)
+        if _silence_active and inactivity_elapsed >= INACTIVITY_GOODBYE_SECS and inactivity_elapsed < INACTIVITY_END_SECS and not inactivity_end_sent_for_current_prompt:
             try:
-                await session.say(_INACTIVITY_END_TEXT, allow_interruptions=False)
-                await asyncio.sleep(3.0)
+                logger.info("[NUDGE_FIRE] 30s goodbye at %.1fs elapsed", inactivity_elapsed)
+                spawn_background_task(_deliver_nudge(_INACTIVITY_END_TEXT), "inactivity_goodbye")
+                inactivity_end_sent_for_current_prompt = True
+                logger.info("[NUDGE] Goodbye line sent at %.1fs silence", inactivity_elapsed)
             except Exception as e:
-                logger.warning("[NUDGE] Failed to deliver inactivity ending line: %s", e)
-            inactivity_end_sent_for_current_prompt = True
+                logger.warning(f"[NUDGE] Failed to deliver goodbye line: {e}")
+        # 40s silence -> call actually ends (10s grace after the goodbye line)
+        if not is_agent_speaking and not is_candidate_speaking and inactivity_elapsed >= INACTIVITY_END_SECS and inactivity_end_sent_for_current_prompt:
+            logger.info("[NUDGE_FIRE] 40s END at %.1fs elapsed", inactivity_elapsed)
+            logger.info("[NUDGE] Ending interview due to inactivity (%.1fs)", inactivity_elapsed)
             await _send_termination_signal("inactivity_timeout")
             interview_marked_finished = True
             interview_finished_event.set()
@@ -4397,7 +4402,17 @@ async def entrypoint(ctx: JobContext):
     )
     await persist_latency_signals(app_id, answer_scores)
     await persist_session_fingerprint(app_id)
-    await persist_answer_scores(app_id, answer_scores)
+    if not answer_scores:
+        logger.warning(
+            "[SCORE] Interview %s finished with zero scored turns -- "
+            "Question Analysis will be empty in the report.", app_id
+        )
+    try:
+        await persist_answer_scores(app_id, answer_scores)
+    except Exception as e:
+        # A failed final score write must not abort completion (billing, report
+        # generation, COMPLETED status) -- the interview genuinely happened.
+        logger.error("[SCORE] Final answer-score persist failed for %s: %s", app_id, e)
     # CRITICAL: Mark as COMPLETED immediately after first save to prevent re-dispatch
     # This must happen before any async work (summary, report, billing) that could fail
     if finished_task.done():

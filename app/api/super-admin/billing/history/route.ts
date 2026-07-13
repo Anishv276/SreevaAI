@@ -29,7 +29,8 @@ export async function GET(request: Request) {
 
         const where: any = {
             application: {
-                job: { organizationId: orgId }
+                isDeleted: false,
+                job: { organizationId: orgId, isDeleted: false }
             },
             isDeleted: false
         };

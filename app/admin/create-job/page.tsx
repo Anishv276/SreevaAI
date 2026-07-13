@@ -368,7 +368,11 @@ function CreateJobForm() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => router.push(isEditMode ? "/admin/jobs" : "/admin")}
+            onClick={() => {
+              const hasProgress = isAnalyzing || Boolean(formData.jdFile || formData.jdFileName || formData.title || formData.jobRole);
+              if (hasProgress && !window.confirm("You have unsaved changes. Are you sure you want to leave? Your progress will be lost.")) return;
+              router.push(isEditMode ? "/admin/jobs" : "/admin");
+            }}
             className="inline-flex items-center justify-center h-10 px-4 rounded-xl bg-white text-sm font-medium text-gray-600 hover:text-violet-600 hover:bg-violet-50 transition-all self-start sm:self-auto"
             style={{ border: "1px solid #E9E7FF" }}>
             <ChevronLeft className="h-4 w-4" />
