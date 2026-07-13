@@ -347,52 +347,108 @@ export function HardwareCheck({
         onComplete({ cameraId: selectedCameraId || undefined, micId: selectedMicId || undefined });
     }, [onComplete, selectedCameraId, selectedMicId, uploadSnapshot, sendFingerprint]);
     // -----------------------------------------------------------------
-    // MIC CHECK -- Web Speech API only, fully in-browser, no server call.
-    // Passes the moment any speech is recognized -- not verifying words,
-    // just confirming the mic is actually picking up voice.
-    // ponytail: no phrase-matching, no audio upload/PCM conversion needed
-    // now that Deepgram is gone -- upgrade to phrase-matching if false
-    // positives (background noise) become a real problem.
+    // MIC CHECK -- audio-energy based, works in EVERY Chromium browser.
+    //
+    // The primary verifier reads real RMS energy off the same AnalyserNode
+    // that drives the volume meter, so it only needs a live mic stream --
+    // no cloud service, no browser-specific speech backend.
+    //
+    // This is deliberate: Brave (and other privacy-hardened Chromium forks)
+    // expose `webkitSpeechRecognition` but strip Google's speech backend, so
+    // recognition.start() turns the mic light on for a moment and then fires
+    // an error (no transcript ever arrives). That made the mic look "broken"
+    // in Brave while working in Chrome. Energy detection has no such
+    // dependency, so the mic verifies identically across browsers.
+    //
+    // The Web Speech API is kept only as an OPTIONAL accelerator: if it
+    // happens to produce a transcript we mark verified early, but we never
+    // depend on it and never fail the check when it errors out.
     // -----------------------------------------------------------------
     const [isListening, setIsListening] = useState(false);
-    const [speechApiSupported, setSpeechApiSupported] = useState(true);
-    const startMicListening = useCallback(() => {
-        const SpeechRecognitionCtor: any = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-        if (!SpeechRecognitionCtor) {
-            setSpeechApiSupported(false);
-            return;
+    const micVerifyRafRef = useRef<number | null>(null);
+    const micVerifyTimeoutRef = useRef<number | null>(null);
+    const stopMicListening = useCallback(() => {
+        if (micVerifyRafRef.current !== null) {
+            cancelAnimationFrame(micVerifyRafRef.current);
+            micVerifyRafRef.current = null;
         }
-        if (recogRef.current) {
-            try { recogRef.current.stop(); } catch { }
+        if (micVerifyTimeoutRef.current !== null) {
+            window.clearTimeout(micVerifyTimeoutRef.current);
+            micVerifyTimeoutRef.current = null;
         }
-        const recognition = new SpeechRecognitionCtor();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = "en-US";
-        recognition.onresult = (event: any) => {
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-                const transcript = event.results[i][0]?.transcript?.trim();
-                if (transcript && transcript.length > 0) {
-                    setMicVerified(true);
-                    setIsListening(false);
-                    try { recognition.stop(); } catch { }
-                    break;
-                }
-            }
-        };
-        recognition.onerror = () => {
-            setIsListening(false);
-        };
-        recognition.onend = () => {
-            setIsListening(false);
-        };
-        recogRef.current = recognition;
-        setIsListening(true);
-        try { recognition.start(); } catch { setIsListening(false); }
-    }, []);
-    useEffect(() => () => {
         if (recogRef.current) { try { recogRef.current.stop(); } catch { } }
+        setIsListening(false);
     }, []);
+    // Optional Web Speech accelerator -- never gates the check, never surfaces
+    // an error to the candidate (Brave et al. will just no-op here).
+    const tryStartSpeechRecognition = useCallback(() => {
+        const SpeechRecognitionCtor: any = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (!SpeechRecognitionCtor) return;
+        if (recogRef.current) { try { recogRef.current.stop(); } catch { } }
+        try {
+            const recognition = new SpeechRecognitionCtor();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = "en-US";
+            recognition.onresult = (event: any) => {
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0]?.transcript?.trim();
+                    if (transcript && transcript.length > 0) {
+                        setMicVerified(true);
+                        stopMicListening();
+                        break;
+                    }
+                }
+            };
+            // Swallow errors/onend silently -- energy detection is the real gate.
+            recognition.onerror = () => { };
+            recognition.onend = () => { };
+            recogRef.current = recognition;
+            recognition.start();
+        } catch { /* Brave/no-backend: ignore, energy path covers us */ }
+    }, [stopMicListening]);
+    const startMicListening = useCallback(() => {
+        if (micStatus !== "granted" || !analyzerRef.current) return;
+        setMicVerified(false);
+        setIsListening(true);
+        // Kick off the optional speech accelerator (harmless where unsupported).
+        tryStartSpeechRecognition();
+        // Primary verifier: require sustained real audio energy so we don't
+        // pass on a single click/pop. ~5 frames above threshold within ~10s.
+        const analyzer = analyzerRef.current;
+        const buf = new Uint8Array(analyzer.fftSize);
+        const ENERGY_THRESHOLD = 0.045; // RMS on the [-1,1] normalized signal
+        const REQUIRED_HITS = 5;
+        let hits = 0;
+        const detect = () => {
+            const a = analyzerRef.current;
+            if (!a) { micVerifyRafRef.current = requestAnimationFrame(detect); return; }
+            a.getByteTimeDomainData(buf);
+            let sumSq = 0;
+            for (let i = 0; i < buf.length; i++) {
+                const v = (buf[i] - 128) / 128;
+                sumSq += v * v;
+            }
+            const rms = Math.sqrt(sumSq / buf.length);
+            if (rms >= ENERGY_THRESHOLD) {
+                hits += 1;
+                if (hits >= REQUIRED_HITS) {
+                    setMicVerified(true);
+                    stopMicListening();
+                    return;
+                }
+            } else if (hits > 0) {
+                hits -= 1; // decay so isolated spikes don't accumulate
+            }
+            micVerifyRafRef.current = requestAnimationFrame(detect);
+        };
+        micVerifyRafRef.current = requestAnimationFrame(detect);
+        // Safety: stop listening after 15s if the candidate stays silent.
+        micVerifyTimeoutRef.current = window.setTimeout(() => {
+            stopMicListening();
+        }, 15000);
+    }, [micStatus, tryStartSpeechRecognition, stopMicListening]);
+    useEffect(() => () => { stopMicListening(); }, [stopMicListening]);
     // -----------------------------------------------------------------
     // NETWORK CHECK -- real round-trip ping against our own API, not decorative.
     // Runs once on mount and every 15s while the page is open so a connection
@@ -722,9 +778,7 @@ export function HardwareCheck({
                                 <span className="text-xs font-semibold text-red-500">Not Verified</span>
                             )}
                         </div>
-                        {!speechApiSupported ? (
-                            <p className="text-xs text-red-500">Speech detection isn&apos;t supported in this browser. Please use Chrome or Edge.</p>
-                        ) : micVerified ? (
+                        {micVerified ? (
                             <p className="text-xs text-emerald-600">We heard you clearly - your microphone is working.</p>
                         ) : (
                             <div className="flex flex-col gap-2.5">

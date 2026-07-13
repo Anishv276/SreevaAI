@@ -222,7 +222,7 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
         }
         fetchCandidates(newPage, pageSize, jobId, resumeFilter, interviewFilter, startDate, endDate, undefined, scoreSort);
     };
-    const handleUpdateStatus = async (applicationId: string, statusUpdate: { resumeStatus?: string }, successMsg: string) => {
+    const handleUpdateStatus = async (applicationId: string, statusUpdate: { resumeScreeningStatus?: string }, successMsg: string) => {
         try {
             const res = await fetch(`/api/candidates/${applicationId}`, {
                 method: "PATCH",
@@ -231,11 +231,11 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
             });
             if (res.ok) {
                 toast.success(successMsg);
-                if (statusUpdate.resumeStatus === "shortlisted") {
+                if (statusUpdate.resumeScreeningStatus === "shortlisted") {
                     fetch(`/api/candidates/${applicationId}/send-interview-link`, { method: "POST" })
                         .then((r) => r.ok && toast.success("Schedule link sent"))
                         .catch(() => {});
-                } else if (statusUpdate.resumeStatus === "rejected") {
+                } else if (statusUpdate.resumeScreeningStatus === "rejected") {
                     fetch(`/api/candidates/${applicationId}/send-rejection-email`, { method: "POST" })
                         .then((r) => r.ok && toast.success("Rejection email sent"))
                         .catch(() => {});
@@ -728,12 +728,12 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
                                                          "Under Review"}
                                                     </span>
                                                     {statusKey === "shortlisted" && (
-                                                        <button onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "rejected" }, `${displayName} rejected`)} className="h-6 w-6 rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-rose-600 transition-colors" title="Reject">
+                                                        <button onClick={() => handleUpdateStatus(candidate.id, { resumeScreeningStatus: "rejected" }, `${displayName} rejected`)} className="h-6 w-6 rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-rose-600 transition-colors" title="Reject">
                                                             <UserX className="h-3.5 w-3.5" />
                                                         </button>
                                                     )}
                                                     {statusKey !== "shortlisted" && statusKey !== "rejected" && !isProcessing && (
-                                                        <button onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "shortlisted" }, `${displayName} shortlisted`)} className="h-6 w-6 rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-emerald-600 transition-colors" title="Shortlist">
+                                                        <button onClick={() => handleUpdateStatus(candidate.id, { resumeScreeningStatus: "shortlisted" }, `${displayName} shortlisted`)} className="h-6 w-6 rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-emerald-600 transition-colors" title="Shortlist">
                                                             <Target className="h-3.5 w-3.5" />
                                                         </button>
                                                     )}
@@ -830,11 +830,11 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
                                                         className="w-56 p-1.5 rounded-xl shadow-lg border-gray-100 bg-white"
                                                     >
                                                         <DropdownMenuLabel className="px-2.5 py-0.5.5 text-[9px] font-black uppercase tracking-widest text-gray-400">Shortlist</DropdownMenuLabel>
-                                                        <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "shortlisted" }, `${displayName} shortlisted`)} className="rounded-xl px-2.5 py-2 text-sm font-semibold text-emerald-600 cursor-pointer transition-colors hover:bg-emerald-50 hover:text-emerald-700 focus:text-emerald-700 focus:bg-emerald-50 data-[highlighted]:bg-emerald-50 data-[highlighted]:text-emerald-700">
+                                                        <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, { resumeScreeningStatus: "shortlisted" }, `${displayName} shortlisted`)} className="rounded-xl px-2.5 py-2 text-sm font-semibold text-emerald-600 cursor-pointer transition-colors hover:bg-emerald-50 hover:text-emerald-700 focus:text-emerald-700 focus:bg-emerald-50 data-[highlighted]:bg-emerald-50 data-[highlighted]:text-emerald-700">
                                                             <Target className="h-4 w-4 mr-2 shrink-0" />
                                                             Shortlist
                                                         </DropdownMenuItem>
-                                                        <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "rejected" }, `${displayName} rejected`)} className="rounded-xl px-2.5 py-2 text-sm font-semibold text-rose-600 cursor-pointer transition-colors hover:bg-rose-50 hover:text-rose-700 focus:text-rose-700 focus:bg-rose-50 data-[highlighted]:bg-rose-50 data-[highlighted]:text-rose-700">
+                                                        <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, { resumeScreeningStatus: "rejected" }, `${displayName} rejected`)} className="rounded-xl px-2.5 py-2 text-sm font-semibold text-rose-600 cursor-pointer transition-colors hover:bg-rose-50 hover:text-rose-700 focus:text-rose-700 focus:bg-rose-50 data-[highlighted]:bg-rose-50 data-[highlighted]:text-rose-700">
                                                             <UserX className="h-4 w-4 mr-2 shrink-0" />
                                                             Reject
                                                         </DropdownMenuItem>

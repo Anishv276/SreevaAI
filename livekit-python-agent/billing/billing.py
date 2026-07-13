@@ -90,6 +90,21 @@ _OPENAI_RATES: dict[str, dict[str, float]] = {
     "gpt-4o-mini":  {"input": 0.15,  "cached_input": 0.075, "output": 0.60},
     "gpt-4o":       {"input": 2.50,  "cached_input": 1.25,  "output": 10.00},
     "gpt-5.4-mini": {"input": 0.75,  "cached_input": 0.075, "output": 4.50},
+    "gpt-5-mini":   {"input": 0.25,  "cached_input": 0.025, "output": 2.00},
+    "gpt-5-nano":   {"input": 0.05,  "cached_input": 0.005, "output": 0.40},
+    "gpt-5":        {"input": 1.25,  "cached_input": 0.125, "output": 10.00},
+}
+
+# Fallback rate for any OpenAI model NOT explicitly listed above. Extraction/
+# report features let admins pick arbitrary model names from the DB config, so a
+# newly-selected (or newly-released) model must NOT cause the whole usage record
+# to be dropped -- see CostCalculator.openai. We approximate with a mid-tier
+# "mini" price and log a warning so the exact rate can be added later. Mirrors the
+# graceful-default behaviour already used for Cartesia/ElevenLabs/Deepgram.
+_OPENAI_RATES_DEFAULT: dict[str, float] = {
+    "input":        float(os.environ.get("OPENAI_LLM_DEFAULT_INPUT_USD_PER_MILLION",  "0.40")),
+    "cached_input": float(os.environ.get("OPENAI_LLM_DEFAULT_CACHED_USD_PER_MILLION", "0.10")),
+    "output":       float(os.environ.get("OPENAI_LLM_DEFAULT_OUTPUT_USD_PER_MILLION", "1.60")),
 }
 
 # Cartesia TTS -- USD per million characters
@@ -400,7 +415,19 @@ class CostCalculator:
         key   = cls._norm_openai(model)
         rates = _OPENAI_RATES.get(key)
         if not rates:
-            raise ValueError(f"[BILLING] No OpenAI pricing for model {model!r} (normalised: {key!r})")
+            # Graceful fallback -- an unknown/newly-configured model must NOT drop
+            # the whole usage record (that silently hid resume/JD extraction costs
+            # from billing). Approximate with a default rate and warn, matching the
+            # TTS/STT strategies which already fall back rather than raise.
+            logger.warning(
+                "[BILLING] No OpenAI pricing for model %r (normalised: %r) -- "
+                "using default rate (input=%.2f cached=%.2f output=%.2f /1M). "
+                "Add this model to _OPENAI_RATES for exact costs.",
+                model, key,
+                _OPENAI_RATES_DEFAULT["input"], _OPENAI_RATES_DEFAULT["cached_input"],
+                _OPENAI_RATES_DEFAULT["output"],
+            )
+            rates = _OPENAI_RATES_DEFAULT
         input_t  = max(0, int(input_t  or 0))
         output_t = max(0, int(output_t or 0))
         cached_t = max(0, min(int(cached_t or 0), input_t))
