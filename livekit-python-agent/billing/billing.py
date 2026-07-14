@@ -57,6 +57,7 @@ import os
 import re
 import sys
 import time
+import uuid
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal, Optional, Protocol
@@ -874,12 +875,241 @@ def merge_manual_billing_usage(
     feature:  str,
     usage:    dict[str, Any],
 ) -> dict[str, Any]:
-    """Backward-compat function: merge one manual LLM usage record into the org billing dict."""
-    model = str(usage.get("model", "") or "").strip()
-    if not model:
-        raise ValueError(f"[BILLING] merge_manual_billing_usage: model required for feature {feature!r}")
-    session_summary = PendingBuffer.build_session_summary(model, usage)
-    return BucketMerger.merge_session(existing, feature, session_summary)
+    """Backward-compat function: merge one manual usage record into the org billing dict.
+
+    Handles both LLM-shaped usage (inputTokens/outputTokens + model) and
+    TTS/STT-shaped usage (ttsCharacters / sttAudioSeconds + ttsProvider/ttsModel
+    or sttProvider/sttModel). The TTS/STT branch is what makes voice-preview
+    billing (which sends no `model`) actually land in the blob instead of
+    raising "model required".
+    """
+    tts_chars = int(usage.get("ttsCharacters", 0) or 0)
+    stt_secs  = float(usage.get("sttAudioSeconds", 0) or 0)
+    model     = str(usage.get("model", "") or "").strip()
+
+    # LLM-shaped record: merge via the session-summary path (unchanged behaviour).
+    if model:
+        session_summary = PendingBuffer.build_session_summary(model, usage)
+        return BucketMerger.merge_session(existing, feature, session_summary)
+
+    # TTS/STT-only record (no LLM model): build a summary carrying just the
+    # audio side so BucketMerger.merge_session can fold it into the bucket.
+    if tts_chars > 0 or stt_secs > 0:
+        summary: dict[str, Any] = {
+            "llm": {"sessions": 0, "totals": {}, "byModel": {}},
+            "tts": {"sessions": 0, "totals": {}, "byModel": {}},
+            "stt": {"sessions": 0, "totals": {}, "byModel": {}},
+        }
+        if tts_chars > 0:
+            tp = str(usage.get("ttsProvider", "") or "").strip().upper() or "UNKNOWN"
+            tm = str(usage.get("ttsModel", "") or "").strip() or "unknown"
+            summary["tts"] = {
+                "sessions": 1,
+                "totals": {"charactersCount": tts_chars},
+                "byModel": {f"{tp}:{tm}": {"provider": tp, "model": tm, "charactersCount": tts_chars}},
+            }
+        if stt_secs > 0:
+            sp = str(usage.get("sttProvider", "") or "").strip().upper() or "DEEPGRAM"
+            sm = str(usage.get("sttModel", "") or "").strip() or "unknown"
+            summary["stt"] = {
+                "sessions": 1,
+                "totals": {"audioDuration": stt_secs},
+                "byModel": {f"{sp}:{sm}": {"provider": sp, "model": sm, "audioDuration": stt_secs}},
+            }
+        return BucketMerger.merge_session(existing, feature, summary)
+
+    raise ValueError(f"[BILLING] merge_manual_billing_usage: model required for feature {feature!r}")
+
+
+# ===============================================================================
+# SECTION 8A -- LedgerWriter (OOP)
+#
+# Emits per-event rows into the "UsageEvent" table. The org blob remains the
+# source of truth for TOTALS; this ledger powers the super-admin per-item detail
+# views. Every insert is idempotent (ON CONFLICT ("eventId") DO NOTHING) and the
+# whole insert path is wrapped in try/except so a ledger failure (e.g. the table
+# not yet migrated on a stale deploy) can never break billing.
+#
+# Context envelope: manual-usage callers may attach usage["context"] =
+#   {eventId, jobId, applicationId, interviewId, jobTitle, candidateName,
+#    label, ledgerFeature, createdAt, source}
+# Old billing.py deployments simply ignore this extra key.
+# ===============================================================================
+
+def _usage_context(usage: dict[str, Any]) -> dict[str, Any]:
+    """Extract the optional ledger context envelope from a usage dict."""
+    ctx = usage.get("context")
+    return dict(ctx) if isinstance(ctx, dict) else {}
+
+
+class LedgerWriter:
+    """Builds and inserts per-event UsageEvent rows. Stateless — classmethods only."""
+
+    @staticmethod
+    def _row(
+        *,
+        feature: str, kind: str, provider: str, model: str,
+        event_id: str, cost_usd: float,
+        calls: int = 1, input_t: int = 0, cached_t: int = 0, output_t: int = 0,
+        tts_chars: int = 0, stt_secs: float = 0.0,
+        ctx: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "id": "evt_" + uuid.uuid4().hex,
+            "feature": ctx.get("ledgerFeature") or feature,
+            "kind": kind,
+            "provider": provider or "openai",
+            "model": model or "unknown",
+            "calls": int(calls or 0),
+            "inputTokens": int(input_t or 0),
+            "cachedInputTokens": int(cached_t or 0),
+            "outputTokens": int(output_t or 0),
+            "ttsCharacters": int(tts_chars or 0),
+            "sttAudioSeconds": float(stt_secs or 0.0),
+            "costUsd": round(float(cost_usd or 0.0), 8),
+            "jobId": ctx.get("jobId"),
+            "applicationId": ctx.get("applicationId"),
+            "interviewId": ctx.get("interviewId"),
+            "jobTitle": ctx.get("jobTitle"),
+            "candidateName": ctx.get("candidateName"),
+            "label": ctx.get("label"),
+            "eventId": event_id,
+            "source": ctx.get("source") or "live",
+            "isTest": bool(ctx.get("isTest", False)),
+            "createdAt": ctx.get("createdAt"),  # None → DB default now()
+        }
+
+    @classmethod
+    def build_rows(cls, pending: list[tuple[str, dict]]) -> list[dict[str, Any]]:
+        """Turn pending (feature, usage) entries into UsageEvent row dicts.
+
+        One row per (feature, kind, provider:model). The logical eventId from
+        context is suffixed with :<kind>:<provider>:<model> so retries dedup and
+        multiple models under one logical event get distinct rows.
+        """
+        rows: list[dict[str, Any]] = []
+        for feature, usage in pending:
+            ctx = _usage_context(usage)
+            logical = str(ctx.get("eventId") or usage.get("eventId") or "").strip()
+            if not logical:
+                logical = "evt:" + uuid.uuid4().hex
+
+            model = str(usage.get("model", "") or "").strip()
+            if model:
+                provider = "openai"
+                input_t  = int(usage.get("inputTokens", 0) or 0)
+                cached_t = int(usage.get("cachedInputTokens", 0) or 0)
+                output_t = int(usage.get("outputTokens", 0) or 0)
+                cost = CostCalculator.openai(model, input_t, cached_t, output_t)
+                rows.append(cls._row(
+                    feature=feature, kind="llm", provider=provider, model=model,
+                    event_id=f"{logical}:llm:{provider}:{model}", cost_usd=cost,
+                    input_t=input_t, cached_t=cached_t, output_t=output_t, ctx=ctx,
+                ))
+
+            tts_chars = int(usage.get("ttsCharacters", 0) or 0)
+            if tts_chars > 0:
+                tp = str(usage.get("ttsProvider", "") or "").strip().upper() or "UNKNOWN"
+                tm = str(usage.get("ttsModel", "") or "").strip() or "unknown"
+                cost = CostCalculator.tts(tp, tm, tts_chars)
+                rows.append(cls._row(
+                    feature=feature, kind="tts", provider=tp, model=tm,
+                    event_id=f"{logical}:tts:{tp}:{tm}", cost_usd=cost,
+                    tts_chars=tts_chars, ctx=ctx,
+                ))
+
+            stt_secs = float(usage.get("sttAudioSeconds", 0) or 0)
+            if stt_secs > 0:
+                sp = str(usage.get("sttProvider", "") or "").strip().upper() or "DEEPGRAM"
+                sm = str(usage.get("sttModel", "") or "").strip() or "unknown"
+                cost = CostCalculator.stt(sp, sm, stt_secs)
+                rows.append(cls._row(
+                    feature=feature, kind="stt", provider=sp, model=sm,
+                    event_id=f"{logical}:stt:{sp}:{sm}", cost_usd=cost,
+                    stt_secs=stt_secs, ctx=ctx,
+                ))
+        return rows
+
+    @staticmethod
+    def build_session_rows(
+        *, app_id: str, interview_id: Optional[str], summary: dict[str, Any],
+        candidate_name: Optional[str], job_title: Optional[str], is_test: bool,
+    ) -> list[dict[str, Any]]:
+        """Build interviewSession TTS/STT ledger rows from a session summary's
+        tts/stt byModel maps. LLM rows come via the manual-usage pending path
+        (eval/brief/llmgen), so only audio is emitted here."""
+        rows: list[dict[str, Any]] = []
+        if not app_id:
+            return rows
+        ctx = {
+            "applicationId": app_id, "interviewId": interview_id,
+            "candidateName": candidate_name, "jobTitle": job_title, "isTest": is_test,
+        }
+        for kind in ("tts", "stt"):
+            by_model = _coerce_jsonish(_coerce_jsonish(summary.get(kind)).get("byModel"))
+            for msummary in by_model.values():
+                m = _coerce_jsonish(msummary)
+                provider = str(m.get("provider", "") or "").strip().upper() or ("DEEPGRAM" if kind == "stt" else "UNKNOWN")
+                model    = str(m.get("model", "") or "").strip() or "unknown"
+                chars    = int(m.get("charactersCount", 0) or 0)
+                secs     = float(m.get("audioDuration", 0) or 0.0)
+                if kind == "tts":
+                    if chars <= 0:
+                        continue
+                    cost = CostCalculator.tts(provider, model, chars)
+                else:
+                    if secs <= 0:
+                        continue
+                    cost = CostCalculator.stt(provider, model, secs)
+                rows.append(LedgerWriter._row(
+                    feature="interviewSession", kind=kind, provider=provider, model=model,
+                    event_id=f"interview:{app_id}:{kind}:{provider}:{model}", cost_usd=cost,
+                    tts_chars=chars if kind == "tts" else 0,
+                    stt_secs=secs if kind == "stt" else 0.0, ctx=ctx,
+                ))
+        return rows
+
+    @classmethod
+    async def insert(cls, conn, rows: list[dict[str, Any]]) -> None:
+        """Insert ledger rows (ON CONFLICT DO NOTHING). Never raises — a ledger
+        failure must not break the billing transaction that owns the blob."""
+        if not rows:
+            return
+        try:
+            await conn.executemany(
+                'INSERT INTO "UsageEvent" '
+                '("id","organizationId","feature","kind","provider","model","calls",'
+                '"inputTokens","cachedInputTokens","outputTokens","ttsCharacters",'
+                '"sttAudioSeconds","costUsd","jobId","applicationId","interviewId",'
+                '"jobTitle","candidateName","label","eventId","source","isTest","createdAt") '
+                "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,"
+                "COALESCE($23, NOW())) "
+                'ON CONFLICT ("eventId") DO NOTHING',
+                [
+                    (
+                        r["id"], r["_orgId"], r["feature"], r["kind"], r["provider"], r["model"],
+                        r["calls"], r["inputTokens"], r["cachedInputTokens"], r["outputTokens"],
+                        r["ttsCharacters"], r["sttAudioSeconds"], r["costUsd"], r["jobId"],
+                        r["applicationId"], r["interviewId"], r["jobTitle"], r["candidateName"],
+                        r["label"], r["eventId"], r["source"], r["isTest"],
+                        _to_ts(r.get("createdAt")),
+                    )
+                    for r in rows
+                ],
+            )
+        except Exception as e:  # noqa: BLE001 — ledger must never break billing
+            logger.error("[BILLING] LedgerWriter.insert failed (non-fatal): %s", e, exc_info=True)
+
+
+def _to_ts(v: Any):
+    """Coerce a ledger createdAt (epoch float or None) to a datetime or None."""
+    if v is None:
+        return None
+    try:
+        from datetime import datetime, timezone
+        return datetime.fromtimestamp(float(v), tz=timezone.utc)
+    except Exception:
+        return None
 
 
 # ===============================================================================
@@ -944,6 +1174,11 @@ class BillingRepository:
                         'UPDATE "OrganizationDetails" SET "platformUsageMetrics" = $1::jsonb, "orgUpdatedAt" = NOW() WHERE id = $2',
                         json.dumps(merged), org_id,
                     )
+                    # Per-event ledger rows (same transaction; non-fatal on failure).
+                    ledger_rows = LedgerWriter.build_rows(pending)
+                    for r in ledger_rows:
+                        r["_orgId"] = org_id
+                    await LedgerWriter.insert(conn, ledger_rows)
             logger.info("[BILLING] Flushed %d pending entries for org=%s", len(pending), org_id)
         except Exception as e:
             logger.error("[BILLING] flush_pending failed for org=%s: %s", org_id, e, exc_info=True)
@@ -958,6 +1193,12 @@ class BillingRepository:
         tts_model:    Optional[str] = None,
         stt_provider: Optional[str] = None,
         stt_model:    Optional[str] = None,
+        *,
+        app_id:         Optional[str] = None,
+        interview_id:   Optional[str] = None,
+        candidate_name: Optional[str] = None,
+        job_title:      Optional[str] = None,
+        is_test:        bool = False,
     ) -> None:
         """Merge a session's LiveKit usage into Organization.usageMetrics (livekit bucket)."""
         if not org_id or not DATABASE_URL:
@@ -1018,6 +1259,19 @@ class BillingRepository:
                         'UPDATE "OrganizationDetails" SET "platformUsageMetrics" = $1::jsonb, "orgUpdatedAt" = NOW() WHERE id = $2',
                         json.dumps(merged), org_id,
                     )
+                    # interviewSession TTS/STT ledger rows (same transaction; non-fatal).
+                    # Test sessions never write org billing, so this only runs for real
+                    # interviews — but guard on is_test for defence in depth.
+                    if app_id and not is_test:
+                        session_rows = LedgerWriter.build_session_rows(
+                            app_id=app_id, interview_id=interview_id,
+                            summary=session_summary,
+                            candidate_name=candidate_name, job_title=job_title,
+                            is_test=is_test,
+                        )
+                        for r in session_rows:
+                            r["_orgId"] = org_id
+                        await LedgerWriter.insert(conn, session_rows)
             llm_t = session_summary["llm"]["totals"]
             logger.info(
                 "[BILLING] Saved org usage: org=%s llm_tokens=%d stt_secs=%.1f tts_secs=%.1f",
@@ -1366,6 +1620,11 @@ async def save_org_usage_metrics(
     plugin_tts_characters:    int   = 0,
     plugin_tts_audio_seconds: float = 0.0,
     plugin_stt_audio_seconds: float = 0.0,
+    app_id:                   Optional[str] = None,
+    interview_id:             Optional[str] = None,
+    candidate_name:           Optional[str] = None,
+    job_title:                Optional[str] = None,
+    is_test:                  bool = False,
 ) -> None:
     """Merge a session's usage into Organization.usageMetrics.
 
@@ -1392,6 +1651,8 @@ async def save_org_usage_metrics(
         org_id, summary,
         tts_provider=tts_provider, tts_model=tts_model,
         stt_provider=stt_provider, stt_model=stt_model,
+        app_id=app_id, interview_id=interview_id,
+        candidate_name=candidate_name, job_title=job_title, is_test=is_test,
     )
 
 

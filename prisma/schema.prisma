@@ -37,11 +37,16 @@ model OrganizationDetails {
   billingCreditsUsed       Float                     @default(0)
   quotaControlMode         String                    @default("QUOTA")
   platformUsageMetrics     Json?                     @default("{}")
+  // Subscription display fields (maintained manually by super admin; no payment automation)
+  planPriceUsd             Float?
+  billingCycle             String? // "Monthly" | "Yearly"
+  nextBillingDate          DateTime?
   isRecordingEnabled       Boolean?
   recordingKeepForDays     Int?
   isDeleted                Boolean                   @default(false)
   jobs                     Job[]
   organizationCredentials  OrganizationCredentials[]
+  usageEvents              UsageEvent[]
 
   @@index([orgStatus])
   @@index([orgCreatedAt(sort: Desc)])
@@ -196,6 +201,44 @@ model SupportTicket {
 
   @@index([ticketStatus, ticketCreatedAt])
   @@index([interviewId, ticketCreatedAt])
+  @@index([applicationId])
+}
+
+// Append-only per-event billing ledger. One row per (logical billing event,
+// feature, kind, provider:model). The org blob (OrganizationDetails.
+// platformUsageMetrics.billing, written by billing.py) remains the source of
+// truth for TOTALS; this table feeds per-item detail views. Rows are inserted
+// by billing.py's LedgerWriter in the same transaction as the blob merge, and
+// by scripts/backfill-usage-events.ts (source="backfill").
+model UsageEvent {
+  id                String              @id @default(cuid())
+  organizationId    String
+  feature           String // jdExtraction | resumeExtraction | resumeReport | interviewEval |
+  // interviewLLMGeneration | interviewBrief | interviewSession | interviewReport | voicePreview
+  kind              String // llm | tts | stt
+  provider          String              @default("openai")
+  model             String
+  calls             Int                 @default(1)
+  inputTokens       Int                 @default(0)
+  cachedInputTokens Int                 @default(0)
+  outputTokens      Int                 @default(0)
+  ttsCharacters     Int                 @default(0)
+  sttAudioSeconds   Float               @default(0)
+  costUsd           Float               @default(0)
+  jobId             String? // Prisma Job id (nullable; JD extraction runs pre-job-creation)
+  applicationId     String?
+  interviewId       String?
+  jobTitle          String? // denormalized at write time — survives deletion
+  candidateName     String? // denormalized at write time
+  label             String? // fallback label, e.g. JD fileName, "Voice preview"
+  eventId           String              @unique // idempotency: "<logicalId>:<kind>:<provider>:<model>"
+  source            String              @default("live") // live | backfill
+  isTest            Boolean             @default(false)
+  createdAt         DateTime            @default(now())
+  organization      OrganizationDetails @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, feature, createdAt(sort: Desc)])
+  @@index([organizationId, createdAt(sort: Desc)])
   @@index([applicationId])
 }
 

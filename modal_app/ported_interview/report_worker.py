@@ -168,11 +168,18 @@ async def _run(payload: dict) -> None:
     # same CostCalculator rate tables as production and written only to
     # Interview.testBillingMetrics below.
     if not is_test:
+        # Attach per-event ledger context so the super-admin usage view can show
+        # cost per candidate/job. Eval usage is stored in the "interview" blob
+        # bucket (unchanged) but tagged feature "interviewEval" in the ledger.
+        _ctx_base = {"applicationId": app_id, "jobTitle": job_title, "candidateName": candidate_name}
         for u in eval_usages:
+            u["context"] = {**_ctx_base, "ledgerFeature": "interviewEval", "eventId": f"interview:{app_id}:eval"}
             await persist_org_manual_billing_usage(org_id, "interview", u)
         for u in brief_usages:
+            u["context"] = {**_ctx_base, "eventId": f"interview:{app_id}:brief"}
             await persist_org_manual_billing_usage(org_id, "interviewBrief", u)
         for u in llmgen_usages:
+            u["context"] = {**_ctx_base, "eventId": f"interview:{app_id}:llmgen"}
             await persist_org_manual_billing_usage(org_id, "interviewLLMGeneration", u)
 
         try:

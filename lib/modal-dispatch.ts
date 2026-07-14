@@ -263,6 +263,13 @@ export async function processResumeScreeningViaModal(job: Job, token: string | u
 
   const usageExtract = result?.usage_extract ?? result?.usage ?? null;
   const usageScore = result?.usage_score ?? null;
+  // Per-event ledger attribution: this resume belongs to a known application/job/candidate.
+  const resumeCtxBase = {
+    applicationId,
+    jobId: application?.job?.id ?? null,
+    jobTitle: application?.job?.title ?? null,
+    candidateName: parsedName || null,
+  };
   if (usageExtract) {
     await recordOrgBillingUsage({
       orgId,
@@ -273,6 +280,7 @@ export async function processResumeScreeningViaModal(job: Job, token: string | u
         outputTokens: usageExtract.outputTokens || 0,
         cachedInputTokens: usageExtract.cachedInputTokens || 0,
         eventId: `resume-extraction:${job.id}`,
+        context: { ...resumeCtxBase, eventId: `resume-extraction:${job.id}` },
       },
     }).catch((err: unknown) => console.error(`[MODAL-DISPATCH] resumeExtraction billing failed:`, err));
   }
@@ -286,6 +294,7 @@ export async function processResumeScreeningViaModal(job: Job, token: string | u
         outputTokens: usageScore.outputTokens || 0,
         cachedInputTokens: usageScore.cachedInputTokens || 0,
         eventId: `resume-report:${job.id}`,
+        context: { ...resumeCtxBase, eventId: `resume-report:${job.id}` },
       },
     }).catch((err: unknown) => console.error(`[MODAL-DISPATCH] resumeReport billing failed:`, err));
   }
@@ -346,6 +355,7 @@ export async function processResumeFileExtractViaModal(job: Job, token: string |
         outputTokens: extracted.usage.outputTokens || 0,
         cachedInputTokens: extracted.usage.cachedInputTokens || 0,
         eventId: `resume-file-extraction:${job.id}`,
+        context: { label: fileName, eventId: `resume-file-extraction:${job.id}` },
       },
     }).catch((err: unknown) => console.error(`[MODAL-DISPATCH] resumeExtraction (file) billing failed:`, err));
   }
@@ -384,17 +394,31 @@ export async function processJdExtractionViaModal(job: Job, token: string | unde
       console.log(`[MODAL-DISPATCH] JD extraction done, job=${job.id}`);
 
       if (orgId && result?.usage) {
-        await recordOrgBillingUsage({
-          orgId,
-          feature: "jdExtraction",
-          usage: {
-            model: result.usage.model,
-            inputTokens: result.usage.inputTokens || 0,
-            outputTokens: result.usage.outputTokens || 0,
-            cachedInputTokens: result.usage.cachedInputTokens || 0,
-            eventId: `jd-extraction:${job.id}`,
-          },
-        }).catch((err: unknown) => console.error(`[MODAL-DISPATCH] jdExtraction billing failed:`, err));
+        // Bill JD extraction HERE (worker) and mark the job billed so the status
+        // poller (app/api/extract/status/[jobId]) sees the flag and skips its own
+        // billing — previously BOTH billed, double-charging the org blob.
+        try {
+          await recordOrgBillingUsage({
+            orgId,
+            feature: "jdExtraction",
+            usage: {
+              model: result.usage.model,
+              inputTokens: result.usage.inputTokens || 0,
+              outputTokens: result.usage.outputTokens || 0,
+              cachedInputTokens: result.usage.cachedInputTokens || 0,
+              eventId: `jd-extraction:${job.id}`,
+              context: { label: fileName ?? null, eventId: `jd-extraction:${job.id}` },
+            },
+          });
+          try {
+            await job.updateData({ ...(job.data as Record<string, unknown>), usageBilled: true, usageBilledAt: new Date().toISOString() });
+          } catch {
+            // Redis unavailable — status poller's own billing (guarded by the same
+            // flag) will bill exactly once instead. Not fatal.
+          }
+        } catch (err: unknown) {
+          console.error(`[MODAL-DISPATCH] jdExtraction billing failed:`, err);
+        }
       }
       return result;
     },

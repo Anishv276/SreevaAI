@@ -92,6 +92,9 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         adminEmail: "", adminPassword: "",
         recordingEnabled: false,
         recordingRetentionDays: "",
+        planPriceUsd: "",
+        billingCycle: "Monthly",
+        nextBillingDate: "",
     });
     useEffect(() => {
         const fetchOrg = async () => {
@@ -109,6 +112,9 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                     adminPassword: "",
                     recordingEnabled: data.recordingEnabled === true && data.recordingRetentionDays != null,
                     recordingRetentionDays: data.recordingRetentionDays == null ? "" : String(data.recordingRetentionDays),
+                    planPriceUsd: data.planPriceUsd == null ? "" : String(data.planPriceUsd),
+                    billingCycle: data.billingCycle || "Monthly",
+                    nextBillingDate: data.nextBillingDate ? String(data.nextBillingDate).slice(0, 10) : "",
                 });
                 setBillingSnapshot({
                     totalInterviewsAllowed: Number(data.totalInterviewsAllowed || 0),
@@ -144,6 +150,9 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                     maxConcurrentSlots: Number(form.maxConcurrentSlots || 5),
                     totalInterviewsAllowed: Math.max(0, Number(totalInterviewsAllowedInput) || 0),
                     interviewQuotaTopUp: Math.max(0, Number(interviewTopUpInput) || 0),
+                    planPriceUsd: form.planPriceUsd === "" ? null : Number(form.planPriceUsd),
+                    billingCycle: form.billingCycle || null,
+                    nextBillingDate: form.nextBillingDate || null,
                 }),
             });
             if (!res.ok) throw new Error("Failed to update records");
@@ -279,6 +288,53 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                             </div>
                             <p className="text-[11px] font-medium text-gray-500 leading-relaxed">
                                 Use <span className="font-black text-gray-700">Total Interviews Allocated</span> to set the exact quota. Use <span className="font-black text-gray-700">Top-Up Interviews</span> only to add more on top of that total.
+                            </p>
+                        </div>
+                        <div className="rounded-2xl border border-gray-100 bg-white p-5 space-y-4">
+                            <p className="text-[10px] font-semibold uppercase tracking-widest text-violet-600">Subscription</p>
+                            <div className="grid gap-4 md:grid-cols-3">
+                                <PremiumInput
+                                    label="Plan Price (USD)"
+                                    icon={Coins}
+                                    type="number"
+                                    min="0"
+                                    required={false}
+                                    value={form.planPriceUsd}
+                                    onChange={(e: any) => setForm(p => ({ ...p, planPriceUsd: e.target.value }))}
+                                    placeholder="699"
+                                />
+                                <div className="space-y-2">
+                                    <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
+                                        <Layers className="h-3 w-3 text-[#7C3AED]" />
+                                        Billing Cycle
+                                    </label>
+                                    <div className="flex items-center gap-2 rounded-2xl border border-gray-100 bg-gray-50 p-2">
+                                        {["Monthly", "Yearly"].map((c) => (
+                                            <button
+                                                key={c}
+                                                type="button"
+                                                onClick={() => setForm(p => ({ ...p, billingCycle: c }))}
+                                                className={cn(
+                                                    "rounded-xl px-4 py-2 text-[11px] font-black uppercase tracking-widest transition",
+                                                    form.billingCycle === c ? "bg-white text-[#7C3AED] shadow-sm" : "text-gray-400 hover:text-gray-700"
+                                                )}
+                                            >
+                                                {c}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <PremiumInput
+                                    label="Next Billing Date"
+                                    icon={Clock}
+                                    type="date"
+                                    required={false}
+                                    value={form.nextBillingDate}
+                                    onChange={(e: any) => setForm(p => ({ ...p, nextBillingDate: e.target.value }))}
+                                />
+                            </div>
+                            <p className="text-[11px] font-medium text-gray-500 leading-relaxed">
+                                Shown on the org&apos;s usage &amp; billing card. Leave blank to fall back to synthesized defaults.
                             </p>
                         </div>
                     </div>

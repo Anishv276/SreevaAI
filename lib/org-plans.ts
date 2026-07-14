@@ -53,3 +53,23 @@ export function formatOrgPlan(plan?: string | null): string {
   if (normalized) return PLAN_LABELS[normalized];
   return String(plan || "").trim() || "";
 }
+
+/**
+ * Synthesized plan billing values used as a FALLBACK when an org has no stored
+ * planPriceUsd / billingCycle / nextBillingDate (rows predating those columns).
+ * Mirrors the historical behaviour of app/api/super-admin/billing/route.ts and
+ * the backfill in the add_usage_event_ledger migration, so stored and
+ * synthesized values reconcile. `now` is injectable for testability.
+ */
+export function synthesizedPlanBilling(
+  billingPlan?: string | null,
+  now: Date = new Date()
+): { priceUsd: number; billingCycle: string; nextBillingDate: Date } {
+  const isScale = String(billingPlan || "").toLowerCase().includes("scale")
+    || normalizeOrgPlan(billingPlan) === "BUSINESS";
+  return {
+    priceUsd: isScale ? 699 : 0,
+    billingCycle: "Monthly",
+    nextBillingDate: new Date(now.getFullYear(), now.getMonth() + 1, 1),
+  };
+}

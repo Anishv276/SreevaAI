@@ -90,6 +90,10 @@ export async function GET(
                                 usage: {
                                     ...result.usage,
                                     eventId: `jd-extraction:${jobId}`,
+                                    context: {
+                                        label: (job.data as Record<string, unknown> | undefined)?.fileName as string ?? null,
+                                        eventId: `jd-extraction:${jobId}`,
+                                    },
                                 },
                             });
                         } catch (billingErr) {

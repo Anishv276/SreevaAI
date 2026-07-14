@@ -4478,6 +4478,11 @@ async def entrypoint(ctx: JobContext):
         plugin_tts_characters=billable_tts_characters,
         plugin_tts_audio_seconds=plugin_tts_audio_seconds,
         plugin_stt_audio_seconds=plugin_stt_audio_seconds,
+        # Per-event ledger attribution for interviewSession STT/TTS rows.
+        app_id=app_id,
+        candidate_name=candidate_name,
+        job_title=job_title,
+        is_test=_is_test_session,
     )
     # AI Scorecard + billing snapshot + debug PDF -- handed off to the durable
     # Node/BullMQ worker (interview-report queue -> report_worker.py) instead of

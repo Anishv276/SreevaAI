@@ -297,7 +297,14 @@ class BriefPipeline:
         )
         if row.orgId:
             try:
+                _brief_ctx = {
+                    "applicationId": row.applicationId,
+                    "candidateName": row.fullName,
+                    "jobTitle": row.job_title,
+                    "eventId": f"brief:{row.applicationId}",
+                }
                 for u in _brief_usages:
+                    u["context"] = _brief_ctx
                     await record_manual_usage(row.orgId, "interviewBrief", u)
                 await flush_billing(row.orgId)
             except Exception as bill_err:

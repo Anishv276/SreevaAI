@@ -13,6 +13,22 @@ export type BillingFeature =
   | "resumeReport"
   | "interviewReport";
 
+// Optional ledger-context envelope. Rides inside the usage payload and is
+// consumed by billing.py's LedgerWriter to attribute per-event UsageEvent rows
+// (job/candidate names, idempotency eventId, ledgerFeature override). Older
+// billing.py deployments simply ignore it, so it is safe across deploy skew.
+type BillingContext = {
+  eventId?: string | null;
+  jobId?: string | null;
+  applicationId?: string | null;
+  interviewId?: string | null;
+  jobTitle?: string | null;
+  candidateName?: string | null;
+  label?: string | null;
+  ledgerFeature?: string | null;
+  source?: "live" | "backfill" | null;
+};
+
 type BillingUsage = {
   model?: string | null;
   inputTokens?: number;
@@ -29,6 +45,7 @@ type BillingUsage = {
   sttModel?: string | null;
   eventId?: string | null;
   recordedAt?: string | null;
+  context?: BillingContext;
 };
 
 function hasBillableUsage(usage: BillingUsage) {

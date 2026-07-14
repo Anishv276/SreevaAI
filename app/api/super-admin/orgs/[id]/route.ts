@@ -91,6 +91,9 @@ export async function PATCH(
             totalInterviewsAllowed,
             interviewQuotaTopUp,
             maxConcurrentSlots,
+            planPriceUsd,
+            billingCycle,
+            nextBillingDate,
         } = body;
         const parsedInterviewQuotaTopUp =
             interviewQuotaTopUp !== undefined ? Math.max(0, Math.round(Number(interviewQuotaTopUp) || 0)) : undefined;
@@ -219,6 +222,37 @@ export async function PATCH(
         }
         if (shouldUpdateInterviewQuotaTotal) {
             updateData.totalInterviewsAllowed = parsedInterviewQuotaTotal;
+        }
+        // -- Subscription display fields (maintained manually by super admin) ----
+        if (planPriceUsd !== undefined) {
+            const price = Number(planPriceUsd);
+            if (planPriceUsd === null || planPriceUsd === "") {
+                updateData.planPriceUsd = null;
+            } else if (!Number.isFinite(price) || price < 0) {
+                return NextResponse.json({ error: "planPriceUsd must be a non-negative number" }, { status: 400 });
+            } else {
+                updateData.planPriceUsd = price;
+            }
+        }
+        if (billingCycle !== undefined) {
+            if (billingCycle === null || billingCycle === "") {
+                updateData.billingCycle = null;
+            } else if (!["Monthly", "Yearly"].includes(String(billingCycle))) {
+                return NextResponse.json({ error: "billingCycle must be 'Monthly' or 'Yearly'" }, { status: 400 });
+            } else {
+                updateData.billingCycle = String(billingCycle);
+            }
+        }
+        if (nextBillingDate !== undefined) {
+            if (nextBillingDate === null || nextBillingDate === "") {
+                updateData.nextBillingDate = null;
+            } else {
+                const d = new Date(nextBillingDate);
+                if (isNaN(d.getTime())) {
+                    return NextResponse.json({ error: "nextBillingDate must be a valid date" }, { status: 400 });
+                }
+                updateData.nextBillingDate = d;
+            }
         }
         Object.assign(
             updateData,

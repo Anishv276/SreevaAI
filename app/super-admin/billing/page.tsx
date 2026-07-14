@@ -1,10 +1,13 @@
 "use client";
-import React from "react";
+import React, { Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Building2, Search, RefreshCw, ChevronRight } from "lucide-react";
-import { BillingContent } from "@/components/admin/billing/billing-content";
 import { formatOrgPlan } from "@/lib/org-plans";
 import { formatLandingPackageForOrgPlan } from "@/lib/landing-packages";
 import { cn } from "@/lib/utils";
+import { OrgUsagePanel } from "@/components/super-admin/usage/org-usage-panel";
+import { CurrencyToggle, useCurrency } from "@/components/super-admin/usage/currency";
+
 type OrgSummary = {
   id: string;
   name: string;
@@ -14,12 +17,19 @@ type OrgSummary = {
   totalInterviewsAllowed: number;
   totalInterviewsUsed: number;
 };
-export default function SuperAdminBillingPage() {
+
+function SuperAdminBillingInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const orgIdParam = searchParams.get("orgId");
+
   const [orgs, setOrgs] = React.useState<OrgSummary[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [search, setSearch] = React.useState("");
-  const [selectedOrgId, setSelectedOrgId] = React.useState<string | null>(null);
+  const [selectedOrgId, setSelectedOrgId] = React.useState<string | null>(orgIdParam);
+  const { currency, setCurrency, fmt } = useCurrency();
+
   React.useEffect(() => {
     let cancelled = false;
     const loadOrgs = async () => {
@@ -27,14 +37,12 @@ export default function SuperAdminBillingPage() {
         setLoading(true);
         setError(null);
         const res = await fetch("/api/super-admin/billing/orgs", { cache: "no-store" });
-        if (!res.ok) {
-          throw new Error(`Failed to load organizations (${res.status})`);
-        }
+        if (!res.ok) throw new Error(`Failed to load organizations (${res.status})`);
         const data = await res.json();
         const rows: OrgSummary[] = Array.isArray(data.orgs) ? data.orgs : [];
         if (cancelled) return;
         setOrgs(rows);
-        setSelectedOrgId((curr) => curr || rows[0]?.id || null);
+        setSelectedOrgId((curr) => curr || orgIdParam || rows[0]?.id || null);
       } catch (err) {
         if (cancelled) return;
         console.error("[SuperAdminBillingPage] Failed to load orgs:", err);
@@ -48,7 +56,18 @@ export default function SuperAdminBillingPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [orgIdParam]);
+
+  // Keep the URL's orgId in sync with the selected org (preserving the deep link).
+  const selectOrg = React.useCallback(
+    (id: string) => {
+      setSelectedOrgId(id);
+      // Reset section/sub when switching orgs so the new org opens at the overview.
+      router.replace(`/super-admin/billing?orgId=${encodeURIComponent(id)}`, { scroll: false });
+    },
+    [router]
+  );
+
   const filteredOrgs = React.useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return orgs;
@@ -56,35 +75,28 @@ export default function SuperAdminBillingPage() {
       [org.name, org.slug, formatOrgPlan(org.plan), org.status].join(" ").toLowerCase().includes(q)
     );
   }, [orgs, search]);
+
   React.useEffect(() => {
-    if (!selectedOrgId && filteredOrgs[0]?.id) {
-      setSelectedOrgId(filteredOrgs[0].id);
-    }
+    if (!selectedOrgId && filteredOrgs[0]?.id) setSelectedOrgId(filteredOrgs[0].id);
   }, [filteredOrgs, selectedOrgId]);
+
   const selectedOrg = React.useMemo(
     () => orgs.find((org) => org.id === selectedOrgId) || null,
     [orgs, selectedOrgId]
   );
-  const creditsUrl = selectedOrgId ? `/api/super-admin/billing?orgId=${encodeURIComponent(selectedOrgId)}&` : "/api/super-admin/billing?";
-  const historyUrl = selectedOrgId
-    ? `/api/super-admin/billing/history?orgId=${encodeURIComponent(selectedOrgId)}&`
-    : "/api/super-admin/billing/history?";
-  const interviewRemaining = selectedOrg ? Math.max(0, selectedOrg.totalInterviewsAllowed - selectedOrg.totalInterviewsUsed) : 0;
+
   return (
     <div className="space-y-6 pb-10 animate-in fade-in duration-500">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Billing</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Select an organization and view its credits and usage</p>
+          <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Usage & Billing</h1>
+          <p className="text-sm text-gray-400 mt-0.5">Select an organization to view its detailed usage insights</p>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
+          <CurrencyToggle currency={currency} setCurrency={setCurrency} />
           <div className="rounded-xl bg-white px-4 py-2.5" style={{ border: "1px solid #E9E7FF" }}>
             <div className="text-[10px] font-medium uppercase tracking-wider text-gray-400">Selected org</div>
             <div className="text-sm font-semibold text-gray-900">{selectedOrg?.name || "None selected"}</div>
-          </div>
-          <div className="rounded-xl bg-white px-4 py-2.5" style={{ border: "1px solid #E9E7FF" }}>
-            <div className="text-[10px] font-medium uppercase tracking-wider text-gray-400">Remaining interviews</div>
-            <div className="text-sm font-semibold text-gray-900">{interviewRemaining.toFixed(0)}</div>
           </div>
         </div>
       </div>
@@ -129,7 +141,7 @@ export default function SuperAdminBillingPage() {
                     <button
                       key={org.id}
                       type="button"
-                      onClick={() => setSelectedOrgId(org.id)}
+                      onClick={() => selectOrg(org.id)}
                       className={cn(
                         "w-full rounded-xl border px-2 py-2 text-left transition-all duration-200 group",
                         isActive
@@ -174,23 +186,23 @@ export default function SuperAdminBillingPage() {
           </div>
         </aside>
         <section className="min-w-0">
-          {selectedOrg ? (
-            <BillingContent
-              creditsEndpoint={creditsUrl}
-              historyEndpoint={historyUrl}
-              orgName={selectedOrg.name}
-              orgPlanLabel={formatLandingPackageForOrgPlan(selectedOrg.plan) || "Starter"}
-              showRechargeHelp={false}
-              showCreditInternals={true}
-              showCreditsUsedInHistory={true}
-            />
+          {selectedOrgId ? (
+            <OrgUsagePanel key={selectedOrgId} orgId={selectedOrgId} fmt={fmt} />
           ) : (
             <div className="rounded-2xl border border-gray-200 bg-white p-12 text-center text-gray-500">
-              Select an organization to view billing.
+              Select an organization to view usage.
             </div>
           )}
         </section>
       </div>
     </div>
+  );
+}
+
+export default function SuperAdminBillingPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-sm text-gray-400">Loading…</div>}>
+      <SuperAdminBillingInner />
+    </Suspense>
   );
 }

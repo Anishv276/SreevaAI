@@ -16,6 +16,7 @@ async function recordVoicePreviewUsage(input: {
   if (!orgId) return;
   const characters = input.text.length;
   if (characters <= 0) return;
+  const eventId = `voice-preview:${orgId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
   try {
     await recordOrgBillingUsage({
       orgId,
@@ -25,7 +26,12 @@ async function recordVoicePreviewUsage(input: {
         ttsProvider: input.provider,
         ttsModel: input.model,
         ttsCharacters: characters,
-        eventId: `voice-preview:${orgId}:${Date.now()}:${Math.random().toString(36).slice(2)}`,
+        eventId,
+        context: {
+          eventId,
+          ledgerFeature: "voicePreview",
+          label: "Voice preview",
+        },
       },
     });
   } catch (error) {

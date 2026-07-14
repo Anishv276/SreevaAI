@@ -1651,7 +1651,14 @@ async def _node_llm_calls(state: ReportState) -> dict:
     # doesn't take down the entire report and cause a silent "[REPORT] Failed".
     # Test sessions route cost to testBillingMetrics instead of the org's real
     # usage bucket, so testing spend never shows up in a customer's billing.
+    _report_ctx = {
+        "applicationId": app_id,
+        "candidateName": state.get("candidate_name", ""),
+        "jobTitle": job_title,
+        "eventId": f"interview:{app_id}:report",
+    }
     def _bill(usage: dict) -> Any:
+        usage = {**usage, "context": _report_ctx}
         return (
             _persist_test_report_billing(app_id, usage)
             if is_test
@@ -2108,7 +2115,14 @@ async def generate_interview_summary(
         )
 
         if org_id or is_test:
+            _summary_ctx = {
+                "applicationId": app_id,
+                "candidateName": candidate_name,
+                "jobTitle": job_title,
+                "eventId": f"interview:{app_id}:summary",
+            }
             def _bill(usage: dict) -> Any:
+                usage = {**usage, "context": _summary_ctx}
                 return (
                     _persist_test_report_billing(app_id, usage)
                     if is_test
