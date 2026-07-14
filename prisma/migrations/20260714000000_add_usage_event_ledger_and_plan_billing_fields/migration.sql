@@ -5,8 +5,12 @@ ALTER TABLE "OrganizationDetails" ADD COLUMN     "nextBillingDate" TIMESTAMP(3);
 
 -- Backfill plan fields to match the values the billing API previously synthesized on the fly
 -- (see app/api/super-admin/billing/route.ts). Only fills rows that are still NULL.
+-- NOTE: matches on the "BUSINESS" plan id (lib/org-plans.ts), not the "scale" text --
+-- the old API's `billingPlan.toLowerCase().includes("scale")` check only ever matched
+-- because "scale" happened to appear in one legacy plan string; it silently missed
+-- BUSINESS-plan orgs stored under their canonical id. Match the id directly here.
 UPDATE "OrganizationDetails" SET
-    "planPriceUsd"    = CASE WHEN lower("billingPlan") LIKE '%scale%' THEN 699 ELSE 0 END,
+    "planPriceUsd"    = CASE WHEN "billingPlan" = 'BUSINESS' OR lower("billingPlan") LIKE '%scale%' THEN 699 ELSE 0 END,
     "billingCycle"    = 'Monthly',
     "nextBillingDate" = date_trunc('month', now()) + interval '1 month'
 WHERE "planPriceUsd" IS NULL;
