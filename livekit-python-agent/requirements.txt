@@ -5,6 +5,7 @@ livekit-plugins-deepgram==1.6.4
 livekit-plugins-cartesia==1.6.4
 livekit-plugins-elevenlabs==1.6.4
 livekit-plugins-sarvam==1.6.4
+livekit-plugins-silero==1.6.4
 
 # ── Other ──────────────────────────────────────────────────────────────────────
 fastapi>=0.129.2

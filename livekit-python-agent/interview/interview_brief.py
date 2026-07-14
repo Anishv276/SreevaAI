@@ -407,7 +407,6 @@ async def _understand_role(
             {"role": "system", "content": _ROLE_UNDERSTANDING_SYSTEM},
             {"role": "user", "content": user_prompt},
         ],
-        timeout=15,
     )
 
     if usage_sink is not None and response.usage is not None:
@@ -491,7 +490,6 @@ async def _topup_role_topics(
                     {"role": "system", "content": _TOPUP_SYSTEM},
                     {"role": "user", "content": user_prompt},
                 ],
-                timeout=20,
             )
         except Exception:
             logger.warning("[BRIEF] topup call failed, shipping brief with fewer topics", exc_info=True)
@@ -576,7 +574,6 @@ async def generate_interview_brief(
                 {"role": "system", "content": _BRIEF_SYSTEM},
                 {"role": "user", "content": user_prompt},
             ],
-            timeout=30,
         )
 
         chunks: list[str] = []

@@ -79,7 +79,7 @@ def _check_api_key(x_api_key: str | None) -> None:
         raise HTTPException(status_code=401, detail="invalid or missing API key")
 
 
-@app.function(image=image, secrets=secrets, timeout=180, max_containers=100)
+@app.function(image=image, secrets=secrets, timeout=600, max_containers=100)
 def extract_resume(file_bytes: bytes, file_name: str, model: str) -> dict:
     """Mirrors service.py's /extract/resume — extraction only, no scoring."""
     import sys
@@ -97,7 +97,7 @@ def extract_resume(file_bytes: bytes, file_name: str, model: str) -> dict:
     return result
 
 
-@app.function(image=image, secrets=secrets, timeout=120, max_containers=100)
+@app.function(image=image, secrets=secrets, timeout=600, max_containers=100)
 def extract_jd(file_bytes: bytes, file_name: str, model: str) -> dict:
     """Mirrors service.py's /extract/jd."""
     import sys
@@ -115,7 +115,7 @@ def extract_jd(file_bytes: bytes, file_name: str, model: str) -> dict:
     return result
 
 
-@app.function(image=image, secrets=secrets, timeout=180, max_containers=100)
+@app.function(image=image, secrets=secrets, timeout=600, max_containers=100)
 def extract_resume_and_score(
     file_bytes: bytes,
     file_name: str,
@@ -154,7 +154,7 @@ from fastapi import UploadFile, Form, Header, File
 # FastAPI parameter types (UploadFile/Form/Header) work exactly as they would
 # in a normal FastAPI app -- no extra wrapping needed.
 # ---------------------------------------------------------------------------
-@app.function(image=image, secrets=secrets, timeout=180)
+@app.function(image=image, secrets=secrets, timeout=600)
 @modal.fastapi_endpoint(method="POST", docs=True)
 async def extract_resume_endpoint(
     file: UploadFile = File(...),
@@ -166,7 +166,7 @@ async def extract_resume_endpoint(
     return await extract_resume.remote.aio(data, file.filename or "resume.pdf", model)
 
 
-@app.function(image=image, secrets=secrets, timeout=120)
+@app.function(image=image, secrets=secrets, timeout=600)
 @modal.fastapi_endpoint(method="POST", docs=True)
 async def extract_jd_endpoint(
     file: UploadFile = File(...),
@@ -178,7 +178,7 @@ async def extract_jd_endpoint(
     return await extract_jd.remote.aio(data, file.filename or "jd.pdf", model)
 
 
-@app.function(image=image, secrets=secrets, timeout=180)
+@app.function(image=image, secrets=secrets, timeout=600)
 @modal.fastapi_endpoint(method="POST", docs=True)
 async def extract_resume_and_score_endpoint(
     file: UploadFile = File(...),

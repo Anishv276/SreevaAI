@@ -103,7 +103,7 @@ secrets = [
 ]
 
 
-@app.function(image=image, secrets=secrets, timeout=400, max_containers=100)
+@app.function(image=image, secrets=secrets, timeout=600, max_containers=100)
 def generate_report(payload: dict) -> dict:
     """Mirrors report_worker.py's _run() -- same payload shape, piped via
     function argument instead of stdin JSON."""
@@ -135,7 +135,7 @@ def _check_api_key(x_api_key: str | None) -> None:
         raise HTTPException(status_code=401, detail="invalid or missing API key")
 
 
-@app.function(image=image, secrets=secrets, timeout=400)
+@app.function(image=image, secrets=secrets, timeout=600)
 @modal.fastapi_endpoint(method="POST", docs=True)
 async def generate_report_endpoint(
     payload: dict,

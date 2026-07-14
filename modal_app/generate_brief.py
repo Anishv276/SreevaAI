@@ -96,7 +96,7 @@ secrets = [
 ]
 
 
-@app.function(image=image, secrets=secrets, timeout=180, max_containers=100)
+@app.function(image=image, secrets=secrets, timeout=600, max_containers=100)
 def generate_brief(application_id: str) -> dict:
     """Mirrors generate_brief.py's _main() -- fetch, classify, LLM call, persist."""
     import asyncio
@@ -131,7 +131,7 @@ def _check_api_key(x_api_key: str | None) -> None:
         raise HTTPException(status_code=401, detail="invalid or missing API key")
 
 
-@app.function(image=image, secrets=secrets, timeout=180)
+@app.function(image=image, secrets=secrets, timeout=600)
 @modal.fastapi_endpoint(method="POST", docs=True)
 async def generate_brief_endpoint(
     body: GenerateBriefRequest,

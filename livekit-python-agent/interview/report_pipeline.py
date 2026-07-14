@@ -270,10 +270,10 @@ class LLMCallSpec:
     system:          str
     user:            str
     max_tokens:      int
-    timeout:         float
     response_format: dict
     call_type:       str
     _LLM_DEFAULT:    str
+    timeout:         float | None = None  # None = no timeout, let LLM take as long as needed
     temperature:     float       = 0.0
     org_id:          str        = ""
     app_id:          str        = ""
@@ -338,7 +338,15 @@ class ReportLLMClient:
                 if spec.prediction:
                     kwargs["prediction"] = spec.prediction
 
-                async with asyncio.timeout(spec.timeout):
+                if spec.timeout is not None:
+                    async with asyncio.timeout(spec.timeout):
+                        stream = await self.client.chat.completions.create(**kwargs)
+                        async for chunk in stream:  # type: ignore
+                            if chunk.choices and chunk.choices[0].delta.content:
+                                chunks.append(chunk.choices[0].delta.content)
+                            if getattr(chunk, "usage", None):
+                                usage_data = chunk.usage
+                else:
                     stream = await self.client.chat.completions.create(**kwargs)
                     async for chunk in stream:  # type: ignore
                         if chunk.choices and chunk.choices[0].delta.content:
@@ -530,7 +538,6 @@ class BehavioralAnalyzer:
             system=self._SYSTEM,
             user=user,
             max_tokens=800,
-            timeout=45.0,
             response_format=_BEHAVIORAL_JSON_SCHEMA,
             call_type="behavioral_analysis",
             temperature=0.2,
@@ -719,7 +726,6 @@ class AnswerIntegrityAnalyzer:
             system=self._SYSTEM,
             user=user,
             max_tokens=400,
-            timeout=45.0,
             response_format=_ANSWER_INTEGRITY_JSON_SCHEMA,
             call_type="report_answer_integrity",
             org_id=org_id,
@@ -1486,7 +1492,6 @@ async def _node_llm_calls(state: ReportState) -> dict:
                 system=_EVAL_SYSTEM,
                 user=eval_user,
                 max_tokens=1100,
-                timeout=55.0,
                 response_format=_EVAL_JSON_SCHEMA,
                 call_type="report_eval",
                 org_id=org_id,
@@ -1497,7 +1502,6 @@ async def _node_llm_calls(state: ReportState) -> dict:
                 system=skills_system,
                 user=skills_user,
                 max_tokens=700,
-                timeout=45.0,
                 response_format=_SKILLS_JSON_SCHEMA,
                 call_type="report_skills",
                 org_id=org_id,
@@ -1942,7 +1946,6 @@ async def generate_interview_summary(
                 system=_SUMMARY_SYSTEM,
                 user=shared_user,
                 max_tokens=500,
-                timeout=60.0,
                 response_format={"type": "text"},
                 temperature=0.1,
                 call_type="report_summary",
@@ -1954,7 +1957,6 @@ async def generate_interview_summary(
                 system=_VERDICT_SYSTEM,
                 user=shared_user,
                 max_tokens=250,
-                timeout=60.0,
                 response_format=_VERDICT_JSON_SCHEMA,
                 temperature=0.1,
                 call_type="report_verdict",

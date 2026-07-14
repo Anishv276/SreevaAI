@@ -116,43 +116,37 @@ async def _run(payload: dict) -> None:
     scores_context = None
     logger.info("[REPORT] Generating with answer_scores=%d turns", len(answer_scores))
     try:
-        async with asyncio.timeout(300):
-            scores_context = await generate_interview_report(
-                app_id,
-                transcript_lines,
-                answer_scores,
-                job_title,
-                llmInterviewReport=payload.get("llmInterviewReport", ""),
-                proctoring_data=payload.get("proctoringData") or {},
-                org_id=org_id,
-                jd_json=payload.get("jdJson"),
-                resume_json=payload.get("resumeJson"),
-                topic_records=list(topic_records),
-                candidate_name=candidate_name,
-                answer_integrity_enabled=bool(payload.get("answerIntegrityEnabled")),
-                is_test=is_test,
-            )
+        scores_context = await generate_interview_report(
+            app_id,
+            transcript_lines,
+            answer_scores,
+            job_title,
+            llmInterviewReport=payload.get("llmInterviewReport", ""),
+            proctoring_data=payload.get("proctoringData") or {},
+            org_id=org_id,
+            jd_json=payload.get("jdJson"),
+            resume_json=payload.get("resumeJson"),
+            topic_records=list(topic_records),
+            candidate_name=candidate_name,
+            answer_integrity_enabled=bool(payload.get("answerIntegrityEnabled")),
+            is_test=is_test,
+        )
         logger.info("[REPORT] Completed. scores_context keys=%s",
                     list(scores_context.keys()) if scores_context else None)
-    except asyncio.TimeoutError:
-        logger.warning(f"[REPORT] Timed out for {app_id} after 5 min")
     except Exception as e:
         logger.error(f"[REPORT] Failed for {app_id}: {e}")
 
     try:
-        async with asyncio.timeout(60):
-            await generate_interview_summary(
-                app_id,
-                transcript_lines,
-                job_title,
-                llmInterviewReport=payload.get("llmInterviewReport", ""),
-                org_id=org_id,
-                scores_context=scores_context,
-                candidate_name=candidate_name,
-                is_test=is_test,
-            )
-    except asyncio.TimeoutError:
-        logger.warning(f"[SUMMARY] Timed out for {app_id} after 60s")
+        await generate_interview_summary(
+            app_id,
+            transcript_lines,
+            job_title,
+            llmInterviewReport=payload.get("llmInterviewReport", ""),
+            org_id=org_id,
+            scores_context=scores_context,
+            candidate_name=candidate_name,
+            is_test=is_test,
+        )
     except Exception as e:
         logger.error(f"[SUMMARY] Failed for {app_id}: {e}")
 
