@@ -56,19 +56,26 @@ class AgentConfig:
 
     def __init__(self) -> None:
         # STT Configuration -- stt_model comes from org DB, not env
-        # eot_threshold raised 0.70 -> 0.80 and eot_timeout_ms raised 3500 -> 6000: Flux
-        # was firing native end-of-turn mid-answer on ordinary thinking pauses (candidates
-        # pausing ~4-8s between sentences), splitting one answer into two separate turns.
-        # This tolerates a longer natural pause before forcing EOT, and requires higher
-        # confidence before committing early, without waiting so long every real
-        # answer-end feels unresponsive.
-        self._flux_eot_threshold = float(os.environ.get("FLUX_EOT_THRESHOLD", "0.80"))
+        # eot_threshold: Deepgram's own docs (developers.deepgram.com/docs/flux/configuration)
+        # give three use-case tiers: Natural conversation 0.7/5000ms, Low-Latency real-time
+        # agents 0.7/6000ms, High-Reliability (OTP/legal) 0.85/8000ms. This was previously
+        # raised to 0.80 to stop Flux cutting off candidates mid-thinking-pause, but that
+        # traded into the opposite complaint -- turn-end detection feeling slow/laggy.
+        # 0.7 matches Deepgram's own Low-Latency tier (real-time conversational agent,
+        # not sensitive-data capture), keeping eot_timeout_ms's longer window (below) to
+        # still tolerate a natural thinking pause without needing a higher confidence bar.
+        self._flux_eot_threshold = float(os.environ.get("FLUX_EOT_THRESHOLD", "0.7"))
         self._flux_eager_eot_threshold_str = os.environ.get("FLUX_EAGER_EOT_THRESHOLD", "").strip()
         self._flux_eager_eot_threshold = (
             float(self._flux_eager_eot_threshold_str)
             if self._flux_eager_eot_threshold_str and self._flux_eager_eot_threshold_str.lower() != "none"
             else None
         )
+        # eot_timeout_ms: kept at Deepgram's own Low-Latency-tier value (6000ms) -- this is
+        # the hard ceiling before Flux forces a turn-end regardless of confidence, so it's
+        # what tolerates a candidate's natural thinking pause. Lowering threshold (above)
+        # should speed up detection on clearly-finished speech without needing to shrink
+        # this ceiling and risk reintroducing the original mid-answer cutoff bug.
         self._flux_eot_timeout_ms = int(os.environ.get("FLUX_EOT_TIMEOUT_MS", "6000"))
 
         # LLM models are now per-org from DB (set via Super Admin → AI Models).
@@ -197,16 +204,6 @@ class MutableStateManager:
         events = self._pending_manual_billing.pop(org_id, [])
         return events
 
-    def has_pending_billing(self, org_id: str) -> bool:
-        """Check if there are pending billing events for an org."""
-        return org_id in self._pending_manual_billing and len(self._pending_manual_billing[org_id]) > 0
-
-    def clear_all(self) -> None:
-        """Clear all mutable state (for testing/shutdown)."""
-        self._db_pool = None
-        self._db_pool_init_task = None
-        self._pending_manual_billing.clear()
-
 
 # ===============================================================================
 # SECTION 3 -- TextSanitizer (Centralized Text Cleaning)
@@ -272,19 +269,7 @@ class TextSanitizer:
     # Trailing fillers at end of turn
     _TRAILING_FILLER_RE = re.compile(r"(?:[,.\s]+)(?:um+|uh+)\s*[.!?]*\s*$", re.I)
 
-    # ALL-CAPS acronym pattern: 2–6 uppercase letters (whole word), optionally followed
-    # by a lowercase 's' for plurals (e.g. APIs, LLMs). Single-letter words (I, A) and
-    # Roman numerals are excluded via the negative lookbehind/lookahead on length.
-    # We space out the letters so Sarvam says "A P I" not "API" or "api".
-    # Words in _ACRONYM_PASS_THROUGH are already handled correctly by Sarvam's engine
-    # and must not be letter-spaced (they sound like real words even in caps).
-    _ACRONYM_PASS_THROUGH: frozenset[str] = frozenset({
-        # Real words that happen to be all-caps sometimes
-        "OK", "NO", "GO", "DO", "IS", "IT", "IN", "ON", "UP", "US",
-        # Sarvam handles these correctly via enable_preprocessing
-        "AI", "ML", "CV",
-    })
-    # Matches ALL-CAPS words of 2–6 letters, optionally plural (APIs, LLMs)
+    # Matches ALL-CAPS words of 2–6 letters, optionally plural (APIs, LLMs).
     _CAPS_ACRONYM_RE: re.Pattern = re.compile(r"\b([A-Z]{2,6})(s?)\b")
 
     # CamelCase splitter: insert a space before each uppercase letter that follows a
@@ -292,44 +277,41 @@ class TextSanitizer:
     # This is only applied to CamelCase words (not ALL-CAPS, which are handled above).
     _CAMEL_RE: re.Pattern = re.compile(r"([a-z])([A-Z])")
 
-    # Known words that look like acronyms but Sarvam reads correctly -- leave them alone.
-    _SARVAM_READS_OK: frozenset[str] = frozenset({
+    # ponytail: positive allowlist only — an ALL-CAPS word is letter-spaced ONLY if it's
+    # a known acronym here. Everything else (MINUTES, STOP, HELLO, any capitalized
+    # common word the LLM emits) is left untouched. This is the inverse of the old
+    # "expand everything, allowlist the exceptions" design, which mispronounced any
+    # capitalized English word not yet added to an exceptions list (the "m-i-n-u-t-e-s"
+    # bug). Add new real acronyms here as they come up; forgetting to add one just means
+    # Sarvam reads it as a word (safe), not that it gets spelled out (broken).
+    _KNOWN_ACRONYMS: frozenset[str] = frozenset({
+        "RAG", "LLM", "LLMs", "NLP", "API", "APIs", "CICD",
         "SQL", "AWS", "GCP", "GIT", "SSH", "PDF", "URL", "HTTP", "HTML", "CSS",
         "JSON", "YAML", "REST", "CRUD", "CORS", "UUID", "GPU", "CPU", "RAM",
     })
 
     @staticmethod
     def normalize_for_sarvam(text: str) -> str:
-        """Auto-fix pronunciation for any technical term the LLM writes.
+        """Auto-fix pronunciation for known technical acronyms.
 
-        Two rules applied universally — no static word list needed:
-
-        1. ALL-CAPS acronyms (RAG, LLM, NLP, API, CICD, etc.) get letter-spaced
-           so Sarvam says "R A G" clearly instead of "ragg" or "R-A-G".
-           Words Sarvam already handles correctly are skipped.
+        1. ALL-CAPS acronyms found in _KNOWN_ACRONYMS get letter-spaced so
+           Sarvam says "R A G" clearly instead of "ragg" or "R-A-G". Any other
+           ALL-CAPS word is left as-is (Sarvam reads plain capitalized words fine).
 
         2. CamelCase words (FineTuning, DevOps, LangChain written in-sentence)
            get a space inserted at each case boundary so Sarvam reads them as
            two natural words instead of mashing them together.
-
-        This fires for every candidate's keywords automatically — no dict
-        updates needed when new tech terms appear in future resumes/JDs.
         """
         def _fix_caps(m: re.Match) -> str:
             word = m.group(1)
             plural = m.group(2)  # 's' or ''
-            if word in TextSanitizer._ACRONYM_PASS_THROUGH:
-                return m.group(0)
-            if word in TextSanitizer._SARVAM_READS_OK:
-                return m.group(0)
-            # 2-letter words: Sarvam usually reads fine, only space if truly acronym-like
-            if len(word) == 2:
+            if word not in TextSanitizer._KNOWN_ACRONYMS:
                 return m.group(0)
             # Space out: "RAG" → "R A G", "LLMs" → "L L M s"
             spaced = " ".join(word)
             return (spaced + " " + plural) if plural else spaced
 
-        # Pass 1: fix ALL-CAPS acronyms
+        # Pass 1: fix known ALL-CAPS acronyms
         result = TextSanitizer._CAPS_ACRONYM_RE.sub(_fix_caps, text)
         # Pass 2: split CamelCase (only interior boundaries, not ALL-CAPS runs)
         result = TextSanitizer._CAMEL_RE.sub(r"\1 \2", result)

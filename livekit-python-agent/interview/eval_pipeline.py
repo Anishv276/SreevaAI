@@ -9,7 +9,6 @@ Architecture:
   run_eval_and_build_directive() — orchestrates everything, returns result dict to agent
 """
 from __future__ import annotations
-import asyncio
 import re
 import logging
 from typing import Any, Dict, List, Optional
@@ -335,28 +334,24 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     _topic_importance = current_topic_state.importance if current_topic_state else "HIGH"
 
     try:
-        raw = await asyncio.wait_for(
-            _score_and_capture(
-                candidate_answer=p.answer,
-                last_question=p.question,
-                topic_follow_up_count=_follow_up_count,
-                transcript_lines=p.transcript_lines,
-                client=client,
-                org_id=p.org_id,
-                llm_model=p.llm_model,
-                candidate_band=p.band,
-                active_topic=p.active_topic or "",
-                topic_importance=_topic_importance,
-                topic_tag=p.topic_tag,
-                topic_probe_focus=p.topic_probe_focus,
-                job_title=p.job_title,
-                signals_already_fired=current_topic_state.signals_fired if current_topic_state else [],
-            ),
-            timeout=10.0,
+        raw = await _score_and_capture(
+            candidate_answer=p.answer,
+            last_question=p.question,
+            topic_follow_up_count=_follow_up_count,
+            transcript_lines=p.transcript_lines,
+            client=client,
+            org_id=p.org_id,
+            llm_model=p.llm_model,
+            candidate_band=p.band,
+            active_topic=p.active_topic or "",
+            topic_importance=_topic_importance,
+            topic_tag=p.topic_tag,
+            topic_probe_focus=p.topic_probe_focus,
+            job_title=p.job_title,
+            signals_already_fired=current_topic_state.signals_fired if current_topic_state else [],
         )
-    except (asyncio.TimeoutError, Exception) as ex:
-        logger.error("[EVAL] turn=%d | scoring %s — recovery decision",
-                     p.turn, "timed out" if isinstance(ex, asyncio.TimeoutError) else f"failed: {ex}")
+    except Exception as ex:
+        logger.error("[EVAL] turn=%d | scoring failed: %s — recovery decision", p.turn, ex)
         try:
             await log_llm_error(
                 app_id=p.app_id,
@@ -404,7 +399,9 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         logger.info("[SIGNAL] %s | reason=%r", signal, signal_reason)
 
     # -- Track response signal patterns -----------------------------------------------
-    # If clarification_request fires twice, escalate to MOVE_ON (question is unclear or candidate confused)
+    # If clarification_request fires 3 times in a row, escalate to MOVE_ON (question is
+    # unclear or candidate confused). Below 3, always rephrase -- 2 genuine "didn't catch
+    # that" moments on the same topic is normal and must not skip the topic.
     if current_topic_state and signal == "clarification_request":
         current_topic_state.clarification_request_count += 1
     elif current_topic_state and signal != "clarification_request":
@@ -434,13 +431,13 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     # -- Decision (priority order; response signals override saturation) ----
     # Response signals (pure_denial, clarification_request, etc) fire immediately with forced_action=True.
     # They override saturation logic entirely -- no need to check dry_topic/weak_exit/saturated.
-    # ESCALATION: if clarification_request or rephrase_request fires 2+ times, upgrade to MOVE_ON
+    # ESCALATION: if clarification_request fires 3+ times in a row, upgrade to MOVE_ON
     _escalate_to_move_on = False
     if _forced_response_signal and current_topic_state:
-        if action == "REPHRASE" and current_topic_state.clarification_request_count >= 2:
+        if action == "REPHRASE" and current_topic_state.clarification_request_count >= 3:
             action = "MOVE_ON"
             _escalate_to_move_on = True
-            logger.info("[DECISION] MOVE_ON reason=clarification_escalation (asked 2x) turn=%d", p.turn)
+            logger.info("[DECISION] MOVE_ON reason=clarification_escalation (asked 3x) turn=%d", p.turn)
         else:
             logger.info("[DECISION] %s (forced response signal) reason=%s turn=%d", action, raw.get("reason", "forced"), p.turn)
     elif _forced_response_signal:

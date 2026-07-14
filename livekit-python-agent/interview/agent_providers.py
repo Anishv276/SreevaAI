@@ -35,23 +35,40 @@ _SARVAM_VALID_SPEAKERS = frozenset({
 })
 _PROVIDER_DEFAULTS: dict[str, Any] = {
     "cartesia_speed":          1.0,
-    "sarvam_pace":             1.2,
+    # LiveKit's official Sarvam guide: "Start at 1.0, then tune after listening to
+    # full agent turns." An interviewer reading at 1.2x sounds rushed/impatient --
+    # no interview-specific reason to default faster than natural pace. Per-org DB
+    # override (ctx_data.ttsSpeed) still lets specific orgs tune this if wanted.
+    "sarvam_pace":             1.0,
     # bulbul:v3 -- per Sarvam docs (https://docs.sarvam.ai/api-reference-docs/text-to-speech/stream)
     # 22050 Hz is recommended for streaming (24000 is higher quality but slower to generate)
     "sarvam_v3_sample_rate":   22050,
     "sarvam_v2_sample_rate":   22050,
-    # 64k is optimal for low-latency streaming per Sarvam docs -- 128k adds generation overhead
-    "sarvam_output_bitrate":   "64k",
+    # 128k (LiveKit doc default) over 64k -- an interview call runs 15-20+ minutes
+    # continuously, so sustained audio quality for the whole call matters more here
+    # than shaving latency off the very first chunk. Candidates listen closely to
+    # understand nuanced questions; a lower bitrate persists as a quality cost for
+    # the entire session, not just the opening moment.
+    "sarvam_output_bitrate":   "128k",
     "sarvam_output_codec":     "mp3",
     # min_buffer_size = chars before Sarvam starts processing (not frames/bytes).
-    # 30 is the Sarvam-recommended minimum -- below this Sarvam may cut off incomplete words.
-    "sarvam_min_buffer":       30,
-    # max_chunk_length = chars per chunk. 100-150 per docs -- keeps latency low for conversational
-    # responses. 150 is the sweet spot: short enough for fast first-chunk, long enough for fluency.
-    "sarvam_max_chunk":        150,
+    # Raised from the doc-minimum of 30 -- at 30, Sarvam frequently started generating
+    # audio for a ~4-6 word fragment on its own, giving each fragment its own prosody/
+    # tone and producing disjointed word-by-word delivery ("hello" in one tone, then
+    # the rest of the sentence). 80 keeps chunks closer to a full clause so prosody
+    # carries across the sentence, at a small cost to time-to-first-audio.
+    "sarvam_min_buffer":       80,
+    # max_chunk_length = chars per chunk. Raised alongside min_buffer_size so Sarvam
+    # isn't forced to cut a clause short right after crossing the new buffer floor.
+    "sarvam_max_chunk":        220,
     "sarvam_v2_pitch":         0.0,
     "sarvam_v2_loudness":      1.0,
-    "sarvam_temperature":      0.80,
+    # Changed from 0.80. bulbul:v3 only, range 0.01-2.0, plugin default 0.6.
+    # 0.80 was in the "too expressive for structured interviews, responses vary
+    # noticeably" zone -- likely the cause of halting, inconsistent delivery.
+    # 0.3-0.4 is robotic/monotonous (fine for announcements, not interviews).
+    # 0.5 is the professional-yet-natural sweet spot for an interviewer voice.
+    "sarvam_temperature":      0.5,
     # WS connect/send timeout. Sarvam closes idle connections after 60s -- keepalive pings every
     # 20s prevent this. recv timeout is set separately to 90s in _recv_task.
     "sarvam_ws_timeout_sec":   25,

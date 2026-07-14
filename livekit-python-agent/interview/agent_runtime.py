@@ -259,7 +259,12 @@ class CoveredTopics:
 # across all eval, directive, and brief calls for every interview session.
 # Creating AsyncOpenAI() per-session causes a cold TLS handshake on the first
 # call of each session, adding 50–200ms. One shared client eliminates that.
-_SHARED_OPENAI_CLIENT: AsyncOpenAI = AsyncOpenAI()
+# max_retries=1 (SDK default is 2): eval/directive calls already sit inside their
+# own asyncio.wait_for timeout, so a silent SDK-level retry-with-backoff on a
+# transient error just burns the timeout budget on a second attempt instead of
+# failing fast into our own recovery path. One retry still absorbs a real blip;
+# it no longer eats most of an 8-11s budget doing it invisibly.
+_SHARED_OPENAI_CLIENT: AsyncOpenAI = AsyncOpenAI(max_retries=1)
 from interview.agent_runtime_helpers import (
     _build_recent_context_block,
     append_transcript_line,
@@ -297,9 +302,7 @@ from interview.prompt_layers import (
     build_evaluation_layer_prompt,
     build_system_prompt,
 )
-CLOSING_TRIGGER_SECS = 20   # begin the closing goodbye at T-20s. Wide enough that a
-                            # single slow loop iteration (candidate mid-answer, agent busy)
-                            # cannot skip past the window into the `remaining<=0` break.
+CLOSING_TRIGGER_SECS = 10   # begin the closing goodbye at exactly T-10s (19:50 of a 20:00 interview).
 # Custom-question normalisation constants  module-level so they are allocated once.
 _CUSTOM_Q_PREFIXES: tuple[str, ...] = (
     "ask him about",
@@ -313,24 +316,19 @@ _CUSTOM_Q_PREFIXES: tuple[str, ...] = (
 _STT_LANGUAGE_CODE = "en-US"
 _TTS_LANGUAGE_CODE = "en"
 # ponytail: _TTS_DEFAULT_MODELS deleted -- all model values come from org DB row now
-_MEANINGFUL_SHORT_ANSWERS = {
-    "no",
-    "yes",
-    "yeah",
-    "yep",
-    "ok",
-    "okay",
-    "sure",
-    "right",
-    "nothing", "none", "pass", "skip", "na", "n/a",
-}
 # STT noise-suppression helpers  compiled at import time.
 _STT_WHITESPACE_RE = re.compile(r"\s+")
 _STT_NON_ALPHA_RE = re.compile(r"[^a-zA-Z]")
 _STT_VOWEL_RE = re.compile(r"[aeiou]")
 # TTS sentence boundary  compiled once at module level (not per tts_node call).
 _TTS_SENT_END_RE = re.compile(r'(?<=[.?!…])\s+|(?<=—)\s+')
-_TTS_MAX_BUFFER_CHARS = 200  # push to TTS if no sentence boundary found after this many chars
+# Push to TTS if no sentence boundary found after this many chars. Raised from 200 --
+# at 200, any sentence over ~30-35 words got force-split mid-sentence at an arbitrary
+# character (not a clause boundary), and each split half became its own Sarvam
+# synthesis segment with its own prosody -- audible as disjointed, word-by-word
+# delivery specifically on longer sentences. 400 lets most real sentences (even
+# fairly long interviewer ones) push as one continuous unit.
+_TTS_MAX_BUFFER_CHARS = 400
 def _normalize_custom_question_text(raw: str) -> str:
     text = re.sub(r"\s+", " ", (raw or "").strip().lower())
     for p in _CUSTOM_Q_PREFIXES:
@@ -359,11 +357,6 @@ def _clean_stt_text(raw_text: str) -> str:
             continue
         cleaned_tokens.append(token)
     return _STT_WHITESPACE_RE.sub(" ", " ".join(cleaned_tokens)).strip()
-def _normalized_short_answer(text: str) -> str:
-    return re.sub(r"[^a-z0-9/]+", "", (text or "").strip().lower())
-def _is_tiny_fragment(text: str) -> bool:
-    words = [w for w in (text or "").strip().split() if w]
-    return len(words) <= 3 and _normalized_short_answer(text) not in _MEANINGFUL_SHORT_ANSWERS
 def _topic_short_title(topic: str) -> str:
     """Extract short title from full topic string (before ' - ')."""
     return (topic or "").split(" - ")[0].strip()
@@ -403,23 +396,6 @@ def _build_cross_ref_rule(source_tag: str) -> str:
         "and move on. Do NOT frame it as if it were on their resume."
     )
 
-def _sanitize_topic_title_for_speech(title: str) -> str:
-    """Clean a topic title for spoken delivery.
-    - Strip trailing parenthetical fragments and acronym tails like
-      "(MLSC), GRIET" so the agent says "Tech Lead" not "Tech Lead microsoft
-      Learn Student Club (MLSC), GRIET".
-    - Collapse internal whitespace.
-    """
-    if not title:
-        return ""
-    # Drop everything after the first comma (work-history rows like
-    # "Tech Lead - microsoft Learn Student Club (MLSC), GRIET" pollute speech)
-    cleaned = title.split(",", 1)[0]
-    # Remove any parenthetical chunks.
-    cleaned = re.sub(r"\s*\([^)]*\)\s*", " ", cleaned)
-    # Collapse whitespace.
-    cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    return cleaned
 def _build_probe_directive(
     *,
     signal: Optional[str],
@@ -809,7 +785,9 @@ async def _generate_move_on_directive(
         "Do NOT write the actual question. Ishitha generates it herself from your guidance.\n"
         "Do NOT write 'Suggested question:' or any scripted line she would copy verbatim.\n"
         "ONE question only — Ishitha must ask one thing and then listen. "
-        "No compound questions, no 'and also', no multi-part asks.\n\n"
+        "No compound questions, no 'and also', no multi-part asks. "
+        "Keep OPENING ANGLE guidance short — Ishitha's actual spoken question must land under "
+        "30 words total, so don't ask her to build multi-sentence context before the question.\n\n"
         "Output plain text only. No markdown. No code blocks."
     )
     _user = (
@@ -928,8 +906,13 @@ async def _generate_move_on_directive(
 class InterviewAgent(Agent):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._pending_eval_task: Optional[asyncio.Task] = None
         self._waiting_for_eval: bool = False
+        # Turn number the currently in-flight eval belongs to (set alongside
+        # _waiting_for_eval = True). llm_node's gate release is guaranteed via a
+        # try/finally in _process_user_conversation_item keyed on this turn number,
+        # so a directive is always applied (or the gate released) for the exact
+        # turn it was opened for -- see that function's finally block.
+        self._pending_eval_turn: Optional[int] = None
         self._tts_text_characters: int = 0
         # Cleared when a user turn arrives, set after directive is injected.
         # llm_node waits on this before generating the real interview question.
@@ -991,63 +974,19 @@ class InterviewAgent(Agent):
         # LiveKit calls llm_node as soon as a user item lands. During the real
         # interview we block only while the previous question is awaiting eval.
         # Prompt-text inference is too brittle here; the runtime owns this flag.
+        #
+        # No timeout here: _process_user_conversation_item (agent_runtime.py) now
+        # guarantees this event is released via a try/finally covering every one of
+        # its return paths, so the wait is bounded by eval's own real completion,
+        # not by a manufactured ceiling. A timeout here was previously masking a
+        # real bug (an early `return` that skipped the gate release) rather than
+        # protecting against genuine LLM slowness -- see the finally block there.
         _must_wait_for_eval = self._waiting_for_eval
         if _must_wait_for_eval:
             self._directive_ready.clear()
             logger.debug("[LLM_GATE] waiting for eval directive")
-        timed_out = False
-        try:
-            # Timeout ladder (strictly increasing so the inner call always finishes
-            # or self-recovers before any outer guard fires):
-            #   inner LLM call (agent_scoring)      = 8s
-            #   eval wrapper (run_eval_and_build..)  = 10s
-            #   THIS LLM gate                        = 11s
-            # Strictly increasing ladder: inner always resolves before outer fires.
-            # Eval owns its own recovery so this gate firing = genuine asyncio stall.
-            await asyncio.wait_for(self._directive_ready.wait(), timeout=11.0)
-            logger.info("[LLM_GATE] directive ready")
-        except asyncio.TimeoutError:
-            timed_out = True
-            pending_state = "none"
-            if self._pending_eval_task is not None:
-                pending_state = "done" if self._pending_eval_task.done() else "pending"
-            logger.critical("[LLM_GATE] CRITICAL: timed out (11s) -- eval_task=%s (likely stalled); escalating", pending_state)
-            if _must_wait_for_eval:
-                self._waiting_for_eval = False
-                # Use the mutable _chat_ctx -- self.chat_ctx is a read-only view.
-                remove_system_messages_multi(
-                    self._chat_ctx,
-                    ("[NEXT_TURN_DIRECTIVE", "[RECENT_CONTEXT"),
-                )
-                # Check if the last candidate message was a clarification question.
-                _last_user_msg = ""
-                for _item in reversed(list(getattr(self._chat_ctx, "items", []))):
-                    if getattr(_item, "role", None) == "user":
-                        _last_user_msg = str(getattr(_item, "content", "") or "").strip()
-                        break
-                _is_clarification = _last_user_msg.endswith("?") or any(
-                    w in _last_user_msg.lower()
-                    for w in ("which one", "what do you mean", "can you clarify", "which", "what do you")
-                )
-                if _is_clarification:
-                    _timeout_instruction = (
-                        "The candidate asked a clarification question. Apologise briefly and re-ask "
-                        "the question in simpler, more concrete terms. Do NOT say 'Take your time'."
-                    )
-                else:
-                    _timeout_instruction = (
-                        "The evaluation directive was not ready in time. Do NOT ask a topical follow-up, "
-                        "do NOT move topics, and do NOT use stale context. Say only: "
-                        "\"Take your time -- I'm listening.\""
-                    )
-                self._chat_ctx.add_message(
-                    role="system",
-                    content=(
-                        "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                        "DECISION: RECOVER_GATE_TIMEOUT\n"
-                        + _timeout_instruction
-                    ),
-                )
+        await self._directive_ready.wait()
+        logger.info("[LLM_GATE] directive ready")
         # Generate from the agent's LIVE mutable context (self._chat_ctx) -- this is the
         # same object the eval task injects NEXT_TURN_DIRECTIVE / TOPIC_LOCK into, and the
         # object LiveKit itself copies from when building a reply. self.chat_ctx (the public
@@ -1078,8 +1017,7 @@ class InterviewAgent(Agent):
                 )
         _sys_count = sum(1 for m in getattr(effective_ctx, "items", []) if getattr(m, "role", "") == "system")
         logger.info(
-            "[LLM_GATE] %s | sys_msgs=%d%s",
-            "on-time" if not timed_out else "timeout",
+            "[LLM_GATE] sys_msgs=%d%s",
             _sys_count,
             " [MOVE_ON-clean]" if _has_moveon else "",
         )
@@ -1184,6 +1122,7 @@ def prewarm(proc: JobProcess):
         logger.info("Prewarm skipped (SKIP_PREWARM=1). All resources will initialize lazily.")
         proc.userdata["default_stt"] = None
         proc.userdata["default_tts"] = None
+        proc.userdata["vad"] = None
         return
     logger.info("Prewarming worker process...")
     # Pre-instantiate default STT/TTS plugins so their internal HTTP sessions
@@ -1198,6 +1137,20 @@ def prewarm(proc: JobProcess):
         logger.info("Default TTS prewarmed.")
     except Exception as e:
         logger.warning(f"Failed to prewarm default TTS: {e}")
+    # Silero VAD: runs alongside Flux's STT-based end-of-turn detection. Flux still
+    # owns turn_detection="stt" end-of-turn decisions -- VAD adds a raw-audio-energy
+    # speech-presence signal that doesn't depend on STT producing a transcript first.
+    # This makes is_candidate_speaking (the inactivity-nudge ladder's speech signal)
+    # robust to STT lag on quiet/mumbled speech or unusual accents, and speeds up
+    # barge-in detection when a candidate interrupts the AI mid-question. Free,
+    # local, CPU-only (Apache-2.0, onnxruntime) -- no per-call cost either way.
+    try:
+        from livekit.plugins import silero
+        proc.userdata["vad"] = silero.VAD.load()
+        logger.info("Silero VAD prewarmed.")
+    except Exception as e:
+        logger.warning(f"Failed to prewarm Silero VAD: {e}")
+        proc.userdata["vad"] = None
     # DB pool initializes lazily on first job -- asyncpg requires an async context
     # which is not available in the sync prewarm() function.
     logger.info("DB pool will initialize lazily on first job.")
@@ -1741,8 +1694,9 @@ async def entrypoint(ctx: JobContext):
                 ):
                     _add(token)
         return terms[:97]  # provider prepends 3 base terms and caps at 100.
-    # VAD removed: Flux STT native EOT jobs all turn boundaries (turn_detection="stt").
-    # Silero ONNX model is no longer needed -- saves ~200ms prewarm startup time.
+    # Flux owns end-of-turn decisions via native EOT events (turn_detection="stt");
+    # VAD is used separately for speech-presence/barge-in signal quality -- see
+    # vad_plugin wiring near session_kwargs below.
     flux_session_keyterms = _build_flux_session_keyterms()
     logger.info("[STT_FLUX] static session keyterms prepared: %d extra terms", len(flux_session_keyterms))
     try:
@@ -1909,14 +1863,25 @@ async def entrypoint(ctx: JobContext):
         logger.warning("[USAGE] Failed to attach LLM metrics hook: %s", e)
     # Flux provides native end-of-turn detection via EOT events -- no separate semantic
     # turn detector needed. turn_detection="stt" tells LiveKit to use Flux's EOT events.
-    logger.info("[TURN_DETECTOR] Flux native EOT active (engine=%s)", getattr(stt_plugin, "_hr_stt_engine", "flux"))
+    logger.info("[FLUX_EOT] Flux native end-of-turn active (engine=%s)", getattr(stt_plugin, "_hr_stt_engine", "flux"))
     ai_name = ctx_data.aiName or "Ishitha"
     welcome_text = build_greeting_text(candidate_first_name or candidate_name, ai_name)
     logger.info("[FLOW] Greeting precomputed during launching phase")
+    # Silero VAD (prewarmed in prewarm() above) alongside Flux's turn_detection="stt" --
+    # Flux still owns end-of-turn decisions; VAD adds a raw-audio speech-presence signal
+    # that doesn't depend on STT producing a transcript first, per LiveKit's documented
+    # reference pairing for the Flux plugin. Note: AgentSession silently defaults to its
+    # own local inference.VAD(model="silero") whenever `vad` is omitted entirely, so a
+    # local Silero-backed VAD was actually always running even when this kwarg was
+    # previously left out -- this just switches to the explicit, tunable plugin
+    # instance (matching LiveKit's documented config knobs) instead of the SDK's
+    # implicit, un-configurable default, and makes the load cost visible in prewarm().
+    vad_plugin = ctx.proc.userdata.get("vad")
     session_kwargs = {
         "stt": stt_plugin,
         "llm": llm_plugin,
         "tts": tts_plugin,
+        "vad": vad_plugin,
         "turn_handling": TurnHandlingOptions(
             preemptive_generation={"enabled": False},
             # Flux STT jobs turn boundaries -- no separate endpointing detector needed.
@@ -3470,8 +3435,16 @@ async def entrypoint(ctx: JobContext):
                 agent._directive_ready.set()
         except Exception as e:
             logger.error("[EVAL] _process_user_conversation_item failed turn=%d: %s", turn_snapshot, e, exc_info=True)
-            agent._waiting_for_eval = False
-            agent._directive_ready.set()
+        finally:
+            # Guarantees the gate is released for this turn no matter which of the
+            # early `return`s above was taken (STT-noise discard, not-EOT skip, etc.).
+            # Those returns don't go through the normal-completion or exception release
+            # above, and previously left llm_node's gate closed with nothing to open it
+            # except its own timeout -- i.e. the source of the "silent for 10-15s" bug.
+            # This makes the gate release unconditional and turn-scoped instead.
+            if agent._waiting_for_eval and agent._pending_eval_turn == turn_snapshot:
+                agent._waiting_for_eval = False
+                agent._directive_ready.set()
     _FIXED_WARMUP_TEXT = (
         "Right, so this'll be a fairly casual conversation — I'm just curious to know more about "
         "what you've worked on and how you think about things. Are you all set to begin?"
@@ -3547,6 +3520,7 @@ async def entrypoint(ctx: JobContext):
         # so the LLM never generates this line (it was producing unpredictable filler).
         if turn_snapshot == 1 and not warmup_complete:
             agent._waiting_for_eval = True
+            agent._pending_eval_turn = turn_snapshot
             agent._directive_ready.clear()
             await _process_user_conversation_item(content, "user", turn_snapshot, is_final_eot=True)
             _append_with_elapsed("Candidate", content)
@@ -3599,6 +3573,7 @@ async def entrypoint(ctx: JobContext):
         # next turn before we've decided completing_warmup and injected the directive.
         if not warmup_complete:
             agent._waiting_for_eval = True
+            agent._pending_eval_turn = turn_snapshot
             agent._directive_ready.clear()
         _warmup_readiness_markers = (
             "yes", "yeah", "yep", "ready", "let's go", "lets go", "go ahead",
@@ -3876,6 +3851,7 @@ async def entrypoint(ctx: JobContext):
                         # Clearing here ensures the gate is already closed when Turn 3 fires,
                         # so the sync gate fast-path (which sets it) runs after the answer lands.
                         agent._waiting_for_eval = True
+                        agent._pending_eval_turn = turn_count + 1
                         agent._directive_ready.clear()
                         logger.info("[LLM_GATE] Pre-cleared after opening question delivery (Turn 3 guard)")
                 else:
@@ -3910,6 +3886,7 @@ async def entrypoint(ctx: JobContext):
                     # waits for the candidate's answer. The warmup completion handler
                     # will inject the warmup-done directive and release the gate.
                     agent._waiting_for_eval = True
+                    agent._pending_eval_turn = turn_count
                     agent._directive_ready.clear()
                     # Update PHASE_STATUS so if LLM fires again before candidate replies
                     # it knows the warmup question is ALREADY spoken -- don't repeat it.
@@ -3926,6 +3903,7 @@ async def entrypoint(ctx: JobContext):
                     logger.info("[LLM_GATE] Gated after warmup readiness check — waiting for candidate answer")
                 elif _is_interview_turn:
                     agent._waiting_for_eval = True
+                    agent._pending_eval_turn = turn_count
                     agent._directive_ready.clear()
                     logger.info("[LLM_GATE] Pre-cleared after interview question delivery")
                 reset_inactivity_clock(start_waiting=True)
@@ -4227,32 +4205,38 @@ async def entrypoint(ctx: JobContext):
             logger.info(f"[NUDGE] Sent termination signal to frontend (reason={reason})")
         except Exception as e:
             logger.warning(f"Failed to send termination signal: {e}")
+    _goodbye_speak_secs = 0.0
+    time_limit_reached_event = asyncio.Event()
+    async def _closing_trigger_at_exact_deadline(fire_in: float) -> None:
+        # Scheduled once, independent of the poll loop below -- fires at exactly
+        # T-CLOSING_TRIGGER_SECS (19:50 of a 20:00 interview) with no poll-interval slack.
+        await asyncio.sleep(fire_in)
+        if not _closing_triggered:
+            await _speak_time_limit_goodbye(float(CLOSING_TRIGGER_SECS))
+            time_limit_reached_event.set()
     async def _speak_time_limit_goodbye(remaining: float) -> None:
         # Deterministic "we're out of time" close. Set _closing_triggered FIRST so
         # concurrent eval turns stop injecting new questions (see the guard at the
         # top of the eval path) even if the say() below is slow or interrupted.
         # Called from two places:
-        #   1. In-loop at T-CLOSING_TRIGGER_SECS (the normal path).
-        #   2. As a post-loop fallback if the loop exited via `remaining<=0`
-        #      without ever hitting the trigger window -- previously that case
-        #      ended the interview SILENTLY. This guarantees the candidate always
-        #      hears a closing line at the time limit.
-        nonlocal _closing_triggered
+        #   1. From _closing_trigger_at_exact_deadline, an asyncio.sleep()-scheduled
+        #      task that fires at exactly T-CLOSING_TRIGGER_SECS (19:50 of a 20:00
+        #      interview) -- independent of the main loop's poll interval, so there's
+        #      no polling-granularity slack in when this starts.
+        #   2. As a post-loop fallback if the scheduled task above never ran (e.g. the
+        #      loop broke early via finish/disconnect racing the deadline) -- this
+        #      guarantees the candidate always hears a closing line at the time limit.
+        nonlocal _closing_triggered, _goodbye_speak_secs
         if _closing_triggered:
             return
         _closing_triggered = True
         logger.info("[CLOSING] Triggered at remaining=%.1fs", remaining)
         _name = candidate_first_name or candidate_name
-        _goodbye_candidate = (
-            f"Sorry to interrupt — we're coming up on time, so I'll wrap up here. "
-            f"It was great speaking with you, {_name}. "
-            "Thanks so much for your time, and we'll be in touch soon!"
-        )
-        _goodbye_silence = (
-            f"We're just about at time, so I'll wrap up here. "
-            f"It was great speaking with you, {_name}. "
-            "Thanks so much for your time, and we'll be in touch soon!"
-        )
+        # Kept to one short sentence + sign-off so worst-case TTS speaking time stays
+        # bounded and predictable -- see _goodbye_speak_secs measurement below.
+        _goodbye_candidate = f"Sorry to interrupt, {_name} — we're at time, so I'll wrap up here. Thanks so much, we'll be in touch soon!"
+        _goodbye_silence = f"We're at time, {_name}, so I'll wrap up here. Thanks so much, we'll be in touch soon!"
+        _say_start = time.monotonic()
         try:
             if is_candidate_speaking or is_agent_speaking:
                 session.interrupt()
@@ -4262,14 +4246,18 @@ async def entrypoint(ctx: JobContext):
                 await session.say(_goodbye_silence, allow_interruptions=False)
         except Exception as e:
             logger.warning("[CLOSING] Goodbye delivery failed: %s", e)
+        finally:
+            _goodbye_speak_secs = time.monotonic() - _say_start
     # Use the greeting-begin timestamp so `remaining` counts from when greeting started,
     # NOT from when the greeting audio finished. This makes the 20-min window exact.
     session_loop_start = _interview_timer_start
     _last_timer_log = time.monotonic()
+    _closing_deadline_fire_in = max(0.0, total_seconds - CLOSING_TRIGGER_SECS - (time.monotonic() - session_loop_start))
+    closing_trigger_task = asyncio.create_task(_closing_trigger_at_exact_deadline(_closing_deadline_fire_in))
     while True:
         elapsed = time.monotonic() - session_loop_start
         remaining = total_seconds - elapsed
-        if finished_task.done() or disconnected_task.done():
+        if finished_task.done() or disconnected_task.done() or time_limit_reached_event.is_set():
             break
         if remaining <= 0:
             break
@@ -4310,10 +4298,6 @@ async def entrypoint(ctx: JobContext):
                 else:
                     logger.info("[FLOW] Custom Q 75%% checkpoint  all custom questions already asked")
                 _custom_q_reminder_fired = True
-        # --- T-20s: closing trigger ---
-        if remaining <= CLOSING_TRIGGER_SECS and not _closing_triggered:
-            await _speak_time_limit_goodbye(remaining)
-            break
         inactivity_elapsed = (
             (time.monotonic() - awaiting_candidate_since)
             if awaiting_candidate_response and awaiting_candidate_since is not None
@@ -4383,7 +4367,10 @@ async def entrypoint(ctx: JobContext):
             break
         await asyncio.sleep(1)
     # Check if we exited because of finish/disconnect or because time ran out
-    time_expired = not finished_task.done() and not disconnected_task.done()
+    time_expired = (
+        time_limit_reached_event.is_set()
+        or (not finished_task.done() and not disconnected_task.done())
+    )
     if time_expired:
         # FALLBACK: normally the goodbye was already spoken at T-CLOSING_TRIGGER_SECS
         # inside the loop. But if the loop exited via `remaining<=0` without the
@@ -4394,14 +4381,20 @@ async def entrypoint(ctx: JobContext):
         if not _closing_triggered:
             logger.warning("[CLOSING] Trigger was skipped inside loop -- speaking goodbye now (fallback)")
             await _speak_time_limit_goodbye(0.0)
-        logger.info(f"[CLOSING] Session ended at time limit ({time_limit_mins}m)")
-        await asyncio.sleep(3.0)  # allow TTS to finish before disconnecting
+        logger.info(
+            f"[CLOSING] Session ended at time limit ({time_limit_mins}m), "
+            f"goodbye took {_goodbye_speak_secs:.1f}s"
+        )
+        # session.say(..., allow_interruptions=False) above already blocks until the
+        # goodbye finishes speaking -- no need to guess/sleep for TTS duration here.
+        # Small fixed buffer only for audio buffer flush / network flight time.
+        await asyncio.sleep(0.5)
         await _send_termination_signal("time_expired")
         interview_marked_finished = True
         interview_finished_event.set()
         disconnect_event.set()
     # Cancel pending tasks
-    for task in [finished_task, disconnected_task]:
+    for task in [finished_task, disconnected_task, closing_trigger_task]:
         if not task.done():
             task.cancel()
     # --- Grace Period: Wait for final STT results to arrive (Deepgram/LiveKit tail) ---

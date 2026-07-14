@@ -373,18 +373,15 @@ async def _classify_signal_from_answer(
     _user = f"QUESTION: {last_question}\n\nANSWER: {candidate_answer}"
     _usage: dict | None = None
     try:
-        resp = await asyncio.wait_for(
-            client.chat.completions.create(
-                model=llm_model,
-                temperature=0.0,
-                max_tokens=80,
-                messages=[
-                    {"role": "system", "content": _system},
-                    {"role": "user", "content": _user},
-                ],
-                response_format={"type": "json_object"},
-            ),
-            timeout=5.0,
+        resp = await client.chat.completions.create(
+            model=llm_model,
+            temperature=0.0,
+            max_tokens=80,
+            messages=[
+                {"role": "system", "content": _system},
+                {"role": "user", "content": _user},
+            ],
+            response_format={"type": "json_object"},
         )
         # Capture usage immediately after the call succeeds -- it was billed
         # regardless of whether the response body parses cleanly below.
@@ -530,35 +527,32 @@ async def _call_scoring(
         )
         return ctx
 
-    stream = await asyncio.wait_for(
-        client.chat.completions.create(
-            model=llm_model,
-            temperature=EVAL_TEMPERATURE,
-            max_tokens=120,
-            stream=True,
-            messages=[
-                {"role": "system", "content": _build_scoring_system_prompt()},
-                {
-                    "role": "user",
-                    "content": (
-                        f"QUESTION: {last_question}\n\n"
-                        f"ANSWER: {candidate_answer}\n\n"
-                        f"FOLLOW-UPS ON THIS TOPIC SO FAR: {topic_follow_up_count}\n\n"
-                        f"RECENT CONVERSATION (last 3 exchanges):\n{recent_context}"
-                    ),
-                },
-            ],
-            response_format={"type": "json_object"},
-            stream_options={"include_usage": True},
-            store=True,
-            metadata={
-                "call_type": "eval_scoring",
-                "band": candidate_band,
-                "topic_importance": topic_importance,
-                "org_id": org_id or "",
+    stream = await client.chat.completions.create(
+        model=llm_model,
+        temperature=EVAL_TEMPERATURE,
+        max_tokens=120,
+        stream=True,
+        messages=[
+            {"role": "system", "content": _build_scoring_system_prompt()},
+            {
+                "role": "user",
+                "content": (
+                    f"QUESTION: {last_question}\n\n"
+                    f"ANSWER: {candidate_answer}\n\n"
+                    f"FOLLOW-UPS ON THIS TOPIC SO FAR: {topic_follow_up_count}\n\n"
+                    f"RECENT CONVERSATION (last 3 exchanges):\n{recent_context}"
+                ),
             },
-        ),
-        timeout=8.0,
+        ],
+        response_format={"type": "json_object"},
+        stream_options={"include_usage": True},
+        store=True,
+        metadata={
+            "call_type": "eval_scoring",
+            "band": candidate_band,
+            "topic_importance": topic_importance,
+            "org_id": org_id or "",
+        },
     )
 
     raw = ""
@@ -649,36 +643,43 @@ async def _call_signal_classification(
             + _build_signal_prompt_block()
         )
 
-    resp = await asyncio.wait_for(
-        client.chat.completions.create(
-            model=llm_model,
-            temperature=0.0,
-            max_tokens=500,
-            messages=[
-                {"role": "system", "content": _build_signal_system_prompt()},
-                {
-                    "role": "user",
-                    "content": (
-                        f"QUESTION: {last_question}\n\n"
-                        f"ANSWER: {candidate_answer}\n\n"
-                        f"RECENT CONVERSATION (last 3 exchanges):\n{recent_context}"
-                    ),
-                },
-            ],
-            store=True,
-            metadata={
-                "call_type": "eval_signal",
-                "topic_importance": topic_importance,
-                "org_id": org_id or "",
+    # Streamed like _call_scoring above -- bytes arrive incrementally instead of
+    # the whole 500-token generation completing before any content is visible.
+    stream = await client.chat.completions.create(
+        model=llm_model,
+        temperature=0.0,
+        max_tokens=500,
+        stream=True,
+        messages=[
+            {"role": "system", "content": _build_signal_system_prompt()},
+            {
+                "role": "user",
+                "content": (
+                    f"QUESTION: {last_question}\n\n"
+                    f"ANSWER: {candidate_answer}\n\n"
+                    f"RECENT CONVERSATION (last 3 exchanges):\n{recent_context}"
+                ),
             },
-        ),
-        timeout=6.0,
+        ],
+        stream_options={"include_usage": True},
+        store=True,
+        metadata={
+            "call_type": "eval_signal",
+            "topic_importance": topic_importance,
+            "org_id": org_id or "",
+        },
     )
 
-    raw = resp.choices[0].message.content or ""
+    raw = ""
+    _usage = None
+    async for chunk in stream:
+        if chunk.choices and chunk.choices[0].delta.content:
+            raw += chunk.choices[0].delta.content
+        if chunk.usage:
+            _usage = chunk.usage
 
     from billing.billing import extract_usage as _extract_usage  # noqa: PLC0415
-    _llm_usage = _extract_usage(resp, llm_model) if resp else {
+    _llm_usage = _extract_usage(_usage, llm_model) if _usage else {
         "model": llm_model, "inputTokens": 0, "outputTokens": 0, "cachedInputTokens": 0,
     }
 
@@ -932,12 +933,8 @@ async def evaluate_answer(
             "_llm_usage": _eval_llm_usages,
         }
 
-    except (asyncio.TimeoutError, Exception) as e:
-        _is_timeout = isinstance(e, asyncio.TimeoutError)
-        logger.error(
-            "[EVAL] evaluate_answer %s (%s) — returning low-confidence recovery",
-            "timed out" if _is_timeout else "failed", e,
-        )
+    except Exception as e:
+        logger.error("[EVAL] evaluate_answer failed (%s) — returning low-confidence recovery", e)
         return {
             "clarity": 2.0, "depth": 1.0, "specificity": 1.0, "grounding": 1.0,
             "overall": 1.3,

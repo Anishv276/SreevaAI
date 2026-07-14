@@ -208,7 +208,7 @@ const interviewReportVerdict = typeof interviewSummaryData?.decision_note === "o
             name:     String(r.skill).trim(),
             score:    typeof r.score === "number" ? r.score : parseFloat(String(r.score)) || 5,
             status:   String(r.status || "NOT TESTED"),
-            evidence: String(r.evidence || "").trim(),
+            evidence: Array.isArray(r.evidence) ? r.evidence : (r.evidence ? [String(r.evidence).trim()] : []),
         }));
     const interviewReportSummary = typeof interviewSummaryData?.decision_note === "string" 
         ? interviewSummaryData.decision_note 
@@ -233,30 +233,23 @@ const groupedProctoringSignals = rawProctoringEvents.reduce((acc: any[], ev: any
     // Skip metadata-only events (ip_registered = fingerprint bookkeeping)
     if (key === "ip_registered") return acc;
     const severity = String(ev?.severity || "low").toLowerCase();
-        // Each occurrence keeps its own during_question/during_topic (attached by
-        // report_pipeline.py's _attach_question_context) so the UI can say
-        // "left the tab during the Python question" per incident, not just once.
-        const occurrence = {
-            severity,
-            timestamp: ev?.timestamp,
-            during_question: ev?.during_question,
-            during_topic: ev?.during_topic,
-            reason: ev?.reason,
-        };
         const existing = acc.find((row: any) => row.key === key);
         if (existing) {
             existing.count += 1;
-            existing.occurrences.push(occurrence);
             if (severity === "high") existing.severity = "high";
             else if (severity === "medium" && existing.severity !== "high") existing.severity = "medium";
-            // Keep the highest-score occurrence's extra fields (score/reason/quotes/turns)
-            // for content-layer/aggregate signals like answer_integrity, latency_mismatch.
-            if (typeof ev?.score === "number" && (existing.score === undefined || ev.score > existing.score)) {
-                existing.score = ev.score;
-                existing.reason = ev.reason;
-                existing.quotes = ev.quotes;
+            // answer_integrity: OR the flags across occurrences, keep the latest verdict.
+            if (typeof ev?.ai_phrasing_flagged === "boolean" || typeof ev?.contradiction_flagged === "boolean") {
+                existing.aiPhrasingFlagged = existing.aiPhrasingFlagged || !!ev.ai_phrasing_flagged;
+                existing.contradictionFlagged = existing.contradictionFlagged || !!ev.contradiction_flagged;
+                existing.verdict = ev.verdict;
             }
-            if (Array.isArray(ev?.turns)) existing.turns = ev.turns;
+            // latency_mismatch: keep the highest max_latency_sec seen.
+            if (typeof ev?.max_latency_sec === "number" && (existing.maxLatencySec === undefined || ev.max_latency_sec > existing.maxLatencySec)) {
+                existing.maxLatencySec = ev.max_latency_sec;
+                existing.maxLatencyQuestion = ev.max_latency_question;
+                existing.avgLatencySec = ev.avg_latency_sec;
+            }
             return acc;
         }
         acc.push({
@@ -264,9 +257,10 @@ const groupedProctoringSignals = rawProctoringEvents.reduce((acc: any[], ev: any
             label: key.replace(/_/g, " "),
             count: 1,
             severity,
-            occurrences: [occurrence],
-            ...(typeof ev?.score === "number" ? { score: ev.score, reason: ev.reason, quotes: ev.quotes } : {}),
-            ...(Array.isArray(ev?.turns) ? { turns: ev.turns } : {}),
+            ...(typeof ev?.ai_phrasing_flagged === "boolean" || typeof ev?.contradiction_flagged === "boolean"
+                ? { aiPhrasingFlagged: !!ev.ai_phrasing_flagged, contradictionFlagged: !!ev.contradiction_flagged, verdict: ev.verdict }
+                : {}),
+            ...(typeof ev?.max_latency_sec === "number" ? { maxLatencySec: ev.max_latency_sec, maxLatencyQuestion: ev.max_latency_question, avgLatencySec: ev.avg_latency_sec } : {}),
         });
         return acc;
     }, []);
@@ -632,7 +626,7 @@ const groupedProctoringSignals = rawProctoringEvents.reduce((acc: any[], ev: any
                     skillsEvaluated,
                     skillRatingsList,
                     avgResponseTimeSec,
-                    reportNotGenerated: Boolean(candidate?.interview?.isTestSession && isFallbackReport),
+                    reportNotGenerated: isFallbackReport,
                 })}
             />
         </>

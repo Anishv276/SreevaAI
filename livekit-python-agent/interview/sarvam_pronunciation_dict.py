@@ -23,8 +23,9 @@ Why two dicts:
   dict (it contains both base + session words merged); otherwise use base dict.
 
 Auto-pronunciation rules (no human needed):
-  - ALL-CAPS 3-6 letters: "RAG" → "R A G", "CICD" → "C I C D"
   - Known-pronunciation table for terms Sarvam consistently gets wrong
+    (explicit list only -- no blind ALL-CAPS-to-letters fallback, since that
+    misfires on names/words that happen to arrive in caps, e.g. "VAMSI")
   - CamelCase terms: passed as-is (the client-side normalizer handles splitting)
   - Unknown words: passed through (Sarvam's enable_preprocessing handles most)
 """
@@ -34,7 +35,6 @@ import io
 import json
 import logging
 import os
-import re
 from typing import Optional
 
 import httpx
@@ -195,10 +195,6 @@ _KNOWN_PRONUNCIATIONS: dict[str, str] = {
     "orc":       "orc",
 }
 
-# ALL-CAPS acronym pattern: 2–6 uppercase letters
-_CAPS_RE = re.compile(r"^([A-Z]{2,6})(s?)$")
-
-
 def _auto_pronounce(word: str) -> Optional[str]:
     """Generate a pronunciation for a single word with no known entry.
 
@@ -218,16 +214,11 @@ def _auto_pronounce(word: str) -> Optional[str]:
     if key in _BASE_PRONUNCIATIONS:
         return None  # already in base dict, no session entry needed
 
-    # ALL-CAPS acronym: "RAG" → "R A G", "APIs" → "A P I s"
-    m = _CAPS_RE.match(word)
-    if m:
-        letters = m.group(1)
-        plural = m.group(2)
-        if len(letters) >= 3:
-            spaced = " ".join(letters)
-            return (spaced + " " + plural) if plural else spaced
-
-    # Word is all-lowercase or mixed -- let Sarvam handle it
+    # Anything else -- including ALL-CAPS words not in the tables above, e.g. a
+    # candidate's name arriving in caps ("VAMSI") -- is left to Sarvam as-is. Only
+    # explicitly-known acronyms (_KNOWN_PRONUNCIATIONS/_SARVAM_READS_OK) get
+    # letter-spaced; there is no blind ALL-CAPS fallback (that mis-detects names
+    # as acronyms, the same bug fixed in agent_runtime_utils.normalize_for_sarvam).
     return None
 
 
@@ -472,21 +463,3 @@ async def get_session_dict_id(
     except Exception as exc:
         logger.warning("[SARVAM_DICT] Session dict failed: %s (exc_type=%s) — falling back to base dict", exc, type(exc).__name__, exc_info=True)
         return base_dict_id
-
-
-# -- Legacy compat (keep old callers working) -----------------------------------
-
-async def get_or_create_dict_id(api_key: str) -> Optional[str]:
-    """Backward-compat wrapper. Returns base dict ID."""
-    return await get_or_create_base_dict_id(api_key)
-
-
-async def sync_pronunciations(api_key: str, dict_id: str, extra: dict[str, str] | None = None) -> None:
-    """Push the full base set (plus any extras) to an existing dict."""
-    merged = {**_BASE_PRONUNCIATIONS, **(extra or {})}
-    if len(merged) > 100:
-        merged = dict(list(merged.items())[:100])
-    try:
-        await _update_dict(api_key, dict_id, merged)
-    except Exception as exc:
-        logger.warning("[SARVAM_DICT] sync_pronunciations failed: %s", exc)

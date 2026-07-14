@@ -68,7 +68,7 @@ export type SreevaAIInterviewViewModel = {
   aiBullets: string[];
   integritySignals: IntelSignalRow[];
   signalAnalysis: Record<string, any>;
-  skills: { name: string; score: number; evidence?: string; status?: string; stars?: number; scoreLabel?: string; whatShowed?: string; whatMissing?: string }[];
+  skills: { name: string; score: number; evidence?: string[]; status?: string; stars?: number; scoreLabel?: string; whatShowed?: string; whatMissing?: string }[];
   topStrengths: string[];
   topRisks: string[];
   transcript: { from: "ai" | "user"; text: string; time?: string; qBadge?: QBadge; bad?: boolean; seekSeconds?: number; seekLabel?: string }[];
@@ -182,19 +182,6 @@ function recommendationFromAI(aiRec: string, pct: number): { label: string; colo
   return { label: "Reject", color: "red" };
 }
 
-const PROCTORING_DISPLAY: Record<string, { title: string; why: string; risk: string }> = {
-  face_absence: { title: "Face not visible", why: "Camera detected no face during the interview. The candidate may have looked away, turned off the camera, or left the frame.", risk: "High - indicates the candidate was not actively present in front of the camera." },
-  multiple_faces: { title: "Multiple faces detected", why: "More than one person was detected in the camera frame, suggesting someone else may have been present or assisting.", risk: "High - potential coaching or collaboration violation." },
-  identity_mismatch: { title: "Identity mismatch", why: "The face detected during the interview did not consistently match the registered identity of the candidate.", risk: "High - possible impersonation attempt. Verify with candidate photo ID." },
-  camera_disabled: { title: "Camera disabled mid-session", why: "The candidate turned off the camera during a live interview segment, breaking proctoring visibility.", risk: "High - prevents visual monitoring of the candidate." },
-  microphone_disabled: { title: "Microphone disabled mid-session", why: "The microphone was turned off during the interview, disrupting audio capture and transcription quality.", risk: "Medium - may affect transcript accuracy; review recording for gaps." },
-  tab_switch: { title: "Tab switch", why: "The candidate switched to another browser tab while the interview tab stayed open. This is commonly associated with looking up answers.", risk: "Medium - cross-check with answer quality; sudden improvement after a tab switch is a red flag." },
-  fullscreen_exit: { title: "Fullscreen exited", why: "The candidate left fullscreen mode during the interview (Esc, F11, or browser UI). This is a deliberate action, unlike a passive focus loss.", risk: "High - often precedes looking at a second screen or another application in view." },
-  window_focus_loss: { title: "Window focus lost", why: "The browser window lost OS-level focus, e.g. the candidate alt-tabbed to another application or a notification stole focus.", risk: "Medium - cross-check duration and frequency; brief losses may be incidental (e.g. OS notifications)." },
-  connection_lost: { title: "Connection dropped", why: "The candidate's internet connection was interrupted during the session. This may be genuine or deliberate.", risk: "Low-Medium - check whether audio and video resumed cleanly and whether answers were affected." },
-  answer_integrity: { title: "Answer integrity flagged", why: "The candidate's answers show AI-generated/read phrasing, contradict claims made in earlier turns, or both — the only content-layer signal, since it looks at what was actually said rather than session behavior.", risk: "High - catches a candidate who behaves cleanly (no tab switches, camera stays on) but is reading generated answers or forgets what they claimed earlier in the same interview." },
-  session_fingerprint: { title: "Session fingerprint mismatch", why: "The candidate's browser or device fingerprint changed mid-session — detected via screen resolution, platform, user agent, timezone, or IP geolocation shifts. This indicates VPN use, a device swap, or a virtual machine environment.", risk: "High - device swap or VM use suggests deliberate evasion of proctoring controls." },
-};
 function SkillRatingsList({ skills }: { skills: SreevaAIInterviewViewModel["skills"] }) {
   const [open, setOpen] = useState<number | null>(null);
   return (
@@ -209,14 +196,21 @@ function SkillRatingsList({ skills }: { skills: SreevaAIInterviewViewModel["skil
             <span className="text-[12px] font-semibold text-[#374151] truncate">{skill.name}</span>
             <div className="flex items-center gap-1.5 shrink-0">
               <span className="text-[11px] font-bold text-[#374151] tabular-nums">{skill.score}/10</span>
-              {skill.evidence && (
+              {skill.evidence?.length ? (
                 <ChevronDown className={cn("w-3 h-3 text-[#9CA3AF] transition-transform", open === idx && "rotate-180")} />
-              )}
+              ) : null}
             </div>
           </button>
-          {open === idx && skill.evidence && (
-            <p className="mt-1.5 text-[11px] leading-relaxed text-[#6B7280] pl-0.5">{skill.evidence}</p>
-          )}
+          {open === idx && skill.evidence?.length ? (
+            <ul className="mt-1.5 space-y-1 pl-0.5">
+              {skill.evidence.map((e, ei) => (
+                <li key={ei} className="text-[11px] leading-relaxed text-[#6B7280] flex gap-1.5">
+                  <span className="shrink-0">-</span>
+                  <span>{e}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </li>
       ))}
     </ul>
@@ -226,74 +220,29 @@ function SkillRatingsList({ skills }: { skills: SreevaAIInterviewViewModel["skil
 function buildIntegritySignals(
   rows: {
     key: string; label: string; value: string; bad: boolean;
-    score?: number; reason?: string; quotes?: string[];
-    occurrences?: { severity: string; timestamp?: number; during_question?: string; during_topic?: string; reason?: string }[];
-    turns?: { turn: number; question: string; latency_sec: number; gap_before_sec: number | null }[];
+    verdict?: string[]; aiPhrasingFlagged?: boolean; contradictionFlagged?: boolean;
+    maxLatencySec?: number; maxLatencyQuestion?: string; avgLatencySec?: number;
   }[],
-  _integrityScore: number,
-  integritySignalsAnalysis?: Record<string, string[]>,
 ): IntelSignalRow[] {
   // Only include events that actually occurred (exclude the "No flags" clean placeholder)
   const realRows = rows.filter(r => r.key !== "clean");
   const signals: IntelSignalRow[] = realRows.map((r) => {
-    const countMatch = r.value.match(/^(\d+)/);
-    const count = countMatch ? parseInt(countMatch[1], 10) : 0;
-    const display = PROCTORING_DISPLAY[r.key];
-    const title = display?.title || r.label.replace(/\b\w/g, c => c.toUpperCase());
+    const title = r.label.replace(/\b\w/g, c => c.toUpperCase());
     const details: string[] = [];
-    // LLM's 3 sharp points (whole-session analysis of every occurrence of this
-    // signal type) take priority over the generic static why/risk copy.
-    const llmPoints = integritySignalsAnalysis?.[r.key];
-    if (llmPoints?.length) {
-      for (const p of llmPoints) details.push(`- ${p}`);
-    } else if (display) {
-      details.push(`- ${display.why}`);
-      details.push(`Risk: ${display.risk}`);
+    if (r.key === "latency_mismatch" && r.maxLatencySec !== undefined) {
+      // Highest and average latency only -- shown on hover.
+      const qLabel = r.maxLatencyQuestion ? ` (during "${r.maxLatencyQuestion}")` : "";
+      details.push(`Highest: ${r.maxLatencySec}s${qLabel}`);
+      details.push(`Average: ${r.avgLatencySec}s`);
+    } else if (r.key === "answer_integrity") {
+      // High-impact content-layer signal: no score, just what fired + the verdict.
+      const flags: string[] = [];
+      if (r.aiPhrasingFlagged) flags.push("AI-generated/read phrasing");
+      if (r.contradictionFlagged) flags.push("Cross-turn contradiction");
+      if (flags.length) details.push(`Flagged: ${flags.join(", ")}`);
+      for (const v of r.verdict || []) details.push(v);
     }
-    // latency_mismatch: per-question breakdown + inter-turn gaps, not a plain count.
-    // Show at most 3 turns to keep the tooltip readable.
-    if (r.turns?.length) {
-      const SLOW_THRESHOLD = 8;
-      const slowTurns = r.turns.filter(t => t.latency_sec >= SLOW_THRESHOLD);
-
-      if (slowTurns.length > 0) {
-        for (const t of slowTurns.slice(0, 3)) {
-          const qLabel = t.question ? `"${t.question}"` : `turn ${t.turn}`;
-          details.push(`- Unusually slow response: ${t.latency_sec}s to start answering ${qLabel}.`);
-        }
-        if (slowTurns.length > 3) {
-          details.push(`- ...and ${slowTurns.length - 3} more slow responses.`);
-        }
-      } else {
-        details.push(`- All ${r.turns.length} responses within normal range (average ${(r.turns.reduce((s, t) => s + t.latency_sec, 0) / r.turns.length).toFixed(1)}s).`);
-      }
-    }
-    else if (typeof r.score === "number") {
-      // Content-layer signals (answer_integrity) carry a score/reason/quotes
-      // instead of a simple occurrence count -- surface those directly.
-      details.push(`Score: ${r.score}/100`);
-      if (r.reason) details.push(`- ${r.reason}`);
-      if (r.quotes?.length) {
-        for (const q of r.quotes) details.push(`Quote: "${q}"`);
-      }
-    }
-    else if (r.occurrences?.length) {
-      // Per-occurrence "during which question" context, attached by
-      // report_pipeline.py's _attach_question_context.
-      for (const occ of r.occurrences) {
-        if (occ.during_question) details.push(`- Happened during: "${occ.during_question}"`);
-        else if (occ.during_topic) details.push(`- Happened during the ${occ.during_topic} topic.`);
-      }
-      if (count >= 3) details.push(`- Occurred ${count} times - high frequency. Strongly recommend reviewing recording timestamps.`);
-      else if (count === 2) details.push(`- Occurred twice - review both incidents in the recording before deciding.`);
-      else if (count === 1 && !r.occurrences.some(o => o.during_question || o.during_topic)) {
-        details.push(`- Occurred once - isolated event, review the recording at this point to confirm context.`);
-      }
-    } else if (count > 0) {
-      if (count >= 3) details.push(`- Occurred ${count} times - high frequency. Strongly recommend reviewing recording timestamps.`);
-      else if (count === 2) details.push(`- Occurred twice - review both incidents in the recording before deciding.`);
-      else details.push(`- Occurred once - isolated event, review the recording at this point to confirm context.`);
-    }
+    // All other signals: name + count only, no explanation.
     return {
       id: r.key,
       label: title,
@@ -309,7 +258,7 @@ function buildIntegritySignals(
       label: "No flags detected",
       badge: "Clean",
       tone: "emerald",
-      details: ["No proctoring events raised during this session.", "Candidate completed the interview without any integrity flags."],
+      details: ["No proctoring events raised during this session."],
     });
   }
   return signals;
@@ -350,9 +299,8 @@ export function buildSreevaAIInterviewViewModel(i: {
   proctoringVerdictSummary: string;
   groupedProctoringSignals: {
     key: string; label: string; count: number; severity: string;
-    score?: number; reason?: string; quotes?: string[];
-    occurrences?: { severity: string; timestamp?: number; during_question?: string; during_topic?: string; reason?: string; explanation?: string }[];
-    turns?: { turn: number; question: string; latency_sec: number; gap_before_sec: number | null }[];
+    verdict?: string[]; aiPhrasingFlagged?: boolean; contradictionFlagged?: boolean;
+    maxLatencySec?: number; maxLatencyQuestion?: string; avgLatencySec?: number;
   }[];
   wordCount: number;
   interviewScore: number;
@@ -411,23 +359,23 @@ export function buildSreevaAIInterviewViewModel(i: {
   const questionsAsked = Math.max(1, (i.interviewQaRows?.length || i.interviewSessionRows.length) || 1);
   const techTag: "GOOD" | "AVERAGE" | "WEAK" = technicalPct >= 70 ? "GOOD" : technicalPct >= 45 ? "AVERAGE" : "WEAK";
 
-  // a"a" Proctoring rows a"a"
+  // a"a" Proctoring rows a"a" -- name + count only, except latency_mismatch (max/avg) and answer_integrity (verdict, no score)
   const proctoringRows: {
     key: string; label: string; value: string; bad: boolean;
-    score?: number; reason?: string; quotes?: string[];
-    occurrences?: { severity: string; timestamp?: number; during_question?: string; during_topic?: string; reason?: string; explanation?: string }[];
-    turns?: { turn: number; question: string; latency_sec: number; gap_before_sec: number | null }[];
+    verdict?: string[]; aiPhrasingFlagged?: boolean; contradictionFlagged?: boolean;
+    maxLatencySec?: number; maxLatencyQuestion?: string; avgLatencySec?: number;
   }[] =
     (i.groupedProctoringSignals || []).slice(0, 8).map((g) => ({
       key: g.key,
       label: g.label.replace(/\b\w/g, (ch) => ch.toUpperCase()),
       value: `${g.count} time${g.count === 1 ? "" : "s"}`,
       bad: g.severity === "high" || g.severity === "medium",
-      score: g.score,
-      reason: g.reason,
-      quotes: g.quotes,
-      occurrences: g.occurrences,
-      turns: g.turns,
+      verdict: g.verdict,
+      aiPhrasingFlagged: g.aiPhrasingFlagged,
+      contradictionFlagged: g.contradictionFlagged,
+      maxLatencySec: g.maxLatencySec,
+      maxLatencyQuestion: g.maxLatencyQuestion,
+      avgLatencySec: g.avgLatencySec,
     }));
   if (proctoringRows.length === 0) {
     proctoringRows.push({ key: "clean", label: "Session telemetry", value: "No flags", bad: false });
@@ -436,7 +384,7 @@ export function buildSreevaAIInterviewViewModel(i: {
   const rawIntegrityScore = Number.isFinite(i.integrityScore)
     ? Math.max(0, Math.min(100, i.integrityScore!))
     : (proctoringRows.some((r) => r.bad) ? 65 : 95);
-  const integritySignals = buildIntegritySignals(proctoringRows, rawIntegrityScore, behavAnalysis?.integrity_analysis?.narratives);
+  const integritySignals = buildIntegritySignals(proctoringRows);
   // Skills -- sourced only from skillRatings DB column (agent_persistence.py)
   const skills = (i.interviewReportSkills || [])
     .map((s: any) => {
@@ -446,7 +394,9 @@ export function buildSreevaAIInterviewViewModel(i: {
       const score = typeof rawScore === "number"
         ? Math.max(1, Math.min(10, Math.round(rawScore)))
         : Math.max(1, Math.min(10, Math.round(parseFloat(String(rawScore)) || 5)));
-      const evidence = cleanAiText(String(s?.evidence || "").trim()) || undefined;
+      const evidence: string[] = Array.isArray(s?.evidence)
+        ? s.evidence.map((e: unknown) => cleanAiText(String(e || "").trim())).filter(Boolean)
+        : (cleanAiText(String(s?.evidence || "").trim()) ? [cleanAiText(String(s.evidence).trim())] : []);
       return { name, score, evidence };
     })
     .filter(Boolean)
@@ -597,8 +547,6 @@ export function buildSreevaAIInterviewViewModel(i: {
     : buildDecisionNote();
   const verdictRecommendationReason = cleanAiText(String(verdict.recommendation_reason || "").trim());
   const aiSummaryConcise = String((verdict as any).ai_summary_concise || "").trim();
-  // Proctoring signal (needed before aiBullets to reference flagCount)
-  const flagCount = proctoringRows.filter((row) => row.bad).length;
   // Primary: use interviewAiSummary -- the new 4-bullet evidence-based summary generated by generate_interview_summary
   const aiBullets: string[] = (() => {
     const bullets: string[] = [];
@@ -626,25 +574,6 @@ export function buildSreevaAIInterviewViewModel(i: {
           const cleaned = cleanAiText(line.replace(/^[\s•\-+]\s*/, "").replace(/^\*(?!\*)/, "").trim());
           if (cleaned.length > 5) bullets.push(cleaned);
         });
-    }
-    // Fallback: evidence-based bullets derived from actual data, no comm/recommendation duplication
-    if (bullets.length === 0 && !i.isFallbackReport) {
-      const provedSkills = skills.filter(s => s.score >= 5).slice(0, 2);
-      const topSkillNames = provedSkills.map(s => `**${s.name}**`).join(" and ") || "**their primary domain**";
-      bullets.push(cleanAiText(`Candidate demonstrated practical hands-on exposure to ${topSkillNames} through specific project descriptions and implementation context.`));
-      const gapSkills = skills.filter(s => s.score < 5).slice(0, 2);
-      const gapNames = gapSkills.map(s => `**${s.name}**`).join(" and ") || "**advanced technical depth**";
-      bullets.push(cleanAiText(`Depth was ${technicalPct >= 60 ? "solid in core areas but surface-level" : "limited"} on ${gapNames} - answers stayed at concept level without implementation detail when probed.`));
-      const behavioralSummary = String(behavAnalysis?.summary || "").trim();
-      const engagementLine = behavioralSummary
-        ? behavioralSummary.split(".")[0].trim() + "."
-        : flagCount === 0
-          ? "Candidate maintained consistent engagement with no behavioral anomalies across the session."
-          : `${flagCount} behavioral signal${flagCount !== 1 ? "s" : ""} triggered during the session - review proctoring timeline for context.`;
-      bullets.push(cleanAiText(engagementLine));
-      const topStrength = topStrengths[0]?.replace(/\*\*/g, "") || "";
-      const topRisk = topRisks[0]?.replace(/\*\*/g, "") || "";
-      if (topStrength) bullets.push(cleanAiText(`Strongest observed signal: ${topStrength.toLowerCase()}${topRisk ? ` - primary area to validate further: ${topRisk.toLowerCase()}` : ""}.`));
     }
     return bullets.slice(0, 4);
   })();
@@ -753,11 +682,13 @@ function ScrollFade({ children, className, style }: { children: React.ReactNode;
   );
 }
 
-/* Compact signal analysis — each point truncates to 1 line with dropdown to expand */
+/* Compact signal analysis — each topic collapses to its label, expands to 2-3 bullets */
 function SignalAnalysisPanelCompact({ analysis }: { analysis: Record<string, any> }) {
   const [openIdx, setOpenIdx] = useState<number | null>(null);
-  const points: string[] = Array.isArray(analysis?.behavioral_signals_analysis)
-    ? (analysis.behavioral_signals_analysis as string[]).filter((p) => typeof p === "string" && p.trim())
+  const points: { topic: string; bullets: string[] }[] = Array.isArray(analysis?.behavioral_signals_analysis)
+    ? (analysis.behavioral_signals_analysis as any[])
+      .filter((p) => p && typeof p.topic === "string" && Array.isArray(p.bullets) && p.bullets.length)
+      .map((p) => ({ topic: p.topic, bullets: p.bullets.filter((b: unknown) => typeof b === "string" && b.trim()) }))
     : [];
   if (points.length === 0) {
     return (
@@ -766,8 +697,7 @@ function SignalAnalysisPanelCompact({ analysis }: { analysis: Record<string, any
   }
   return (
     <ul className="divide-y divide-[#F0F1F3]">
-      {points.map((text, idx) => {
-        const { title, description } = parseBulletCard(text);
+      {points.map(({ topic, bullets }, idx) => {
         const isOpen = openIdx === idx;
         return (
           <li key={idx} className="py-2">
@@ -777,12 +707,19 @@ function SignalAnalysisPanelCompact({ analysis }: { analysis: Record<string, any
               onClick={() => setOpenIdx(isOpen ? null : idx)}
             >
               <span className="mt-[5px] h-[6px] w-[6px] shrink-0 rounded-full bg-[#3B82F6]" />
-              <p className={cn("text-[12px] font-medium text-[#111827] leading-relaxed flex-1", !isOpen && "truncate")}>{title}</p>
+              <p className="text-[12px] font-medium text-[#111827] leading-relaxed flex-1 truncate">{topic}</p>
               <ChevronDown className={cn("h-3.5 w-3.5 text-[#9CA3AF] shrink-0 mt-[3px] transition-transform duration-200", isOpen && "rotate-180")} />
             </button>
-            {isOpen && description && (
+            {isOpen && (
               <div className="overflow-hidden animate-in slide-in-from-top-1 fade-in-50 duration-200">
-                <p className="text-[11px] leading-relaxed text-[#4B5563] mt-1.5 pl-[19px] pr-4">{description}</p>
+                <ul className="mt-1.5 pl-[19px] pr-4 space-y-1">
+                  {bullets.map((b, bi) => (
+                    <li key={bi} className="text-[11px] leading-relaxed text-[#4B5563] flex gap-1.5">
+                      <span className="shrink-0">-</span>
+                      <span>{b}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
           </li>
@@ -1368,7 +1305,7 @@ export function InterviewReportSreevaAI({
                   <span className="text-[11px] font-bold uppercase tracking-widest text-rose-700">Hiring Note</span>
                 </div>
                 <p className={cn("text-[12px] leading-snug text-rose-900 font-medium", !expandedVerdict && "line-clamp-3")}>
-                  {model.reportNotGenerated ? "This report hasn't been generated." : (model.verdictSummary || model.verdictRecommendationReason || "No specific hiring note provided.")}
+                  {model.reportNotGenerated ? "Report is preparing…" : (model.verdictSummary || model.verdictRecommendationReason || "No specific hiring note provided.")}
                 </p>
               </div>
 
@@ -1395,9 +1332,7 @@ export function InterviewReportSreevaAI({
                 <div className="flex-1 overflow-y-auto pr-2" style={{ scrollbarWidth: "thin" }}>
                   <ul className="space-y-2.5">
                     {model.reportNotGenerated ? (
-                      <p className="text-[13px] text-[#6B7280]">This report hasn't been generated.</p>
-                    ) : model.isFallback ? (
-                      <p className="text-[13px] text-[#6B7280]">AI analysis pending.</p>
+                      <p className="text-[13px] text-[#6B7280]">Report is preparing…</p>
                     ) : (
                       model.aiBullets.slice(0, 3).map((b, i) => (
                         <li key={i} className="flex items-start gap-2.5">
@@ -1424,10 +1359,14 @@ export function InterviewReportSreevaAI({
                 </div>
                 <div className="flex-1 overflow-visible pr-2">
                   {model.integritySignals.length === 1 && model.integritySignals[0].id === "clean" ? (
-                    <div className="flex items-start gap-2.5">
-                      <span className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-                      <p className="text-[12px] font-medium leading-relaxed text-[#374151]">Candidate completed the interview without any proctoring or integrity flags.</p>
-                    </div>
+                    model.reportNotGenerated ? (
+                      <p className="text-[13px] text-[#6B7280]">Report is preparing…</p>
+                    ) : (
+                      <div className="flex items-start gap-2.5">
+                        <span className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+                        <p className="text-[12px] font-medium leading-relaxed text-[#374151]">Candidate completed the interview without any proctoring or integrity flags.</p>
+                      </div>
+                    )
                   ) : (
                     <div className="flex flex-col gap-2">
                       {model.integritySignals.filter(r => r.id !== "clean").map((row) => (
@@ -1471,7 +1410,7 @@ export function InterviewReportSreevaAI({
                 <h3 className="text-[14px] font-bold text-[#111827] mb-6 shrink-0">Evaluation Radar</h3>
                 <div className="flex-1 flex items-center justify-center -mt-4 min-h-0">
                   {model.reportNotGenerated ? (
-                    <p className="text-[13px] text-[#6B7280]">This report hasn't been generated.</p>
+                    <p className="text-[13px] text-[#6B7280]">Report is preparing…</p>
                   ) : (
                     <EvaluationScoresCard scores={model.technical.scores} overall={model.technical.percent} />
                   )}
@@ -1482,7 +1421,7 @@ export function InterviewReportSreevaAI({
                 <h3 className="text-[14px] font-bold text-[#111827] mb-5 shrink-0">Skill Ratings</h3>
                 <div className="flex-1 overflow-y-auto pr-2" style={{ scrollbarWidth: "thin" }}>
                   {model.reportNotGenerated ? (
-                    <p className="text-[13px] text-[#6B7280]">This report hasn't been generated.</p>
+                    <p className="text-[13px] text-[#6B7280]">Report is preparing…</p>
                   ) : model.skills.length > 0 ? (
                     <SkillRatingsList skills={model.skills} />
                   ) : (
@@ -1500,7 +1439,7 @@ export function InterviewReportSreevaAI({
                 </div>
                 <div className="flex-1 overflow-y-auto pr-2" style={{ scrollbarWidth: "thin" }}>
                   {model.reportNotGenerated ? (
-                    <p className="text-[13px] text-[#6B7280]">This report hasn't been generated.</p>
+                    <p className="text-[13px] text-[#6B7280]">Report is preparing…</p>
                   ) : (
                     <SignalAnalysisPanelCompact analysis={model.signalAnalysis} />
                   )}
@@ -1523,7 +1462,7 @@ export function InterviewReportSreevaAI({
                 </div>
                 <div className="flex-1 overflow-y-auto pr-2" style={{ scrollbarWidth: "thin" }}>
                   {model.reportNotGenerated ? (
-                    <p className="text-[13px] text-[#6B7280]">This report hasn't been generated.</p>
+                    <p className="text-[13px] text-[#6B7280]">Report is preparing…</p>
                   ) : model.topStrengths.length > 0 ? (
                     <ul className="space-y-3">
                       {model.topStrengths.map((item, idx) => (
@@ -1548,7 +1487,7 @@ export function InterviewReportSreevaAI({
                 </div>
                 <div className="flex-1 overflow-y-auto pr-2" style={{ scrollbarWidth: "thin" }}>
                   {model.reportNotGenerated ? (
-                    <p className="text-[13px] text-[#6B7280]">This report hasn't been generated.</p>
+                    <p className="text-[13px] text-[#6B7280]">Report is preparing…</p>
                   ) : model.topRisks.length > 0 ? (
                     <ul className="space-y-3">
                       {model.topRisks.map((item, idx) => (

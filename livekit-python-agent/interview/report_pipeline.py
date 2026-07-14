@@ -85,7 +85,7 @@ class LLMEvalResponse(BaseModel):
 class LLMSkillEntry(BaseModel):
     skill:    str = ""
     score:    int = Field(default=5, ge=1, le=10)
-    evidence: str = ""
+    evidence: list[str] = Field(default_factory=list)
 
     @field_validator("score", mode="before")
     @classmethod
@@ -419,22 +419,25 @@ class BehavioralAnalyzer:
         "- example_evaded: Asked for a real story. Got theory or 'usually I do X' instead.\n"
         "- functional_claim_unverified: Named a tool/method vaguely. Couldn't prove hands-on usage.\n"
         "- claim_not_demonstrated: Made a strong self-claim with no evidence to back it up.\n\n"
-        "YOUR JOB: Write 4-5 analysis points. Each point is a FULL PARAGRAPH (5-8 sentences).\n\n"
-        "REQUIRED COVERAGE - You MUST address all of these:\n"
+        "YOUR JOB: Cover up to 5 topics below, but ONLY the ones with real evidence in the transcript — "
+        "skip a topic entirely rather than padding it with a weak or generic observation. For each topic "
+        "you do cover, write ONE topic label and EXACTLY 2-3 short, sharp bullet points (one sentence "
+        "each), not a paragraph.\n\n"
+        "TOPICS TO CONSIDER:\n"
         "1. Composure Under Pressure: When challenged, corrected, or asked a hard follow-up, did they stay calm and adapt, or become flustered, defensive, or repetitive? Quote the moment.\n"
         "2. Communication Style: Were their answers direct and structured, or did they ramble, hedge ('I think maybe', 'kind of', 'sort of'), or circle back without landing a point?\n"
         "3. Engagement & Responsiveness: Did their energy and attentiveness stay consistent, or did it visibly shift (e.g. sharp and engaged early, flat or checked-out later)? Reference where the shift happened.\n"
         "4. Handling Not Knowing Something: When they didn't know an answer, did they admit it plainly, reason out loud, bluff, deflect, or go silent? Quote the exact moment.\n"
         "5. Delivery Consistency: Did their communication style stay stable across topics, or did it change noticeably between rehearsed-sounding topics and unexpected ones?\n\n"
         "HARD RULES:\n"
-        "- Every paragraph MUST reference a specific question, topic, or near-exact quote from the transcript.\n"
+        "- Every bullet MUST reference a specific question, topic, or near-exact quote from the transcript.\n"
         "- Do NOT write a sentence that could apply to any other candidate.\n"
         "- Do NOT use filler praise like 'showed enthusiasm' or 'had a positive attitude'.\n"
         "- Do NOT mention score numbers or dimension names.\n"
         "- Do NOT judge technical correctness, domain knowledge, or whether an answer was 'right' — that belongs to a different section of the report.\n"
         "- Do NOT make personality or character judgments (e.g. 'introverted', 'a confident person', 'a team player'). Describe specific observed behavior in THIS interview only, never a trait label.\n\n"
-        'Output ONLY a JSON array of 4-5 strings. Each string is a full paragraph. No markdown.\n'
-        '["Paragraph one...", "Paragraph two..."]'
+        'Output ONLY valid JSON: {"points": [{"topic": "Composure Under Pressure", "bullets": ["...", "..."]}, ...]}. '
+        "No markdown, no extra keys."
     )
 
 
@@ -517,7 +520,7 @@ class BehavioralAnalyzer:
         org_id:    str = "",
         app_id:    str = "",
     ) -> tuple[dict, list[dict]]:
-        """Returns ({"points": [...]}, [usage_dict, ...])."""
+        """Returns ({"points": [{"topic": str, "bullets": [str, ...]}, ...]}, [usage_dict, ...])."""
         if not os.environ.get("OPENAI_API_KEY"):
             logger.warning("[BEHAVIORAL] Skipping: missing OPENAI_API_KEY")
             return {"points": []}, []
@@ -526,9 +529,9 @@ class BehavioralAnalyzer:
         spec = LLMCallSpec(
             system=self._SYSTEM,
             user=user,
-            max_tokens=1000,
+            max_tokens=800,
             timeout=45.0,
-            response_format={"type": "text"},
+            response_format=_BEHAVIORAL_JSON_SCHEMA,
             call_type="behavioral_analysis",
             temperature=0.2,
             org_id=org_id,
@@ -537,20 +540,15 @@ class BehavioralAnalyzer:
         )
         try:
             raw, usage = await _llm.call(spec)
-            try:
-                parsed = json.loads(raw)
-                if isinstance(parsed, list):
-                    points = [str(p).strip() for p in parsed if p]
-                elif isinstance(parsed, dict):
-                    points = [str(v).strip() for v in parsed.values() if v]
-                else:
-                    points = []
-            except Exception:
-                points = [
-                    l.strip().lstrip("-'").strip()
-                    for l in raw.splitlines()
-                    if len(l.strip()) > 20
-                ]
+            data = json.loads(raw)
+            points = [
+                {
+                    "topic": str(p.get("topic", "")).strip(),
+                    "bullets": [str(b).strip() for b in p.get("bullets", []) if str(b).strip()][:3],
+                }
+                for p in data.get("points", [])
+                if str(p.get("topic", "")).strip() and p.get("bullets")
+            ]
             result = {"points": points[:5]}
             logger.info(
                 "[BEHAVIORAL] %d points | signals=%d tokens=%d+%d",
@@ -563,6 +561,39 @@ class BehavioralAnalyzer:
         except Exception as e:
             logger.error("[BEHAVIORAL] LLM call failed: %s", e, exc_info=True)
             return {"points": []}, []
+
+
+_BEHAVIORAL_JSON_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "behavioral_response",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "points": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "topic": {"type": "string"},
+                            "bullets": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "minItems": 2,
+                                "maxItems": 3,
+                            },
+                        },
+                        "required": ["topic", "bullets"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["points"],
+            "additionalProperties": False,
+        },
+    },
+}
 
 
 _behavioral_analyzer = BehavioralAnalyzer()
@@ -594,56 +625,63 @@ class AnswerIntegrityAnalyzer:
     """Detects AI-generated/read phrasing AND cross-turn contradictions.
 
     Runs once per interview (not per-turn) over the full transcript, in
-    parallel with the other report LLM calls. Returns a 0-100 overall
-    score (the higher of the two dimensions); the caller (_node_assemble)
-    turns that into a fired/not-fired integrity event at a threshold, same
-    shape as the other browser signals.
+    parallel with the other report LLM calls. This is judgment work, not
+    keyword matching -- a candidate saying "leverage" once because it's the
+    correct technical term is not a signal; the same candidate producing
+    three consecutive essay-structured answers with zero natural speech
+    markers is. The model must reason about the WHOLE pattern, not pattern-
+    match a phrase list, and must anchor every claim in an exact quote --
+    an unsupported claim is worse than useless to a recruiter deciding
+    whether to trust this candidate.
     """
 
     _SYSTEM = (
-        "You are checking a candidate's SPOKEN interview transcript for two independent "
-        "problems. Judge each one separately, then report an overall verdict.\n\n"
-        "You are given the full interview transcript (speech-to-text, so natural spoken "
-        "grammar is expected and normal).\n\n"
-        "DIMENSION 1 -- PHRASING (does any single answer sound read/AI-generated, not spoken?)\n"
-        "Signs of AI-generated / read phrasing:\n"
-        "- Stock LLM phrasing: 'it's worth noting that', 'in today's fast-paced environment', "
-        "'leverage synergies', 'at the end of the day', 'plays a crucial role', 'delve into'.\n"
-        "- Essay cadence in a spoken answer: 'firstly... secondly... in conclusion' — people "
-        "don't talk like this live, that's written-essay structure.\n"
-        "- Suspiciously uniform sentence construction across different answers — real spontaneous "
-        "speech is messy and varies; generated text has an unnaturally consistent smoothness.\n"
-        "- Total absence of natural speech markers (no filler words, no self-correction, no "
-        "false starts, no trailing off) especially when the answer is long and detailed — "
-        "combined with unusually polished, well-organized content for something said out loud.\n"
-        "- Vocabulary/register mismatch: precise, formal, textbook language in the 'big' answers "
-        "that doesn't match how the same candidate talks in casual moments (greeting, small talk, "
-        "clarifying questions) elsewhere in the transcript.\n"
-        "NOT a phrasing signal: a well-spoken/articulate candidate, appropriate technical jargon "
-        "used correctly, rehearsed personal stories, non-native English quirks, or answers too "
-        "short to judge either way.\n\n"
-        "DIMENSION 2 -- CONSISTENCY (do claims across different turns contradict each other?)\n"
-        "Look across ALL turns for factual contradictions about the same project/role/claim: "
-        "different numbers for the same thing (team size, timeline, budget, scale), a role or "
+        "You are a senior interview integrity analyst. You are given a candidate's SPOKEN interview "
+        "transcript (speech-to-text, so natural spoken grammar/filler words are expected and normal -- "
+        "do not flag them). Your job is to catch two specific failure modes a candidate can hide behind "
+        "clean behavioral proctoring (camera on, no tab switches): reading/AI-generated answers, and "
+        "self-contradiction across turns. This requires real judgment, not keyword spotting -- reason "
+        "about the full pattern of how this specific candidate talks before concluding anything.\n\n"
+        "CHECK 1 -- AI-GENERATED OR READ PHRASING\n"
+        "Read the ENTIRE transcript first to build a baseline for how this candidate actually talks: "
+        "their vocabulary, sentence length, filler words, self-corrections, hedging. Then look for "
+        "answers that break from that baseline in ways consistent with reading or AI generation:\n"
+        "- Stock LLM/essay phrasing that a real person doesn't say out loud: 'it's worth noting that', "
+        "'in today's fast-paced environment', 'leverage synergies', 'at the end of the day', 'plays a "
+        "crucial role', 'delve into', 'firstly... secondly... in conclusion'.\n"
+        "- A sudden jump in polish/structure/vocabulary for ONE answer that doesn't match how the same "
+        "candidate talked two questions earlier or later -- the register mismatch is the signal, not "
+        "eloquence itself.\n"
+        "- Total absence of natural speech markers (no filler words, no self-correction, no false "
+        "starts) on a long, detailed answer, when the candidate DOES show those markers elsewhere in "
+        "the same transcript -- the contrast is what matters.\n"
+        "Do NOT flag: a consistently articulate candidate (if they talk that way throughout, that's "
+        "just how they talk), correct use of technical jargon, a well-rehearsed personal story told "
+        "once, non-native English phrasing quirks, or short answers with too little signal to judge.\n"
+        "If you flag this, you MUST quote the exact suspect sentence(s) and name specifically what about "
+        "it breaks from the candidate's own established baseline elsewhere in the transcript.\n\n"
+        "CHECK 2 -- CROSS-TURN CONTRADICTION\n"
+        "Scan every turn for factual claims about the same project/role/event and check them against "
+        "each other: different numbers for the same thing (team size, timeline, budget, scale), an "
         "ownership claim that changes ('I led it' vs 'I was just one of the team' about the same "
-        "project), or a technical detail that flatly contradicts an earlier turn's version of the "
-        "same story. This is the strongest signal against a candidate reading from prepared notes: "
-        "each individual answer can sound perfectly natural while still not agreeing with what they "
-        "said earlier.\n"
-        "NOT a consistency signal: reasonable elaboration or added detail on a later turn, rounding "
-        "differences ('about 10' then '12'), or discussing genuinely different projects/roles.\n\n"
-        "SCORING (0-100 for each dimension, independently):\n"
-        "0-25: No issue on this dimension.\n"
-        "26-50: A few weak indicators, plausibly innocent.\n"
-        "51-75: Multiple/clear indicators on this dimension.\n"
-        "76-100: Strong, repeated, unambiguous pattern on this dimension.\n\n"
+        "project), or a technical detail that flatly contradicts an earlier turn's version. This catches "
+        "a candidate reading from prepared notes even when each individual answer sounds natural.\n"
+        "Do NOT flag: reasonable elaboration or added detail later, rounding differences ('about 10' "
+        "then '12'), or genuinely different projects/roles being discussed.\n"
+        "If you flag this, you MUST quote both conflicting claims and name which turns they came from.\n\n"
+        "OUTPUT — be decisive, not hedgy. If neither check finds real evidence, say so plainly in one "
+        "line ('No AI-generated phrasing or contradictions found; responses were consistent and matched "
+        "the candidate's natural speech pattern throughout') — do not manufacture a weak finding to have "
+        "something to report.\n"
         "Output ONLY valid JSON matching the schema exactly. No markdown.\n"
-        "- phrasing_score: integer 0-100 as defined above for Dimension 1.\n"
-        "- phrasing_reason: one paragraph explaining the phrasing score, quoting specific phrases if any.\n"
-        "- consistency_score: integer 0-100 as defined above for Dimension 2.\n"
-        "- consistency_reason: one paragraph explaining the consistency score. If contradictions exist, "
-        "name the specific claims and which turns they came from.\n"
-        "- quotes: 0-4 short exact quotes from the transcript that most support either score (empty if none)."
+        "- ai_phrasing_flagged: true only if you found a concrete, quotable instance breaking from the "
+        "candidate's baseline. false otherwise.\n"
+        "- contradiction_flagged: true only if you found two concrete, quotable conflicting claims. "
+        "false otherwise.\n"
+        "- verdict: 2-3 short, high-impact sentences for a recruiter reading this in 5 seconds. If "
+        "either check fired, state exactly what fired, quote the evidence, and say what it means for "
+        "hiring judgment. If nothing fired, one confident sentence saying so is enough. No hedging, no "
+        "filler, no restating these instructions."
     )
 
     @staticmethod
@@ -654,9 +692,8 @@ class AnswerIntegrityAnalyzer:
     @staticmethod
     def _empty_result() -> dict:
         return {
-            "phrasing_score": 0, "phrasing_reason": "",
-            "consistency_score": 0, "consistency_reason": "",
-            "score": 0, "reason": "", "quotes": [],
+            "ai_phrasing_flagged": False, "contradiction_flagged": False,
+            "flagged": False, "verdict": [],
         }
 
     async def analyze(
@@ -667,9 +704,9 @@ class AnswerIntegrityAnalyzer:
         org_id: str = "",
         app_id: str = "",
     ) -> tuple[dict, list[dict]]:
-        """Returns (result_dict, [usage_dict]). result_dict has phrasing_score,
-        phrasing_reason, consistency_score, consistency_reason, score (overall,
-        max of the two), reason (which dimension drove the overall score), quotes.
+        """Returns (result_dict, [usage_dict]). result_dict has ai_phrasing_flagged,
+        contradiction_flagged, flagged (either of the two), and verdict
+        (2-3 sentence recruiter-facing summary).
         """
         if not os.environ.get("OPENAI_API_KEY"):
             logger.warning("[ANSWER_INTEGRITY] Skipping: missing OPENAI_API_KEY")
@@ -681,7 +718,7 @@ class AnswerIntegrityAnalyzer:
         spec = LLMCallSpec(
             system=self._SYSTEM,
             user=user,
-            max_tokens=700,
+            max_tokens=400,
             timeout=45.0,
             response_format=_ANSWER_INTEGRITY_JSON_SCHEMA,
             call_type="report_answer_integrity",
@@ -692,29 +729,17 @@ class AnswerIntegrityAnalyzer:
         try:
             raw, usage = await _llm.call(spec)
             data = json.loads(raw)
-            phrasing_score = max(0, min(100, int(data.get("phrasing_score", 0))))
-            consistency_score = max(0, min(100, int(data.get("consistency_score", 0))))
-            phrasing_reason = str(data.get("phrasing_reason", "")).strip()
-            consistency_reason = str(data.get("consistency_reason", "")).strip()
-            overall_score = max(phrasing_score, consistency_score)
-            driver = "consistency" if consistency_score > phrasing_score else "phrasing"
-            overall_reason = (
-                f"Phrasing {phrasing_score}/100: {phrasing_reason} "
-                f"Consistency {consistency_score}/100: {consistency_reason} "
-                f"Overall flagged on the {driver} dimension."
-            ).strip()
+            ai_phrasing_flagged = bool(data.get("ai_phrasing_flagged", False))
+            contradiction_flagged = bool(data.get("contradiction_flagged", False))
             result = {
-                "phrasing_score":      phrasing_score,
-                "phrasing_reason":     phrasing_reason,
-                "consistency_score":   consistency_score,
-                "consistency_reason":  consistency_reason,
-                "score":               overall_score,
-                "reason":              overall_reason,
-                "quotes": [str(q).strip() for q in (data.get("quotes") or []) if str(q).strip()][:4],
+                "ai_phrasing_flagged":   ai_phrasing_flagged,
+                "contradiction_flagged": contradiction_flagged,
+                "flagged":               ai_phrasing_flagged or contradiction_flagged,
+                "verdict": [str(v).strip() for v in (data.get("verdict") or []) if str(v).strip()][:3],
             }
             logger.info(
-                "[ANSWER_INTEGRITY] phrasing=%d consistency=%d overall=%d tokens=%d+%d",
-                phrasing_score, consistency_score, overall_score,
+                "[ANSWER_INTEGRITY] ai_phrasing=%s contradiction=%s tokens=%d+%d",
+                ai_phrasing_flagged, contradiction_flagged,
                 _llm.usage_dict(usage, _LLM_DEFAULT)["inputTokens"],
                 _llm.usage_dict(usage, _LLM_DEFAULT)["outputTokens"],
             )
@@ -727,174 +752,18 @@ class AnswerIntegrityAnalyzer:
 _answer_integrity_analyzer = AnswerIntegrityAnalyzer()
 
 
-# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
-# SECTION 6c — IntegrityNarrator (OOP)
-#
-# Looks at ALL fired proctoring events across the whole session at once (with
-# timestamps + which question/topic was live) and writes exactly 3 sharp
-# bullet points per SIGNAL TYPE explaining why it fired. Grouped by type, not
-# per-event, so a signal that fired 5 times still gets one crisp 3-point
-# verdict instead of 5 near-duplicate paragraphs. Skipped entirely when no
-# events fired (clean session).
-# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
-
-_INTEGRITY_NARRATIVE_SYSTEM = (
-    "You are a proctoring analyst reviewing an interview session's integrity flags for a recruiter.\n\n"
-    "You are given every fired proctoring event across the whole session, grouped by signal type -- "
-    "each occurrence includes its timestamp and which question/topic was live at that moment.\n\n"
-    "For EACH signal type, analyze all of its occurrences together (timing, which questions they "
-    "clustered around, patterns across occurrences) and write EXACTLY 3 sharp bullet points:\n"
-    "1. WHAT fired and when, concretely -- reference the actual questions/topics/timing given, not "
-    "a generic description.\n"
-    "2. WHY it most likely fired, your best inference from the pattern across all occurrences (e.g. "
-    "tab switches clustering right after hard technical questions suggests looking up answers; face "
-    "absence during long answers suggests reading off-camera; a switch to a different room/desk shows up "
-    "as fullscreen_exit + face_absence together — call that out as a combined pattern, not separate).\n"
-    "3. WHAT IT MEANS for hiring judgment -- should this be dismissed as incidental, or does it "
-    "materially undermine trust in this candidate's answers.\n\n"
-    "Ground every point in the specific data given — never invent details not present. If the context "
-    "is too thin to infer a cause, say plainly that the cause can't be determined and it should be "
-    "checked against the recording.\n"
-    "Output ONLY valid JSON: {\"signals\": [{\"signal_name\": \"<exact signal name from input>\", "
-    "\"points\": [\"<point 1>\", \"<point 2>\", \"<point 3>\"]}]}. Exactly 3 points per signal type, "
-    "one entry per distinct signal type given."
-)
-
-_INTEGRITY_NARRATIVE_JSON_SCHEMA = {
-    "type": "json_schema",
-    "json_schema": {
-        "name": "integrity_narrative_response",
-        "strict": True,
-        "schema": {
-            "type": "object",
-            "properties": {
-                "signals": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "signal_name": {"type": "string"},
-                            "points": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                                "minItems": 3,
-                                "maxItems": 3,
-                            },
-                        },
-                        "required": ["signal_name", "points"],
-                        "additionalProperties": False,
-                    },
-                },
-            },
-            "required": ["signals"],
-            "additionalProperties": False,
-        },
-    },
-}
-
-
-class IntegrityNarrator:
-    """Turns all fired proctoring events into a 3-sharp-points verdict per signal type.
-
-    One LLM call per report, only when events actually fired. Input events are
-    the same dicts IntegrityEngine scores -- each already carries
-    during_question/during_topic (attached by _attach_question_context),
-    timestamp, severity, and any event-specific fields (score/reason/quotes
-    for answer_integrity, latency_sec for latency events, etc).
-    """
-
-    @staticmethod
-    def _describe_occurrence(evt: dict) -> str:
-        parts = [f"severity={evt.get('severity', 'unknown')}"]
-        if evt.get("during_question"):
-            parts.append(f"during_question=\"{evt['during_question']}\"")
-        elif evt.get("during_topic"):
-            parts.append(f"during_topic=\"{evt['during_topic']}\"")
-        if evt.get("timestamp"):
-            parts.append(f"elapsed_ms={evt['timestamp']}")
-        if evt.get("latency_sec") is not None:
-            parts.append(f"latency_sec={evt['latency_sec']}")
-        if evt.get("reason"):
-            parts.append(f"raw_reason=\"{evt['reason']}\"")
-        if evt.get("quotes"):
-            parts.append(f"quotes={evt['quotes']}")
-        return " | ".join(parts)
-
-    async def analyze(
-        self,
-        events: list[dict],
-        *,
-        _LLM_DEFAULT: str,
-        org_id: str = "",
-        app_id: str = "",
-    ) -> tuple[dict[str, list[str]], list[dict]]:
-        """Returns ({signal_name: [3 points]}, [usage_dict]). Empty dict if no events."""
-        if not events:
-            return {}, []
-
-        grouped: dict[str, list[dict]] = {}
-        for evt in events:
-            name = str(evt.get("signal_name") or evt.get("eventType") or "unknown")
-            grouped.setdefault(name, []).append(evt)
-
-        lines: list[str] = []
-        for name, occs in grouped.items():
-            lines.append(f"SIGNAL: {name} (x{len(occs)})")
-            for occ in occs:
-                lines.append(f"  - {self._describe_occurrence(occ)}")
-        user = "\n".join(lines)
-
-        spec = LLMCallSpec(
-            system=_INTEGRITY_NARRATIVE_SYSTEM,
-            user=user,
-            max_tokens=250 * max(1, len(grouped)),
-            timeout=45.0,
-            response_format=_INTEGRITY_NARRATIVE_JSON_SCHEMA,
-            call_type="report_integrity_narrative",
-            temperature=0.2,
-            org_id=org_id,
-            app_id=app_id,
-            _LLM_DEFAULT=_LLM_DEFAULT,
-        )
-        try:
-            raw, usage = await _llm.call(spec)
-            data = json.loads(raw)
-            points_by_signal: dict[str, list[str]] = {}
-            for item in data.get("signals", []):
-                name = str(item.get("signal_name", "")).strip()
-                pts = [str(p).strip() for p in item.get("points", []) if str(p).strip()]
-                if name and pts:
-                    points_by_signal[name] = pts
-            return points_by_signal, ([_llm.usage_dict(usage, _LLM_DEFAULT)] if usage else [])
-        except Exception as e:
-            logger.error("[INTEGRITY_NARRATIVE] LLM call failed: %s", e, exc_info=True)
-            return {}, []
-
-
-_integrity_narrator = IntegrityNarrator()
-
-# Fires as an integrity event when the overall score crosses this threshold.
-_ANSWER_INTEGRITY_FLAG_THRESHOLD = 60
-
-
 def _build_answer_integrity_event(answer_integrity_result: dict) -> dict:
     """Single source of truth for the answer_integrity event shape -- used both
-    when building the full integrity-tab event list for IntegrityNarrator
-    (_node_llm_calls) and when persisting/scoring in _node_assemble. Keeping
-    this in one place means the two call sites can't drift out of sync with
-    each other the way the event-append-ordering bug did."""
+    when building the integrity-tab event list (_node_llm_calls) and when
+    persisting/scoring in _node_assemble."""
     return {
         "eventType":   "answer_integrity",
         "signal_name": "answer_integrity",
-        "severity":    "high" if answer_integrity_result["score"] >= 80 else "medium",
+        "severity":    "high" if (answer_integrity_result["ai_phrasing_flagged"] and answer_integrity_result["contradiction_flagged"]) else "medium",
         "timestamp":   int(time.time() * 1000),
-        "score":              answer_integrity_result["score"],
-        "reason":             answer_integrity_result["reason"],
-        "phrasing_score":     answer_integrity_result["phrasing_score"],
-        "phrasing_reason":    answer_integrity_result["phrasing_reason"],
-        "consistency_score":  answer_integrity_result["consistency_score"],
-        "consistency_reason": answer_integrity_result["consistency_reason"],
-        "quotes":      answer_integrity_result["quotes"],
+        "ai_phrasing_flagged":   answer_integrity_result["ai_phrasing_flagged"],
+        "contradiction_flagged": answer_integrity_result["contradiction_flagged"],
+        "verdict":               answer_integrity_result["verdict"],
     }
 
 
@@ -1160,10 +1029,9 @@ FOR EACH CATEGORY:
   6-7: Explained concepts correctly. Some hands-on knowledge. Gaps when probed deeper.
   8-9: Demonstrated real working knowledge. Held probes. Gave specific implementation details.
   10: Exceptional depth. Could teach this. No gaps found.
-- evidence: A detailed paragraph (4-6 sentences) explaining exactly why this score was given.
-  Reference specific questions, the candidate's actual answers, whether they held up under probing,
-  what they got right, what they missed, and what it means about their practical capability.
-  NO generic praise. NO sentences that could apply to any other candidate.
+- evidence: EXACTLY 2-3 short bullet points (array of strings), not a paragraph. Each bullet is
+  ONE sharp sentence referencing a specific question/answer/probe moment and what it proves about
+  their practical capability. NO generic praise. NO sentences that could apply to any other candidate.
 
 SCORING ADJUSTMENTS:
 - If the candidate said "I don't know" or denied a topic -> cap that category at 3.
@@ -1187,7 +1055,13 @@ _SKILLS_JSON_SCHEMA = {
                         "properties": {
                             "skill":    {"type": "string", "description": "The dynamic category name, e.g., 'Frontend Development'"},
                             "score":    {"type": "integer"},
-                            "evidence": {"type": "string", "description": "In-depth analysis of why this score was given"},
+                            "evidence": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "minItems": 2,
+                                "maxItems": 3,
+                                "description": "2-3 sharp bullet points explaining the score",
+                            },
                         },
                         "required": ["skill", "score", "evidence"],
                         "additionalProperties": False,
@@ -1208,73 +1082,94 @@ _ANSWER_INTEGRITY_JSON_SCHEMA = {
         "schema": {
             "type": "object",
             "properties": {
-                "phrasing_score":     {"type": "integer", "description": "0-100 likelihood this answer reads as AI-generated/read rather than spoken"},
-                "phrasing_reason":    {"type": "string"},
-                "consistency_score":  {"type": "integer", "description": "0-100 severity of cross-turn factual contradictions"},
-                "consistency_reason": {"type": "string"},
-                "quotes": {"type": "array", "items": {"type": "string"}},
+                "ai_phrasing_flagged":   {"type": "boolean", "description": "true only if a concrete, quotable AI-generated/read passage was found"},
+                "contradiction_flagged": {"type": "boolean", "description": "true only if two concrete, quotable conflicting claims were found"},
+                "verdict": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 1,
+                    "maxItems": 3,
+                    "description": "1-3 short, high-impact sentences for a recruiter: what fired, the concrete evidence (quote or claim), and what it means for hiring judgment. One confident sentence if nothing fired.",
+                },
             },
-            "required": ["phrasing_score", "phrasing_reason", "consistency_score", "consistency_reason", "quotes"],
+            "required": ["ai_phrasing_flagged", "contradiction_flagged", "verdict"],
             "additionalProperties": False,
         },
     },
 }
 
 _SUMMARY_SYSTEM = """You are a senior talent partner writing a post-interview brief for the hiring team.
-Write EXACTLY 3 bullet points. Each bullet is ONE crisp sentence.
-Rules:
-- Bullet 1: The single most important technical signal from this interview. Name the exact topic and what they demonstrated or failed to demonstrate. Include what they said.
-- Bullet 2: The single biggest overall takeaway about this candidate's fit and trajectory for the role (not a behavioral or communication observation — that's covered in the Behavioral Analysis section). Focus on what it means for the hiring decision.
-- Bullet 3: One sharp hiring implication. What does this person look like in the role 30 days in? What is the risk or gain?
-- No softening. No filler. Every sentence unique to this candidate. No scores or numbers.
-- Start each with a dash (-).
-OUTPUT ONLY the 3 dashes. No markdown. No extra text."""
+The brief must read as if written by a person who watched THIS specific interview, not a template filled
+in for any candidate. Do not force content into a fixed slot if it doesn't genuinely belong there.
 
-_VERDICT_SYSTEM = """You are a senior hiring manager making the final call after an interview.
-You have the full picture: dimension scores, skill ratings, strengths, concerns, and interview evidence.
+Write 2-4 bullet points — exactly as many as this candidate's interview actually earns, not a fixed count.
+A candidate with one standout signal and one clear gap needs 2 bullets; a candidate with several distinct,
+non-redundant things worth telling a recruiter can get up to 4. Never pad to hit a number, and never merge
+two unrelated observations into one bullet just to stay under a count.
 
-YOUR JOB:
-Make a single, conclusive hiring decision with an evidence-backed score and justification.
-Recruiters will rely on this to make or kill an offer. Be precise and accountable.
+Each bullet is ONE crisp sentence covering ONE of these lenses — use only the lenses that have real
+evidence behind them for this candidate, in whatever order matters most for THIS candidate:
+- The most important technical signal: name the exact topic and what they demonstrated or failed to
+  demonstrate, including what they actually said.
+- The biggest overall takeaway about fit and trajectory for the role (not behavioral/communication — that
+  lives in a separate section). What it means for the hiring decision.
+- A sharp hiring implication: what this person looks like in the role 30 days in, and what the risk or
+  gain is.
+- Anything else that is genuinely the most important thing a recruiter needs to know about this specific
+  candidate that the above lenses don't capture — only if it's real and non-redundant.
 
-SCORING THE CANDIDATE (0-100):
-You are given a COMPUTED WEIGHTED SCORE derived deterministically from the dimension scores — use it as
-your starting anchor. Adjust it up or down by at most ~10 points based on the evidence, strengths, and
-concerns text; do not ignore it and invent an unrelated number.
+HARD RULES:
+- No softening, no filler, no restating a dimension score in words ("their communication was decent").
+- Every sentence must be something that could ONLY be said about this candidate — if a sentence could be
+  copy-pasted onto a different candidate's report unchanged, cut it.
+- No scores or numbers.
+- Start each bullet with a dash (-).
+OUTPUT ONLY the dashes, one per line. No markdown. No extra text."""
 
-Map your judgment to the DIMENSION SCORES you were given:
-1. JD Fit (30%) — maps to JD Knowledge
-2. Problem Solving (25%) — maps to Problem Solving
-3. Resume/Experience Credibility (20%) — maps to Experience/Resume Credibility
-4. Communication (15%) — maps to Communication
-5. Ownership (10%) — maps to Ownership
+_VERDICT_SYSTEM = """You are a senior hiring manager making the final call after an interview. Recruiters
+will rely on this to make or kill an offer — be precise, accountable, and actually do the reading.
 
-Score based ONLY on the actual evidence in front of you — do not default to a middling number out of
-caution, and do not push toward the extremes to "spread things out" either. A candidate who is genuinely
-average — solid in some areas, weak in others, unremarkable overall — should score in the middle of the
-range; that is a correct score, not a failure to differentiate. Reserve high scores for evidence of
-genuinely strong, well-rounded performance, and low scores for evidence of genuinely weak or evasive
-performance. The goal is an accurate score for THIS candidate, not an even distribution across candidates.
+YOU ARE GIVEN, IN THE USER MESSAGE, EVERYTHING A HUMAN REVIEWER WOULD READ BEFORE DECIDING — READ ALL OF
+IT, NOT JUST THE NUMBERS:
+- The 5 dimension scores and the evidence behind each (JD Knowledge, Problem Solving, Resume/Experience
+  Credibility, Communication, Ownership).
+- A computed weighted average of those 5 scores — a rough reference point only; it cannot see anything
+  below it, so don't treat it as a ceiling or floor.
+- The full skill-by-skill breakdown with ratings and evidence per skill.
+- Strengths and concerns lists.
+- The behavioral analysis (composure, communication style, engagement, how they handled not knowing
+  something).
+- Answer integrity findings (AI-generated/read phrasing, cross-turn contradictions).
+- The FULL interview transcript — the ground truth every other section above is a summary of.
 
+YOUR JOB: read all of it and form one honest, holistic judgment of this candidate, the way a sharp human
+reviewer would after actually reading the whole file — not by averaging the numbers you're given. Weigh
+each section by how much it actually tells you: the transcript and skill evidence usually carry more
+signal than a single dimension label; a genuine integrity flag or a stark contradiction between what a
+section claims and what the transcript shows should weigh heavily regardless of what the other numbers say.
 
-SCORE CALIBRATION:
-0-30: Major gaps in basics. Cannot perform the role.
-31-50: Surface-level knowledge only. High ramp-up cost. Significant risk.
-51-65: Some competence but key gaps. Hire only for junior/support roles with mentorship.
-66-79: Solid candidate. Some depth missing but capable. Hold if senior role, hire if junior.
-80-89: Strong performer. Can contribute immediately. Minor gaps acceptable.
-90-100: Exceptional. Exceeds bar for the role.
-
+Give ONE score, 0-100, that reflects your real judgment of this specific candidate for this specific role.
+Use the full range — a genuinely weak candidate should score low, a genuinely strong one should score
+high, and a genuinely mixed candidate should score in the middle. Do not default to a safe middling number,
+and do not compress candidates toward any particular range out of caution. Accuracy for THIS candidate is
+the only goal.
 
 DECISION RULES:
-- "Hire": score >= 70 AND no critical gaps in role-required skills.
-- "Hold": score 50-69 OR strong in some areas but missing a key requirement.
-- "Reject": score < 50 OR demonstrated inability in core role requirements.
+- "Hire": score >= 65 AND no DISQUALIFYING gap. A disqualifying gap means the candidate could not do the
+  job's core function — e.g. a backend role candidate who cannot explain how their own code works, or who
+  has zero grasp of the primary language/framework the role requires. A single soft spot in ONE secondary
+  or peripheral area (e.g. solid everywhere else but vague on one specific sub-topic like a particular
+  cloud service's IAM details) is normal for almost every real candidate and does NOT disqualify — score
+  >= 65 with only minor, secondary gaps should be Hire, not Hold. Do not downgrade a strong candidate to
+  Hold just because they weren't flawless on every single sub-topic asked.
+- "Hold": score 45-64, OR score >= 65 but with a genuinely significant gap or unresolved integrity concern
+  that materially affects whether they can do the job, not just a minor sub-topic weakness.
+- "Reject": score < 45, OR a disqualifying gap/confirmed integrity issue regardless of score.
 
 JUSTIFICATION — Write 3 sharp bullet points starting with "-":
-- Bullet 1: The single strongest positive signal from the entire interview. Name the exact topic, what they said or did, and why it matters for this role.
-- Bullet 2: The single biggest gap, risk, or concern. Name the specific moment where they failed or fell short. Be blunt.
-- Bullet 3: The final verdict sentence. State the decision clearly, name the key reason, and what should happen next (move forward, hold for X reason, reject because Y).
+- Bullet 1: The single strongest positive signal from the entire interview. Name the exact topic, what they said or did, and why it matters for this role. Pull from the transcript or skill evidence, not just a dimension label.
+- Bullet 2: The single biggest gap, risk, or concern — pulling from whichever section makes it clearest (transcript, skill breakdown, behavioral read, or integrity). Name the specific moment. Be blunt. If there genuinely isn't one, say plainly that no material gap was found instead of manufacturing one.
+- Bullet 3: The final verdict sentence. State the decision clearly, name the key reason, and what should happen next.
 No score numbers. No hedging. No generic language. Every sentence must be specific to this candidate's actual interview performance.
 
 OUTPUT ONLY valid JSON matching the provided schema EXACTLY. No markdown fences."""
@@ -1580,11 +1475,6 @@ async def _node_llm_calls(state: ReportState) -> dict:
     )
 
     # -- Run the 4 independent LLM calls in parallel ------------------------
-    # IntegrityNarrator runs AFTER this gather, not inside it: it needs the
-    # answer_integrity event (built from answer_integrity_result, below), and
-    # narrating before that event exists silently excluded answer_integrity
-    # from ever getting 3-point narration -- it could only ever see the
-    # browser/proctoring events, never the content-layer signal.
     (
         (eval_raw, eval_usage),
         (skills_raw, skills_usage),
@@ -1627,27 +1517,7 @@ async def _node_llm_calls(state: ReportState) -> dict:
         )
     )
 
-    # Build the complete integrity-tab event list -- browser/proctoring events
-    # PLUS the answer_integrity event (same shape/threshold _node_assemble used
-    # to use later) -- so IntegrityNarrator sees every signal that will actually
-    # render in the integrity tab, in one pass, and every one of them gets 3
-    # sharp points instead of only the browser events.
-    _all_integrity_events = list((state.get("proctoring_data") or {}).get("events", []))
-    answer_integrity_flagged = (
-        answer_integrity_enabled
-        and answer_integrity_result["score"] >= _ANSWER_INTEGRITY_FLAG_THRESHOLD
-    )
-    if answer_integrity_flagged:
-        _all_integrity_events.append(_build_answer_integrity_event(answer_integrity_result))
-
-    integrity_narratives, integrity_narrative_usages = await _integrity_narrator.analyze(
-        _all_integrity_events,
-        _LLM_DEFAULT=llm_default,
-        org_id=org_id,
-        app_id=app_id,
-    )
-
-    # Persist billing for all 5 calls concurrently — non-fatal so a DB blip
+    # Persist billing for all 4 calls concurrently — non-fatal so a DB blip
     # doesn't take down the entire report and cause a silent "[REPORT] Failed".
     # Test sessions route cost to testBillingMetrics instead of the org's real
     # usage bucket, so testing spend never shows up in a customer's billing.
@@ -1663,7 +1533,6 @@ async def _node_llm_calls(state: ReportState) -> dict:
             _bill(_llm.usage_dict(skills_usage, llm_default)),
             *[_bill(bu) for bu in beh_usages],
             *[_bill(au) for au in answer_integrity_usages],
-            *[_bill(nu) for nu in integrity_narrative_usages],
         ]
         try:
             await asyncio.gather(*billing_tasks)
@@ -1696,7 +1565,6 @@ async def _node_llm_calls(state: ReportState) -> dict:
         "skills_result":      skills_result,
         "behavioral_analysis": behavioral_result,
         "answer_integrity_result": answer_integrity_result,
-        "integrity_narratives": integrity_narratives,
     }
 
 
@@ -1716,19 +1584,18 @@ async def _node_assemble(state: ReportState) -> dict:
     behavioral_analysis = state.get("behavioral_analysis") or {"points": []}
     behavioral_signals  = state.get("behavioral_signals", [])
     answer_integrity_result = state.get("answer_integrity_result") or AnswerIntegrityAnalyzer._empty_result()
-    integrity_signals_analysis = state.get("integrity_narratives") or {}
 
     # Content-layer integrity signal: fold the answer-integrity verdict into the
     # same browser-events list that jobs the deterministic integrity score,
     # so a candidate who behaves cleanly but cheats in what they SAID (AI-read
     # phrasing, or contradicts themselves across turns) still gets caught. Only
-    # fires as an event above the threshold; the raw score is always kept in
-    # signalAnalysis regardless, for recruiter judgment.
+    # fires as an event if either check actually found something; the verdict
+    # is always kept in signalAnalysis regardless, for recruiter judgment.
     # Gated on the org toggle -- disabled orgs never fire this event even if
-    # a score happens to be present in state (defense in depth; the LLM call
+    # a flag happens to be present in state (defense in depth; the LLM call
     # itself is already skipped upstream when disabled).
     answer_integrity_enabled = state.get("answer_integrity_enabled", False)
-    answer_integrity_flagged = answer_integrity_enabled and answer_integrity_result["score"] >= _ANSWER_INTEGRITY_FLAG_THRESHOLD
+    answer_integrity_flagged = answer_integrity_enabled and answer_integrity_result["flagged"]
     if answer_integrity_flagged:
         answer_integrity_event = _build_answer_integrity_event(answer_integrity_result)
         proctoring_data = {
@@ -1791,17 +1658,12 @@ async def _node_assemble(state: ReportState) -> dict:
         "behavioral_signals": behavioral_signals,
         "behavioral_signals_analysis": behavioral_analysis.get("points", []),
         "integrity_analysis": {
-            "narratives": integrity_signals_analysis,
             "answer_integrity": {
-                "enabled":             answer_integrity_enabled,
-                "score":               answer_integrity_result["score"],
-                "flagged":             answer_integrity_flagged,
-                "reason":              answer_integrity_result["reason"],
-                "phrasing_score":      answer_integrity_result["phrasing_score"],
-                "phrasing_reason":     answer_integrity_result["phrasing_reason"],
-                "consistency_score":   answer_integrity_result["consistency_score"],
-                "consistency_reason":  answer_integrity_result["consistency_reason"],
-                "quotes":              answer_integrity_result["quotes"],
+                "enabled":                 answer_integrity_enabled,
+                "flagged":                 answer_integrity_flagged,
+                "ai_phrasing_flagged":     answer_integrity_result["ai_phrasing_flagged"],
+                "contradiction_flagged":   answer_integrity_result["contradiction_flagged"],
+                "verdict":                 answer_integrity_result["verdict"],
             },
         },
     }
@@ -1874,7 +1736,6 @@ async def _node_assemble(state: ReportState) -> dict:
         "strengths":              eval_result.strengths,
         "concerns":               eval_result.concerns,
         "behavioral_points":      behavioral_analysis.get("points", []),
-        "integrity_signals_analysis": integrity_signals_analysis,
         "answer_integrity":       signal_analysis["integrity_analysis"]["answer_integrity"],
     }
     return {"scores_context": scores_context}
@@ -2026,7 +1887,7 @@ async def generate_interview_summary(
     skills = ctx.get("skill_ratings", [])
     skill_block = (
         "\n".join(
-            f"  {s['skill']} ({s['score']}/10): {s.get('evidence', '').strip()}"
+            f"  {s['skill']} ({s['score']}/10):\n" + "\n".join(f"    - {e}" for e in (s.get("evidence") or []))
             for s in skills[:12]
         )
         if skills else "  Not available"
@@ -2039,22 +1900,17 @@ async def generate_interview_summary(
 
     behavioral_points = ctx.get("behavioral_points", [])
     behavioral_block = (
-        "\n\n".join(f"  - {p}" for p in behavioral_points) if behavioral_points else "  Not available"
-    )
-
-    integrity_signals_analysis = ctx.get("integrity_signals_analysis", {})
-    integrity_signals_block = (
-        "\n".join(
-            f"  {name}:\n" + "\n".join(f"    - {p}" for p in points)
-            for name, points in integrity_signals_analysis.items()
+        "\n\n".join(
+            f"  {p['topic']}:\n" + "\n".join(f"    - {b}" for b in p.get("bullets", []))
+            for p in behavioral_points
         )
-        if integrity_signals_analysis else "  No proctoring signals fired."
+        if behavioral_points else "  Not available"
     )
 
     answer_integrity = ctx.get("answer_integrity", {})
     answer_integrity_block = (
-        f"  Flagged: {answer_integrity.get('flagged', False)} | Score: {answer_integrity.get('score', 0)}/100\n"
-        f"  Reason: {answer_integrity.get('reason', 'Not available')}"
+        f"  Flagged: {answer_integrity.get('flagged', False)}\n"
+        + "\n".join(f"  - {v}" for v in answer_integrity.get("verdict", []))
         if answer_integrity.get("enabled") else "  Not enabled for this org."
     )
 
@@ -2065,13 +1921,14 @@ async def generate_interview_summary(
         f"Integrity: {integrity_band} ({integrity_score}/100)\n"
         f"Behavioral signals: {signal_summary}\n"
         f"COMPUTED WEIGHTED SCORE: {computed_overall if computed_overall is not None else 'Not available'}/100 "
-        f"(deterministic weighted average of the dimension scores below — use this as your anchor point)\n\n"
+        f"(deterministic weighted average of the 5 dimension scores below — a reference point only, it "
+        f"cannot see the transcript/skills/behavioral/integrity sections below it; form your own score "
+        f"from the full picture, not just this number)\n\n"
         f"DIMENSION SCORES + EVIDENCE:\n{dimension_block}\n\n"
         f"SKILL BREAKDOWN:\n{skill_block}\n\n"
         f"STRENGTHS OBSERVED:\n{strengths_block}\n\n"
         f"CONCERNS FLAGGED:\n{concerns_block}\n\n"
         f"BEHAVIORAL ANALYSIS:\n{behavioral_block}\n\n"
-        f"INTEGRITY SIGNALS ANALYSIS:\n{integrity_signals_block}\n\n"
         f"ANSWER INTEGRITY:\n{answer_integrity_block}\n\n"
         f"FULL INTERVIEW TRANSCRIPT:\n{transcript_text}"
     )

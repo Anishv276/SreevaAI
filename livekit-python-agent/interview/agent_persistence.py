@@ -379,15 +379,14 @@ async def mark_interview_failed(app_id: str, reason: str = "technical_error") ->
     except Exception as e:
         logger.error(f"[INTERVIEW] Failed to mark app {app_id} as FAILED: {e}")
 async def persist_latency_signals(app_id: str, answer_scores: list[dict]) -> None:
-    """Compute a single latency_mismatch event with per-turn latencies (each
-    tagged with the question it belongs to) and inter-turn gaps, then append
-    to integritySignals.
+    """Compute a single latency_mismatch event with the highest and average
+    response latency across the session, then append to proctoringEvents.
 
     The event has the shape:
       {"eventType": "latency_mismatch", "severity": "medium",
-       "timestamp": <now_ms>,
-       "latency_sec": {"turn_1": 2.5, "turn_2": 4.2, ...},
-       "turns": [{"turn": 1, "question": "...", "latency_sec": 2.5, "gap_before_sec": null}, ...]}
+       "timestamp": <now_ms>, "count": 5,
+       "avg_latency_sec": 4.2,
+       "max_latency_sec": 8.4, "max_latency_question": "..."}
     """
     if not app_id or not DATABASE_URL or not answer_scores:
         return
@@ -396,36 +395,18 @@ async def persist_latency_signals(app_id: str, answer_scores: list[dict]) -> Non
         if not s.get("is_warmup") and s.get("turn") and s.get("response_latency_sec") is not None
         and s["response_latency_sec"] > 0
     ]
-    scored.sort(key=lambda s: s["turn"])
-    per_turn: dict[str, float] = {}
-    turns: list[dict] = []
-    _prev_wall_ms: Optional[int] = None
-    for s in scored:
-        turn = int(s["turn"])
-        lat = round(float(s["response_latency_sec"]), 1)
-        per_turn[f"turn_{turn}"] = lat
-        wall_ms = s.get("question_asked_at_wall_ms") or 0
-        gap_before_sec = (
-            round((wall_ms - _prev_wall_ms) / 1000, 1)
-            if wall_ms and _prev_wall_ms and wall_ms > _prev_wall_ms
-            else None
-        )
-        if wall_ms:
-            _prev_wall_ms = wall_ms
-        turns.append({
-            "turn": turn,
-            "question": str(s.get("question", "")).strip()[:200],
-            "latency_sec": lat,
-            "gap_before_sec": gap_before_sec,
-        })
-    if not per_turn:
+    if not scored:
         return
+    latencies = [round(float(s["response_latency_sec"]), 1) for s in scored]
+    slowest = max(scored, key=lambda s: s["response_latency_sec"])
     latency_event = {
-        "eventType":   "latency_mismatch",
-        "severity":    "medium",
-        "timestamp":   int(time.time() * 1000),
-        "latency_sec": per_turn,
-        "turns":       turns,
+        "eventType":            "latency_mismatch",
+        "severity":             "medium",
+        "timestamp":            int(time.time() * 1000),
+        "count":                len(latencies),
+        "avg_latency_sec":      round(sum(latencies) / len(latencies), 1),
+        "max_latency_sec":      round(float(slowest["response_latency_sec"]), 1),
+        "max_latency_question": str(slowest.get("question", "")).strip()[:200],
     }
     try:
         pool = await DatabasePool.get()
@@ -449,7 +430,7 @@ async def persist_latency_signals(app_id: str, answer_scores: list[dict]) -> Non
             )
         logger.info(
             "[LATENCY] Appended latency_mismatch event (%d turns) for %s (total integrity=%d)",
-            len(per_turn), app_id, len(merged),
+            len(latencies), app_id, len(merged),
         )
     except Exception as e:
         logger.error("[LATENCY] Failed to persist latency_mismatch event for %s: %s", app_id, e)
@@ -493,8 +474,11 @@ async def persist_session_fingerprint(app_id: str) -> None:
                     deltas["userAgent"] = "changed"
                 if first_fp.get("screen") and later_fp.get("screen") and first_fp["screen"] != later_fp["screen"]:
                     deltas["screen"] = f"{first_fp['screen']} \u2192 {later_fp['screen']}"
-                if first_fp.get("canvasHash") and later_fp.get("canvasHash") and first_fp["canvasHash"] != later_fp["canvasHash"]:
-                    deltas["canvasFingerprint"] = "changed"
+                # canvasHash is NOT used for comparison -- canvas rendering isn't
+                # deterministic across calls on the same machine (subpixel AA/font
+                # hinting jitter), so it produced false-positive fingerprint changes
+                # even with zero real device change. platform/userAgent/screen/
+                # timezone are stable per-session and are the only real signals.
                 if first_fp.get("timezone") and later_fp.get("timezone") and first_fp["timezone"] != later_fp["timezone"]:
                     deltas["timezone"] = f"{first_fp['timezone']} \u2192 {later_fp['timezone']}"
                 screen_s = (later_fp.get("screen") or "").startswith("1024x768")
@@ -511,8 +495,6 @@ async def persist_session_fingerprint(app_id: str) -> None:
                     continue
                 if "platform" in deltas or "userAgent" in deltas or "screen" in deltas:
                     severity = "high"
-                elif "timezone" in deltas or "canvasFingerprint" in deltas:
-                    severity = "medium"
                 else:
                     severity = "medium"
                 reasons = "; ".join(f"{k}={v}" for k, v in deltas.items())

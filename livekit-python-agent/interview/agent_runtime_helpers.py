@@ -16,6 +16,7 @@ Improvements over original:
 import re
 from interview.agent_runtime_support import logger
 from interview.agent_runtime_utils import TextSanitizer, TranscriptManager
+from interview.probe_strategy import _strip_leaked_meta
 
 # -- ElevenLabs text normalization ---------------------------------------------
 # flash_v2_5 has weaker normalization than multilingual_v2. Pre-normalize before
@@ -185,21 +186,35 @@ def make_sarvam_llm_rewrite_transform(openai_client, model: str):
     This is necessary because the LLM streams word-by-word; rewriting fragments
     produces garbled output.
 
-    Rewriting is sentence-level so latency impact is minimal — the first sentence
-    goes to Sarvam as soon as the LLM finishes it, not after the whole response.
+    Rewriting is sentence-level and bounded to a ~0.35s budget (_REWRITE_BUDGET_SECS)
+    per sentence -- if the LLM call doesn't return in time, the original sentence is
+    spoken immediately instead of blocking the TTS stream. A per-sentence network
+    round trip in the middle of the stream is audible as a dead-air gap between
+    phrases, so this transform must never make TTS wait meaningfully long.
 
-    Falls back to yielding original text on any API error — the interview never
-    breaks because of a rewrite failure.
+    Falls back to yielding original text on any API error or timeout — the
+    interview never breaks, and never audibly pauses, because of a rewrite failure.
 
     Args:
         openai_client: Shared AsyncOpenAI instance (reuses existing connection pool)
         model: LLM model to use (default gpt-4.1-nano — fast and cheap)
     """
+    import asyncio as _asyncio
     import re as _re
+    from interview.agent_runtime_utils import TextSanitizer as _TS
 
     # Sentence-ending punctuation -- captures the punctuation + any trailing space
     # so the space is included in the flushed chunk, not dropped between sentences.
     _SENT_END = _re.compile(r'[.!?][ \t]*')
+    # Rewrite must never make TTS wait -- if it's not back within this budget,
+    # speak the original sentence and let the rewrite finish in the background.
+    _REWRITE_BUDGET_SECS = 0.35
+    # Matches only known acronyms (same curated list as normalize_for_sarvam), not a
+    # blind ALL-CAPS regex -- avoids firing an LLM call for every sentence that merely
+    # contains the candidate's name in caps (e.g. "VAMSI").
+    _KNOWN_ACRONYM_RE = _re.compile(
+        r'\b(' + '|'.join(_re.escape(a) for a in _TS._KNOWN_ACRONYMS) + r')\b'
+    )
 
     async def _rewrite_sentence(sentence: str) -> str:
         """Call LLM to rewrite one sentence for TTS. Returns original on error."""
@@ -207,8 +222,8 @@ def make_sarvam_llm_rewrite_transform(openai_client, model: str):
         if not sentence:
             return sentence
 
-        # Skip rewrite if the sentence has no ALL-CAPS words or camelCase -- no-op
-        if not _re.search(r'[A-Z]{2,}|[a-z][A-Z]', sentence):
+        # Skip rewrite if the sentence has no known acronym or camelCase term -- no-op
+        if not _KNOWN_ACRONYM_RE.search(sentence) and not _re.search(r'[a-z][A-Z]', sentence):
             return sentence
 
         try:
@@ -220,7 +235,9 @@ def make_sarvam_llm_rewrite_transform(openai_client, model: str):
                 ],
                 temperature=0.0,
                 max_tokens=len(sentence) * 3,  # rewrite can't be much longer
-                timeout=3.0,  # hard cap — never block TTS for more than 3s
+                timeout=0.6,  # hard cap — a per-sentence network round trip in the
+                              # middle of the TTS stream is audible as a speech gap,
+                              # so this must stay well under natural speaking pace.
             )
             rewritten = resp.choices[0].message.content or sentence
             # Safety: if LLM returned something wildly longer, fall back
@@ -246,12 +263,22 @@ def make_sarvam_llm_rewrite_transform(openai_client, model: str):
                 sentence_with_punct = buffer[: m.end()].rstrip()
                 trailing_space = " " if buffer[m.end() - 1 :].startswith((" ", "\t")) or m.group(0)[-1] in (" ", "\t") else " "
                 buffer = buffer[m.end():]
-                rewritten = await _rewrite_sentence(sentence_with_punct)
+                try:
+                    rewritten = await _asyncio.wait_for(
+                        _rewrite_sentence(sentence_with_punct), timeout=_REWRITE_BUDGET_SECS
+                    )
+                except _asyncio.TimeoutError:
+                    rewritten = sentence_with_punct
                 yield rewritten + trailing_space
 
         # Flush any remaining text (last sentence with no trailing punctuation)
         if buffer.strip():
-            rewritten = await _rewrite_sentence(buffer)
+            try:
+                rewritten = await _asyncio.wait_for(
+                    _rewrite_sentence(buffer), timeout=_REWRITE_BUDGET_SECS
+                )
+            except _asyncio.TimeoutError:
+                rewritten = buffer
             yield rewritten
 
     return _transform
@@ -268,6 +295,7 @@ def make_tts_sanitize_transform(provider: str = ""):
         async for chunk in text_stream:
             cleaned = polish_candidate_facing_text(chunk)
             cleaned = _enforce_single_question(cleaned)
+            cleaned = _strip_leaked_meta(cleaned)
             cleaned = _apply_tts_phonetic_fixes(cleaned, provider=provider)
             if cleaned:
                 if not emitted_any:
@@ -280,12 +308,6 @@ def make_tts_sanitize_transform(provider: str = ""):
                 "suppressing TTS output (expected during STT fragment assembly)."
             )
     return _transform
-
-
-async def _tts_sanitize_transform(text_stream):
-    """Default sanitize transform (Sarvam/Cartesia). Use make_tts_sanitize_transform() for provider-aware version."""
-    async for chunk in make_tts_sanitize_transform()(text_stream):
-        yield chunk
 
 
 # ===============================================================================
