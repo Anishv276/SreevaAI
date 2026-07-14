@@ -51,7 +51,7 @@ async def _validate_sarvam_api_key(api_key: str) -> bool:
         return False
 
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(timeout=60) as client:
             # Try a simple GET to the list endpoint -- doesn't require a dict, just validates auth
             resp = await client.get(
                 _BASE_URL,
@@ -267,7 +267,7 @@ def _build_payload(pronunciations: dict[str, str]) -> bytes:
 
 async def _list_dicts(api_key: str) -> list[str]:
     """Return list of existing dict_ids for this account."""
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.get(
             _BASE_URL,
             headers={"api-subscription-key": api_key},
@@ -291,7 +291,7 @@ async def _list_dicts(api_key: str) -> list[str]:
 async def _create_dict(api_key: str, pronunciations: dict[str, str]) -> str:
     """Create a pronunciation dict using multipart (Sarvam's required format)."""
     payload = _build_payload(pronunciations)
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=60) as client:
         logger.debug(
             "[SARVAM_DICT_DEBUG] Creating dict with %d pronunciations | payload_size=%d bytes",
             len(pronunciations), len(payload)
@@ -325,7 +325,7 @@ async def _create_dict(api_key: str, pronunciations: dict[str, str]) -> str:
 async def _update_dict(api_key: str, dict_id: str, pronunciations: dict[str, str]) -> None:
     """Update a pronunciation dict using multipart (Sarvam's required format)."""
     payload = _build_payload(pronunciations)
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=60) as client:
         logger.debug(
             "[SARVAM_DICT_DEBUG] Updating dict %s with %d pronunciations",
             dict_id, len(pronunciations)
@@ -348,7 +348,7 @@ async def _update_dict(api_key: str, dict_id: str, pronunciations: dict[str, str
 
 
 async def _delete_dict(api_key: str, dict_id: str) -> None:
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.delete(
             _BASE_URL,
             params={"dict_id": dict_id},

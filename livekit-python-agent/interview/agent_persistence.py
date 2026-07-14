@@ -82,7 +82,7 @@ class DatabasePool:
         if not DATABASE_URL:
             raise RuntimeError("DATABASE_URL is not set")
         async def _init_conn(conn: asyncpg.Connection) -> None:
-            await conn.execute("SET statement_timeout = '30s'")
+            await conn.execute("SET statement_timeout = '60s'")
         return await asyncpg.create_pool(
             cls.normalize_dsn(DATABASE_URL),
             ssl=_SSL_CONTEXT,
@@ -97,7 +97,7 @@ class DatabasePool:
         if pool._closed:
             return False
         try:
-            async with pool.acquire(timeout=2.0) as conn:
+            async with pool.acquire(timeout=60.0) as conn:
                 await conn.fetchval("SELECT 1")
             return True
         except Exception:

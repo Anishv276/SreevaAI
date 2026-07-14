@@ -227,7 +227,7 @@ async def post_pdf_to_slack(pdf_bytes: bytes, filename: str, title: str) -> None
 
     import aiohttp
 
-    _timeout = aiohttp.ClientTimeout(total=60)
+    _timeout = aiohttp.ClientTimeout(total=300)
     auth_headers = {"Authorization": f"Bearer {bot_token}"}
 
     try:

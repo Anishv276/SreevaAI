@@ -79,7 +79,7 @@ async def log_test_event(app_id: str, event_type: str, message: str, data: dict 
                 async with session.post(
                     _TEST_EVENT_LOG_URL,
                     json=payload,
-                    timeout=aiohttp.ClientTimeout(total=1)
+                    timeout=aiohttp.ClientTimeout(total=60)
                 ) as resp:
                     pass
         except (ImportError, ModuleNotFoundError):
@@ -91,7 +91,7 @@ async def log_test_event(app_id: str, event_type: str, message: str, data: dict 
                 headers={"Content-Type": "application/json"},
                 method="POST"
             )
-            urllib.request.urlopen(req, timeout=1)
+            urllib.request.urlopen(req, timeout=60)
     except Exception as e:
         logger.debug("[TEST_EVENT_LOG] Failed to log event: %s", e)
 
@@ -138,7 +138,7 @@ async def _enqueue_report_job(app_id: str, payload: dict) -> None:
         async with aiohttp.ClientSession() as http_session:
             async with http_session.post(
                 _REPORT_ENQUEUE_URL, data=body, headers=headers,
-                timeout=aiohttp.ClientTimeout(total=5),
+                timeout=aiohttp.ClientTimeout(total=60),
             ) as resp:
                 if resp.status >= 300:
                     logger.error(
@@ -148,7 +148,7 @@ async def _enqueue_report_job(app_id: str, payload: dict) -> None:
     except (ImportError, ModuleNotFoundError):
         try:
             req = urllib.request.Request(_REPORT_ENQUEUE_URL, data=body, headers=headers, method="POST")
-            urllib.request.urlopen(req, timeout=5)
+            urllib.request.urlopen(req, timeout=60)
         except Exception as e:
             logger.error("[REPORT] Enqueue failed for %s: %s", app_id, e)
             return
