@@ -20,8 +20,8 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
         }
         const normalizedEmail = normalizeEmail(email);
-        // -- RATE LIMITING (fail closed: a Redis outage must not open brute force) --
-        const isLimited = await isRateLimited(`login:${normalizedEmail}`, 5, 60, true);
+        // -- RATE LIMITING (fail closed in production, fail open in dev if Redis is down) --
+        const isLimited = await isRateLimited(`login:${normalizedEmail}`, 5, 60, process.env.NODE_ENV === "production");
         if (isLimited) {
             await logLoginAttempt({
                 userId: "unknown",

@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import { FileSearch, FileText, Video, ClipboardCheck, ChevronRight } from "lucide-react";
+import { FileSearch, FileText, FileBarChart2, Video, ClipboardCheck, ChevronRight } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SectionKey, UsageOverview } from "./usage-types";
@@ -13,6 +13,7 @@ export const SECTION_STYLE: Record<
 > = {
   jdExtraction: { color: "#10b981", icon: FileSearch, iconBg: "bg-emerald-50", iconFg: "text-emerald-600", hoverBorder: "hover:border-emerald-200", hoverText: "group-hover:text-emerald-600" },
   resumeExtraction: { color: "#3b82f6", icon: FileText, iconBg: "bg-blue-50", iconFg: "text-blue-600", hoverBorder: "hover:border-blue-200", hoverText: "group-hover:text-blue-600" },
+  resumeReport: { color: "#e87ba4", icon: FileBarChart2, iconBg: "bg-rose-50", iconFg: "text-rose-600", hoverBorder: "hover:border-rose-200", hoverText: "group-hover:text-rose-600" },
   interview: { color: "#7c3aed", icon: Video, iconBg: "bg-violet-50", iconFg: "text-violet-600", hoverBorder: "hover:border-violet-200", hoverText: "group-hover:text-violet-600" },
   finalReport: { color: "#f97316", icon: ClipboardCheck, iconBg: "bg-orange-50", iconFg: "text-orange-600", hoverBorder: "hover:border-orange-200", hoverText: "group-hover:text-orange-600" },
 };

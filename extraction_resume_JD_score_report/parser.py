@@ -183,13 +183,20 @@ class DocumentParser:
         semantic, usage2 = _llm(client, RESUME_SEMANTIC_SYSTEM, build_resume_semantic_prompt(structural, jd_criteria), model)
 
         merged = _merge_resume(structural, semantic)
+        # "usage" stays the summed total (unchanged shape, existing callers keep
+        # working) -- "usages" is the new per-call breakdown: 2 real LLM calls
+        # (structural pass, semantic pass), each billed and displayed separately.
         usage = {
             "model": model,
             "inputTokens": (usage1.get("inputTokens", 0) or 0) + (usage2.get("inputTokens", 0) or 0),
             "outputTokens": (usage1.get("outputTokens", 0) or 0) + (usage2.get("outputTokens", 0) or 0),
             "cachedInputTokens": (usage1.get("cachedInputTokens", 0) or 0) + (usage2.get("cachedInputTokens", 0) or 0),
         }
-        return {"data": merged, "usage": usage}
+        usages = [
+            {**usage1, "model": usage1.get("model") or model, "callLabel": "structural extraction"},
+            {**usage2, "model": usage2.get("model") or model, "callLabel": "semantic assessment"},
+        ]
+        return {"data": merged, "usage": usage, "usages": usages}
 
     # -- Score -----------------------------------------------------------------
 
@@ -279,14 +286,28 @@ class DocumentParser:
                 **report,
                 "experience_assessment": report.get("experience_assessment") or {},
             }
-            return {"data": final, "usage": report_usage}
+            # "usage" stays the report-LLM-only total (unchanged shape) -- "usages"
+            # adds the previously-untracked embeddings call (scorer.py's semantic
+            # matching) as its own entry, so both real API calls behind a single
+            # "resume report" are billed and displayed, not just the report one.
+            usages = [{**report_usage, "callLabel": "report generation"}]
+            embedding_usage = score_result.get("embedding_usage")
+            if embedding_usage:
+                usages.append({**embedding_usage, "isEmbedding": True, "callLabel": "semantic matching"})
+            return {"data": final, "usage": report_usage, "usages": usages}
 
         except Exception as exc:
+            fallback_usage = {"model": report_model, "inputTokens": 0, "outputTokens": 0, "cachedInputTokens": 0}
+            usages = [{**fallback_usage, "callLabel": "report generation"}]
+            embedding_usage = score_result.get("embedding_usage")
+            if embedding_usage:
+                usages.append({**embedding_usage, "isEmbedding": True, "callLabel": "semantic matching"})
             return {
                 "data": {
                     **score_result,
                     "recruiter_snapshot": f"Automated evaluation completed. Score: {score_result['score']}.",
                     "decision_reason": f"Report generation failed â€” {score_result['status']} at {score_result['score']}. Error: {exc}",
                 },
-                "usage": {"model": report_model, "inputTokens": 0, "outputTokens": 0, "cachedInputTokens": 0},
+                "usage": fallback_usage,
+                "usages": usages,
             }

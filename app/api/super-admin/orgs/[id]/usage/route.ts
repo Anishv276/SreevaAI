@@ -3,6 +3,14 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { apiErrorResponse } from "@/lib/slack-error-logger";
 import { formatOrgPlan, synthesizedPlanBilling } from "@/lib/org-plans";
+import {
+  numOr0 as n,
+  roundCost as round,
+  clampLegacyCost as clampLegacy,
+  primaryModelFromByModel as primaryModel,
+  refreshOrgUsageSummaryDebounced,
+  type UsageBucket as Bucket,
+} from "@/lib/usage-metrics";
 
 /**
  * GET /api/super-admin/orgs/[id]/usage
@@ -12,37 +20,21 @@ import { formatOrgPlan, synthesizedPlanBilling } from "@/lib/org-plans";
  * written by billing.py — the source of truth). The UsageEvent ledger provides
  * per-item detail (fetched separately via .../usage/events) and the ledger vs
  * blob delta becomes the "Legacy (before detailed tracking)" remainder here.
+ *
+ * Shared bucket-reading/rounding/reconciliation helpers live in lib/usage-metrics.ts
+ * so this route and the OrgUsageSummary refresh can never disagree on a number.
  */
 
-type Bucket = {
-  runs?: number; inputTokens?: number; outputTokens?: number; costUsd?: number;
-  ttsCharacters?: number; ttsCostUsd?: number; sttAudioSeconds?: number; sttCostUsd?: number;
-  byModel?: Record<string, any>; ttsByModel?: Record<string, any>; sttByModel?: Record<string, any>;
-};
-
-function n(v: unknown): number {
-  const x = Number(v);
-  return Number.isFinite(x) ? x : 0;
+// Real call count for a byModel map -- sums each entry's own runs/sessions
+// count rather than counting distinct models, which undercounts whenever
+// multiple calls share one model.
+function callsFromByModel(byModel: Record<string, any> | null | undefined): number {
+  if (!byModel || typeof byModel !== "object") return 0;
+  return Object.values(byModel).reduce(
+    (sum, v) => sum + n((v as any)?.runs ?? (v as any)?.sessions ?? (v as any)?.calls),
+    0
+  );
 }
-
-// Primary model = highest-cost entry in a byModel map (provider prefix stripped).
-function primaryModel(byModel: Record<string, any> | null | undefined): string | null {
-  if (!byModel || typeof byModel !== "object") return null;
-  let best: string | null = null;
-  let bestCost = -1;
-  for (const [key, v] of Object.entries(byModel)) {
-    const cost = n((v as any)?.costUsd);
-    if (cost > bestCost) {
-      bestCost = cost;
-      const parts = key.split(":");
-      best = parts.length >= 2 ? parts.slice(1).join(":") : key;
-    }
-  }
-  return best;
-}
-
-const round = (v: number) => Math.round(v * 1e6) / 1e6;
-const clampLegacy = (blob: number, ledger: number) => Math.max(0, round(blob - ledger));
 
 export async function GET(
   _request: Request,
@@ -87,7 +79,9 @@ export async function GET(
 
     // ---- Section totals (blob) ----
     const jdCost = n(B("jdExtraction").costUsd);
-    const resumeCost = n(B("resumeExtraction").costUsd) + n(B("resumeReport").costUsd);
+    const resumeExtractionCost = n(B("resumeExtraction").costUsd);
+    const resumeReportCost = n(B("resumeReport").costUsd);
+    const resumeCost = resumeExtractionCost + resumeReportCost; // kept for the overview donut/grand total
     // Interview section: eval/live (interview bucket LLM) + brief + llmgen + TTS + STT.
     const interviewLlmCost = n(B("interview").costUsd) + n(B("interviewBrief").costUsd) + n(B("interviewLLMGeneration").costUsd);
     const interviewTtsCost = n(B("interview").ttsCostUsd);
@@ -105,10 +99,17 @@ export async function GET(
       },
       {
         key: "resumeExtraction" as const, label: "Resume Extraction",
-        costUsd: round(resumeCost), runs: n(B("resumeExtraction").runs) + n(B("resumeReport").runs),
+        costUsd: round(resumeExtractionCost), runs: n(B("resumeExtraction").runs),
         primaryModel: primaryModel(B("resumeExtraction").byModel),
-        ledgerCostUsd: round(ledgerCost("resumeExtraction") + ledgerCost("resumeReport")),
-        legacyCostUsd: clampLegacy(resumeCost, ledgerCost("resumeExtraction") + ledgerCost("resumeReport")),
+        ledgerCostUsd: round(ledgerCost("resumeExtraction")),
+        legacyCostUsd: clampLegacy(resumeExtractionCost, ledgerCost("resumeExtraction")),
+      },
+      {
+        key: "resumeReport" as const, label: "Resume Report",
+        costUsd: round(resumeReportCost), runs: n(B("resumeReport").runs),
+        primaryModel: primaryModel(B("resumeReport").byModel),
+        ledgerCostUsd: round(ledgerCost("resumeReport")),
+        legacyCostUsd: clampLegacy(resumeReportCost, ledgerCost("resumeReport")),
       },
       {
         key: "interview" as const, label: "Interview",
@@ -148,7 +149,7 @@ export async function GET(
         costUsd: round(interviewTtsCost),
         ledgerCostUsd: 0,
         legacyCostUsd: 0,
-        calls: evalBucket.ttsByModel ? Object.keys(evalBucket.ttsByModel).length : 0,
+        calls: callsFromByModel(evalBucket.ttsByModel),
         primaryModel: primaryModel(evalBucket.ttsByModel),
         units: { ttsCharacters: n(evalBucket.ttsCharacters) },
       },
@@ -156,7 +157,7 @@ export async function GET(
         key: "stt" as const, label: "STT",
         costUsd: round(interviewSttCost),
         ledgerCostUsd: 0, legacyCostUsd: 0,
-        calls: evalBucket.sttByModel ? Object.keys(evalBucket.sttByModel).length : 0,
+        calls: callsFromByModel(evalBucket.sttByModel),
         primaryModel: primaryModel(evalBucket.sttByModel),
         units: { sttAudioSeconds: n(evalBucket.sttAudioSeconds) },
       },
@@ -233,6 +234,14 @@ export async function GET(
     const planPriceUsd = org.planPriceUsd ?? synth.priceUsd;
     const billingCycle = org.billingCycle ?? synth.billingCycle;
     const nextBillingDate = (org.nextBillingDate ?? synth.nextBillingDate).toISOString();
+
+    // Keep the OrgUsageSummary snapshot table current whenever anyone actually
+    // looks at this org's usage. Debounced (skips entirely, no DB round-trip,
+    // if already refreshed recently) so rapid page views/section navigation
+    // don't pile up extra concurrent queries on top of this route's own --
+    // an earlier non-debounced version of this call caused real connection
+    // pool exhaustion under normal usage-page navigation.
+    refreshOrgUsageSummaryDebounced(id);
 
     return NextResponse.json({
       org: {

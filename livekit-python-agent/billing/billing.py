@@ -96,6 +96,17 @@ _OPENAI_RATES: dict[str, dict[str, float]] = {
     "gpt-5":        {"input": 1.25,  "cached_input": 0.125, "output": 10.00},
 }
 
+# OpenAI embeddings -- USD per million input tokens (no output/cached tiers).
+# Used by extraction_resume_JD_score_report/scorer.py's SemanticSkillIndex for
+# resume/JD semantic matching -- a real, separately-billed API call that was
+# previously not tracked or billed at all.
+_OPENAI_EMBEDDING_RATES: dict[str, float] = {
+    "text-embedding-3-small": 0.02,
+    "text-embedding-3-large": 0.13,
+    "text-embedding-ada-002": 0.10,
+}
+_OPENAI_EMBEDDING_DEFAULT: float = float(os.environ.get("OPENAI_EMBEDDING_DEFAULT_USD_PER_MILLION", "0.02"))
+
 # Fallback rate for any OpenAI model NOT explicitly listed above. Extraction/
 # report features let admins pick arbitrary model names from the DB config, so a
 # newly-selected (or newly-released) model must NOT cause the whole usage record
@@ -413,7 +424,14 @@ class CostCalculator:
 
     @classmethod
     def openai(cls, model: str, input_t: int, cached_t: int, output_t: int) -> float:
-        key   = cls._norm_openai(model)
+        key = cls._norm_openai(model)
+        if key in _OPENAI_EMBEDDING_RATES:
+            # Embeddings have no completion/cached tiers -- input tokens are the
+            # only billable quantity. Routed through here (rather than requiring
+            # every caller to know to call .embedding() instead) so an embedding
+            # usage record can flow through the same LLM-shaped merge/ledger path
+            # used everywhere else, with no schema/shape change needed upstream.
+            return cls.embedding(model, input_t)
         rates = _OPENAI_RATES.get(key)
         if not rates:
             # Graceful fallback -- an unknown/newly-configured model must NOT drop
@@ -438,6 +456,13 @@ class CostCalculator:
             + (cached_t / 1_000_000.0) * rates["cached_input"]
             + (output_t / 1_000_000.0) * rates["output"]
         )
+
+    @classmethod
+    def embedding(cls, model: str, input_t: int) -> float:
+        key = cls._norm_openai(model)
+        rate = _OPENAI_EMBEDDING_RATES.get(key, _OPENAI_EMBEDDING_DEFAULT)
+        input_t = max(0, int(input_t or 0))
+        return (input_t / 1_000_000.0) * rate
 
     @classmethod
     def tts(cls, provider: str, model: str, chars: int) -> float:
@@ -1001,9 +1026,10 @@ class LedgerWriter:
                 cached_t = int(usage.get("cachedInputTokens", 0) or 0)
                 output_t = int(usage.get("outputTokens", 0) or 0)
                 cost = CostCalculator.openai(model, input_t, cached_t, output_t)
+                kind = "embedding" if usage.get("isEmbedding") else "llm"
                 rows.append(cls._row(
-                    feature=feature, kind="llm", provider=provider, model=model,
-                    event_id=f"{logical}:llm:{provider}:{model}", cost_usd=cost,
+                    feature=feature, kind=kind, provider=provider, model=model,
+                    event_id=f"{logical}:{kind}:{provider}:{model}", cost_usd=cost,
                     input_t=input_t, cached_t=cached_t, output_t=output_t, ctx=ctx,
                 ))
 
@@ -1202,6 +1228,12 @@ class BillingRepository:
     ) -> None:
         """Merge a session's LiveKit usage into Organization.usageMetrics (livekit bucket)."""
         if not org_id or not DATABASE_URL:
+            return
+        if is_test:
+            # Test sessions must never pollute the org's real billing totals --
+            # see the module docstring / report_worker.py's identical guard on
+            # the manual-usage side. Only the ledger insert used to be gated on
+            # is_test; this blob merge was missing the same guard.
             return
         if not any(bucket.get("sessions") for bucket in session_summary.values()):
             return

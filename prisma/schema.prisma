@@ -215,7 +215,7 @@ model UsageEvent {
   organizationId    String
   feature           String // jdExtraction | resumeExtraction | resumeReport | interviewEval |
   // interviewLLMGeneration | interviewBrief | interviewSession | interviewReport | voicePreview
-  kind              String // llm | tts | stt
+  kind              String // llm | tts | stt | embedding
   provider          String              @default("openai")
   model             String
   calls             Int                 @default(1)
@@ -240,6 +240,29 @@ model UsageEvent {
   @@index([organizationId, feature, createdAt(sort: Desc)])
   @@index([organizationId, createdAt(sort: Desc)])
   @@index([applicationId])
+}
+
+// Materialized per-org cost summary, one row per org, one column per billing
+// feature. Recomputed from OrganizationDetails.platformUsageMetrics + the
+// UsageEvent ledger via lib/usage-metrics.ts#refreshOrgUsageSummary -- never
+// written to directly by request handlers, so it can't drift out of sync with
+// the live usage view. Exists for fast cross-org reporting/export without
+// recomputing from JSON blobs on every query.
+model OrgUsageSummary {
+  orgId                     String   @id
+  orgName                   String
+  jdExtractionCostUsd       Float    @default(0)
+  resumeExtractionCostUsd   Float    @default(0)
+  resumeReportCostUsd       Float    @default(0)
+  interviewLlmCostUsd       Float    @default(0)
+  interviewEvalCostUsd      Float    @default(0)
+  interviewBriefCostUsd     Float    @default(0)
+  interviewGenerationCostUsd Float   @default(0)
+  interviewTtsCostUsd       Float    @default(0)
+  interviewSttCostUsd       Float    @default(0)
+  interviewReportCostUsd    Float    @default(0)
+  totalCostUsd              Float    @default(0)
+  lastComputedAt            DateTime @default(now()) @updatedAt
 }
 
 model AIVoice {

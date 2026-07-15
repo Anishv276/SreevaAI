@@ -72,6 +72,11 @@ export function PlanCard({
           <div className="h-full rounded-full bg-white/80" style={{ width: `${usedPct}%` }} />
         </div>
       </div>
+
+      <div className="mt-3 flex items-center justify-between text-[11px] font-semibold text-violet-200">
+        <span>Credits used</span>
+        <span>{org.creditsUsed.toLocaleString(undefined, { maximumFractionDigits: 2 })} <span className="text-violet-300">(1 min = 1 credit)</span></span>
+      </div>
     </div>
   );
 }

@@ -13,6 +13,7 @@ import { TestUsageCard } from "./test-usage-card";
 const SECTION_TO_SLUG: Partial<Record<SectionKey, EventsSectionSlug>> = {
   jdExtraction: "jd",
   resumeExtraction: "resume",
+  resumeReport: "resume-report",
   finalReport: "report",
 };
 

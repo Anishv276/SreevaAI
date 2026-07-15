@@ -107,6 +107,11 @@ export async function GET(
                                 });
                             } catch { /* best effort */ }
                         }
+                    } else if (orgId && !result?.usage && !alreadyBilled) {
+                        // Modal returned no usage field -- this JD extraction is unbilled.
+                        // Most likely cause: the deployed Modal app is stale (predates
+                        // usage tracking) -- redeploy modal_app/extract_and_score.py.
+                        console.error(`[BILLING] jdExtraction billing SKIPPED for job=${jobId}: Modal response had no usage field. Result keys: ${Object.keys(result || {}).join(", ")}`);
                     }
                     return {
                         status: "completed",

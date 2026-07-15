@@ -28,6 +28,31 @@ import { sendScheduleInviteEmail } from "./mail";
 
 const RETRY_DELAY_MS = 3000;
 
+/** Retry a billing write a few times with backoff before giving up -- a
+ * transient DB/subprocess hiccup must not permanently drop real, already-
+ * incurred cost with no recovery path (unlike jdExtraction's usageBilled
+ * flag, resume screening has no job-data field to retry from on a later
+ * poll, so this call site needs its own retry). Never throws -- returns
+ * whether the write ultimately succeeded so callers can gate follow-up state
+ * (e.g. jdExtraction's usageBilled flag) without a redundant try/catch. */
+async function recordBillingWithRetry(opts: Parameters<typeof recordOrgBillingUsage>[0], label: string): Promise<boolean> {
+  const attempts = 3;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      await recordOrgBillingUsage(opts);
+      return true;
+    } catch (err) {
+      if (attempt === attempts) {
+        console.error(`[MODAL-DISPATCH] ${label} billing failed after ${attempts} attempts:`, err);
+        return false;
+      }
+      console.warn(`[MODAL-DISPATCH] ${label} billing attempt ${attempt}/${attempts} failed, retrying:`, err);
+      await new Promise((r) => setTimeout(r, 1000 * attempt));
+    }
+  }
+  return false;
+}
+
 const MODAL_ENDPOINTS = {
   resumeExtraction: process.env.MODAL_EXTRACT_RESUME_URL || "",
   jdExtraction: process.env.MODAL_EXTRACT_JD_URL || "",
@@ -263,6 +288,18 @@ export async function processResumeScreeningViaModal(job: Job, token: string | u
 
   const usageExtract = result?.usage_extract ?? result?.usage ?? null;
   const usageScore = result?.usage_score ?? null;
+  // Per-call breakdown behind each merged total above -- usagesExtract is the 2
+  // real resume-extraction LLM calls (structural + semantic pass); usagesScore
+  // is the report-generation LLM call + the embeddings call scorer.py's
+  // semantic matching makes (previously untracked/unbilled entirely). Falls
+  // back to the single merged entry above if an un-redeployed Modal app
+  // doesn't send these yet.
+  const usagesExtract: any[] = Array.isArray(result?.usages_extract) && result.usages_extract.length
+    ? result.usages_extract
+    : usageExtract ? [usageExtract] : [];
+  const usagesScore: any[] = Array.isArray(result?.usages_score) && result.usages_score.length
+    ? result.usages_score
+    : usageScore ? [usageScore] : [];
   // Per-event ledger attribution: this resume belongs to a known application/job/candidate.
   const resumeCtxBase = {
     applicationId,
@@ -270,33 +307,47 @@ export async function processResumeScreeningViaModal(job: Job, token: string | u
     jobTitle: application?.job?.title ?? null,
     candidateName: parsedName || null,
   };
-  if (usageExtract) {
-    await recordOrgBillingUsage({
-      orgId,
-      feature: "resumeExtraction",
-      usage: {
-        model: usageExtract.model,
-        inputTokens: usageExtract.inputTokens || 0,
-        outputTokens: usageExtract.outputTokens || 0,
-        cachedInputTokens: usageExtract.cachedInputTokens || 0,
-        eventId: `resume-extraction:${job.id}`,
-        context: { ...resumeCtxBase, eventId: `resume-extraction:${job.id}` },
-      },
-    }).catch((err: unknown) => console.error(`[MODAL-DISPATCH] resumeExtraction billing failed:`, err));
+  if (usagesExtract.length) {
+    await Promise.all(usagesExtract.map((u, i) =>
+      recordBillingWithRetry({
+        orgId,
+        feature: "resumeExtraction",
+        usage: {
+          model: u.model,
+          inputTokens: u.inputTokens || 0,
+          outputTokens: u.outputTokens || 0,
+          cachedInputTokens: u.cachedInputTokens || 0,
+          eventId: `resume-extraction:${job.id}:${i}`,
+          context: { ...resumeCtxBase, label: u.callLabel ?? null, eventId: `resume-extraction:${job.id}:${i}` },
+        },
+      }, "resumeExtraction")
+    ));
+  } else {
+    // Modal returned no usage_extract/usage field -- this app data is unbilled.
+    // Most likely cause: the deployed Modal app is stale (predates usage
+    // tracking) -- redeploy via `modal deploy modal_app/extract_and_score.py`.
+    console.error(`[MODAL-DISPATCH] resumeExtraction billing SKIPPED for ${applicationId}: Modal response had no usage_extract/usage field. Result keys: ${Object.keys(result || {}).join(", ")}`);
   }
-  if (usageScore) {
-    await recordOrgBillingUsage({
-      orgId,
-      feature: "resumeReport",
-      usage: {
-        model: usageScore.model,
-        inputTokens: usageScore.inputTokens || 0,
-        outputTokens: usageScore.outputTokens || 0,
-        cachedInputTokens: usageScore.cachedInputTokens || 0,
-        eventId: `resume-report:${job.id}`,
-        context: { ...resumeCtxBase, eventId: `resume-report:${job.id}` },
-      },
-    }).catch((err: unknown) => console.error(`[MODAL-DISPATCH] resumeReport billing failed:`, err));
+  if (usagesScore.length) {
+    await Promise.all(usagesScore.map((u, i) =>
+      recordBillingWithRetry({
+        orgId,
+        feature: "resumeReport",
+        usage: {
+          model: u.model,
+          inputTokens: u.inputTokens || 0,
+          outputTokens: u.outputTokens || 0,
+          cachedInputTokens: u.cachedInputTokens || 0,
+          isEmbedding: !!u.isEmbedding,
+          eventId: `resume-report:${job.id}:${i}`,
+          context: { ...resumeCtxBase, label: u.callLabel ?? null, eventId: `resume-report:${job.id}:${i}` },
+        },
+      }, "resumeReport")
+    ));
+  } else if (hasJd) {
+    // Only expected when hasJd is true (resumeAndScore endpoint) -- extraction-only
+    // calls never populate usage_score, so skip logging noise for that path.
+    console.error(`[MODAL-DISPATCH] resumeReport billing SKIPPED for ${applicationId}: Modal response had no usage_score field. Result keys: ${Object.keys(result || {}).join(", ")}`);
   }
 
   console.log(`[MODAL-DISPATCH] Job ${job.id} completed for ${applicationId} — score: ${aiScore ?? "n/a"}`);
@@ -396,29 +447,33 @@ export async function processJdExtractionViaModal(job: Job, token: string | unde
       if (orgId && result?.usage) {
         // Bill JD extraction HERE (worker) and mark the job billed so the status
         // poller (app/api/extract/status/[jobId]) sees the flag and skips its own
-        // billing — previously BOTH billed, double-charging the org blob.
-        try {
-          await recordOrgBillingUsage({
-            orgId,
-            feature: "jdExtraction",
-            usage: {
-              model: result.usage.model,
-              inputTokens: result.usage.inputTokens || 0,
-              outputTokens: result.usage.outputTokens || 0,
-              cachedInputTokens: result.usage.cachedInputTokens || 0,
-              eventId: `jd-extraction:${job.id}`,
-              context: { label: fileName ?? null, eventId: `jd-extraction:${job.id}` },
-            },
-          });
+        // billing — previously BOTH billed, double-charging the org blob. Retries
+        // a few times before falling back to the poller's own retry-on-next-poll.
+        const billed = await recordBillingWithRetry({
+          orgId,
+          feature: "jdExtraction",
+          usage: {
+            model: result.usage.model,
+            inputTokens: result.usage.inputTokens || 0,
+            outputTokens: result.usage.outputTokens || 0,
+            cachedInputTokens: result.usage.cachedInputTokens || 0,
+            eventId: `jd-extraction:${job.id}`,
+            context: { label: fileName ?? null, eventId: `jd-extraction:${job.id}` },
+          },
+        }, "jdExtraction");
+        if (billed) {
           try {
             await job.updateData({ ...(job.data as Record<string, unknown>), usageBilled: true, usageBilledAt: new Date().toISOString() });
           } catch {
             // Redis unavailable — status poller's own billing (guarded by the same
             // flag) will bill exactly once instead. Not fatal.
           }
-        } catch (err: unknown) {
-          console.error(`[MODAL-DISPATCH] jdExtraction billing failed:`, err);
         }
+      } else if (orgId) {
+        // Modal returned no usage field -- this JD extraction is unbilled.
+        // Most likely cause: the deployed Modal app is stale (predates usage
+        // tracking) -- redeploy via `modal deploy modal_app/extract_and_score.py`.
+        console.error(`[MODAL-DISPATCH] jdExtraction billing SKIPPED for job=${job.id}: Modal response had no usage field. Result keys: ${Object.keys(result || {}).join(", ")}`);
       }
       return result;
     },

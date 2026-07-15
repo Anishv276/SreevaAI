@@ -1,7 +1,7 @@
 // Response types for the super-admin usage view API.
 // See app/api/super-admin/orgs/[id]/usage/route.ts and .../usage/events/route.ts.
 
-export type SectionKey = "jdExtraction" | "resumeExtraction" | "interview" | "finalReport";
+export type SectionKey = "jdExtraction" | "resumeExtraction" | "resumeReport" | "interview" | "finalReport";
 export type InterviewSubKey = "tts" | "stt" | "generation" | "eval" | "brief";
 
 export type UsageSection = {
@@ -33,7 +33,7 @@ export type InterviewSubSection = {
 export type ByModelEntry = {
   provider: string;
   model: string;
-  kind: "llm" | "tts" | "stt";
+  kind: "llm" | "tts" | "stt" | "embedding";
   costUsd: number;
 };
 
@@ -67,7 +67,7 @@ export type UsageEventRow = {
   id: string;
   createdAt: string;
   feature: string;
-  kind: "llm" | "tts" | "stt";
+  kind: "llm" | "tts" | "stt" | "embedding";
   provider: string;
   model: string;
   calls: number;
@@ -94,6 +94,7 @@ export type UsageEventsResponse = {
 export type EventsSectionSlug =
   | "jd"
   | "resume"
+  | "resume-report"
   | "report"
   | "interview-tts"
   | "interview-stt"

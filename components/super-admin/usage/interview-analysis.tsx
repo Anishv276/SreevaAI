@@ -42,7 +42,7 @@ export function InterviewAnalysis({
     const slices: DonutSlice[] = top.map((m, i) => ({
       value: m.costUsd,
       color: MODEL_COLORS[i],
-      label: `${m.model} (${m.kind.toUpperCase()})`,
+      label: m.provider ? `${m.model} · ${m.provider} (${m.kind.toUpperCase()})` : `${m.model} (${m.kind.toUpperCase()})`,
     }));
     const otherTotal = rest.reduce((s, m) => s + m.costUsd, 0);
     if (otherTotal > 0) slices.push({ value: otherTotal, color: "#9ca3af", label: "Other" });

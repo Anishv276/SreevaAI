@@ -13,6 +13,7 @@ type ColKey = "job" | "candidate" | "model" | "calls" | "tokens" | "tts" | "stt"
 const COLUMN_PRESETS: Record<string, ColKey[]> = {
   jd: ["job", "model", "calls", "tokens", "cost"],
   resume: ["candidate", "job", "model", "calls", "tokens", "cost"],
+  "resume-report": ["candidate", "job", "model", "calls", "tokens", "cost"],
   report: ["candidate", "job", "model", "calls", "tokens", "cost"],
   "interview-tts": ["job", "candidate", "model", "calls", "tts", "cost"],
   "interview-stt": ["candidate", "job", "model", "calls", "stt", "cost"],
@@ -43,6 +44,18 @@ function cell(row: UsageEventRow, col: ColKey, fmt: (n: number) => string): Reac
         <span className="inline-flex items-center gap-1.5">
           <span className="font-medium text-gray-800">{row.model}</span>
           <span className="text-[10px] uppercase tracking-wide text-gray-400">{row.provider}</span>
+          {row.kind === "embedding" && (
+            <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-sky-600">
+              Embedding
+            </span>
+          )}
+          {/* Distinguishes the 2 real LLM calls behind one resume extraction/report
+              (structural + semantic pass; report generation + semantic matching) --
+              row.label carries the call name for these rows since jobTitle already
+              covers the "job" column for them. */}
+          {row.jobTitle && row.label && (
+            <span className="text-[10px] italic text-gray-400">{row.label}</span>
+          )}
         </span>
       );
     case "calls":

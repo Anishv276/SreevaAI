@@ -14,7 +14,8 @@ import { apiErrorResponse } from "@/lib/slack-error-logger";
 // UI section key -> the ledger feature(s) + optional kind it maps to.
 const SECTION_MAP: Record<string, { features: string[]; kind?: string; blobKeys: string[] }> = {
   jd: { features: ["jdExtraction"], blobKeys: ["jdExtraction"] },
-  resume: { features: ["resumeExtraction", "resumeReport"], blobKeys: ["resumeExtraction", "resumeReport"] },
+  resume: { features: ["resumeExtraction"], blobKeys: ["resumeExtraction"] },
+  "resume-report": { features: ["resumeReport"], blobKeys: ["resumeReport"] },
   report: { features: ["interviewReport"], blobKeys: ["interviewReport"] },
   "interview-tts": { features: ["interviewSession", "voicePreview"], kind: "tts", blobKeys: [] },
   "interview-stt": { features: ["interviewSession"], kind: "stt", blobKeys: [] },
