@@ -55,8 +55,8 @@ import urllib.error
 from dataclasses import dataclass, field
 from enum import Enum
 
-# --- Test Event Logger (for /test page debugging) ------------------------------
-_TEST_EVENT_LOG_URL = os.environ.get("TEST_EVENT_LOG_URL", "").strip()
+_APP_URL_BASE = os.environ.get("APP_URL", "http://localhost:3000").rstrip("/")
+_TEST_EVENT_LOG_URL = os.environ.get("TEST_EVENT_LOG_URL", f"{_APP_URL_BASE}/api/test/events").strip()
 
 async def log_test_event(app_id: str, event_type: str, message: str, data: dict | None = None) -> None:
     """Send event to /api/test/events for live debugging on /test page.
@@ -272,7 +272,6 @@ from interview.agent_runtime_helpers import (
     _tts_acronym_transform,
     _elevenlabs_normalize_transform,
     _sarvam_normalize_transform,
-    make_sarvam_llm_rewrite_transform,
     polish_candidate_facing_text,
     remove_system_messages,
     remove_system_messages_multi,
@@ -396,6 +395,146 @@ def _build_cross_ref_rule(source_tag: str) -> str:
         "and move on. Do NOT frame it as if it were on their resume."
     )
 
+@dataclass(frozen=True)
+class _CandidateIntent:
+    """Classification of what the candidate's last turn actually was.
+
+    Single source of truth for filler/reaction selection -- previously this
+    classification logic was duplicated (with diverging pattern lists) between
+    the probe-directive path and the move-on-directive path, which is how
+    phrasings like "I'm asking is this a small question?" fell through one
+    classifier's clarification check but not the other's (move-on had no
+    clarification check at all).
+    """
+    is_connection_check: bool
+    is_clarification_ask: bool
+    is_no_recall: bool
+    is_hedge: bool
+    hint: str  # ready-to-use guidance string for the LLM prompt
+
+
+def _classify_candidate_intent(
+    prev_answer: str, prev_question: str = "", *, for_move_on: bool = False,
+) -> _CandidateIntent:
+    """Classify the candidate's last turn.
+
+    prev_question grounds the classification in what was actually asked --
+    without it, a short reply like "what?" or "is this a...?" is judged purely
+    by its own wording, and the resulting hint has no question to re-ask or
+    reference, so the LLM's "re-ask the SAME question" instruction was pointing
+    at nothing concrete. Passing prev_question lets the hint quote the actual
+    question back, and lets short bare replies ("what?", "sorry?") only count
+    as a clarification ask when there WAS a real question to be confused about
+    (not during warmup chit-chat where prev_question is empty).
+
+    for_move_on=True: the topic is already decided to change (a MOVE_ON is in
+    progress) -- prev_answer/prev_question are used ONLY to pick the best
+    filler/reaction, never to alter the transition itself. The default
+    (for_move_on=False, used by the within-topic probe path) still tells the
+    LLM to stay on the same question when the candidate was confused, since
+    there the topic genuinely isn't moving.
+    """
+    prev_lower = (prev_answer or "").lower().strip()
+    prev_q_stripped = (prev_question or "").strip()
+
+    is_connection_check = any(
+        p in prev_lower for p in ("can you hear", "are you there", "hello?", "you there?")
+    )
+    # Clarification/confusion signals -- expanded from the original list after a
+    # live transcript showed real candidate phrasings slipping through:
+    # "I'm asking is this a small question?", "is this a dumb/smart question",
+    # "which project", "what question", "not clear", "confused".
+    is_clarification_ask = is_connection_check or any(
+        p in prev_lower
+        for p in (
+            "are you asking", "you're asking", "i'm asking", "im asking",
+            "do you mean", "what do you mean", "which project", "which one",
+            "which question", "what project", "what question",
+            "can you clarify", "can you repeat", "can you refresh",
+            "is this a", "is that a",  # "is this a small/dumb/smart question?"
+            "not clear", "confus", "don't understand", "dont understand",
+            "didn't get", "didnt get", "come again",
+        )
+    )
+    # Bare one/two-word confusion replies ("what?", "sorry?", "huh?") only count
+    # as clarification if there was an actual question to be confused about --
+    # otherwise a short warmup pleasantry ("what's up") would misfire.
+    if not is_clarification_ask and prev_q_stripped and len(prev_lower.split()) <= 3:
+        is_clarification_ask = any(
+            prev_lower == p or prev_lower.startswith(p)
+            for p in ("what?", "what", "sorry?", "sorry", "huh?", "huh", "pardon?", "pardon")
+        )
+    is_no_recall = (not prev_lower) or any(
+        p in prev_lower
+        for p in ("i don't know", "i dont know", "i forgot", "i don't remember",
+                   "i dont remember", "not sure", "can't recall", "cant recall",
+                   "don't remember", "no idea")
+    )
+    is_hedge = any(
+        p in prev_lower for p in ("i think", "probably", "maybe", "i believe", "kind of", "sort of")
+    )
+
+    _q_ref = f" (\"{prev_q_stripped[:120]}\")" if prev_q_stripped else ""
+
+    if is_connection_check:
+        if for_move_on:
+            hint = (
+                "CONNECTION CHECK: They asked if you can hear them, not answered the question"
+                f"{_q_ref}. Briefly confirm you can hear them before moving on -- "
+                "e.g. 'Yes, I can hear you' / 'Loud and clear' -- then transition into the new topic."
+            )
+        else:
+            hint = (
+                "CONNECTION CHECK: They asked if you can hear them, not answered the question. "
+                "Briefly confirm you can hear them, then re-ask the SAME question you just asked"
+                f"{_q_ref} (don't move to a new topic or skip it as if it were answered)."
+            )
+    elif is_clarification_ask:
+        if for_move_on:
+            hint = (
+                f"CLARIFICATION DETECTED: They were confused or asking what you meant{_q_ref} -- "
+                "they never actually answered it. Acknowledge that briefly and naturally -- "
+                "e.g. 'No worries,' / 'All good,' / 'Sure,' -- then move into the new topic. "
+                "Do not imply their confusion was an answer or that the old question got resolved."
+            )
+        else:
+            hint = (
+                "CLARIFICATION DETECTED: They are confused or asking what you meant -- they did NOT "
+                "answer the question and did NOT ask to move on. You MUST re-explain or rephrase the "
+                f"SAME question you just asked{_q_ref}, more simply, anchoring the topic name "
+                "explicitly. Do NOT ask a new question. Do NOT change topics. Do NOT treat this as "
+                "an answer."
+            )
+    elif is_no_recall:
+        hint = (
+            "FILLER: they couldn't recall — vary it, e.g. 'No worries.' / 'Fair enough.' / "
+            "'That's alright.' Don't reuse recent turns' wording."
+        )
+    elif len(prev_lower.split()) <= 8:
+        hint = (
+            "FILLER: short answer, acknowledge briefly — vary it, e.g. 'Hmm, okay.' / 'Right.' / "
+            "'Got it.' Don't reuse recent turns' wording."
+        )
+    elif is_hedge:
+        hint = (
+            "FILLER: they hedged, don't praise it — vary it, e.g. 'Hmm, okay.' / 'Mm.' / 'Alright.' "
+            "Don't reuse recent turns' wording."
+        )
+    else:
+        hint = (
+            "FILLER: substantive answer — vary it, e.g. 'Ah, makes sense.' / 'Got it.' / "
+            "'That tracks.' Don't reuse recent turns' wording."
+        )
+
+    return _CandidateIntent(
+        is_connection_check=is_connection_check,
+        is_clarification_ask=is_clarification_ask,
+        is_no_recall=is_no_recall,
+        is_hedge=is_hedge,
+        hint=hint,
+    )
+
+
 def _build_probe_directive(
     *,
     signal: Optional[str],
@@ -486,25 +625,13 @@ def _build_probe_directive(
         prev_question=prev_question,
     )
 
-    # Filler guidance -- classify prev answer intent so Ishitha's reaction is connected
-    _prev_lower = (prev_answer or "").lower().strip()
-    _is_connection_check = any(p in _prev_lower for p in ("can you hear", "are you there", "hello?", "you there?"))
-    _is_clarification_ask = _is_connection_check or any(
-        p in _prev_lower for p in ("are you asking", "you're asking", "do you mean", "what do you mean", "which", "can you clarify")
-    )
-
-    if _is_connection_check:
-        _filler_hint = "CONNECTION CHECK: They asked if you can hear them, not answered the question. Briefly confirm you can hear them, then re-ask the SAME question (don't move to a new topic or skip it as if it were answered)."
-    elif _is_clarification_ask:
-        _filler_hint = "CLARIFICATION DETECTED: They didn't understand your question. Rephrase it MORE SIMPLY and anchor the topic name explicitly."
-    elif not _prev_lower or any(p in _prev_lower for p in ("i don't know", "i forgot", "i don't remember", "not sure", "can't recall")):
-        _filler_hint = "FILLER: they couldn't recall — vary it, e.g. 'No worries.' / 'Fair enough.' / 'That's alright.' Don't reuse recent turns' wording."
-    elif len(_prev_lower.split()) <= 8:
-        _filler_hint = "FILLER: short answer, acknowledge briefly — vary it, e.g. 'Hmm, okay.' / 'Right.' / 'Got it.' Don't reuse recent turns' wording."
-    elif any(p in _prev_lower for p in ("i think", "probably", "maybe", "i believe", "kind of", "sort of")):
-        _filler_hint = "FILLER: they hedged, don't praise it — vary it, e.g. 'Hmm, okay.' / 'Mm.' / 'Alright.' Don't reuse recent turns' wording."
-    else:
-        _filler_hint = "FILLER: substantive answer — vary it, e.g. 'Ah, makes sense.' / 'Got it.' / 'That tracks.' Don't reuse recent turns' wording."
+    # Filler guidance -- classify prev answer intent so Ishitha's reaction is connected.
+    # Shared classifier (also used by _generate_move_on_directive) so clarification/
+    # confusion detection doesn't drift between the two directive-building paths.
+    _intent = _classify_candidate_intent(prev_answer, prev_question)
+    _is_connection_check = _intent.is_connection_check
+    _is_clarification_ask = _intent.is_clarification_ask
+    _filler_hint = _intent.hint
 
     # Short display label for the HARD STOP line -- prefer structured topic title,
     # fall back to the first segment of the full active_topic context string.
@@ -541,26 +668,40 @@ def _build_probe_directive(
     if coverage_memory:
         parts_out.append(coverage_memory)
 
-    parts_out += [
-        "NOW: React to what they said (one short phrase), then ask your follow-up question.",
-        "One question mark. Never two questions in one turn.",
-        "The question can have 1-3 sentences of natural setup before the actual question — that's fine.",
-        "Grounded in what they just told you. Never 'Can you' or 'Could you'. Never 'Great!' or 'Awesome!'.",
-        "",
-    ]
-    if _mandatory_subconcept:
+    if _is_clarification_ask:
+        # Single, unambiguous clarification instruction -- takes priority over
+        # (and replaces) the generic "ask your follow-up question" instruction below.
+        # Previously both instructions were emitted together, with the generic
+        # "ask your follow-up question" line landing first and stronger, so the
+        # LLM would ask a brand-new question instead of clarifying -- confirmed
+        # from a live transcript where "You're asking about which project?" was
+        # answered by pivoting to an entirely different topic instead of
+        # clarifying which project was meant.
         parts_out += [
-            f"CRITICAL SUB-CONCEPT LOCK: This turn's question MUST be about '{_mandatory_subconcept}' — "
-            f"not about any other sub-concept of '{topic_item.title if topic_item else active_topic}'. ",
-            f"If you previously probed '{_mandatory_subconcept}' already, dig deeper INTO IT (an internal "
-            f"mechanism, an edge case, a decision) — never pivot to a different sub-concept mid-turn.",
-            f"Do NOT ask a generic overview question about the topic. Do NOT ask about a different sub-concept.",
+            f"THEY ASKED FOR CLARIFICATION, NOT AN ANSWER: Re-explain or rephrase the SAME "
+            f"question you just asked, MORE SIMPLY, and mention '{_topic_short}' upfront so "
+            f"they know exactly which topic/project you mean. Do NOT ask a new question. "
+            f"Do NOT move to a different topic or sub-concept this turn.",
+            "One question mark. Never two questions in one turn.",
             "",
         ]
-    if _is_clarification_ask:
+    else:
         parts_out += [
-            f"THEY ASKED FOR CLARIFICATION: Ask SIMPLER, mention '{_topic_short}' upfront.",
+            "NOW: React to what they said (one short phrase), then ask your follow-up question.",
+            "One question mark. Never two questions in one turn.",
+            "The question can have 1-3 sentences of natural setup before the actual question — that's fine.",
+            "Grounded in what they just told you. Never 'Can you' or 'Could you'. Never 'Great!' or 'Awesome!'.",
+            "",
         ]
+        if _mandatory_subconcept:
+            parts_out += [
+                f"CRITICAL SUB-CONCEPT LOCK: This turn's question MUST be about '{_mandatory_subconcept}' — "
+                f"not about any other sub-concept of '{topic_item.title if topic_item else active_topic}'. ",
+                f"If you previously probed '{_mandatory_subconcept}' already, dig deeper INTO IT (an internal "
+                f"mechanism, an edge case, a decision) — never pivot to a different sub-concept mid-turn.",
+                f"Do NOT ask a generic overview question about the topic. Do NOT ask about a different sub-concept.",
+                "",
+            ]
     parts_out += [""]
 
     directive = "\n".join(parts_out)
@@ -587,6 +728,7 @@ async def _generate_move_on_directive(
     usage_sink: Optional[Any] = None,
     topic_item: Optional[Any] = None,
     prev_answer: str = "",  # candidate's last answer — used to derive the right opening filler
+    prev_question: str = "",  # question that answer was responding to — grounds clarification detection
     app_id: str = "",
     candidate_name: str = "",
 ) -> str:
@@ -843,28 +985,27 @@ async def _generate_move_on_directive(
             generated = re.sub(
                 r"SUGGESTED OPENING QUESTION.*$", "", generated, flags=re.I | re.DOTALL
             ).strip()
-        # Build filler instruction from the actual prev answer so the LLM
-        # picks a reaction that matches what the candidate really said -- 
-        # not a generic list it ignores.
+        # Build filler instruction from the actual prev answer + prev question so the
+        # LLM picks a reaction that matches what the candidate really said -- not a
+        # generic list it ignores. Uses the same shared classifier as the probe-directive
+        # path. for_move_on=True: prev_answer/prev_question are used ONLY to pick the
+        # best filler wording -- the topic transition itself is never altered here
+        # (previously "clarification detected" was a separate branch that changed what
+        # instruction the LLM got about moving on at all; now every case flows through
+        # one instruction and the topic always moves the same way).
         _prev_trimmed = (prev_answer or "").strip()[:300]
+        _prev_q_trimmed = (prev_question or "").strip()[:200]
+        _intent = _classify_candidate_intent(_prev_trimmed, _prev_q_trimmed, for_move_on=True)
         if _prev_trimmed:
-            # Classify the candidate's answer intent so the filler is contextually correct
-            _prev_lc = _prev_trimmed.lower()
-            if not _prev_lc or any(p in _prev_lc for p in ("i don't know", "i forgot", "i don't remember", "not sure", "can't recall")):
-                _intent_hint = "They couldn't recall or said they don't know → e.g. 'No worries.' / 'Fair enough.' / 'That's alright.' / 'Understood.'"
-            elif len(_prev_lc.split()) <= 8:
-                _intent_hint = "Very short answer, possibly surface-level → e.g. 'Hmm, okay.' / 'Right.' / 'Got it.' / 'I see.'"
-            elif any(p in _prev_lc for p in ("i think", "probably", "maybe", "i believe", "kind of", "sort of")):
-                _intent_hint = "They hedged or were vague → e.g. 'Hmm, okay.' / 'Mm.' / 'Alright.' / 'I see.' to acknowledge without validating"
-            else:
-                _intent_hint = "Substantive answer → e.g. 'Ah, makes sense.' / 'Got it.' / 'That tracks.' / 'Interesting.'"
             _filler_instruction = (
                 f"\n\nOPENING REACTION — must respond to what the candidate actually said:\n"
                 f"THEIR LAST ANSWER: \"{_prev_trimmed}\"\n"
-                f"ANSWER INTENT: {_intent_hint}\n"
+                + (f"QUESTION IT WAS RESPONDING TO: \"{_prev_q_trimmed}\"\n" if _prev_q_trimmed else "")
+                + f"ANSWER INTENT: {_intent.hint}\n"
                 "The examples above are illustrative, not a fixed list — invent your own short, natural "
-                "micro-reaction (3-8 words) that fits the intent. Do not default to picking only from the examples.\n"
-                "The reaction and the new question must feel like one connected turn — "
+                "micro-reaction (3-8 words) that fits the intent, then move into the new topic. "
+                "Do not default to picking only from the examples.\n"
+                "The reaction and the new topic's question must feel like one connected turn — "
                 "not a reaction to silence followed by an unrelated question.\n"
                 "NEVER say 'Great!', 'Awesome!', 'Fantastic!', 'Amazing!', or any hollow praise.\n"
                 "NEVER say 'Thanks for sharing' or any 'thanks for [verb]ing' phrase.\n"
@@ -1054,6 +1195,16 @@ class InterviewAgent(Agent):
             buf = ""
             n = 0
             is_elevenlabs = type(tts_engine).__module__.startswith("livekit.plugins.elevenlabs")
+            # NOTE: previously tried bypassing sentence-buffering for Sarvam too (raw
+            # LLM chunks straight to push_text), reasoning that Sarvam's own plugin
+            # tokenizer should be the only segmenter. Live testing made stumbling much
+            # worse (word-by-word with gaps), and this also isn't how Sarvam was
+            # configured 2 months ago when TTS quality was good -- reverted back to
+            # sentence-buffered pushes for Sarvam, matching the original working setup.
+            # Do NOT add a second grouping layer here either: the Sarvam plugin runs its
+            # OWN SentenceTokenizer over whatever is pushed and then applies
+            # min_buffer_size/max_chunk_length. Word-gap symptoms are a min_buffer_size
+            # problem (see agent_providers.py), not a push-cadence problem.
             async for chunk in text:
                 if is_elevenlabs:
                     self._record_tts_text(chunk)
@@ -1728,7 +1879,6 @@ async def entrypoint(ctx: JobContext):
     # for this candidate's specific resume/JD keywords. Zero human maintenance -- 
     # any tech term on any future resume is handled automatically.
     _sarvam_dict_id: str | None = None
-    _sarvam_llm_rewrite_transform = None
     _elevenlabs_pronunciation_locators: list | None = None
     if org_tts_provider == "ELEVENLABS":
         # ElevenLabs pronunciation dictionary locators (analogous to Sarvam's dict_id).
@@ -1758,13 +1908,13 @@ async def entrypoint(ctx: JobContext):
                 _tts_keywords,
                 base_dict_id=_base_dict_id,
             )
-        # LLM rewrite transform: rewrites tech acronyms/terms to be TTS-friendly.
-        # Uses the shared OpenAI client (no extra connection cost) with gpt-4.1-nano.
-        # Sentence-buffered so latency impact is one nano call per sentence (~50ms).
-        _sarvam_llm_rewrite_transform = make_sarvam_llm_rewrite_transform(
-            _SHARED_OPENAI_CLIENT,
-            model=analysis_model,
-        )
+        # No LLM normalization transform for Sarvam: it duplicated
+        # _sarvam_normalize_transform's regex pass over the same _KNOWN_ACRONYMS
+        # list, but did so via a live OpenAI call sitting in the middle of the TTS
+        # text stream -- one more network dependency in the audio path, for zero
+        # coverage gain on any acronym the regex already handles. dict_id (above)
+        # covers resume/JD-specific terms; the regex covers the curated list.
+        # Removed while isolating causes of TTS stumbling.
     try:
         tts_plugin = _tts_builder(
             language=_TTS_LANGUAGE_CODE,
@@ -1905,9 +2055,9 @@ async def entrypoint(ctx: JobContext):
             "filter_emoji",
             *([_tts_acronym_transform] if org_tts_provider == "CARTESIA" else []),
             *([_elevenlabs_normalize_transform] if org_tts_provider == "ELEVENLABS" else []),
-            # Sarvam path: regex normalizer first, then LLM rewriter for ambiguous terms.
+            # Sarvam path: regex normalizer only -- dict_id handles resume/JD-specific
+            # terms server-side; no LLM call in the audio path (see comment above).
             *([_sarvam_normalize_transform] if org_tts_provider == "SARVAM" else []),
-            *([_sarvam_llm_rewrite_transform] if _sarvam_llm_rewrite_transform else []),
             make_tts_sanitize_transform(org_tts_provider),
         ],
         "aec_warmup_duration": 0.5,
@@ -3175,6 +3325,7 @@ async def entrypoint(ctx: JobContext):
                                 usage_sink=_llmgen_llm_usages.append,
                                 topic_item=_pre_next_item,
                                 prev_answer=(payload.get("answer") or ""),
+                                prev_question=_last_interviewer_question,
                                 app_id=app_id,
                                 candidate_name=candidate_name,
                             )
@@ -3289,6 +3440,7 @@ async def entrypoint(ctx: JobContext):
                             usage_sink=_eval_llm_usages_accumulated.append,
                             topic_item=_new_topic_item,
                             prev_answer=_prev_a,
+                            prev_question=_last_interviewer_question,
                             app_id=app_id,
                             candidate_name=candidate_name,
                         )
@@ -3446,8 +3598,8 @@ async def entrypoint(ctx: JobContext):
                 agent._waiting_for_eval = False
                 agent._directive_ready.set()
     _FIXED_WARMUP_TEXT = (
-        "Right, so this'll be a fairly casual conversation — I'm just curious to know more about "
-        "what you've worked on and how you think about things. Are you all set to begin?"
+        "Right, so this'll be a fairly casual conversation — I'll be asking you a few questions "
+        "based on your resume and the role. Are you all set to begin?"
     )
     async def _handle_completed_user_turn(_turn_ctx, new_message) -> None:
         # Interview already ended (time limit or inactivity timeout) -- the closing
@@ -3466,7 +3618,8 @@ async def entrypoint(ctx: JobContext):
             await _handle_completed_user_turn_locked(_turn_ctx, new_message)
     async def _handle_completed_user_turn_locked(_turn_ctx, new_message) -> None:
         nonlocal _answer_received_at, _candidate_turn_since_last_assistant, \
-            warmup_complete, _interview_has_started, _last_evaluated_turn_snapshot
+            warmup_complete, _interview_has_started, _last_evaluated_turn_snapshot, \
+            is_agent_speaking, first_agent_turn_committed_at
         content = (getattr(new_message, "text_content", "") or "").strip()
         if not content:
             logger.debug("[USER_TURN] completed turn had no text; releasing gate without reply directive")
@@ -3535,11 +3688,29 @@ async def entrypoint(ctx: JobContext):
                 if _asked_back else _FIXED_WARMUP_TEXT
             )
             try:
-                await session.say(_warmup_text_to_say, allow_interruptions=False)
+                # Same retry pattern as the greeting (session_loop_start above) --
+                # Sarvam's WS can drop the very first synthesis call right after
+                # the greeting's own WS just closed, with session.say() returning
+                # cleanly despite no audio reaching the candidate.
+                for _w_attempt in range(3):
+                    try:
+                        is_agent_speaking = False
+                        await session.say(_warmup_text_to_say, allow_interruptions=False)
+                        if not is_agent_speaking and first_agent_turn_committed_at is None:
+                            raise RuntimeError("session.say() returned with no audible speech detected")
+                        break
+                    except Exception as _w_retry_err:
+                        if _w_attempt == 2:
+                            raise
+                        logger.warning(
+                            "[WARMUP] session.say() attempt %d failed, retrying: %s",
+                            _w_attempt + 1, _w_retry_err,
+                        )
+                        await asyncio.sleep(0.5)
                 _append_with_elapsed("Interviewer", _warmup_text_to_say)
                 logger.info("[WARMUP] Fixed warmup delivered via session.say()")
             except Exception as _w_err:
-                logger.warning("[WARMUP] session.say() warmup failed: %s", _w_err)
+                logger.warning("[WARMUP] session.say() warmup failed after retries: %s", _w_err)
                 # session.say() never delivered the assistant message, so
                 # on_conversation_item_added's turn_count==2 branch will never fire to
                 # close the gate for us -- release it here so the LLM isn't stuck
@@ -3621,10 +3792,35 @@ async def entrypoint(ctx: JobContext):
             logger.info("[WARMUP] First interview directive injected at turn=%d | ready to ask anchor topic", turn_snapshot)
             agent._waiting_for_eval = False
             agent._directive_ready.set()
+        elif turn_snapshot == 2 and len(_content_lc.split()) <= 2:
+            # Candidate's first reply to warmup was near-empty ("Hello?", "What?") --
+            # this is the signature of warmup audio never having played (see
+            # session.say() delivery-check above), not a real answer. Replay the
+            # fixed warmup line directly instead of burning a turn on an LLM
+            # re-prompt, which is what previously made "turn 3" land as a second
+            # warmup exchange instead of the first real interview question.
+            logger.info("[WARMUP] turn=%d near-empty reply (%r) -- replaying fixed warmup line", turn_snapshot, content[:40])
+            try:
+                is_agent_speaking = False
+                await session.say(_FIXED_WARMUP_TEXT, allow_interruptions=False)
+            except Exception as _replay_err:
+                logger.warning("[WARMUP] warmup replay failed: %s", _replay_err)
+            _append_with_elapsed("Interviewer", _FIXED_WARMUP_TEXT)
+            remove_system_messages(chat_ctx, "[PHASE_STATUS]")
+            chat_ctx.add_message(
+                role="system",
+                content=(
+                    "[PHASE_STATUS -- DO NOT SAY ALOUD]\n"
+                    "GREETING: DONE. WARMUP QUESTION: ALREADY ASKED — do not repeat it.\n"
+                    "Wait silently for candidate's answer. DO NOT say anything until [NEXT_TURN_DIRECTIVE] arrives."
+                ),
+            )
+            agent._waiting_for_eval = False
+            agent._directive_ready.set()
         elif not warmup_complete:
             # Candidate answered the warmup question but didn't signal readiness yet
             # (e.g. "I'm doing great" instead of "yes"/"ready"). Ishitha should ask a
-            # natural follow-up / re-confirm readiness rather than staying silent -- 
+            # natural follow-up / re-confirm readiness rather than staying silent --
             # release the gate we closed above so the LLM can respond to what they said.
             remove_system_messages(chat_ctx, "[PHASE_STATUS]")
             chat_ctx.add_message(
@@ -4094,7 +4290,13 @@ async def entrypoint(ctx: JobContext):
                 for _attempt in range(3):
                     try:
                         # allow_interruptions=False for greeting prevents 'break voice' from echo bleed
+                        is_agent_speaking = False
                         await session.say(welcome_text, allow_interruptions=False)
+                        # session.say() can return cleanly while the TTS WS silently
+                        # produced no audible audio -- confirm playback actually started
+                        # before treating this attempt as a success.
+                        if not is_agent_speaking and first_agent_turn_committed_at is None:
+                            raise RuntimeError("session.say() returned with no audible speech detected")
                         greeting_delivered = True
                         greeting_delivered_at = time.time()
                         # session.say() bypasses the LLM pipeline and does NOT fire
@@ -4123,6 +4325,7 @@ async def entrypoint(ctx: JobContext):
                                 "connection error",
                                 "apiconnectionerror",
                                 "send task failed",
+                                "no audible speech detected",
                             )
                         )
                         if is_transport_err and _attempt < 2:

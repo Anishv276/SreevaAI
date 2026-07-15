@@ -12,7 +12,7 @@ def build_greeting_text(candidate_name: str, ai_name: str) -> str:
     """Fixed greeting — natural, warm, consistent across all sessions."""
     name = (candidate_name or "").strip().split()[0] if candidate_name else "there"
     ai = (ai_name or "").strip() or "your interviewer"
-    return f"Hi {name}, this is {ai}. Good to connect with you today — how are you doing?"
+    return f"Hi {name}, this is {ai}, your AI interviewer for today. Good to connect with you today — how are you doing?"
 
 
 def _build_custom_questions_block(custom_questions: list[str] | None) -> str:

@@ -178,7 +178,7 @@ async def _sarvam_normalize_transform(text_stream):
         yield TextSanitizer.normalize_for_sarvam(chunk)
 
 
-def make_sarvam_llm_rewrite_transform(openai_client, model: str):
+def make_sarvam_llm_normalization_transform(openai_client, model: str):
     """Return an async generator transform that rewrites TTS text via LLM.
 
     The transform buffers incoming chunks until a sentence boundary (. ! ?)
@@ -289,19 +289,55 @@ def make_tts_sanitize_transform(provider: str = ""):
 
     ElevenLabs preserves em-dashes and ellipses for natural pacing.
     Sarvam/Cartesia collapse them to commas.
+
+    MUST buffer to sentence boundaries before cleaning. The LLM streams token
+    fragments (" me", " about", " your") whose LEADING SPACE is the word
+    boundary. polish_candidate_facing_text() ends in .strip(), so cleaning each
+    fragment individually deletes those spaces and the words get glued
+    ("Tellmeaboutyour...") -- Sarvam then reads the run-on as disjointed,
+    word-by-word speech. This is why greeting/warmup (delivered as one whole
+    string via session.say) sounded perfect but turn 3+ (LLM-streamed) stumbled.
+    Buffering means each clean runs on a whole sentence, preserving inter-word
+    spaces exactly as the greeting path does.
     """
+    def _clean(sentence: str) -> str:
+        cleaned = polish_candidate_facing_text(sentence)
+        cleaned = _enforce_single_question(cleaned)
+        cleaned = _strip_leaked_meta(cleaned)
+        cleaned = _apply_tts_phonetic_fixes(cleaned, provider=provider)
+        return cleaned
+
     async def _transform(text_stream):
         emitted_any = False
+        buf = ""
+
+        def _emit(sentence: str):
+            nonlocal emitted_any
+            cleaned = _clean(sentence)
+            if not cleaned:
+                return None
+            if not emitted_any:
+                logger.debug("[TTS_FIRST_CHUNK] First chunk to TTS: %r", cleaned[:120])
+            emitted_any = True
+            # Re-attach a trailing space so consecutive sentences stay separated
+            # once the downstream tts_node re-buffers them.
+            return cleaned + " "
+
         async for chunk in text_stream:
-            cleaned = polish_candidate_facing_text(chunk)
-            cleaned = _enforce_single_question(cleaned)
-            cleaned = _strip_leaked_meta(cleaned)
-            cleaned = _apply_tts_phonetic_fixes(cleaned, provider=provider)
-            if cleaned:
-                if not emitted_any:
-                    logger.debug("[TTS_FIRST_CHUNK] First chunk to TTS: %r", cleaned[:120])
-                emitted_any = True
-                yield cleaned
+            buf += chunk
+            while True:
+                m = _TTS_SENT_END_RE.search(buf)
+                if not m:
+                    break
+                sentence = buf[:m.end()]
+                buf = buf[m.end():]
+                out = _emit(sentence)
+                if out:
+                    yield out
+        if buf.strip():
+            out = _emit(buf)
+            if out:
+                yield out
         if not emitted_any:
             logger.debug(
                 "[TTS_SANITIZE] Transform yielded empty — LLM turn was directive-only, "

@@ -27,7 +27,20 @@ export async function GET(request: Request) {
             take: 100,
         });
 
-        return NextResponse.json({ candidates: applications });
+        const mappedCandidates = applications.map(app => ({
+            id: app.id,
+            fullName: app.candidateFullName,
+            email: app.candidateEmail,
+            interviewStatus: app.interviewPhaseStatus,
+            aiScore: app.resumeAiScore,
+            interview: app.interview ? {
+                status: app.interview.interviewStatus,
+                isTest: app.interview.isTestSession,
+                completedAt: app.interview.interviewCompletedAt,
+            } : null,
+        }));
+
+        return NextResponse.json({ candidates: mappedCandidates });
     } catch (e) {
         return apiErrorResponse({
             route: "/api/test/candidates",
