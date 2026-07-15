@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { apiErrorResponse } from "@/lib/slack-error-logger";
 import { synthesizedPlanBilling } from "@/lib/org-plans";
+import { aggregateOrgUsageEvents } from "@/lib/usage-metrics";
 
 export async function GET(request: Request) {
     try {
@@ -171,36 +172,38 @@ export async function GET(request: Request) {
         const interviewsTotal = org.totalInterviewsAllowed || 300;
         const interviewsUsed = org.totalInterviewsUsed || 0;
 
-        // Build consumption hub from usageMetrics.billing
-        const usageMetrics = (org.platformUsageMetrics && typeof org.platformUsageMetrics === "object")
-            ? (org.platformUsageMetrics as Record<string, any>)
-            : {};
-        const billing = (usageMetrics.billing && typeof usageMetrics.billing === "object")
-            ? (usageMetrics.billing as Record<string, any>)
-            : {};
-        const consumptionFeatures = [
-            "interview", "interviewBrief", "interviewLLMGeneration",
-            "interviewReport", "resumeExtraction", "jdExtraction", "resumeReport",
-        ];
-        const consumptionHub: Record<string, any> = {};
-        for (const feat of consumptionFeatures) {
-            const b = billing[feat] ?? {};
-            consumptionHub[feat] = {
-                runs:         Number(b.runs || 0),
-                inputTokens:  Number(b.inputTokens || 0),
-                outputTokens: Number(b.outputTokens || 0),
-                costUsd:      Number(b.costUsd || 0),
-                ttsCharacters: Number(b.ttsCharacters || 0),
-                ttsCostUsd:   Number(b.ttsCostUsd || 0),
-                sttAudioSeconds: Number(b.sttAudioSeconds || 0),
-                sttCostUsd:   Number(b.sttCostUsd || 0),
-                byModel:      b.byModel ?? {},
-                ttsByModel:   b.ttsByModel ?? {},
-                sttByModel:   b.sttByModel ?? {},
-            };
-        }
-        const totalLlmCost = consumptionFeatures.reduce(
-            (s, f) => s + Number(consumptionHub[f]?.costUsd || 0), 0
+        // Build consumption hub from the UsageEvent ledger (real spend only).
+        const entityRows = await prisma.usageEvent.findMany({
+            where: { organizationId: orgId, isTest: false },
+            select: { feature: true, usage: true },
+        });
+        const agg = aggregateOrgUsageEvents(entityRows);
+        // Map the shared aggregate onto the hub's per-feature shape. The interview
+        // TTS/STT rolls up under the "interview" feature (as it did in the blob).
+        const feat = (a: typeof agg.eval, tts?: typeof agg.interviewTts, stt?: typeof agg.interviewStt) => ({
+            runs:            a.calls,
+            inputTokens:     a.inputTokens,
+            outputTokens:    a.outputTokens,
+            costUsd:         a.costUsd,
+            ttsCharacters:   tts?.ttsCharacters ?? 0,
+            ttsCostUsd:      tts?.costUsd ?? 0,
+            sttAudioSeconds: stt?.sttAudioSeconds ?? 0,
+            sttCostUsd:      stt?.costUsd ?? 0,
+            byModel:         a.byModel,
+            ttsByModel:      tts?.byModel ?? {},
+            sttByModel:      stt?.byModel ?? {},
+        });
+        const consumptionHub: Record<string, any> = {
+            interview:              feat(agg.eval, agg.interviewTts, agg.interviewStt),
+            interviewBrief:         feat(agg.brief),
+            interviewLLMGeneration: feat(agg.llmGeneration),
+            interviewReport:        feat(agg.report),
+            resumeExtraction:       feat(agg.resumeExtraction),
+            jdExtraction:           feat(agg.jdExtraction),
+            resumeReport:           feat(agg.resumeReport),
+        };
+        const totalLlmCost = Object.values(consumptionHub).reduce(
+            (s, f) => s + Number(f?.costUsd || 0), 0
         );
         const totalTtsCost = Number(consumptionHub.interview?.ttsCostUsd || 0);
         const totalSttCost = Number(consumptionHub.interview?.sttCostUsd || 0);

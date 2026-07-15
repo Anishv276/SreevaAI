@@ -458,7 +458,16 @@ export async function processJdExtractionViaModal(job: Job, token: string | unde
             outputTokens: result.usage.outputTokens || 0,
             cachedInputTokens: result.usage.cachedInputTokens || 0,
             eventId: `jd-extraction:${job.id}`,
-            context: { label: fileName ?? null, eventId: `jd-extraction:${job.id}` },
+            context: {
+              // No real Job record exists yet at JD-extraction time (jobs/route.ts
+              // mints its own id later, unrelated to this queue job) -- the BullMQ
+              // queue id is only used as the UsageEvent entity key, never shown as
+              // a real Job id. jobTitle (from the extracted JD) is what's displayed.
+              jobId: `extraction:${job.id}`,
+              jobTitle: result?.data?.job_title ?? null,
+              label: fileName ?? null,
+              eventId: `jd-extraction:${job.id}`,
+            },
           },
         }, "jdExtraction");
         if (billed) {

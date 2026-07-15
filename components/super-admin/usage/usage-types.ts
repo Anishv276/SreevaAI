@@ -101,3 +101,24 @@ export type EventsSectionSlug =
   | "interview-generation"
   | "interview-eval"
   | "interview-brief";
+
+// One row per interview entity, every sub-feature's calls/cost side by side.
+// See app/api/super-admin/orgs/[id]/usage/events/route.ts's "interview-all" section.
+export type InterviewEventRow = {
+  id: string;
+  createdAt: string;
+  jobTitle: string | null;
+  candidateName: string | null;
+  evalRuns: number; evalCostUsd: number;
+  generationRuns: number; generationCostUsd: number;
+  briefRuns: number; briefCostUsd: number;
+  ttsCharacters: number; ttsCostUsd: number;
+  sttAudioSeconds: number; sttCostUsd: number;
+  totalCostUsd: number;
+};
+
+export type InterviewEventsResponse = {
+  rows: InterviewEventRow[];
+  nextCursor: string | null;
+  totalCostUsd: number;
+};

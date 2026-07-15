@@ -1,7 +1,7 @@
 "use client";
 import React, { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Building2, Search, RefreshCw, ChevronRight } from "lucide-react";
+import { Search, RefreshCw, ChevronRight } from "lucide-react";
 import { formatOrgPlan } from "@/lib/org-plans";
 import { formatLandingPackageForOrgPlan } from "@/lib/landing-packages";
 import { cn } from "@/lib/utils";
@@ -28,7 +28,19 @@ function SuperAdminBillingInner() {
   const [error, setError] = React.useState<string | null>(null);
   const [search, setSearch] = React.useState("");
   const [selectedOrgId, setSelectedOrgId] = React.useState<string | null>(orgIdParam);
+  const [isDropdownOpen, setIsDropdownOpen] = React.useState(false);
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
   const { currency, setCurrency, fmt } = useCurrency();
+
+  React.useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -86,7 +98,7 @@ function SuperAdminBillingInner() {
   );
 
   return (
-    <div className="space-y-6 pb-10 animate-in fade-in duration-500">
+    <div className="mx-auto max-w-5xl space-y-6 pb-10 animate-in fade-in duration-500">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Usage & Billing</h1>
@@ -94,97 +106,89 @@ function SuperAdminBillingInner() {
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
           <CurrencyToggle currency={currency} setCurrency={setCurrency} />
-          <div className="rounded-xl bg-white px-4 py-2.5" style={{ border: "1px solid #E9E7FF" }}>
-            <div className="text-[10px] font-medium uppercase tracking-wider text-gray-400">Selected org</div>
-            <div className="text-sm font-semibold text-gray-900">{selectedOrg?.name || "None selected"}</div>
-          </div>
-        </div>
-      </div>
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[220px_minmax(0,1fr)] items-start">
-        <aside className="sticky top-5 overflow-hidden rounded-2xl bg-white" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
-          <div className="p-3" style={{ borderBottom: "1px solid #F0EEF8" }}>
-            <div className="mb-2 flex items-center gap-2">
-              <div className="flex h-6.5 w-6.5 items-center justify-center rounded-lg bg-gray-50 text-gray-500">
-                <Building2 className="h-3 w-3" />
-              </div>
+          <div className="relative" ref={dropdownRef}>
+            <button
+              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+              className="flex items-center justify-between min-w-[200px] rounded-xl bg-white px-4 py-2.5 text-left transition-all hover:border-violet-200"
+              style={{ border: "1px solid #E9E7FF" }}
+            >
               <div>
-                <p className="text-[8px] font-bold uppercase tracking-[0.14em] text-gray-400">Organizations</p>
-                <p className="text-[10px] font-medium text-gray-700">{orgs.length} total</p>
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Selected org</div>
+                <div className="text-sm font-semibold text-gray-900">{selectedOrg?.name || "None selected"}</div>
               </div>
-            </div>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-2.5 w-2.5 -translate-y-1/2 text-gray-400" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search orgs"
-                className="h-8.5 w-full rounded-xl border border-gray-200 bg-white pl-8 pr-3 text-[12px] outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-violet-100"
-              />
-            </div>
-          </div>
-          <div className="max-h-[calc(100vh-240px)] overflow-y-auto p-1.25 custom-scrollbar">
-            {loading ? (
-              <div className="p-5 text-center">
-                <RefreshCw className="h-5 w-5 animate-spin text-violet-500 mx-auto mb-2" />
-                <p className="text-[8px] font-bold uppercase tracking-[0.14em] text-gray-400">Loading</p>
-              </div>
-            ) : error ? (
-              <div className="p-5 text-center text-[12px] text-gray-500">{error}</div>
-            ) : filteredOrgs.length === 0 ? (
-              <div className="p-5 text-center text-[12px] text-gray-500">No organizations match your search.</div>
-            ) : (
-              <div className="space-y-1">
-                {filteredOrgs.map((org) => {
-                  const isActive = org.id === selectedOrgId;
-                  const remainingInterviews = Math.max(0, org.totalInterviewsAllowed - org.totalInterviewsUsed);
-                  return (
-                    <button
-                      key={org.id}
-                      type="button"
-                      onClick={() => selectOrg(org.id)}
-                      className={cn(
-                        "w-full rounded-xl border px-2 py-2 text-left transition-all duration-200 group",
-                        isActive
-                          ? "border-[#7C3AED] bg-violet-50"
-                          : "border-gray-100 bg-white hover:border-violet-200 hover:bg-violet-50/40"
-                      )}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-gray-900 text-[9px] font-bold text-white">
-                          {org.name[0]?.toUpperCase()}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <h3 className="truncate text-[12px] font-semibold text-gray-900 group-hover:text-[#7C3AED]">{org.name}</h3>
-                            <ChevronRight className={cn("h-2.5 w-2.5 shrink-0 transition-transform text-gray-300", isActive && "translate-x-0.5 text-[#7C3AED]")} />
-                          </div>
-                          <div className="mt-0.5 flex flex-wrap items-center gap-1">
-                            <span className="text-[7px] font-bold uppercase tracking-[0.14em] text-gray-400">{org.slug}</span>
-                            <span className="h-1 w-1 rounded-full bg-gray-200" />
-                            <span className="text-[7px] font-bold uppercase tracking-[0.14em] text-gray-400">{formatLandingPackageForOrgPlan(org.plan) || "Starter"}</span>
-                          </div>
-                          <div className="mt-1 flex items-center justify-between text-[7px] font-bold uppercase tracking-[0.14em]">
-                            <span className={cn(
-                              "px-1.5 py-0.5 rounded-full border",
-                              org.status === "ACTIVE"
-                                ? "bg-emerald-50 text-emerald-600 border-emerald-100"
-                                : "bg-gray-100 text-gray-400 border-gray-200"
-                            )}>
-                              {org.status}
-                            </span>
-                            <span className="text-gray-500">
-                              {remainingInterviews.toFixed(0)} left
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
+              <ChevronRight className={cn("h-4 w-4 text-gray-400 transition-transform", isDropdownOpen && "rotate-90")} />
+            </button>
+            {isDropdownOpen && (
+              <div className="absolute right-0 top-full mt-2 w-[320px] rounded-2xl bg-white z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
+                style={{ border: "1px solid #E9E7FF", boxShadow: "0 25px 60px rgba(124,58,237,0.12)" }}>
+                <div className="p-3" style={{ borderBottom: "1px solid #F0EEF8" }}>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                    <input
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Search orgs"
+                      className="h-10 w-full rounded-xl bg-gray-50 pl-9 pr-3 text-sm outline-none transition-all focus:bg-white"
+                      style={{ border: "1px solid #E9E7FF" }}
+                      onFocus={e => { e.target.style.borderColor = "#7C3AED"; e.target.style.boxShadow = "0 0 0 3px rgba(124,58,237,0.1)"; }}
+                      onBlur={e => { e.target.style.borderColor = "#E9E7FF"; e.target.style.boxShadow = "none"; }}
+                    />
+                  </div>
+                </div>
+                <div className="max-h-[300px] overflow-y-auto p-2 custom-scrollbar">
+                  {loading ? (
+                    <div className="p-5 text-center">
+                      <RefreshCw className="h-5 w-5 animate-spin text-violet-500 mx-auto mb-2" />
+                      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400">Loading</p>
+                    </div>
+                  ) : error ? (
+                    <div className="p-5 text-center text-sm text-gray-500">{error}</div>
+                  ) : filteredOrgs.length === 0 ? (
+                    <div className="p-5 text-center text-sm text-gray-500">No organizations match your search.</div>
+                  ) : (
+                    <div className="space-y-1">
+                      {filteredOrgs.map((org) => {
+                        const isActive = org.id === selectedOrgId;
+                        const remainingInterviews = Math.max(0, org.totalInterviewsAllowed - org.totalInterviewsUsed);
+                        return (
+                          <button
+                            key={org.id}
+                            type="button"
+                            onClick={() => {
+                              selectOrg(org.id);
+                              setIsDropdownOpen(false);
+                            }}
+                            className={cn(
+                              "w-full rounded-xl px-3 py-2.5 text-left transition-all duration-200 group flex items-center gap-3",
+                              isActive
+                                ? "bg-violet-50"
+                                : "bg-white hover:bg-violet-50/50"
+                            )}
+                          >
+                            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-gray-900 text-xs font-bold text-white shadow-sm transition-all"
+                              style={isActive ? { background: "linear-gradient(135deg, #8B5CF6, #3B82F6)" } : {}}>
+                              {org.name[0]?.toUpperCase()}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <h3 className={cn("truncate text-sm font-semibold transition-colors", isActive ? "text-violet-700" : "text-gray-900 group-hover:text-violet-700")}>{org.name}</h3>
+                              <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                                <span className="text-[10px] font-medium text-gray-500">{formatLandingPackageForOrgPlan(org.plan) || "Starter"}</span>
+                                <span className="h-1 w-1 rounded-full bg-gray-300" />
+                                <span className="text-[10px] font-medium text-gray-500">{remainingInterviews.toFixed(0)} left</span>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
-        </aside>
+        </div>
+      </div>
+      <div className="mt-6">
         <section className="min-w-0">
           {selectedOrgId ? (
             <OrgUsagePanel key={selectedOrgId} orgId={selectedOrgId} fmt={fmt} />

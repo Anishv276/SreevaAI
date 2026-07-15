@@ -91,6 +91,11 @@ export async function GET(
                                     ...result.usage,
                                     eventId: `jd-extraction:${jobId}`,
                                     context: {
+                                        // No real Job record exists yet at JD-extraction time --
+                                        // this BullMQ queue id is only used as the UsageEvent
+                                        // entity key, never shown as a real Job id.
+                                        jobId: `extraction:${jobId}`,
+                                        jobTitle: hydratedData?.job_title ?? null,
                                         label: (job.data as Record<string, unknown> | undefined)?.fileName as string ?? null,
                                         eventId: `jd-extraction:${jobId}`,
                                     },

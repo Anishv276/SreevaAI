@@ -75,6 +75,10 @@ export default function JobsPage() {
             await deleteJob(jobToDelete);
             setIsDeleteModalOpen(false);
             setJobToDelete(null);
+            // adminOrg.activeJobCount is a snapshot from page load -- refresh it so the
+            // "New Job" button unlocks immediately instead of staying locked on the
+            // pre-delete count until the next full page load.
+            adminOrg?.refresh();
         } catch {
             toast.error("Failed to delete job");
         } finally {

@@ -263,9 +263,8 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
             const timestamp = Date.now().toString();
             // 1. Soft Delete Job
             await tx.$executeRaw`UPDATE "Job" SET "isDeleted" = true WHERE "id" = ${jobId}`;
-            // 2. Soft Delete Resume Candidates
-            await tx.$executeRaw`UPDATE "ResumeCandidate" SET "isDeleted" = true WHERE "jobId" = ${jobId}`;
-            // 4. Soft Delete Applications
+            // 4. Soft Delete Applications (Application holds candidate/resume data directly --
+            // the separate ResumeCandidate table no longer exists)
             await tx.$executeRaw`UPDATE "Application" SET "isDeleted" = true WHERE "jobId" = ${jobId}`;
             // 5. Soft Delete Interviews (rename applicationId and accessToken)
             await tx.$executeRaw`

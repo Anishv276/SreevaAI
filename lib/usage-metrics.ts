@@ -187,11 +187,12 @@ export async function deductInterviewQuotaForApplication(opts: {
 }
 
 // ============================================================================
-// Shared per-org usage breakdown -- the single calculation used by both the
-// live super-admin usage view (app/api/super-admin/orgs/[id]/usage/route.ts)
-// and the OrgUsageSummary refresh (scripts/refresh-org-usage-summary.ts). Keep
-// this the only place that reads platformUsageMetrics.billing + UsageEvent so
-// the two can never disagree on a number.
+// Shared per-org usage aggregation -- the single calculation used by the live
+// super-admin usage view (app/api/super-admin/orgs/[id]/usage/route.ts), the
+// platform billing dashboard (app/api/super-admin/billing/route.ts), and the
+// OrgUsageSummary refresh (scripts/refresh-org-usage-summary.ts). UsageEvent is
+// the sole source of truth: every cost/call/model number below is summed out of
+// the entity rows' `usage` JSON, so no two surfaces can disagree.
 // ============================================================================
 
 export type UsageBucket = {
@@ -255,64 +256,124 @@ export type OrgUsageBreakdown = {
   totalCostUsd: number;
 };
 
+// Per-feature aggregate summed out of one org's UsageEvent entity rows. The keys
+// mirror the sub-feature keys inside each row's `usage` JSON. `calls` counts real
+// API calls (summed from every model entry's `calls`); `byModel` accumulates
+// provider:model -> {costUsd, calls, ...units} for the primary-model/pie views.
+export type UsageEventAgg = {
+  costUsd: number;
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  ttsCharacters: number;
+  sttAudioSeconds: number;
+  byModel: Record<string, { provider: string; model: string; costUsd: number; calls: number; characters: number; seconds: number; inputTokens: number; outputTokens: number }>;
+};
+
+// Sub-feature keys emitted by aggregateOrgUsageEvents (one bucket each).
+export type UsageAggKey =
+  | "jdExtraction" | "resumeExtraction" | "resumeReport"
+  | "eval" | "brief" | "llmGeneration" | "report"
+  | "interviewTts" | "interviewStt";
+
+export type OrgUsageEventRow = { feature: string; usage: unknown };
+
+function emptyAgg(): UsageEventAgg {
+  return { costUsd: 0, calls: 0, inputTokens: 0, outputTokens: 0, ttsCharacters: 0, sttAudioSeconds: 0, byModel: {} };
+}
+
+function foldLlm(agg: UsageEventAgg, arr: any[]) {
+  for (const m of arr) {
+    const calls = numOr0(m.calls);
+    const key = `${String(m.provider || "openai")}:${String(m.model || "unknown")}`;
+    const bm = (agg.byModel[key] ??= { provider: String(m.provider || "openai"), model: String(m.model || "unknown"), costUsd: 0, calls: 0, characters: 0, seconds: 0, inputTokens: 0, outputTokens: 0 });
+    bm.costUsd += numOr0(m.costUsd); bm.calls += calls;
+    bm.inputTokens += numOr0(m.inputTokens); bm.outputTokens += numOr0(m.outputTokens);
+    agg.costUsd += numOr0(m.costUsd); agg.calls += calls;
+    agg.inputTokens += numOr0(m.inputTokens); agg.outputTokens += numOr0(m.outputTokens);
+  }
+}
+
+function foldAudio(agg: UsageEventAgg, arr: any[], unit: "characters" | "seconds") {
+  for (const m of arr) {
+    const calls = numOr0(m.calls);
+    const key = `${String(m.provider || "unknown")}:${String(m.model || "unknown")}`;
+    const bm = (agg.byModel[key] ??= { provider: String(m.provider || "unknown"), model: String(m.model || "unknown"), costUsd: 0, calls: 0, characters: 0, seconds: 0, inputTokens: 0, outputTokens: 0 });
+    bm.costUsd += numOr0(m.costUsd); bm.calls += calls; bm[unit] += numOr0(m[unit]);
+    agg.costUsd += numOr0(m.costUsd); agg.calls += calls;
+    if (unit === "characters") agg.ttsCharacters += numOr0(m.characters);
+    else agg.sttAudioSeconds += numOr0(m.seconds);
+  }
+}
+
 /**
- * Compute the full per-org cost breakdown from platformUsageMetrics (source of
- * truth for totals) plus the UsageEvent ledger (per-feature calls). Pass an
- * already-fetched org row to avoid a redundant query when the caller already
- * has one (e.g. the live usage-view route).
+ * Aggregate one org's UsageEvent entity rows into a per-sub-feature map. This is
+ * the single UsageEvent-reading routine every cost surface shares. `usage.jd/
+ * resume/report/eval/brief/...` all funnel here so the numbers can't diverge.
+ */
+export function aggregateOrgUsageEvents(rows: OrgUsageEventRow[]): Record<UsageAggKey, UsageEventAgg> {
+  const out: Record<UsageAggKey, UsageEventAgg> = {
+    jdExtraction: emptyAgg(), resumeExtraction: emptyAgg(), resumeReport: emptyAgg(),
+    eval: emptyAgg(), brief: emptyAgg(), llmGeneration: emptyAgg(), report: emptyAgg(),
+    interviewTts: emptyAgg(), interviewStt: emptyAgg(),
+  };
+  const arr = (v: any) => (Array.isArray(v) ? v : []);
+  for (const row of rows) {
+    const usage = (row.usage && typeof row.usage === "object") ? (row.usage as Record<string, any>) : {};
+    if (row.feature === "jdExtraction") {
+      foldLlm(out.jdExtraction, arr(usage.jdExtraction?.llm));
+    } else if (row.feature === "resumeExtraction") {
+      foldLlm(out.resumeExtraction, arr(usage.resumeExtraction?.llm));
+      foldLlm(out.resumeReport, arr(usage.resumeReport?.llm));
+    } else if (row.feature === "interview") {
+      foldLlm(out.eval, arr(usage.eval?.llm));
+      foldLlm(out.brief, arr(usage.brief?.llm));
+      foldLlm(out.llmGeneration, arr(usage.llmGeneration?.llm));
+      foldLlm(out.report, arr(usage.report?.llm));
+      foldAudio(out.interviewTts, arr(usage.tts?.byModel), "characters");
+      foldAudio(out.interviewStt, arr(usage.stt?.byModel), "seconds");
+    }
+  }
+  return out;
+}
+
+/**
+ * Compute the full per-org cost breakdown by summing the org's UsageEvent ledger
+ * rows (real spend only — isTest rows are excluded by the caller's query).
  */
 export async function computeOrgUsageBreakdown(org: {
   id: string;
   name: string;
-  platformUsageMetrics: unknown;
 }): Promise<OrgUsageBreakdown> {
-  const usageMetrics = (org.platformUsageMetrics && typeof org.platformUsageMetrics === "object")
-    ? (org.platformUsageMetrics as Record<string, any>) : {};
-  const billing = (usageMetrics.billing && typeof usageMetrics.billing === "object")
-    ? (usageMetrics.billing as Record<string, UsageBucket>) : {};
-  const B = (k: string): UsageBucket => billing[k] || {};
-
-  const jdBucket = B("jdExtraction");
-  const resumeBucket = B("resumeExtraction");
-  const resumeReportBucket = B("resumeReport");
-  const interviewBucket = B("interview"); // eval/live-session LLM + TTS + STT share this bucket
-  const briefBucket = B("interviewBrief");
-  const genBucket = B("interviewLLMGeneration");
-  const reportBucket = B("interviewReport");
-
-  const interviewLlmCostUsd = numOr0(interviewBucket.costUsd);
-  const interviewTtsCostUsd = numOr0(interviewBucket.ttsCostUsd);
-  const interviewSttCostUsd = numOr0(interviewBucket.sttCostUsd);
-  const interviewBriefCostUsd = numOr0(briefBucket.costUsd);
-  const interviewGenerationCostUsd = numOr0(genBucket.costUsd);
-  const interviewReportCostUsd = numOr0(reportBucket.costUsd);
-  const jdExtractionCostUsd = numOr0(jdBucket.costUsd);
-  const resumeExtractionCostUsd = numOr0(resumeBucket.costUsd);
-  const resumeReportCostUsd = numOr0(resumeReportBucket.costUsd);
+  const rows = await prisma.usageEvent.findMany({
+    where: { organizationId: org.id, isTest: false },
+    select: { feature: true, usage: true },
+  });
+  const agg = aggregateOrgUsageEvents(rows);
 
   const totalCostUsd = roundCost(
-    jdExtractionCostUsd + resumeExtractionCostUsd + resumeReportCostUsd +
-    interviewLlmCostUsd + interviewTtsCostUsd + interviewSttCostUsd +
-    interviewBriefCostUsd + interviewGenerationCostUsd + interviewReportCostUsd
+    agg.jdExtraction.costUsd + agg.resumeExtraction.costUsd + agg.resumeReport.costUsd +
+    agg.eval.costUsd + agg.interviewTts.costUsd + agg.interviewStt.costUsd +
+    agg.brief.costUsd + agg.llmGeneration.costUsd + agg.report.costUsd
   );
 
   return {
     orgId: org.id,
     orgName: org.name,
-    jdExtractionCostUsd: roundCost(jdExtractionCostUsd),
-    jdExtractionRuns: numOr0(jdBucket.runs),
-    resumeExtractionCostUsd: roundCost(resumeExtractionCostUsd),
-    resumeReportCostUsd: roundCost(resumeReportCostUsd),
-    resumeRuns: numOr0(resumeBucket.runs) + numOr0(resumeReportBucket.runs),
-    interviewLlmCostUsd: roundCost(interviewLlmCostUsd),
-    interviewEvalCostUsd: roundCost(interviewLlmCostUsd), // eval IS the interview bucket's LLM cost
-    interviewBriefCostUsd: roundCost(interviewBriefCostUsd),
-    interviewGenerationCostUsd: roundCost(interviewGenerationCostUsd),
-    interviewTtsCostUsd: roundCost(interviewTtsCostUsd),
-    interviewSttCostUsd: roundCost(interviewSttCostUsd),
-    interviewTtsCalls: callsFromByModel(interviewBucket.ttsByModel),
-    interviewSttCalls: callsFromByModel(interviewBucket.sttByModel),
-    interviewReportCostUsd: roundCost(interviewReportCostUsd),
+    jdExtractionCostUsd: roundCost(agg.jdExtraction.costUsd),
+    jdExtractionRuns: agg.jdExtraction.calls,
+    resumeExtractionCostUsd: roundCost(agg.resumeExtraction.costUsd),
+    resumeReportCostUsd: roundCost(agg.resumeReport.costUsd),
+    resumeRuns: agg.resumeExtraction.calls + agg.resumeReport.calls,
+    interviewLlmCostUsd: roundCost(agg.eval.costUsd),
+    interviewEvalCostUsd: roundCost(agg.eval.costUsd),
+    interviewBriefCostUsd: roundCost(agg.brief.costUsd),
+    interviewGenerationCostUsd: roundCost(agg.llmGeneration.costUsd),
+    interviewTtsCostUsd: roundCost(agg.interviewTts.costUsd),
+    interviewSttCostUsd: roundCost(agg.interviewStt.costUsd),
+    interviewTtsCalls: agg.interviewTts.calls,
+    interviewSttCalls: agg.interviewStt.calls,
+    interviewReportCostUsd: roundCost(agg.report.costUsd),
     totalCostUsd,
   };
 }
@@ -331,7 +392,7 @@ const REFRESH_DEBOUNCE_MS = 2 * 60 * 1000;
 export async function refreshOrgUsageSummary(orgId: string): Promise<OrgUsageBreakdown | null> {
   const org = await prisma.organizationDetails.findUnique({
     where: { id: orgId },
-    select: { id: true, name: true, platformUsageMetrics: true },
+    select: { id: true, name: true },
   });
   if (!org) return null;
   const b = await computeOrgUsageBreakdown(org);

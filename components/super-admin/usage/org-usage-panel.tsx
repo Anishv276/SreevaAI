@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import type { SectionKey, InterviewSubKey, UsageOverview, EventsSectionSlug } from "./usage-types";
 import { PlanCard } from "./plan-card";
-import { OverviewGrid, SECTION_STYLE } from "./overview-grid";
+import { OverviewGrid, CostBySection, SECTION_STYLE } from "./overview-grid";
 import { EventsDetail } from "./events-detail";
 import { InterviewAnalysis } from "./interview-analysis";
 import { TestUsageCard } from "./test-usage-card";
@@ -132,7 +132,10 @@ export function OrgUsagePanel({
   // ---- Overview ----
   return (
     <div className="space-y-6">
-      <PlanCard org={data.org} fmt={fmt} />
+      <div className="grid gap-6 lg:grid-cols-2">
+        <PlanCard org={data.org} fmt={fmt} />
+        <CostBySection data={data} fmt={fmt} />
+      </div>
       <OverviewGrid data={data} fmt={fmt} onOpenSection={(key) => setParams({ section: key, sub: null })} />
       <TestUsageCard orgId={orgId} fmt={fmt} />
     </div>

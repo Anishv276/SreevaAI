@@ -39,7 +39,6 @@ export async function POST(request: Request) {
                 applicationId,
                 interviewStatus: "PENDING",
                 isTestSession: true,
-                testSessionBillingMetrics: { skipReport, llmCost: 0, ttsCost: 0, sttCost: 0 },
             },
             update: {
                 interviewStatus: "PENDING",
@@ -51,7 +50,6 @@ export async function POST(request: Request) {
                 aiScoreBreakdown: {},
                 aiInterviewSummary: {},
                 aiSkillRatings: [],
-                testSessionBillingMetrics: { skipReport, llmCost: 0, ttsCost: 0, sttCost: 0 },
             },
             select: { candidateInviteToken: true },
         });

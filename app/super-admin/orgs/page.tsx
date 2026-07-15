@@ -57,7 +57,6 @@ interface Org {
     urlSlug: string;
     billingPlan: string;
     status: string;
-    platformUsageMetrics?: Record<string, unknown> | null;
     adminCount: number;
     jobCount: number;
     candidateCount: number;

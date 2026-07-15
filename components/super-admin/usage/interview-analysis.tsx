@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import type { InterviewSubKey, UsageOverview, EventsSectionSlug } from "./usage-types";
 import { DonutChart, DonutLegend, type DonutSlice } from "./donut-chart";
 import { EventsDetail } from "./events-detail";
+import { InterviewEventsTable } from "./interview-events-table";
 
 // Sub-section identity palette (validated for CVD via the dataviz skill).
 const SUB_STYLE: Record<InterviewSubKey, { color: string; icon: LucideIcon; ring: string; text: string; slug: EventsSectionSlug }> = {
@@ -99,6 +100,14 @@ export function InterviewAnalysis({
               <EventsDetail orgId={orgId} section={activeStyle.slug} fmt={fmt} accent={activeStyle.color} />
             </div>
           )}
+        </div>
+
+        {/* Per-interview breakdown table */}
+        <div className="mt-8">
+          <h3 className="mb-3 border-b border-gray-100 pb-2 text-base font-bold text-gray-900">
+            Interview Sessions
+          </h3>
+          <InterviewEventsTable orgId={orgId} fmt={fmt} accent="#7C3AED" />
         </div>
 
         {/* Per-model pie */}

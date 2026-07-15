@@ -29,6 +29,7 @@ export async function GET(
             where: { id },
             include: {
                 organizationCredentials: {
+                    where: { isDeleted: false },
                     select: { id: true, name: true, email: true }
                 }
             }
@@ -55,6 +56,10 @@ export async function GET(
             totalInterviewsAllowed: billingRows[0]?.totalInterviewsAllowed ?? 0,
             totalInterviewsUsed: billingRows[0]?.totalInterviewsUsed ?? 0,
             billingCreditsUsed: billingRows[0]?.billingCreditsUsed ?? 0,
+            proctoringSignals: org.enabledProctoringSignals,
+            maxConcurrentSlots: org.maxConcurrentInterviews,
+            recordingEnabled: org.isRecordingEnabled === true && org.recordingKeepForDays != null,
+            recordingRetentionDays: org.recordingKeepForDays,
         });
     } catch (error) {
         return apiErrorResponse({
@@ -87,7 +92,6 @@ export async function PATCH(
             adminEmail,
             adminPassword,
             defaultVoiceId, allowedVoiceIds,
-            platformUsageMetrics,
             totalInterviewsAllowed,
             interviewQuotaTopUp,
             maxConcurrentSlots,
@@ -139,11 +143,6 @@ export async function PATCH(
         }
         if (status && !["ACTIVE", "SUSPENDED", "PENDING", "DEACTIVATED", "CLOSED"].includes(status)) {
             return NextResponse.json({ error: "Invalid organization status" }, { status: 400 });
-        }
-        if (platformUsageMetrics) {
-            if (typeof platformUsageMetrics !== "object" && typeof platformUsageMetrics !== "string") {
-                return NextResponse.json({ error: "platformUsageMetrics must be an object or JSON string" }, { status: 400 });
-            }
         }
         const currentInterviewQuotaTotal = Math.max(0, Math.round(Number(existingOrg.totalInterviewsAllowed || 0)));
         const shouldUpdateInterviewQuotaTotal =
@@ -258,23 +257,9 @@ export async function PATCH(
             updateData,
             normalizeOrgAiConfig({ defaultVoiceId, allowedVoiceIds })
         );
-        // Usage metrics -- internal API cost tracking, untouched by billing
-        if (platformUsageMetrics !== undefined) {
-            if (typeof platformUsageMetrics === "string") {
-                const trimmed = platformUsageMetrics.trim();
-                if (!trimmed) {
-                    updateData.platformUsageMetrics = {};
-                } else {
-                    try {
-                        updateData.platformUsageMetrics = JSON.parse(trimmed);
-                    } catch {
-                        return NextResponse.json({ error: "platformUsageMetrics must be valid JSON" }, { status: 400 });
-                    }
-                }
-            } else {
-                updateData.platformUsageMetrics = platformUsageMetrics ?? {};
-            }
-        }
+        // ponytail: removed super-admin platformUsageMetrics override — that column
+        // is gone; UsageEvent is now the sole source of truth for cost totals and
+        // is not manually editable (out of scope, no replacement built).
         // -- EMAIL CONFLICT CHECK ----------------------------
         if (adminEmail) {
             const normalizedEmail = normalizeEmail(adminEmail);
@@ -362,10 +347,14 @@ export async function PATCH(
                         adminUpdate.password = await bcrypt.hash(String(adminPassword).trim(), 10);
                     }
                     if (Object.keys(adminUpdate).length > 0) {
-                        await tx.organizationCredentials.update({
+                        console.log("[ORG_EDIT_DEBUG] writing adminUpdate", { adminId: admin.id, adminUpdate });
+                        const writeResult = await tx.organizationCredentials.update({
                             where: { id: admin.id },
                             data: adminUpdate
                         });
+                        console.log("[ORG_EDIT_DEBUG] write result", { id: writeResult.id, email: writeResult.email });
+                    } else {
+                        console.log("[ORG_EDIT_DEBUG] adminUpdate empty, skipped write", { adminEmail, adminPassword });
                     }
                 }
             }
@@ -388,7 +377,13 @@ export async function PATCH(
                 billingCreditsUsed: billingRows[0]?.billingCreditsUsed ?? 0,
             };
         });
-        const result: Record<string, unknown> = { ...updated };
+        const result: Record<string, unknown> = {
+            ...updated,
+            proctoringSignals: updated.enabledProctoringSignals,
+            maxConcurrentSlots: updated.maxConcurrentInterviews,
+            recordingEnabled: updated.isRecordingEnabled === true && updated.recordingKeepForDays != null,
+            recordingRetentionDays: updated.recordingKeepForDays,
+        };
         if (shouldSyncQuotaStatus || directStatus === "ACTIVE") {
             const syncedStatus = await syncOrgStatusWithInterviewQuota(id);
             if (syncedStatus) {
@@ -435,12 +430,8 @@ export async function DELETE(
             await tx.$executeRaw`UPDATE "OrganizationCredentials" SET "isDeleted" = true, "email" = 'del_' || ${timestamp} || '_' || "email" WHERE "organizationId" = ${id}`;
             // 3. Soft Delete Jobs
             await tx.$executeRaw`UPDATE "Job" SET "isDeleted" = true WHERE "organizationId" = ${id}`;
-            // 4. Soft Delete Resume Candidates
-            await tx.$executeRaw`
-                UPDATE "ResumeCandidate" SET "isDeleted" = true
-                WHERE "jobId" IN (SELECT "id" FROM "Job" WHERE "organizationId" = ${id})
-            `;
-            // 6. Soft Delete Applications
+            // 6. Soft Delete Applications (Application holds candidate/resume data directly --
+            // the separate ResumeCandidate table no longer exists)
             await tx.$executeRaw`
                 UPDATE "Application" SET "isDeleted" = true
                 WHERE "jobId" IN (SELECT "id" FROM "Job" WHERE "organizationId" = ${id})

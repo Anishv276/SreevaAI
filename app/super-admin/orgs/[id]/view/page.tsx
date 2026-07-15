@@ -41,7 +41,6 @@ interface OrgDetail {
     billingPlan: string;
     status: string;
     industry: string | null;
-    platformUsageMetrics?: Record<string, unknown> | null;
     totalInterviewsAllowed?: number;
     totalInterviewsUsed?: number;
     billingCreditsUsed?: number;
@@ -84,6 +83,14 @@ type BillingFeatureMetrics = {
     byModel?: Record<string, unknown>;
     ttsByModel?: Record<string, unknown>;
     sttByModel?: Record<string, unknown>;
+};
+// Shape of GET /api/super-admin/orgs/[id]/usage (see that route for the source).
+type UsageOverviewResponse = {
+    sections: { key: string; costUsd: number; runs: number }[];
+    interview: {
+        subSections: { key: string; costUsd: number; calls: number; units: { ttsCharacters?: number; sttAudioSeconds?: number; inputTokens?: number; outputTokens?: number } }[];
+        byModel: { provider: string; model: string; kind: string; costUsd: number }[];
+    };
 };
 // Returns the org's configured model for a billing section key -- from DB, not hardcoded.
 function getConfiguredModel(org: OrgDetail | null, sectionKey: string): string | null {
@@ -131,6 +138,45 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
     const [showMetrics, setShowMetrics] = useState(false);
+    const [usageOverview, setUsageOverview] = useState<UsageOverviewResponse | null>(null);
+    useEffect(() => {
+        if (!showMetrics || usageOverview) return;
+        fetch(`/api/super-admin/orgs/${id}/usage`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d) => d && setUsageOverview(d))
+            .catch(() => { /* keep panel showing zeros on failure */ });
+    }, [showMetrics, usageOverview, id]);
+    // Reconstructs the billingAll[featureKey] shape this panel was built
+    // against, from the UsageEvent-derived /usage response (sections +
+    // interview.subSections/byModel) -- so the render blocks below barely change.
+    const billingAll: Record<string, BillingFeatureMetrics> = (() => {
+        if (!usageOverview) return {};
+        const out: Record<string, BillingFeatureMetrics> = {};
+        for (const s of usageOverview.sections) {
+            const key = s.key === "finalReport" ? "interviewReport" : s.key === "interview" ? "interview" : s.key;
+            out[key] = { runs: s.runs, costUsd: s.costUsd, byModel: {} };
+        }
+        const sub = (k: string) => usageOverview.interview.subSections.find((x) => x.key === k);
+        const evalSub = sub("eval"), briefSub = sub("brief"), genSub = sub("generation");
+        const ttsSub = sub("tts"), sttSub = sub("stt");
+        out.interview = {
+            ...out.interview,
+            inputTokens: evalSub?.units.inputTokens, outputTokens: evalSub?.units.outputTokens,
+            ttsCharacters: ttsSub?.units.ttsCharacters, ttsCostUsd: ttsSub?.costUsd,
+            sttAudioSeconds: sttSub?.units.sttAudioSeconds, sttCostUsd: sttSub?.costUsd,
+            ttsByModel: Object.fromEntries(
+                usageOverview.interview.byModel.filter((m) => m.kind === "tts").map((m) => [`${m.provider}:${m.model}`, m])
+            ),
+        };
+        out.interviewBrief = { runs: briefSub?.calls, costUsd: briefSub?.costUsd, inputTokens: briefSub?.units.inputTokens, outputTokens: briefSub?.units.outputTokens, byModel: {} };
+        out.interviewLLMGeneration = { runs: genSub?.calls, costUsd: genSub?.costUsd, inputTokens: genSub?.units.inputTokens, outputTokens: genSub?.units.outputTokens, byModel: {} };
+        for (const m of usageOverview.interview.byModel) {
+            if (m.kind !== "llm") continue;
+            const target = out.interview; // primary-model lookup for the LLM table only checks `interview`/etc via getConfiguredModel, byModel is cosmetic
+            (target.byModel ??= {})[`${m.provider}:${m.model}`] = m;
+        }
+        return out;
+    })();
     const [currency, setCurrency] = useState<"USD" | "INR">("USD");
     const [usdToInr, setUsdToInr] = useState<number>(84.5);
     const [rateLoading, setRateLoading] = useState(false);
@@ -543,8 +589,6 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                                 { label: "Interview Brief", key: "interviewBrief" },
                                                 { label: "Interview LLM Generation", key: "interviewLLMGeneration" },
                                             ].map((row) => {
-                                                const usage = (org?.platformUsageMetrics ?? {}) as Record<string, unknown>;
-                                                const billingAll = (usage.billing ?? {}) as Record<string, BillingFeatureMetrics>;
                                                 const billing = (billingAll[row.key] ?? {}) as BillingFeatureMetrics;
                                                 const llmCost = Number(billing?.costUsd || 0);
                                                 const totalTokens = Number(billing?.inputTokens || 0) + Number(billing?.outputTokens || 0);
@@ -573,15 +617,9 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                         <div className="text-[10px] font-black uppercase tracking-[0.15em] text-gray-500">Live Agent + Eval + Brief + Generation</div>
                                         <div className="mt-2 text-4xl font-black text-violet-600">
                                             {fmt(
-                                                (() => {
-                                                    const usage = (org?.platformUsageMetrics ?? {}) as Record<string, unknown>;
-                                                    const billingAll = (usage.billing ?? {}) as Record<string, BillingFeatureMetrics>;
-                                                    return (
-                                                        Number((billingAll["interview"] as BillingFeatureMetrics)?.costUsd || 0)
-                                                        + Number((billingAll["interviewBrief"] as BillingFeatureMetrics)?.costUsd || 0)
-                                                        + Number((billingAll["interviewLLMGeneration"] as BillingFeatureMetrics)?.costUsd || 0)
-                                                    );
-                                                })()
+                                                Number(billingAll["interview"]?.costUsd || 0)
+                                                + Number(billingAll["interviewBrief"]?.costUsd || 0)
+                                                + Number(billingAll["interviewLLMGeneration"]?.costUsd || 0)
                                             )}
                                         </div>
                                     </div>
@@ -597,8 +635,6 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                         { label: "Cartesia", provider: "CARTESIA" },
                                         { label: "Sarvam", provider: "SARVAM" },
                                     ].map((tts) => {
-                                        const usage = (org?.platformUsageMetrics ?? {}) as Record<string, unknown>;
-                                        const billingAll = (usage.billing ?? {}) as Record<string, BillingFeatureMetrics>;
                                         const interviewBilling = (billingAll["interview"] ?? {}) as BillingFeatureMetrics;
                                         // Find provider-specific TTS data from ttsByModel
                                         const ttsByModel = (interviewBilling?.ttsByModel ?? {}) as Record<string, any>;
@@ -631,8 +667,6 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                 <h4 className="text-[12px] font-black uppercase tracking-[0.15em] text-gray-500 mb-4">STT Hub - Deepgram</h4>
                                 <div className="grid gap-4 md:grid-cols-2">
                                     {(() => {
-                                        const usage = (org?.platformUsageMetrics ?? {}) as Record<string, unknown>;
-                                        const billingAll = (usage.billing ?? {}) as Record<string, BillingFeatureMetrics>;
                                         const interviewBilling = (billingAll["interview"] ?? {}) as BillingFeatureMetrics;
                                         const sttMinutes = (Number(interviewBilling?.sttAudioSeconds || 0) / 60).toFixed(1);
                                         const sttCost = Number(interviewBilling?.sttCostUsd || 0);
@@ -665,8 +699,6 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                         "resumeReport",
                                         "interviewReport",
                                     ].reduce((sum, key) => {
-                                        const usage = (org?.platformUsageMetrics ?? {}) as Record<string, unknown>;
-                                        const billingAll = (usage.billing ?? {}) as Record<string, BillingFeatureMetrics>;
                                         const row = billingAll[key] ?? {};
                                         return (
                                             sum

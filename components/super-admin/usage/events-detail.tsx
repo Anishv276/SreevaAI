@@ -140,22 +140,22 @@ export function EventsDetail({
   const grandTotal = (totals?.costUsd || 0) + (legacy?.costUsd || 0);
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-gray-200">
+    <div className="overflow-x-auto rounded-2xl bg-white shadow-sm" style={{ border: "1px solid #E9E7FF" }}>
       <table className="w-full text-left text-sm">
-        <thead className="border-b border-gray-200 bg-gray-50">
+        <thead style={{ background: "#F9F8FF", borderBottom: "1px solid #F0EEF8" }}>
           <tr>
-            <th className="px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-gray-500">Date</th>
+            <th className="px-5 py-3.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">Date</th>
             {cols.map((c) => (
               <th
                 key={c}
-                className={`px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-gray-500 ${c === "cost" ? "text-right" : ""}`}
+                className={`px-5 py-3.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400 ${c === "cost" ? "text-right" : ""}`}
               >
                 {COL_LABEL[c]}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100">
+        <tbody className="divide-y" style={{ borderColor: "#F0EEF8" }}>
           {rows.length === 0 && !legacy && (
             <tr>
               <td colSpan={cols.length + 1} className="px-4 py-8 text-center text-gray-400">
@@ -164,40 +164,40 @@ export function EventsDetail({
             </tr>
           )}
           {rows.map((r) => (
-            <tr key={r.id} className="hover:bg-gray-50/70">
-              <td className="whitespace-nowrap px-4 py-3 text-xs text-gray-500">
+            <tr key={r.id} className="transition-colors hover:bg-violet-50/40">
+              <td className="whitespace-nowrap px-5 py-3.5 text-xs text-gray-500">
                 {new Date(r.createdAt).toLocaleDateString()}
                 {r.source === "backfill" && (
-                  <span className="ml-1.5 rounded bg-gray-100 px-1 py-0.5 text-[9px] font-semibold uppercase text-gray-400">
+                  <span className="ml-2 rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-gray-400">
                     history
                   </span>
                 )}
               </td>
               {cols.map((c) => (
-                <td key={c} className={`px-4 py-3 ${c === "cost" ? "text-right" : ""}`}>
+                <td key={c} className={`px-5 py-3.5 ${c === "cost" ? "text-right" : ""}`}>
                   {cell(r, c, fmt)}
                 </td>
               ))}
             </tr>
           ))}
           {legacy && (
-            <tr className="bg-amber-50/40">
-              <td className="px-4 py-3 text-xs font-medium text-amber-700" colSpan={cols.length}>
+            <tr className="bg-amber-50/30">
+              <td className="px-5 py-3.5 text-xs font-medium text-amber-700" colSpan={cols.length}>
                 Legacy (before detailed tracking)
               </td>
-              <td className="px-4 py-3 text-right font-bold text-amber-800 tabular-nums">{fmt(legacy.costUsd)}</td>
+              <td className="px-5 py-3.5 text-right font-semibold text-amber-800 tabular-nums">{fmt(legacy.costUsd)}</td>
             </tr>
           )}
         </tbody>
         <tfoot>
-          <tr className="border-t-2 border-gray-200 bg-gray-50/80">
-            <td className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-600" colSpan={cols.length}>
+          <tr style={{ background: "#FAFAFC", borderTop: "2px solid #E9E7FF" }}>
+            <td className="px-5 py-4 text-xs font-semibold uppercase tracking-wider text-gray-600" colSpan={cols.length}>
               <span className="inline-flex items-center gap-1.5">
-                <Activity className="h-3.5 w-3.5" style={{ color: accent }} />
+                <Activity className="h-4 w-4" style={{ color: accent }} />
                 Section total ({totals?.rows ?? rows.length} events{totals?.calls ? ` · ${totals.calls.toLocaleString()} calls` : ""})
               </span>
             </td>
-            <td className="px-4 py-3 text-right text-base font-black tabular-nums" style={{ color: accent }}>
+            <td className="px-5 py-4 text-right text-base font-black tabular-nums" style={{ color: accent }}>
               {fmt(grandTotal)}
             </td>
           </tr>

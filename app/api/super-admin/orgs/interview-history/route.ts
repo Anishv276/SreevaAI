@@ -2,6 +2,21 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession, isSuperAdminRole } from "@/lib/auth";
 import { apiErrorResponse } from "@/lib/slack-error-logger";
+
+function n(v: unknown): number {
+  const x = Number(v);
+  return Number.isFinite(x) ? x : 0;
+}
+const round = (v: number) => Math.round(v * 1e6) / 1e6;
+const arr = (v: any) => (Array.isArray(v) ? v : []);
+const sumLlm = (bucket: any) => arr(bucket?.llm).reduce((s: number, m: any) => s + n(m.costUsd), 0);
+
+/**
+ * GET /api/super-admin/orgs/interview-history?orgId=
+ * Per-interview cost from the UsageEvent ledger (interview:{applicationId} row,
+ * isTest=false). llmCostUsd = eval+brief+llmGeneration+report LLM; ttsCostUsd /
+ * sttCostUsd from usage.tts/stt. Response shape unchanged from the blob version.
+ */
 export async function GET(request: Request) {
   try {
     const session = await getSession();
@@ -16,6 +31,7 @@ export async function GET(request: Request) {
     const rows = await prisma.$queryRaw<
       Array<{
         id: string;
+        applicationId: string;
         interviewStatus: string;
         durationInSeconds: number | null;
         recordingDurationSec: number | null;
@@ -24,11 +40,11 @@ export async function GET(request: Request) {
         candidateFullName: string | null;
         jobRole: string | null;
         jobTitle: string | null;
-        billingSnapshotAtCompletion: unknown;
       }>
     >`
       SELECT
         i.id,
+        i."applicationId",
         i."interviewStatus",
         i."durationInSeconds",
         NULLIF(i."sessionRecording"->>'durationSec', '')::integer AS "recordingDurationSec",
@@ -36,8 +52,7 @@ export async function GET(request: Request) {
         i."interviewUpdatedAt",
         a."candidateFullName",
         d."jobRole",
-        d.title AS "jobTitle",
-        COALESCE(i."billingSnapshotAtCompletion", '{}'::jsonb) AS "billingSnapshotAtCompletion"
+        d.title AS "jobTitle"
       FROM "Interview" i
       JOIN "Application" a ON a.id = i."applicationId"
       JOIN "Job" d ON d.id = a."jobId"
@@ -48,31 +63,37 @@ export async function GET(request: Request) {
       ORDER BY COALESCE(i."interviewCompletedAt", i."interviewUpdatedAt") DESC
       LIMIT 100
     `;
+
+    // One UsageEvent lookup for all these interviews (keyed by applicationId).
+    const appIds = rows.map((r) => r.applicationId);
+    const usageRows = appIds.length
+      ? await prisma.usageEvent.findMany({
+          where: { feature: "interview", isTest: false, applicationId: { in: appIds } },
+          select: { applicationId: true, usage: true },
+        })
+      : [];
+    const usageByApp = new Map<string, unknown>();
+    for (const u of usageRows) if (u.applicationId) usageByApp.set(u.applicationId, u.usage);
+
     const result = rows
       .map((row) => {
-        const snapshot = (row.billingSnapshotAtCompletion && typeof row.billingSnapshotAtCompletion === "object" ? row.billingSnapshotAtCompletion : {}) as Record<string, unknown>;
-        // Interview.durationInSeconds is the single source of truth for duration
-        // (see app/api/admin/billing/history/route.ts) — only fall back to the
-        // recording file length for rows saved before that column existed.
+        const usage = (usageByApp.get(row.applicationId) as Record<string, any>) || null;
+        const hasBillingSnapshot = usage !== null;
+        const llmCostUsd = hasBillingSnapshot
+          ? round(sumLlm(usage.eval) + sumLlm(usage.brief) + sumLlm(usage.llmGeneration) + sumLlm(usage.report))
+          : null;
+        const ttsCostUsd = hasBillingSnapshot ? round(n(usage.tts?.costUsd)) : null;
+        const sttCostUsd = hasBillingSnapshot ? round(n(usage.stt?.costUsd)) : null;
+        const totalCostUsd = hasBillingSnapshot
+          ? round(n(llmCostUsd) + n(ttsCostUsd) + n(sttCostUsd))
+          : null;
         const durationSec = Number(row.durationInSeconds ?? row.recordingDurationSec ?? 0);
         const date = (row.interviewCompletedAt ?? row.interviewUpdatedAt).toISOString();
-        const hasExactBreakdown =
-          String(snapshot.costSource || "").toLowerCase() === "exact" ||
-          snapshot.llmCostUsd !== undefined ||
-          snapshot.ttsCostUsd !== undefined ||
-          snapshot.sttCostUsd !== undefined;
-        const hasBillingSnapshot = hasExactBreakdown;
-        const llmCostUsd = hasBillingSnapshot ? Number(snapshot.llmCostUsd ?? 0) : null;
-        const ttsCostUsd = hasBillingSnapshot ? Number(snapshot.ttsCostUsd ?? 0) : null;
-        const sttCostUsd = hasBillingSnapshot ? Number(snapshot.sttCostUsd ?? 0) : null;
-        const totalCostUsd = hasBillingSnapshot
-          ? Number(snapshot.totalCostUsd ?? (Number(llmCostUsd || 0) + Number(ttsCostUsd || 0) + Number(sttCostUsd || 0)))
-          : null;
         return {
           id: row.id,
-          interviewName: String(snapshot.interviewName || `${row.candidateFullName || "Unknown Candidate"} - ${row.jobTitle || row.jobRole || "Interview"}`),
-          candidate: String(snapshot.candidateName || row.candidateFullName || "Unknown Candidate"),
-          role: String(snapshot.jobTitle || row.jobRole || row.jobTitle || "Unknown Role"),
+          interviewName: `${row.candidateFullName || "Unknown Candidate"} - ${row.jobTitle || row.jobRole || "Interview"}`,
+          candidate: String(row.candidateFullName || "Unknown Candidate"),
+          role: String(row.jobRole || row.jobTitle || "Unknown Role"),
           durationSec,
           llmCostUsd,
           ttsCostUsd,

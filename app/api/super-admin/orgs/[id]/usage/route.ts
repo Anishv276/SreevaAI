@@ -6,34 +6,30 @@ import { formatOrgPlan, synthesizedPlanBilling } from "@/lib/org-plans";
 import {
   numOr0 as n,
   roundCost as round,
-  clampLegacyCost as clampLegacy,
-  primaryModelFromByModel as primaryModel,
   refreshOrgUsageSummaryDebounced,
-  type UsageBucket as Bucket,
+  aggregateOrgUsageEvents,
+  type UsageEventAgg,
 } from "@/lib/usage-metrics";
 
 /**
  * GET /api/super-admin/orgs/[id]/usage
  * Single overview fetch for the redesigned super-admin usage view.
  *
- * Section/sub-section TOTALS come from the org blob (platformUsageMetrics.billing,
- * written by billing.py — the source of truth). The UsageEvent ledger provides
- * per-item detail (fetched separately via .../usage/events) and the ledger vs
- * blob delta becomes the "Legacy (before detailed tracking)" remainder here.
- *
- * Shared bucket-reading/rounding/reconciliation helpers live in lib/usage-metrics.ts
- * so this route and the OrgUsageSummary refresh can never disagree on a number.
+ * UsageEvent is the sole source of truth: every section/sub-section total is
+ * summed out of the org's UsageEvent entity rows (isTest=false) via the shared
+ * aggregateOrgUsageEvents helper. legacy/ledger split fields are retired — they
+ * always report ledger cost with legacy 0 now that the blob is gone. The JSON
+ * response shape is unchanged so the restyled React components need no edits.
  */
 
-// Real call count for a byModel map -- sums each entry's own runs/sessions
-// count rather than counting distinct models, which undercounts whenever
-// multiple calls share one model.
-function callsFromByModel(byModel: Record<string, any> | null | undefined): number {
-  if (!byModel || typeof byModel !== "object") return 0;
-  return Object.values(byModel).reduce(
-    (sum, v) => sum + n((v as any)?.runs ?? (v as any)?.sessions ?? (v as any)?.calls),
-    0
-  );
+// Primary model = highest-cost provider:model in an aggregate's byModel map.
+function primaryModel(byModel: UsageEventAgg["byModel"]): string | null {
+  let best: string | null = null;
+  let bestCost = -1;
+  for (const v of Object.values(byModel)) {
+    if (v.costUsd > bestCost) { bestCost = v.costUsd; best = v.model; }
+  }
+  return best;
 }
 
 export async function GET(
@@ -53,194 +49,126 @@ export async function GET(
         id: true, name: true, urlSlug: true, orgStatus: true, billingPlan: true,
         planPriceUsd: true, billingCycle: true, nextBillingDate: true,
         totalInterviewsAllowed: true, totalInterviewsUsed: true, billingCreditsUsed: true,
-        platformUsageMetrics: true,
       },
     });
     if (!org) return NextResponse.json({ error: "Organization not found" }, { status: 404 });
 
-    const usageMetrics = (org.platformUsageMetrics && typeof org.platformUsageMetrics === "object")
-      ? (org.platformUsageMetrics as Record<string, any>) : {};
-    const billing = (usageMetrics.billing && typeof usageMetrics.billing === "object")
-      ? (usageMetrics.billing as Record<string, Bucket>) : {};
-
-    const B = (k: string): Bucket => billing[k] || {};
-
-    // ---- Ledger sums per feature (from UsageEvent) ----
-    const grouped = await prisma.usageEvent.groupBy({
-      by: ["feature"],
-      where: { organizationId: id },
-      _sum: { costUsd: true, calls: true },
+    // Real spend only (test rows are surfaced separately via /api/test/billing).
+    const entityRows = await prisma.usageEvent.findMany({
+      where: { organizationId: id, isTest: false },
+      select: { feature: true, usage: true },
     });
-    const ledgerByFeature = new Map<string, { costUsd: number; calls: number }>();
-    for (const g of grouped) {
-      ledgerByFeature.set(g.feature, { costUsd: n(g._sum.costUsd), calls: n(g._sum.calls) });
-    }
-    const ledgerCost = (feat: string) => ledgerByFeature.get(feat)?.costUsd ?? 0;
+    const agg = aggregateOrgUsageEvents(entityRows);
 
-    // ---- Section totals (blob) ----
-    const jdCost = n(B("jdExtraction").costUsd);
-    const resumeExtractionCost = n(B("resumeExtraction").costUsd);
-    const resumeReportCost = n(B("resumeReport").costUsd);
-    const resumeCost = resumeExtractionCost + resumeReportCost; // kept for the overview donut/grand total
-    // Interview section: eval/live (interview bucket LLM) + brief + llmgen + TTS + STT.
-    const interviewLlmCost = n(B("interview").costUsd) + n(B("interviewBrief").costUsd) + n(B("interviewLLMGeneration").costUsd);
-    const interviewTtsCost = n(B("interview").ttsCostUsd);
-    const interviewSttCost = n(B("interview").sttCostUsd);
+    // ---- Section totals ----
+    const jdCost = agg.jdExtraction.costUsd;
+    const resumeExtractionCost = agg.resumeExtraction.costUsd;
+    const resumeReportCost = agg.resumeReport.costUsd;
+    const resumeCost = resumeExtractionCost + resumeReportCost;
+    const interviewLlmCost = agg.eval.costUsd + agg.brief.costUsd + agg.llmGeneration.costUsd;
+    const interviewTtsCost = agg.interviewTts.costUsd;
+    const interviewSttCost = agg.interviewStt.costUsd;
     const interviewCost = interviewLlmCost + interviewTtsCost + interviewSttCost;
-    const reportCost = n(B("interviewReport").costUsd);
+    const reportCost = agg.report.costUsd;
 
+    // ledgerCostUsd = the section cost; legacyCostUsd retired to 0 (blob gone).
     const sections = [
       {
         key: "jdExtraction" as const, label: "JD Extraction",
-        costUsd: round(jdCost), runs: n(B("jdExtraction").runs),
-        primaryModel: primaryModel(B("jdExtraction").byModel),
-        ledgerCostUsd: round(ledgerCost("jdExtraction")),
-        legacyCostUsd: clampLegacy(jdCost, ledgerCost("jdExtraction")),
+        costUsd: round(jdCost), runs: agg.jdExtraction.calls,
+        primaryModel: primaryModel(agg.jdExtraction.byModel),
+        ledgerCostUsd: round(jdCost), legacyCostUsd: 0,
       },
       {
         key: "resumeExtraction" as const, label: "Resume Extraction",
-        costUsd: round(resumeExtractionCost), runs: n(B("resumeExtraction").runs),
-        primaryModel: primaryModel(B("resumeExtraction").byModel),
-        ledgerCostUsd: round(ledgerCost("resumeExtraction")),
-        legacyCostUsd: clampLegacy(resumeExtractionCost, ledgerCost("resumeExtraction")),
+        costUsd: round(resumeExtractionCost), runs: agg.resumeExtraction.calls,
+        primaryModel: primaryModel(agg.resumeExtraction.byModel),
+        ledgerCostUsd: round(resumeExtractionCost), legacyCostUsd: 0,
       },
       {
         key: "resumeReport" as const, label: "Resume Report",
-        costUsd: round(resumeReportCost), runs: n(B("resumeReport").runs),
-        primaryModel: primaryModel(B("resumeReport").byModel),
-        ledgerCostUsd: round(ledgerCost("resumeReport")),
-        legacyCostUsd: clampLegacy(resumeReportCost, ledgerCost("resumeReport")),
+        costUsd: round(resumeReportCost), runs: agg.resumeReport.calls,
+        primaryModel: primaryModel(agg.resumeReport.byModel),
+        ledgerCostUsd: round(resumeReportCost), legacyCostUsd: 0,
       },
       {
         key: "interview" as const, label: "Interview",
-        costUsd: round(interviewCost), runs: n(B("interview").runs),
-        primaryModel: primaryModel(B("interview").byModel),
-        ledgerCostUsd: round(
-          ledgerCost("interviewEval") + ledgerCost("interviewBrief") +
-          ledgerCost("interviewLLMGeneration") + ledgerCost("interviewSession") +
-          ledgerCost("voicePreview")
-        ),
-        legacyCostUsd: clampLegacy(
-          interviewCost,
-          ledgerCost("interviewEval") + ledgerCost("interviewBrief") +
-          ledgerCost("interviewLLMGeneration") + ledgerCost("interviewSession") +
-          ledgerCost("voicePreview")
-        ),
+        costUsd: round(interviewCost), runs: agg.eval.calls,
+        primaryModel: primaryModel(agg.eval.byModel),
+        ledgerCostUsd: round(interviewCost), legacyCostUsd: 0,
       },
       {
         key: "finalReport" as const, label: "Final Report",
-        costUsd: round(reportCost), runs: n(B("interviewReport").runs),
-        primaryModel: primaryModel(B("interviewReport").byModel),
-        ledgerCostUsd: round(ledgerCost("interviewReport")),
-        legacyCostUsd: clampLegacy(reportCost, ledgerCost("interviewReport")),
+        costUsd: round(reportCost), runs: agg.report.calls,
+        primaryModel: primaryModel(agg.report.byModel),
+        ledgerCostUsd: round(reportCost), legacyCostUsd: 0,
       },
     ];
 
     // ---- Interview sub-sections ----
-    const evalBucket = B("interview"); // eval/live-session LLM shares this bucket
-    const briefBucket = B("interviewBrief");
-    const genBucket = B("interviewLLMGeneration");
-
     const subSections = [
       {
-        // ledger/legacy split for TTS & STT is refined below from the
-        // interviewSession/voicePreview feature grouped by kind.
         key: "tts" as const, label: "TTS",
-        costUsd: round(interviewTtsCost),
-        ledgerCostUsd: 0,
-        legacyCostUsd: 0,
-        calls: callsFromByModel(evalBucket.ttsByModel),
-        primaryModel: primaryModel(evalBucket.ttsByModel),
-        units: { ttsCharacters: n(evalBucket.ttsCharacters) },
+        costUsd: round(interviewTtsCost), ledgerCostUsd: round(interviewTtsCost), legacyCostUsd: 0,
+        calls: agg.interviewTts.calls,
+        primaryModel: primaryModel(agg.interviewTts.byModel),
+        units: { ttsCharacters: agg.interviewTts.ttsCharacters },
       },
       {
         key: "stt" as const, label: "STT",
-        costUsd: round(interviewSttCost),
-        ledgerCostUsd: 0, legacyCostUsd: 0,
-        calls: callsFromByModel(evalBucket.sttByModel),
-        primaryModel: primaryModel(evalBucket.sttByModel),
-        units: { sttAudioSeconds: n(evalBucket.sttAudioSeconds) },
+        costUsd: round(interviewSttCost), ledgerCostUsd: round(interviewSttCost), legacyCostUsd: 0,
+        calls: agg.interviewStt.calls,
+        primaryModel: primaryModel(agg.interviewStt.byModel),
+        units: { sttAudioSeconds: agg.interviewStt.sttAudioSeconds },
       },
       {
         key: "generation" as const, label: "Generation",
-        costUsd: round(n(genBucket.costUsd)),
-        ledgerCostUsd: round(ledgerCost("interviewLLMGeneration")),
-        legacyCostUsd: clampLegacy(n(genBucket.costUsd), ledgerCost("interviewLLMGeneration")),
-        calls: n(genBucket.runs),
-        primaryModel: primaryModel(genBucket.byModel),
-        units: { inputTokens: n(genBucket.inputTokens), outputTokens: n(genBucket.outputTokens) },
+        costUsd: round(agg.llmGeneration.costUsd), ledgerCostUsd: round(agg.llmGeneration.costUsd), legacyCostUsd: 0,
+        calls: agg.llmGeneration.calls,
+        primaryModel: primaryModel(agg.llmGeneration.byModel),
+        units: { inputTokens: agg.llmGeneration.inputTokens, outputTokens: agg.llmGeneration.outputTokens },
       },
       {
         key: "eval" as const, label: "Eval",
-        costUsd: round(n(evalBucket.costUsd)),
-        ledgerCostUsd: round(ledgerCost("interviewEval")),
-        legacyCostUsd: clampLegacy(n(evalBucket.costUsd), ledgerCost("interviewEval")),
-        calls: n(evalBucket.runs),
-        primaryModel: primaryModel(evalBucket.byModel),
-        units: { inputTokens: n(evalBucket.inputTokens), outputTokens: n(evalBucket.outputTokens) },
+        costUsd: round(agg.eval.costUsd), ledgerCostUsd: round(agg.eval.costUsd), legacyCostUsd: 0,
+        calls: agg.eval.calls,
+        primaryModel: primaryModel(agg.eval.byModel),
+        units: { inputTokens: agg.eval.inputTokens, outputTokens: agg.eval.outputTokens },
       },
       {
         key: "brief" as const, label: "Brief",
-        costUsd: round(n(briefBucket.costUsd)),
-        ledgerCostUsd: round(ledgerCost("interviewBrief")),
-        legacyCostUsd: clampLegacy(n(briefBucket.costUsd), ledgerCost("interviewBrief")),
-        calls: n(briefBucket.runs),
-        primaryModel: primaryModel(briefBucket.byModel),
-        units: { inputTokens: n(briefBucket.inputTokens), outputTokens: n(briefBucket.outputTokens) },
+        costUsd: round(agg.brief.costUsd), ledgerCostUsd: round(agg.brief.costUsd), legacyCostUsd: 0,
+        calls: agg.brief.calls,
+        primaryModel: primaryModel(agg.brief.byModel),
+        units: { inputTokens: agg.brief.inputTokens, outputTokens: agg.brief.outputTokens },
       },
     ];
 
-    // Refine TTS/STT ledger split from the interviewSession feature by kind.
-    const sessionByKind = await prisma.usageEvent.groupBy({
-      by: ["kind"],
-      where: { organizationId: id, feature: { in: ["interviewSession", "voicePreview"] } },
-      _sum: { costUsd: true },
-    });
-    const sessionKindCost = new Map<string, number>();
-    for (const g of sessionByKind) sessionKindCost.set(g.kind, n(g._sum.costUsd));
-    const tts = subSections.find((s) => s.key === "tts")!;
-    const stt = subSections.find((s) => s.key === "stt")!;
-    tts.ledgerCostUsd = round(sessionKindCost.get("tts") || 0);
-    tts.legacyCostUsd = clampLegacy(interviewTtsCost, tts.ledgerCostUsd);
-    stt.ledgerCostUsd = round(sessionKindCost.get("stt") || 0);
-    stt.legacyCostUsd = clampLegacy(interviewSttCost, stt.ledgerCostUsd);
-
-    // ---- Per-model pie inside the interview section (from blob byModel maps) ----
+    // ---- Per-model pie inside the interview section ----
     const byModel: Array<{ provider: string; model: string; kind: string; costUsd: number }> = [];
-    const pushModels = (map: Record<string, any> | undefined, kind: string) => {
-      if (!map) return;
-      for (const [key, v] of Object.entries(map)) {
-        const cost = n((v as any)?.costUsd);
-        if (cost <= 0) continue;
-        const parts = key.split(":");
-        const provider = (v as any)?.provider || (parts.length >= 2 ? parts[0] : "");
-        const model = (v as any)?.model || (parts.length >= 2 ? parts.slice(1).join(":") : key);
-        byModel.push({ provider: String(provider), model: String(model), kind, costUsd: round(cost) });
+    const pushModels = (a: UsageEventAgg, kind: string) => {
+      for (const v of Object.values(a.byModel)) {
+        if (v.costUsd <= 0) continue;
+        byModel.push({ provider: v.provider, model: v.model, kind, costUsd: round(v.costUsd) });
       }
     };
-    pushModels(evalBucket.byModel, "llm");
-    pushModels(briefBucket.byModel, "llm");
-    pushModels(genBucket.byModel, "llm");
-    pushModels(evalBucket.ttsByModel, "tts");
-    pushModels(evalBucket.sttByModel, "stt");
+    pushModels(agg.eval, "llm");
+    pushModels(agg.brief, "llm");
+    pushModels(agg.llmGeneration, "llm");
+    pushModels(agg.interviewTts, "tts");
+    pushModels(agg.interviewStt, "stt");
     byModel.sort((a, b) => b.costUsd - a.costUsd);
 
-    // ---- Bottom overview donut: section vs section ----
+    // ---- Bottom overview donut ----
     const overview = sections.map((s) => ({ key: s.key, label: s.label, costUsd: s.costUsd }));
     const totalCostUsd = round(jdCost + resumeCost + interviewCost + reportCost);
 
-    // ---- Plan / subscription (stored, with synthesized fallback) ----
+    // ---- Plan / subscription ----
     const synth = synthesizedPlanBilling(org.billingPlan);
     const planPriceUsd = org.planPriceUsd ?? synth.priceUsd;
     const billingCycle = org.billingCycle ?? synth.billingCycle;
     const nextBillingDate = (org.nextBillingDate ?? synth.nextBillingDate).toISOString();
 
-    // Keep the OrgUsageSummary snapshot table current whenever anyone actually
-    // looks at this org's usage. Debounced (skips entirely, no DB round-trip,
-    // if already refreshed recently) so rapid page views/section navigation
-    // don't pile up extra concurrent queries on top of this route's own --
-    // an earlier non-debounced version of this call caused real connection
-    // pool exhaustion under normal usage-page navigation.
     refreshOrgUsageSummaryDebounced(id);
 
     return NextResponse.json({

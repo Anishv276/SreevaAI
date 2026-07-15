@@ -2,8 +2,8 @@
  * scripts/refresh-org-usage-summary.ts
  * ====================================
  * Recomputes the OrgUsageSummary table (one row per org, one cost column per
- * billing feature) from OrganizationDetails.platformUsageMetrics + the
- * UsageEvent ledger, via lib/usage-metrics.ts#refreshAllOrgUsageSummaries.
+ * billing feature) by summing the org's UsageEvent ledger rows, via
+ * lib/usage-metrics.ts#refreshAllOrgUsageSummaries.
  *
  * Safe to re-run any time -- it's a pure recompute + upsert, never additive.
  *

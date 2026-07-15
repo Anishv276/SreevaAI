@@ -18,6 +18,37 @@ export const SECTION_STYLE: Record<
   finalReport: { color: "#f97316", icon: ClipboardCheck, iconBg: "bg-orange-50", iconFg: "text-orange-600", hoverBorder: "hover:border-orange-200", hoverText: "group-hover:text-orange-600" },
 };
 
+export function CostBySection({
+  data,
+  fmt,
+}: {
+  data: UsageOverview;
+  fmt: (usd: number) => string;
+}) {
+  const slices: DonutSlice[] = data.overview.map((o) => ({
+    value: o.costUsd,
+    color: SECTION_STYLE[o.key as SectionKey]?.color || "#9ca3af",
+    label: o.label,
+  }));
+
+  return (
+    <div className="flex h-full flex-col justify-center rounded-3xl bg-white p-6 md:flex-row md:items-center md:justify-between gap-6"
+      style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+      <div>
+        <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Cost by section</p>
+        <h2 className="mt-1 text-3xl font-black tracking-tight text-gray-900">{fmt(data.org.totalCostUsd)}</h2>
+        <p className="mt-1 text-sm text-gray-500">
+          Cumulative spend across extraction, interviews, and reports.
+        </p>
+        <div className="mt-4 max-w-xs">
+          <DonutLegend data={slices} total={data.org.totalCostUsd} fmt={fmt} />
+        </div>
+      </div>
+      <DonutChart data={slices} total={data.org.totalCostUsd} fmt={fmt} size="md" centerLabel="Total" />
+    </div>
+  );
+}
+
 export function OverviewGrid({
   data,
   fmt,
@@ -27,34 +58,10 @@ export function OverviewGrid({
   fmt: (usd: number) => string;
   onOpenSection: (key: SectionKey) => void;
 }) {
-  const slices: DonutSlice[] = data.overview.map((o) => ({
-    value: o.costUsd,
-    color: SECTION_STYLE[o.key as SectionKey]?.color || "#9ca3af",
-    label: o.label,
-  }));
-
-  // Highlight the highest-cost section.
   const topKey = [...data.sections].sort((a, b) => b.costUsd - a.costUsd)[0]?.key;
 
   return (
-    <div className="space-y-6">
-      {/* Grand total header + overview donut */}
-      <div className="grid gap-6 rounded-3xl border border-[#E9E7FF] bg-white p-6 shadow-sm md:grid-cols-[1fr_auto] md:items-center">
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Cost by section</p>
-          <h2 className="mt-1 text-3xl font-black tracking-tight text-gray-900">{fmt(data.org.totalCostUsd)}</h2>
-          <p className="mt-1 text-sm text-gray-500">
-            Cumulative spend across extraction, interviews, and reports.
-          </p>
-          <div className="mt-4 max-w-xs">
-            <DonutLegend data={slices} total={data.org.totalCostUsd} fmt={fmt} />
-          </div>
-        </div>
-        <DonutChart data={slices} total={data.org.totalCostUsd} fmt={fmt} size="md" centerLabel="Total" />
-      </div>
-
-      {/* Section cards */}
-      <div className="grid gap-4 md:grid-cols-2">
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {data.sections.map((s) => {
           const st = SECTION_STYLE[s.key];
           const Icon = st.icon;
@@ -93,6 +100,5 @@ export function OverviewGrid({
           );
         })}
       </div>
-    </div>
   );
 }

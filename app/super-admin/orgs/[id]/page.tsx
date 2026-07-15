@@ -108,7 +108,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                     maxActiveJobs: formatOrgLimitValue(data.maxActiveJobs),
                     maxConcurrentSlots: data.maxConcurrentSlots != null ? String(data.maxConcurrentSlots) : "5",
                     proctoringSignals: normalizeProctoringSignals(data.proctoringSignals),
-                    adminEmail: data.users && data.users.length > 0 ? data.users[0].email : "",
+                    adminEmail: data.organizationCredentials && data.organizationCredentials.length > 0 ? data.organizationCredentials[0].email : "",
                     adminPassword: "",
                     recordingEnabled: data.recordingEnabled === true && data.recordingRetentionDays != null,
                     recordingRetentionDays: data.recordingRetentionDays == null ? "" : String(data.recordingRetentionDays),

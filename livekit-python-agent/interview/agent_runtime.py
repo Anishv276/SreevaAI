@@ -1265,6 +1265,7 @@ class InterviewContext(BaseModel):
     Required fields raise ValidationError on construction  no manual require_db_value calls needed.
     """
     fullName: str
+    jobId: Optional[str] = None
     jobTitle: str
     language: str
     orgId: Optional[str] = None
@@ -4499,6 +4500,7 @@ async def entrypoint(ctx: JobContext):
         plugin_stt_audio_seconds=plugin_stt_audio_seconds,
         # Per-event ledger attribution for interviewSession STT/TTS rows.
         app_id=app_id,
+        job_id=ctx_data.jobId,
         candidate_name=candidate_name,
         job_title=job_title,
         is_test=_is_test_session,

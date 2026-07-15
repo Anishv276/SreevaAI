@@ -27,7 +27,6 @@ FROM (VALUES
   ('OrganizationDetails', 'totalInterviewsUsed'),
   ('OrganizationDetails', 'billingCreditsUsed'),
   ('OrganizationDetails', 'quotaControlMode'),
-  ('OrganizationDetails', 'platformUsageMetrics'),
   ('OrganizationDetails', 'isRecordingEnabled'),
   ('OrganizationDetails', 'recordingKeepForDays'),
   -- SuperAdmin
@@ -103,7 +102,7 @@ FROM (VALUES
   ('Interview', 'proctoringSnapshotUrls'),
   ('Interview', 'candidateFeedbackText'),
   ('Interview', 'candidateSelfRating'),
-  ('Interview', 'billingSnapshotAtCompletion'),
+  ('Interview', 'quotaDeductedAt'),
   ('Interview', 'proctoringEvents'),
   ('Interview', 'proctoringAnalysis'),
   ('Interview', 'perQuestionAnalysis'),
@@ -115,7 +114,6 @@ FROM (VALUES
   ('Interview', 'interviewTimezone'),
   ('Interview', 'isDeleted'),
   ('Interview', 'isTestSession'),
-  ('Interview', 'testSessionBillingMetrics'),
   ('Interview', 'aiInterviewBrief'),
   -- SupportTicket
   ('SupportTicket', 'id'),

@@ -5,23 +5,33 @@ import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 /**
  * GET /api/super-admin/orgs/[id]/usage/events?section=<s>&cursor=<id>&limit=<n>
- * Paginated per-item detail rows for one section of the usage view, from the
- * UsageEvent ledger. Section totals still come from the org blob (the overview
- * route); the `legacy` field here is the blob-minus-ledger remainder rendered as
- * a "Legacy (before detailed tracking)" row so the table reconciles.
+ *
+ * UsageEvent is now an entity-level ledger: ONE row per jd:{jobId} |
+ * resume:{applicationId} | interview:{applicationId|interviewId}, holding a
+ * `usage` JSON with a per-sub-feature, per-model breakdown (see
+ * prisma/schema.prisma's UsageEvent doc comment for the exact shape).
+ *
+ * Each section here pulls ONE sub-feature key out of that JSON (e.g. "jd"
+ * reads usage.jdExtraction.llm[], "interview-brief" reads usage.brief.llm[])
+ * and expands every (entity, model) combination into its own display row —
+ * the UI still renders a flat table, this route just synthesizes it from the
+ * nested per-entity storage instead of reading flat per-call rows.
  */
 
-// UI section key -> the ledger feature(s) + optional kind it maps to.
-const SECTION_MAP: Record<string, { features: string[]; kind?: string; blobKeys: string[] }> = {
-  jd: { features: ["jdExtraction"], blobKeys: ["jdExtraction"] },
-  resume: { features: ["resumeExtraction"], blobKeys: ["resumeExtraction"] },
-  "resume-report": { features: ["resumeReport"], blobKeys: ["resumeReport"] },
-  report: { features: ["interviewReport"], blobKeys: ["interviewReport"] },
-  "interview-tts": { features: ["interviewSession", "voicePreview"], kind: "tts", blobKeys: [] },
-  "interview-stt": { features: ["interviewSession"], kind: "stt", blobKeys: [] },
-  "interview-generation": { features: ["interviewLLMGeneration"], blobKeys: ["interviewLLMGeneration"] },
-  "interview-eval": { features: ["interviewEval"], blobKeys: ["interview"] },
-  "interview-brief": { features: ["interviewBrief"], blobKeys: ["interviewBrief"] },
+type SubFeature =
+  | { kind: "llm"; path: string } // usage[path].llm[]
+  | { kind: "audio"; path: "tts" | "stt" }; // usage.tts|stt.byModel[]
+
+const SECTION_MAP: Record<string, { feature: string; sub: SubFeature }> = {
+  jd: { feature: "jdExtraction", sub: { kind: "llm", path: "jdExtraction" } },
+  resume: { feature: "resumeExtraction", sub: { kind: "llm", path: "resumeExtraction" } },
+  "resume-report": { feature: "resumeExtraction", sub: { kind: "llm", path: "resumeReport" } },
+  report: { feature: "interview", sub: { kind: "llm", path: "report" } },
+  "interview-tts": { feature: "interview", sub: { kind: "audio", path: "tts" } },
+  "interview-stt": { feature: "interview", sub: { kind: "audio", path: "stt" } },
+  "interview-generation": { feature: "interview", sub: { kind: "llm", path: "llmGeneration" } },
+  "interview-eval": { feature: "interview", sub: { kind: "llm", path: "eval" } },
+  "interview-brief": { feature: "interview", sub: { kind: "llm", path: "brief" } },
 };
 
 function n(v: unknown): number {
@@ -29,6 +39,175 @@ function n(v: unknown): number {
   return Number.isFinite(x) ? x : 0;
 }
 const round = (v: number) => Math.round(v * 1e6) / 1e6;
+
+type EntityRow = {
+  id: string;
+  createdAt: Date;
+  updatedAt: Date;
+  usage: unknown;
+  jobTitle: string | null;
+  candidateName: string | null;
+};
+
+type DisplayRow = {
+  id: string;
+  createdAt: string;
+  feature: string;
+  kind: "llm" | "tts" | "stt" | "embedding";
+  provider: string;
+  model: string;
+  calls: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  ttsCharacters: number;
+  sttAudioSeconds: number;
+  costUsd: number;
+  jobTitle: string | null;
+  candidateName: string | null;
+  label: string | null;
+  source: "live" | "backfill";
+};
+
+/** Expand one entity row's usage[sub] fragment into per-model display rows. */
+function expandRow(entity: EntityRow, sub: SubFeature): DisplayRow[] {
+  const usage = (entity.usage && typeof entity.usage === "object") ? (entity.usage as Record<string, any>) : {};
+  const bucket = usage[sub.path];
+  if (!bucket || typeof bucket !== "object") return [];
+
+  if (sub.kind === "llm") {
+    const arr = Array.isArray(bucket.llm) ? bucket.llm : [];
+    if (arr.length === 0) return [];
+
+    // resumeReport's llm[] mixes the report-writing chat call with a scoring
+    // embedding call -- shown to the org as one "Resume Report" line item, not
+    // a per-model breakdown (the split still lives in the stored usage JSON).
+    if (sub.path === "resumeReport") {
+      const merged = arr.reduce((acc: any, m: any) => ({
+        calls: acc.calls + n(m.calls),
+        inputTokens: acc.inputTokens + n(m.inputTokens),
+        cachedInputTokens: acc.cachedInputTokens + n(m.cachedInputTokens),
+        outputTokens: acc.outputTokens + n(m.outputTokens),
+        costUsd: acc.costUsd + n(m.costUsd),
+      }), { calls: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, costUsd: 0 });
+      const primary = arr.reduce((best: any, m: any) => (n(m.costUsd) > n(best?.costUsd ?? -1) ? m : best), null);
+      return [{
+        id: `${entity.id}:${sub.path}`,
+        createdAt: entity.createdAt.toISOString(),
+        feature: sub.path,
+        kind: "llm",
+        provider: String(primary?.provider || "openai"),
+        model: String(primary?.model || "unknown"),
+        calls: merged.calls,
+        inputTokens: merged.inputTokens,
+        cachedInputTokens: merged.cachedInputTokens,
+        outputTokens: merged.outputTokens,
+        ttsCharacters: 0,
+        sttAudioSeconds: 0,
+        costUsd: round(merged.costUsd),
+        jobTitle: entity.jobTitle,
+        candidateName: entity.candidateName,
+        label: null,
+        source: "live",
+      }];
+    }
+
+    return arr.map((m: any, i: number): DisplayRow => ({
+      id: `${entity.id}:${sub.path}:${i}`,
+      createdAt: entity.createdAt.toISOString(),
+      feature: sub.path,
+      kind: "llm",
+      provider: String(m.provider || "openai"),
+      model: String(m.model || "unknown"),
+      calls: n(m.calls),
+      inputTokens: n(m.inputTokens),
+      cachedInputTokens: n(m.cachedInputTokens),
+      outputTokens: n(m.outputTokens),
+      ttsCharacters: 0,
+      sttAudioSeconds: 0,
+      costUsd: round(n(m.costUsd)),
+      jobTitle: entity.jobTitle,
+      candidateName: entity.candidateName,
+      label: null,
+      source: "live",
+    }));
+  }
+
+  // audio (tts/stt)
+  const arr = Array.isArray(bucket.byModel) ? bucket.byModel : [];
+  const unitKey = sub.path === "tts" ? "characters" : "seconds";
+  return arr.map((m: any, i: number): DisplayRow => ({
+    id: `${entity.id}:${sub.path}:${i}`,
+    createdAt: entity.createdAt.toISOString(),
+    feature: "interview",
+    kind: sub.path,
+    provider: String(m.provider || "unknown"),
+    model: String(m.model || "unknown"),
+    calls: n(m.calls),
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    outputTokens: 0,
+    ttsCharacters: sub.path === "tts" ? n(m[unitKey]) : 0,
+    sttAudioSeconds: sub.path === "stt" ? n(m[unitKey]) : 0,
+    costUsd: round(n(m.costUsd)),
+    jobTitle: entity.jobTitle,
+    candidateName: entity.candidateName,
+    label: null,
+    source: "live",
+  }));
+}
+
+function subCostUsd(entity: EntityRow, sub: SubFeature): number {
+  const usage = (entity.usage && typeof entity.usage === "object") ? (entity.usage as Record<string, any>) : {};
+  const bucket = usage[sub.path];
+  if (!bucket || typeof bucket !== "object") return 0;
+  if (sub.kind === "llm") {
+    const arr = Array.isArray(bucket.llm) ? bucket.llm : [];
+    return arr.reduce((s: number, m: any) => s + n(m.costUsd), 0);
+  }
+  return n(bucket.costUsd);
+}
+
+// One merged row per interview:{appId|interviewId} entity — every sub-feature's
+// calls/cost side by side, instead of expanding per (entity, model) like the
+// single-sub-feature sections above. Powers the "Interview Sessions" table.
+function expandInterviewRow(entity: EntityRow): InterviewDisplayRow {
+  const usage = (entity.usage && typeof entity.usage === "object") ? (entity.usage as Record<string, any>) : {};
+  const arr = (v: any) => (Array.isArray(v) ? v : []);
+  const llmCost = (path: string) => arr(usage[path]?.llm).reduce((s: number, m: any) => s + n(m.costUsd), 0);
+  const llmCalls = (path: string) => arr(usage[path]?.llm).reduce((s: number, m: any) => s + n(m.calls), 0);
+  const evalCost = llmCost("eval"), evalCalls = llmCalls("eval");
+  const genCost = llmCost("llmGeneration"), genCalls = llmCalls("llmGeneration");
+  const briefCost = llmCost("brief"), briefCalls = llmCalls("brief");
+  const ttsCost = n(usage.tts?.costUsd), ttsCharacters = arr(usage.tts?.byModel).reduce((s: number, m: any) => s + n(m.characters), 0);
+  const sttCost = n(usage.stt?.costUsd), sttAudioSeconds = arr(usage.stt?.byModel).reduce((s: number, m: any) => s + n(m.seconds), 0);
+  const totalCost = evalCost + genCost + briefCost + ttsCost + sttCost;
+  return {
+    id: entity.id,
+    createdAt: entity.createdAt.toISOString(),
+    jobTitle: entity.jobTitle,
+    candidateName: entity.candidateName,
+    evalRuns: evalCalls, evalCostUsd: round(evalCost),
+    generationRuns: genCalls, generationCostUsd: round(genCost),
+    briefRuns: briefCalls, briefCostUsd: round(briefCost),
+    ttsCharacters, ttsCostUsd: round(ttsCost),
+    sttAudioSeconds, sttCostUsd: round(sttCost),
+    totalCostUsd: round(totalCost),
+  };
+}
+
+type InterviewDisplayRow = {
+  id: string;
+  createdAt: string;
+  jobTitle: string | null;
+  candidateName: string | null;
+  evalRuns: number; evalCostUsd: number;
+  generationRuns: number; generationCostUsd: number;
+  briefRuns: number; briefCostUsd: number;
+  ttsCharacters: number; ttsCostUsd: number;
+  sttAudioSeconds: number; sttCostUsd: number;
+  totalCostUsd: number;
+};
 
 export async function GET(
   request: Request,
@@ -45,98 +224,68 @@ export async function GET(
     const cursor = searchParams.get("cursor");
     const limit = Math.min(Math.max(Number(searchParams.get("limit")) || 25, 1), 100);
 
+    if (section === "interview-all") {
+      const entities = await prisma.usageEvent.findMany({
+        where: { organizationId: id, feature: "interview", isTest: false },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: limit + 1,
+        ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+        select: { id: true, createdAt: true, updatedAt: true, usage: true, jobTitle: true, candidateName: true },
+      });
+      let nextCursor: string | null = null;
+      if (entities.length > limit) {
+        const extra = entities.pop()!;
+        nextCursor = extra.id;
+      }
+      const rows = entities.map(expandInterviewRow);
+      const totalCostUsd = round(rows.reduce((s, r) => s + r.totalCostUsd, 0));
+      return NextResponse.json({ rows, nextCursor, totalCostUsd });
+    }
+
     const map = SECTION_MAP[section];
     if (!map) return NextResponse.json({ error: `Unknown section '${section}'` }, { status: 400 });
 
-    const where = {
-      organizationId: id,
-      feature: { in: map.features },
-      ...(map.kind ? { kind: map.kind } : {}),
-    };
-
-    const rows = await prisma.usageEvent.findMany({
-      where,
+    // Entity rows are fetched newest-first and expanded into display rows
+    // in-memory (one entity -> 0..N per-model rows for this sub-feature).
+    // Pagination cursors on the entity id; a page may return fewer than
+    // `limit` display rows if entities have few models, which is fine —
+    // the "Load more" button just fetches the next entity page.
+    const entities = await prisma.usageEvent.findMany({
+      where: { organizationId: id, feature: map.feature, isTest: false },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: limit + 1,
       ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
-      select: {
-        id: true, createdAt: true, feature: true, kind: true, provider: true, model: true,
-        calls: true, inputTokens: true, cachedInputTokens: true, outputTokens: true,
-        ttsCharacters: true, sttAudioSeconds: true, costUsd: true,
-        jobTitle: true, candidateName: true, label: true, source: true,
-      },
+      select: { id: true, createdAt: true, updatedAt: true, usage: true, jobTitle: true, candidateName: true },
     });
 
     let nextCursor: string | null = null;
-    if (rows.length > limit) {
-      const extra = rows.pop()!;
+    if (entities.length > limit) {
+      const extra = entities.pop()!;
       nextCursor = extra.id;
     }
 
-    // Ledger-side section totals (all rows, not just this page).
-    const agg = await prisma.usageEvent.aggregate({
-      where,
-      _sum: { costUsd: true, calls: true },
-      _count: { _all: true },
-    });
-    const ledgerCost = round(n(agg._sum.costUsd));
-    const sectionTotals = {
-      costUsd: ledgerCost,
-      calls: n(agg._sum.calls),
-      rows: n(agg._count._all),
-    };
+    const rows = entities.flatMap((e) => expandRow(e, map.sub));
 
-    // Legacy remainder = blob section total - ledger total (clamped at 0).
-    let legacy: { costUsd: number } | null = null;
-    if (map.blobKeys.length > 0) {
-      const org = await prisma.organizationDetails.findUnique({
-        where: { id },
-        select: { platformUsageMetrics: true },
-      });
-      const um = (org?.platformUsageMetrics && typeof org.platformUsageMetrics === "object")
-        ? (org.platformUsageMetrics as Record<string, any>) : {};
-      const billing = (um.billing && typeof um.billing === "object") ? (um.billing as Record<string, any>) : {};
-      const blobCost = map.blobKeys.reduce((s, k) => s + n(billing[k]?.costUsd), 0);
-      const legacyCost = Math.max(0, round(blobCost - ledgerCost));
-      if (legacyCost > 0) legacy = { costUsd: legacyCost };
-    } else if (map.kind && (section === "interview-tts" || section === "interview-stt")) {
-      // TTS/STT live inside the interview blob bucket's tts/sttCostUsd totals.
-      const org = await prisma.organizationDetails.findUnique({
-        where: { id },
-        select: { platformUsageMetrics: true },
-      });
-      const um = (org?.platformUsageMetrics && typeof org.platformUsageMetrics === "object")
-        ? (org.platformUsageMetrics as Record<string, any>) : {};
-      const iv = (um.billing?.interview && typeof um.billing.interview === "object") ? um.billing.interview : {};
-      const blobCost = section === "interview-tts" ? n(iv.ttsCostUsd) : n(iv.sttCostUsd);
-      const legacyCost = Math.max(0, round(blobCost - ledgerCost));
-      if (legacyCost > 0) legacy = { costUsd: legacyCost };
+    // Section totals: sum this sub-feature's cost across ALL entities (not just this page).
+    const allEntities = await prisma.usageEvent.findMany({
+      where: { organizationId: id, feature: map.feature, isTest: false },
+      select: { id: true, createdAt: true, updatedAt: true, usage: true, jobTitle: true, candidateName: true },
+    });
+    let ledgerCost = 0;
+    let callCount = 0;
+    let rowCount = 0;
+    for (const e of allEntities) {
+      ledgerCost += subCostUsd(e, map.sub);
+      const expanded = expandRow(e, map.sub);
+      rowCount += expanded.length;
+      callCount += expanded.reduce((s, r) => s + r.calls, 0);
     }
+    ledgerCost = round(ledgerCost);
+    const sectionTotals = { costUsd: ledgerCost, calls: callCount, rows: rowCount };
 
-    return NextResponse.json({
-      rows: rows.map((r) => ({
-        id: r.id,
-        createdAt: r.createdAt.toISOString(),
-        feature: r.feature,
-        kind: r.kind,
-        provider: r.provider,
-        model: r.model,
-        calls: r.calls,
-        inputTokens: r.inputTokens,
-        cachedInputTokens: r.cachedInputTokens,
-        outputTokens: r.outputTokens,
-        ttsCharacters: r.ttsCharacters,
-        sttAudioSeconds: r.sttAudioSeconds,
-        costUsd: round(n(r.costUsd)),
-        jobTitle: r.jobTitle,
-        candidateName: r.candidateName,
-        label: r.label,
-        source: r.source,
-      })),
-      nextCursor,
-      sectionTotals,
-      legacy,
-    });
+    // UsageEvent is the sole source of truth now — there is no blob remainder,
+    // so `legacy` is always null (the UI's "Legacy" footer row simply never shows).
+    return NextResponse.json({ rows, nextCursor, sectionTotals, legacy: null });
   } catch (error) {
     return apiErrorResponse({
       route: "/api/super-admin/orgs/[id]/usage/events",
