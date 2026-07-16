@@ -170,6 +170,7 @@ function CreateJobForm() {
         let r2Url: string | null = responseData.url ?? null;
         if (responseData.jobId) {
           const jobId = responseData.jobId as string;
+          setFormData((prev: any) => ({ ...prev, jdExtractionJobId: jobId }));
           const deadline = Date.now() + 120000;
           while (Date.now() < deadline) {
             await new Promise((r) => setTimeout(r, 2000));
@@ -240,6 +241,7 @@ function CreateJobForm() {
       jdExtractedDetails: currentFormData.jdExtractedDetails
         ? typeof currentFormData.jdExtractedDetails === "string" ? currentFormData.jdExtractedDetails : JSON.stringify(currentFormData.jdExtractedDetails)
         : null,
+      jdExtractionJobId: currentFormData.jdExtractionJobId || null,
       aiGeneratedInterviewQuestions: parsedQuestions,
       resumeScreeningThreshold: Number(currentFormData.resumeScreeningThreshold ?? 60),
       resumeScreeningCriteria: sanitizeScreeningCriteria(currentFormData.resumeScreeningCriteria || {}),

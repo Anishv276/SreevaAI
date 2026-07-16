@@ -66,6 +66,7 @@ logger = logging.getLogger("brief-worker")
 class ApplicationRow(BaseModel):
     """Validated DB row fetched for the application."""
     applicationId: str
+    jobId: Optional[str] = None
     fullName: str
     resumeData: Any = None
     role: Optional[str] = None
@@ -163,6 +164,7 @@ class BriefRepository:
     _FETCH_QUERY = """
     SELECT
         a.id                                        AS "applicationId",
+        d.id                                         AS "jobId",
         a."candidateFullName"                       AS "fullName",
         a."resumeParsedData"                        AS "resumeData",
         d."jobRole"                                 AS "role",
@@ -297,7 +299,15 @@ class BriefPipeline:
         )
         if row.orgId:
             try:
+                _brief_ctx = {
+                    "applicationId": row.applicationId,
+                    "jobId": row.jobId,
+                    "candidateName": row.fullName,
+                    "jobTitle": row.job_title,
+                    "eventId": f"brief:{row.applicationId}",
+                }
                 for u in _brief_usages:
+                    u["context"] = _brief_ctx
                     await record_manual_usage(row.orgId, "interviewBrief", u)
                 await flush_billing(row.orgId)
             except Exception as bill_err:

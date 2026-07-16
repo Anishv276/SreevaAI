@@ -3,6 +3,17 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { apiErrorResponse } from "@/lib/slack-error-logger";
+import { aggregateOrgUsageEvents, type UsageEventAgg } from "@/lib/usage-metrics";
+
+// Primary model = highest-cost provider:model in an aggregate's byModel map.
+function primaryModel(byModel: UsageEventAgg["byModel"]): string | null {
+    let best: string | null = null;
+    let bestCost = -1;
+    for (const v of Object.values(byModel)) {
+        if (v.costUsd > bestCost) { bestCost = v.costUsd; best = v.model; }
+    }
+    return best;
+}
 
 export async function GET(
     _request: Request,
@@ -18,7 +29,7 @@ export async function GET(
         const org = await prisma.organizationDetails.findUnique({
             where: { id },
             select: {
-                id: true, platformUsageMetrics: true,
+                id: true,
                 llmResumeExtraction: true, llmJdExtraction: true,
                 llmInterviewReport: true, llmResumeReport: true,
                 llmInterviewEval: true, llmInterviewLive: true, llmInterviewBrief: true,
@@ -26,154 +37,55 @@ export async function GET(
         });
         if (!org) return NextResponse.json({ error: "Organization not found" }, { status: 404 });
 
-        // Interview.interviewDuration is the single source of truth for duration
-        // (see app/api/admin/billing/history/route.ts) -- billingSnapshot.durationSec
-        // comes from a separate, largely-unused write path and must never win over it.
+        // Interview.durationInSeconds is the single source of truth for duration.
         const interviews = await prisma.$queryRaw<Array<{
-            testBillingMetrics: Record<string, any> | null;
             interviewDuration: number | null;
         }>>(Prisma.sql`
-            SELECT i."testSessionBillingMetrics" AS "testBillingMetrics",
-                   COALESCE(
-                       i."durationInSeconds",
-                       (i."billingSnapshotAtCompletion"->>'durationSec')::int
-                   ) AS "interviewDuration"
+            SELECT i."durationInSeconds" AS "interviewDuration"
             FROM "Interview" i
             JOIN "Application" a ON a.id = i."applicationId"
             JOIN "Job" d ON d.id = a."jobId"
             WHERE d."organizationId" = ${id}
             AND i."isDeleted" = false AND a."isDeleted" = false AND d."isDeleted" = false
+            AND i."isTestSession" = false
         `);
 
-        const orgUsage = (org.platformUsageMetrics && typeof org.platformUsageMetrics === "object")
-            ? (org.platformUsageMetrics as Record<string, any>)
-            : {};
+        // All costs come from the UsageEvent ledger (real spend only).
+        const entityRows = await prisma.usageEvent.findMany({
+            where: { organizationId: id, isTest: false },
+            select: { feature: true, usage: true },
+        });
+        const agg = aggregateOrgUsageEvents(entityRows);
 
         const aggregates: Record<string, any> = {
-            resumeExtraction:      { runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: org.llmResumeExtraction },
-            jdExtraction:          { runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: org.llmJdExtraction },
-            interviewReport:       { runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: org.llmInterviewReport },
-            resumeReport:          { runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: org.llmResumeReport },
-            interviewEvaluation:   { runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: org.llmInterviewEval },
-            interviewLLMGeneration:{ runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: org.llmInterviewLive },
-            interviewBrief:        { runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: org.llmInterviewBrief },
+            resumeExtraction:      { runs: agg.resumeExtraction.calls, inputTokens: agg.resumeExtraction.inputTokens, outputTokens: agg.resumeExtraction.outputTokens, costUsd: agg.resumeExtraction.costUsd, model: primaryModel(agg.resumeExtraction.byModel) || org.llmResumeExtraction },
+            jdExtraction:          { runs: agg.jdExtraction.calls, inputTokens: agg.jdExtraction.inputTokens, outputTokens: agg.jdExtraction.outputTokens, costUsd: agg.jdExtraction.costUsd, model: primaryModel(agg.jdExtraction.byModel) || org.llmJdExtraction },
+            interviewReport:       { runs: agg.report.calls, inputTokens: agg.report.inputTokens, outputTokens: agg.report.outputTokens, costUsd: agg.report.costUsd, model: primaryModel(agg.report.byModel) || org.llmInterviewReport },
+            resumeReport:          { runs: agg.resumeReport.calls, inputTokens: agg.resumeReport.inputTokens, outputTokens: agg.resumeReport.outputTokens, costUsd: agg.resumeReport.costUsd, model: primaryModel(agg.resumeReport.byModel) || org.llmResumeReport },
+            interviewEvaluation:   { runs: agg.eval.calls, inputTokens: agg.eval.inputTokens, outputTokens: agg.eval.outputTokens, costUsd: agg.eval.costUsd, model: primaryModel(agg.eval.byModel) || org.llmInterviewEval },
+            interviewLLMGeneration:{ runs: agg.llmGeneration.calls, inputTokens: agg.llmGeneration.inputTokens, outputTokens: agg.llmGeneration.outputTokens, costUsd: agg.llmGeneration.costUsd, model: primaryModel(agg.llmGeneration.byModel) || org.llmInterviewLive },
+            interviewBrief:        { runs: agg.brief.calls, inputTokens: agg.brief.inputTokens, outputTokens: agg.brief.outputTokens, costUsd: agg.brief.costUsd, model: primaryModel(agg.brief.byModel) || org.llmInterviewBrief },
             interview: {
-                runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0,
-                sessionDuration: 0,
-                ttsCharacters: 0, ttsCostUsd: 0, sttAudioSeconds: 0, sttCostUsd: 0,
-                model: org.llmInterviewLive,
+                runs: agg.eval.calls, inputTokens: agg.eval.inputTokens, outputTokens: agg.eval.outputTokens, costUsd: agg.eval.costUsd,
+                sessionDuration: interviews.reduce((s, r) => s + Number(r.interviewDuration || 0), 0),
+                ttsCharacters: agg.interviewTts.ttsCharacters, ttsCostUsd: agg.interviewTts.costUsd,
+                sttAudioSeconds: agg.interviewStt.sttAudioSeconds, sttCostUsd: agg.interviewStt.costUsd,
+                model: primaryModel(agg.eval.byModel) || org.llmInterviewLive,
                 ttsProviders: {} as Record<string, { characters: number; costUsd: number }>,
                 sttProviders: {} as Record<string, { seconds: number; costUsd: number }>,
             },
         };
 
-        // testBillingMetrics is only ever written for test sessions (is_test=true in
-        // report_worker.py), so it's NULL for every production interview. It's used
-        // here only to accumulate session wall-clock duration; runs/tokens/cost for
-        // eval/brief/llmgen all come from the billing bucket below (populated in prod too).
-        for (const row of interviews) {
-            const m = row.testBillingMetrics as Record<string, any> || {};
-            if (m.skipReport) continue;
-            // Accumulate actual session wall-clock time from billingSnapshot.durationSec or interviewDuration
-            aggregates.interview.sessionDuration += Number(row.interviewDuration || 0);
+        // Per-provider TTS/STT breakdown from the ledger's byModel maps.
+        for (const v of Object.values(agg.interviewTts.byModel)) {
+            const provider = String(v.provider || "UNKNOWN").toUpperCase();
+            const p = (aggregates.interview.ttsProviders[provider] ??= { characters: 0, costUsd: 0 });
+            p.characters += v.characters; p.costUsd += v.costUsd;
         }
-
-        // All costs and interview-level aggregates come from platformUsageMetrics.billing (billing.py accurate data).
-        const billingBucket = (orgUsage.billing && typeof orgUsage.billing === "object")
-            ? (orgUsage.billing as Record<string, any>)
-            : {};
-
-        // Extract the primary model name from a byModel map (highest-cost entry wins).
-        const primaryModel = (byModel: Record<string, any> | null | undefined): string | null => {
-            if (!byModel || typeof byModel !== "object") return null;
-            let best: string | null = null;
-            let bestCost = -1;
-            for (const [key, v] of Object.entries(byModel)) {
-                const cost = Number((v as any)?.costUsd || 0);
-                if (cost > bestCost) {
-                    bestCost = cost;
-                    // key is "provider:model" — strip provider prefix
-                    const parts = key.split(":");
-                    best = parts.length >= 2 ? parts.slice(1).join(":") : key;
-                }
-            }
-            return best;
-        };
-
-        // Extraction / report phases: all fields from billing bucket.
-        for (const phase of ["resumeExtraction", "jdExtraction", "interviewReport", "resumeReport"]) {
-            const b = billingBucket[phase];
-            if (!b || typeof b !== "object" || !aggregates[phase]) continue;
-            aggregates[phase].runs         += Number(b.runs         || 0);
-            aggregates[phase].inputTokens  += Number(b.inputTokens  || 0);
-            aggregates[phase].outputTokens += Number(b.outputTokens || 0);
-            aggregates[phase].costUsd      += Number(b.costUsd      || 0);
-            const m = primaryModel(b.byModel);
-            if (m) aggregates[phase].model = m;
-        }
-
-        // Brief / LLM gen: runs+tokens+cost all from billing bucket (testBillingMetrics is test-only).
-        for (const phase of ["interviewBrief", "interviewLLMGeneration"]) {
-            const b = billingBucket[phase];
-            if (!b || typeof b !== "object" || !aggregates[phase]) continue;
-            aggregates[phase].runs         += Number(b.runs         || 0);
-            aggregates[phase].inputTokens  += Number(b.inputTokens  || 0);
-            aggregates[phase].outputTokens += Number(b.outputTokens || 0);
-            aggregates[phase].costUsd      += Number(b.costUsd      || 0);
-            const m = primaryModel(b.byModel);
-            if (m) aggregates[phase].model = m;
-        }
-
-        // Interview: all data from billing bucket (accurate Sarvam/Deepgram rates, exact token counts).
-        const ivb = billingBucket.interview;
-        if (ivb && typeof ivb === "object") {
-            aggregates.interview.runs         += Number(ivb.runs         || 0);
-            aggregates.interview.inputTokens  += Number(ivb.inputTokens  || 0);
-            aggregates.interview.outputTokens += Number(ivb.outputTokens || 0);
-            aggregates.interview.costUsd      += Number(ivb.costUsd      || 0);
-
-            // Evaluation row shares the "interview" bucket with live-session usage
-            // (billing.py has no separate eval bucket) — approximation, not exact.
-            aggregates.interviewEvaluation.runs         += Number(ivb.runs         || 0);
-            aggregates.interviewEvaluation.inputTokens  += Number(ivb.inputTokens  || 0);
-            aggregates.interviewEvaluation.outputTokens += Number(ivb.outputTokens || 0);
-
-            // TTS accurate totals
-            aggregates.interview.ttsCharacters += Number(ivb.ttsCharacters || 0);
-            aggregates.interview.ttsCostUsd    += Number(ivb.ttsCostUsd    || 0);
-
-            // TTS per-provider breakdown from billing.py ttsByModel
-            const ttsByModel = (ivb.ttsByModel && typeof ivb.ttsByModel === "object") ? ivb.ttsByModel : {};
-            for (const entry of Object.values(ttsByModel)) {
-                const e = entry as Record<string, any>;
-                const provider = String(e.provider || "UNKNOWN").toUpperCase();
-                if (!aggregates.interview.ttsProviders[provider])
-                    aggregates.interview.ttsProviders[provider] = { characters: 0, costUsd: 0 };
-                aggregates.interview.ttsProviders[provider].characters += Number(e.characters || 0);
-                aggregates.interview.ttsProviders[provider].costUsd    += Number(e.costUsd    || 0);
-            }
-
-            // STT accurate totals
-            aggregates.interview.sttAudioSeconds += Number(ivb.sttAudioSeconds || 0);
-            aggregates.interview.sttCostUsd      += Number(ivb.sttCostUsd      || 0);
-
-            // STT per-provider breakdown from billing.py sttByModel
-            const sttByModel = (ivb.sttByModel && typeof ivb.sttByModel === "object") ? ivb.sttByModel : {};
-            for (const entry of Object.values(sttByModel)) {
-                const e = entry as Record<string, any>;
-                const provider = String(e.provider || "deepgram").toLowerCase();
-                if (!aggregates.interview.sttProviders[provider])
-                    aggregates.interview.sttProviders[provider] = { seconds: 0, costUsd: 0 };
-                aggregates.interview.sttProviders[provider].seconds  += Number(e.audioSeconds || 0);
-                aggregates.interview.sttProviders[provider].costUsd  += Number(e.costUsd      || 0);
-            }
-
-            // Update model labels from actual billing data
-            const evalModel = primaryModel(ivb.byModel);
-            if (evalModel) {
-                aggregates.interview.model = evalModel;
-                aggregates.interviewEvaluation.model = evalModel;
-            }
+        for (const v of Object.values(agg.interviewStt.byModel)) {
+            const provider = String(v.provider || "deepgram").toLowerCase();
+            const p = (aggregates.interview.sttProviders[provider] ??= { seconds: 0, costUsd: 0 });
+            p.seconds += v.seconds; p.costUsd += v.costUsd;
         }
 
         // Round costs

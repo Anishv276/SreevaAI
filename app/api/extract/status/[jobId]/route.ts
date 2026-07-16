@@ -90,6 +90,15 @@ export async function GET(
                                 usage: {
                                     ...result.usage,
                                     eventId: `jd-extraction:${jobId}`,
+                                    context: {
+                                        // No real Job record exists yet at JD-extraction time --
+                                        // this BullMQ queue id is only used as the UsageEvent
+                                        // entity key, never shown as a real Job id.
+                                        jobId: `extraction:${jobId}`,
+                                        jobTitle: hydratedData?.job_title ?? null,
+                                        label: (job.data as Record<string, unknown> | undefined)?.fileName as string ?? null,
+                                        eventId: `jd-extraction:${jobId}`,
+                                    },
                                 },
                             });
                         } catch (billingErr) {
@@ -103,6 +112,11 @@ export async function GET(
                                 });
                             } catch { /* best effort */ }
                         }
+                    } else if (orgId && !result?.usage && !alreadyBilled) {
+                        // Modal returned no usage field -- this JD extraction is unbilled.
+                        // Most likely cause: the deployed Modal app is stale (predates
+                        // usage tracking) -- redeploy modal_app/extract_and_score.py.
+                        console.error(`[BILLING] jdExtraction billing SKIPPED for job=${jobId}: Modal response had no usage field. Result keys: ${Object.keys(result || {}).join(", ")}`);
                     }
                     return {
                         status: "completed",

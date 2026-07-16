@@ -37,7 +37,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                     totalInterviewsAllowed: true,
                     totalInterviewsUsed: true,
                     maxActiveJobs: true,
-                    _count: { select: { jobs: true } },
+                    _count: { select: { jobs: { where: { isDeleted: false } } } },
                 },
             });
             if (org) {

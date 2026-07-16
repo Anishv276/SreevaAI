@@ -51,7 +51,6 @@ from interview.agent_runtime_support import logger, DATABASE_URL
 from interview.brief_extraction import RawResumeJSON, ResumeExtractor
 
 from billing.billing import record_external_billing_usage as _persist_billing
-from billing.billing import record_test_report_billing_usage as _persist_test_report_billing
 from interview.slack_error_logger import log_llm_error
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -119,7 +118,7 @@ class ReportState(TypedDict, total=False):
     resume_json:       dict | None  # structured resume -- feeds experience_credibility eval
     topic_records:     list[dict]   # per-topic MOVE_ON ground-truth from agent
     answer_integrity_enabled: bool  # org toggle — gates the AnswerIntegrityAnalyzer LLM call
-    is_test:           bool  # test session -- routes LLM cost to testBillingMetrics, not org billing
+    is_test:           bool  # test session -- flags UsageEvent rows isTest=True, same ledger path
     # -- Computed by node: signals --------------------------------------------
     integrity_result:  dict
     signal_context:    str
@@ -1523,15 +1522,20 @@ async def _node_llm_calls(state: ReportState) -> dict:
 
     # Persist billing for all 4 calls concurrently — non-fatal so a DB blip
     # doesn't take down the entire report and cause a silent "[REPORT] Failed".
-    # Test sessions route cost to testBillingMetrics instead of the org's real
-    # usage bucket, so testing spend never shows up in a customer's billing.
+    # Real and test sessions take the SAME path: the interviewReport LLM cost
+    # lands in the interview:{app} UsageEvent row's report sub-key, flagged
+    # isTest so test spend is distinguishable but never separate.
+    _report_ctx = {
+        "applicationId": app_id,
+        "candidateName": state.get("candidate_name", ""),
+        "jobTitle": job_title,
+        "eventId": f"interview:{app_id}:report",
+        "isTest": is_test,
+    }
     def _bill(usage: dict) -> Any:
-        return (
-            _persist_test_report_billing(app_id, usage)
-            if is_test
-            else _persist_billing(org_id, "interviewReport", usage)
-        )
-    if org_id or is_test:
+        usage = {**usage, "context": _report_ctx}
+        return _persist_billing(org_id, "interviewReport", usage)
+    if org_id:
         billing_tasks = [
             _bill(_llm.usage_dict(eval_usage, llm_default)),
             _bill(_llm.usage_dict(skills_usage, llm_default)),
@@ -1966,13 +1970,17 @@ async def generate_interview_summary(
             )),
         )
 
-        if org_id or is_test:
+        if org_id:
+            _summary_ctx = {
+                "applicationId": app_id,
+                "candidateName": candidate_name,
+                "jobTitle": job_title,
+                "eventId": f"interview:{app_id}:summary",
+                "isTest": is_test,
+            }
             def _bill(usage: dict) -> Any:
-                return (
-                    _persist_test_report_billing(app_id, usage)
-                    if is_test
-                    else _persist_billing(org_id, "interviewReport", usage)
-                )
+                usage = {**usage, "context": _summary_ctx}
+                return _persist_billing(org_id, "interviewReport", usage)
             try:
                 await asyncio.gather(
                     _bill(_llm.usage_dict(summary_usage, llmInterviewReport)),

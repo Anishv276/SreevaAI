@@ -23,11 +23,19 @@ export async function GET() {
         },
     });
     return NextResponse.json({
+        // Map DB column names to the shape the billing page's OrgSummary expects
+        // (slug/plan/status). Previously the page read org.slug/plan/status which
+        // were undefined because the raw columns are urlSlug/billingPlan/orgStatus.
         orgs: orgs.map((org) => ({
-        ...org,
+        id: org.id,
+        name: org.name,
+        slug: org.urlSlug,
+        plan: org.billingPlan,
+        status: org.orgStatus,
         totalInterviewsAllowed: Number(org.totalInterviewsAllowed || 0),
         totalInterviewsUsed: Number(org.totalInterviewsUsed || 0),
         billingCreditsUsed: Number(org.billingCreditsUsed || 0),
+        orgCreatedAt: org.orgCreatedAt,
       })),
     });
   } catch (error) {

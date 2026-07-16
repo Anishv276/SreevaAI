@@ -116,6 +116,7 @@ class SemanticSkillIndex:
         self._skill_vecs: dict[str, list[float]] = {}
         self._evidence_vecs: list[tuple[list[float], str, str, int]] = []  # (vec, text, label, ev_level)
         self._available = False
+        self.embedding_usage: dict | None = None  # {"model", "inputTokens"} if the embeddings call ran
 
         if client is None:
             return
@@ -147,6 +148,14 @@ class SemanticSkillIndex:
                     self._evidence_vecs.append((vec_map[text], text, label, ev_level))
 
             self._available = True
+            # Embeddings usage has no completion_tokens -- prompt_tokens IS the
+            # billable quantity for this call type.
+            usage = getattr(resp, "usage", None)
+            if usage is not None:
+                self.embedding_usage = {
+                    "model": "text-embedding-3-small",
+                    "inputTokens": int(getattr(usage, "prompt_tokens", 0) or 0),
+                }
         except Exception:
             self._available = False
 
@@ -1423,6 +1432,7 @@ def compute_score(
         "jd_min_years": jd_min_years,
         "semantic_matches": semantic_matches,
         "grounding_warnings": [],
+        "embedding_usage": semantic_index.embedding_usage,
     }
 
 

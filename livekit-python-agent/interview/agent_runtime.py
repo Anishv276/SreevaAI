@@ -44,6 +44,7 @@ from interview.slack_error_logger import (
     log_llm_error,
     log_stt_error,
     log_tts_error,
+    log_worker_error,
 )
 from billing.billing import (
     save_org_usage_metrics as persist_org_usage_metrics,
@@ -128,34 +129,52 @@ _INTERNAL_API_SECRET = os.environ.get("INTERNAL_API_SECRET", "")
 async def _enqueue_report_job(app_id: str, payload: dict) -> None:
     """Hand the report/summary/billing/debug-PDF tail off to the interview-report
     BullMQ queue via an internal Next.js route, instead of running it inline in
-    this (LiveKit-Cloud-recycled) agent job. Fire-and-forget: never blocks or
-    raises into the caller -- a failed handoff is logged and the session still
-    shuts down; the interview keeps its transcript/status either way."""
+    this (LiveKit-Cloud-recycled) agent job. This single HTTP hop is also the
+    only transport for this session's eval/brief/llmgen usage (the payload's
+    "usage" key) -- report_worker.py is what actually bills it. A silently
+    dropped enqueue therefore means BOTH the report AND this session's
+    non-session-level billing are lost, so this retries a few times before
+    giving up, and alerts on final failure instead of just logging it."""
     body = json.dumps(payload, default=str).encode("utf-8")
     headers = {"Content-Type": "application/json", "x-internal-secret": _INTERNAL_API_SECRET}
-    try:
-        import aiohttp
-        async with aiohttp.ClientSession() as http_session:
-            async with http_session.post(
-                _REPORT_ENQUEUE_URL, data=body, headers=headers,
-                timeout=aiohttp.ClientTimeout(total=60),
-            ) as resp:
-                if resp.status >= 300:
-                    logger.error(
-                        "[REPORT] Enqueue failed for %s: HTTP %s", app_id, resp.status,
-                    )
-                    return
-    except (ImportError, ModuleNotFoundError):
+    attempts = 3
+    last_error: str = ""
+    for attempt in range(1, attempts + 1):
         try:
-            req = urllib.request.Request(_REPORT_ENQUEUE_URL, data=body, headers=headers, method="POST")
-            urllib.request.urlopen(req, timeout=60)
+            try:
+                import aiohttp
+                async with aiohttp.ClientSession() as http_session:
+                    async with http_session.post(
+                        _REPORT_ENQUEUE_URL, data=body, headers=headers,
+                        timeout=aiohttp.ClientTimeout(total=5),
+                    ) as resp:
+                        if resp.status >= 300:
+                            last_error = f"HTTP {resp.status}"
+                        else:
+                            logger.info("[REPORT] Enqueued interview-report job for %s", app_id)
+                            return
+            except (ImportError, ModuleNotFoundError):
+                req = urllib.request.Request(_REPORT_ENQUEUE_URL, data=body, headers=headers, method="POST")
+                urllib.request.urlopen(req, timeout=5)
+                logger.info("[REPORT] Enqueued interview-report job for %s", app_id)
+                return
         except Exception as e:
-            logger.error("[REPORT] Enqueue failed for %s: %s", app_id, e)
-            return
-    except Exception as e:
-        logger.error("[REPORT] Enqueue failed for %s: %s", app_id, e)
-        return
-    logger.info("[REPORT] Enqueued interview-report job for %s", app_id)
+            last_error = str(e)
+        if attempt < attempts:
+            logger.warning(
+                "[REPORT] Enqueue attempt %d/%d failed for %s: %s -- retrying",
+                attempt, attempts, app_id, last_error,
+            )
+            await asyncio.sleep(1.5 * attempt)
+    logger.error("[REPORT] Enqueue failed for %s after %d attempts: %s", app_id, attempts, last_error)
+    try:
+        await log_worker_error(
+            error=last_error,
+            reason=f"interview-report enqueue failed after {attempts} attempts -- report AND eval/brief/llmgen billing lost for this session",
+            context={"appId": app_id},
+        )
+    except Exception:
+        pass  # alerting must never mask the original failure
 
 
 class CoverageSource(str, Enum):
@@ -1350,6 +1369,7 @@ class InterviewContext(BaseModel):
     Required fields raise ValidationError on construction  no manual require_db_value calls needed.
     """
     fullName: str
+    jobId: Optional[str] = None
     jobTitle: str
     language: str
     orgId: Optional[str] = None
@@ -4674,6 +4694,12 @@ async def entrypoint(ctx: JobContext):
         plugin_tts_characters=billable_tts_characters,
         plugin_tts_audio_seconds=plugin_tts_audio_seconds,
         plugin_stt_audio_seconds=plugin_stt_audio_seconds,
+        # Per-event ledger attribution for interviewSession STT/TTS rows.
+        app_id=app_id,
+        job_id=ctx_data.jobId,
+        candidate_name=candidate_name,
+        job_title=job_title,
+        is_test=_is_test_session,
     )
     # AI Scorecard + billing snapshot + debug PDF -- handed off to the durable
     # Node/BullMQ worker (interview-report queue -> report_worker.py) instead of

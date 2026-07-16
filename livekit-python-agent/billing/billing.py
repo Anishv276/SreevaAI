@@ -16,8 +16,6 @@ Architecture:
   │                                      model names with regex cache)  │
   │  Section 5 — UsageSummarizer (OOP)  (LiveKit AgentSessionUsage →   │
   │                                      feature-agnostic session dict) │
-  │  Section 6 — BucketMerger (OOP)     (merges one session into the   │
-  │                                      right OrgBilling bucket)       │
   │  Section 7 — PendingBuffer (OOP)    (in-memory accumulator for      │
   │                                      manual LLM usage, flushed at  │
   │                                      session end)                   │
@@ -57,6 +55,7 @@ import os
 import re
 import sys
 import time
+import uuid
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal, Optional, Protocol
@@ -94,6 +93,17 @@ _OPENAI_RATES: dict[str, dict[str, float]] = {
     "gpt-5-nano":   {"input": 0.05,  "cached_input": 0.005, "output": 0.40},
     "gpt-5":        {"input": 1.25,  "cached_input": 0.125, "output": 10.00},
 }
+
+# OpenAI embeddings -- USD per million input tokens (no output/cached tiers).
+# Used by extraction_resume_JD_score_report/scorer.py's SemanticSkillIndex for
+# resume/JD semantic matching -- a real, separately-billed API call that was
+# previously not tracked or billed at all.
+_OPENAI_EMBEDDING_RATES: dict[str, float] = {
+    "text-embedding-3-small": 0.02,
+    "text-embedding-3-large": 0.13,
+    "text-embedding-ada-002": 0.10,
+}
+_OPENAI_EMBEDDING_DEFAULT: float = float(os.environ.get("OPENAI_EMBEDDING_DEFAULT_USD_PER_MILLION", "0.02"))
 
 # Fallback rate for any OpenAI model NOT explicitly listed above. Extraction/
 # report features let admins pick arbitrary model names from the DB config, so a
@@ -412,7 +422,14 @@ class CostCalculator:
 
     @classmethod
     def openai(cls, model: str, input_t: int, cached_t: int, output_t: int) -> float:
-        key   = cls._norm_openai(model)
+        key = cls._norm_openai(model)
+        if key in _OPENAI_EMBEDDING_RATES:
+            # Embeddings have no completion/cached tiers -- input tokens are the
+            # only billable quantity. Routed through here (rather than requiring
+            # every caller to know to call .embedding() instead) so an embedding
+            # usage record can flow through the same LLM-shaped merge/ledger path
+            # used everywhere else, with no schema/shape change needed upstream.
+            return cls.embedding(model, input_t)
         rates = _OPENAI_RATES.get(key)
         if not rates:
             # Graceful fallback -- an unknown/newly-configured model must NOT drop
@@ -437,6 +454,13 @@ class CostCalculator:
             + (cached_t / 1_000_000.0) * rates["cached_input"]
             + (output_t / 1_000_000.0) * rates["output"]
         )
+
+    @classmethod
+    def embedding(cls, model: str, input_t: int) -> float:
+        key = cls._norm_openai(model)
+        rate = _OPENAI_EMBEDDING_RATES.get(key, _OPENAI_EMBEDDING_DEFAULT)
+        input_t = max(0, int(input_t or 0))
+        return (input_t / 1_000_000.0) * rate
 
     @classmethod
     def tts(cls, provider: str, model: str, chars: int) -> float:
@@ -599,196 +623,6 @@ class UsageSummarizer:
 
 
 # ===============================================================================
-# SECTION 6 -- BucketMerger (OOP)
-#
-# Merges one session's usage into a FeatureBilling bucket in-place.
-# All three component merges (LLM, TTS, STT) follow the same pattern:
-#   1. Extract relevant data from session_summary
-#   2. Validate provider + model present (raises if missing)
-#   3. Compute cost via CostCalculator
-#   4. Accumulate into the Pydantic model (in-place mutation)
-# ===============================================================================
-
-class BucketMerger:
-    """Merges session usage into a FeatureBilling bucket.
-
-    All methods mutate `bucket` in-place and return None.
-    Separating the three component merges makes each individually testable.
-    """
-
-    @staticmethod
-    def merge_llm(bucket: FeatureBilling, llm_totals: dict, llm_by_model: dict) -> None:
-        """O(1) hash-lookup accumulation per model. Raises if provider/model absent."""
-        has_totals = any(
-            int(llm_totals.get(k, 0) or 0) > 0
-            for k in ("inputTokens", "inputCachedTokens", "outputTokens", "sessionDuration")
-        )
-        if not llm_by_model and not has_totals:
-            return
-
-        bucket.runs              += 1
-        bucket.inputTokens       += int(llm_totals.get("inputTokens",       0) or 0)
-        bucket.cachedInputTokens += int(llm_totals.get("inputCachedTokens", 0) or 0)
-        bucket.outputTokens      += int(llm_totals.get("outputTokens",      0) or 0)
-        bucket.sessionDuration   += float(llm_totals.get("sessionDuration", 0) or 0)
-
-        session_cost = 0.0
-        for model_key, raw in llm_by_model.items():
-            row      = _coerce_jsonish(raw)
-            provider = str(row.get("provider", "") or "").strip().upper()
-            model    = str(row.get("model",    "") or "").strip()
-            if not provider or not model:
-                raise ValueError(f"[BILLING] LLM merge: provider/model missing in {model_key!r}")
-            input_t  = int(row.get("inputTokens",       0) or 0)
-            cached_t = int(row.get("inputCachedTokens", 0) or 0)
-            output_t = int(row.get("outputTokens",      0) or 0)
-            dur      = float(row.get("sessionDuration", 0) or 0)
-            cost     = CostCalculator.openai(model, input_t, cached_t, output_t)
-            session_cost += cost
-            mb = bucket.byModel.setdefault(model_key, ModelBilling(provider=provider, model=model))
-            mb.runs              += 1
-            mb.inputTokens       += input_t
-            mb.cachedInputTokens += cached_t
-            mb.outputTokens      += output_t
-            mb.sessionDuration   += dur
-            mb.costUsd           += cost
-
-        bucket.costUsd += session_cost
-
-    @staticmethod
-    def merge_tts(bucket: FeatureBilling, tts_by_model: dict, tts_total_chars: int) -> None:
-        if tts_total_chars > 0 and not tts_by_model:
-            raise ValueError("[BILLING] TTS merge: byModel is empty but total chars > 0")
-
-        session_chars, session_cost = 0, 0.0
-        for _, raw in tts_by_model.items():
-            row      = _coerce_jsonish(raw)
-            provider = str(row.get("provider", "") or "").strip().upper()
-            model    = str(row.get("model",    "") or "").strip()
-            if not provider or not model:
-                raise ValueError("[BILLING] TTS merge: provider/model missing")
-            chars = int(row.get("charactersCount", 0) or row.get("inputTokens", 0) or 0)
-            if not chars:
-                continue
-            session_chars += chars
-            cost           = CostCalculator.tts(provider, model, chars)
-            session_cost  += cost
-            key = f"{provider.lower()}:{model.lower()}"
-            mb  = bucket.ttsByModel.setdefault(key, ModelBilling(provider=provider, model=model))
-            mb.runs       += 1
-            mb.characters += chars
-            mb.costUsd    += cost
-
-        if session_chars:
-            bucket.ttsRuns       += 1
-            bucket.ttsCharacters += session_chars
-            bucket.ttsCostUsd    += session_cost
-
-    @staticmethod
-    def merge_stt(bucket: FeatureBilling, stt_by_model: dict, stt_total_secs: float) -> None:
-        if stt_total_secs > 0 and not stt_by_model:
-            raise ValueError("[BILLING] STT merge: byModel is empty but total seconds > 0")
-
-        session_secs, session_cost = 0.0, 0.0
-        for _, raw in stt_by_model.items():
-            row      = _coerce_jsonish(raw)
-            provider = str(row.get("provider", "") or "").strip().upper()
-            model    = str(row.get("model",    "") or "").strip()
-            if not provider or not model:
-                raise ValueError("[BILLING] STT merge: provider/model missing")
-            secs = float(row.get("audioDuration", 0) or 0.0)
-            if not secs:
-                continue
-            session_secs += secs
-            cost          = CostCalculator.stt(provider, model, secs)
-            session_cost += cost
-            key = f"{provider.lower()}:{model.lower()}"
-            mb  = bucket.sttByModel.setdefault(key, ModelBilling(provider=provider, model=model))
-            mb.runs        += 1
-            mb.audioSeconds += secs
-            mb.costUsd     += cost
-
-        if session_secs:
-            bucket.sttRuns        += 1
-            bucket.sttAudioSeconds += session_secs
-            bucket.sttCostUsd     += session_cost
-
-    @classmethod
-    def merge_session(
-        cls,
-        existing_org_billing: dict[str, Any],
-        feature: str,
-        session_summary: dict[str, Any],
-        tts_config: Optional[dict] = None,
-        stt_config: Optional[dict] = None,
-    ) -> dict[str, Any]:
-        """Merge one session into the right feature bucket and return updated billing dict.
-
-        This is the main entry point. It:
-          1. Validates the feature name (O(1) frozenset check)
-          2. Loads the OrgBilling Pydantic model (validates all bucket shapes)
-          3. Calls the three component merges
-          4. Returns the updated dict (Pydantic → dict)
-        """
-        if feature not in _VALID_FEATURES:
-            raise ValueError(f"[BILLING] Unknown feature {feature!r}. Valid: {sorted(_VALID_FEATURES)}")
-
-        merged = dict(existing_org_billing)
-        org    = OrgBilling.model_validate(_coerce_jsonish(merged.get("billing")))
-        bucket: FeatureBilling = getattr(org, feature)
-
-        llm_data  = _coerce_jsonish(session_summary.get("llm"))
-        tts_data  = _coerce_jsonish(session_summary.get("tts"))
-        stt_data  = _coerce_jsonish(session_summary.get("stt"))
-
-        llm_totals   = _coerce_jsonish(llm_data.get("totals"))
-        llm_by_model = _coerce_jsonish(llm_data.get("byModel"))
-        tts_totals   = _coerce_jsonish(tts_data.get("totals"))
-        tts_by_model = _coerce_jsonish(tts_data.get("byModel"))
-        stt_totals   = _coerce_jsonish(stt_data.get("totals"))
-        stt_by_model = _coerce_jsonish(stt_data.get("byModel"))
-
-        tts_chars = int(tts_totals.get("charactersCount", 0) or tts_totals.get("inputTokens", 0) or 0)
-        stt_secs  = float(stt_totals.get("audioDuration", 0) or 0.0)
-
-        llm_has = bool(llm_by_model) or any(
-            int(llm_totals.get(k, 0) or 0) > 0
-            for k in ("inputTokens", "inputCachedTokens", "outputTokens", "sessionDuration")
-        )
-        if not llm_has and not tts_chars and not stt_secs:
-            merged["billing"] = org.model_dump()
-            return merged
-
-        if llm_has:
-            cls.merge_llm(bucket, llm_totals, llm_by_model)
-        cls.merge_tts(bucket, tts_by_model, tts_chars)
-        cls.merge_stt(bucket, stt_by_model, stt_secs)
-
-        merged["billing"] = org.model_dump()
-        return merged
-
-
-# Backward-compat aliases used by agent_persistence.py and agent_runtime.py
-def merge_feature_billing(
-    existing: dict[str, Any],
-    feature:  str,
-    session_summary: dict[str, Any],
-    tts_config: Optional[dict] = None,
-    stt_config: Optional[dict] = None,
-) -> dict[str, Any]:
-    return BucketMerger.merge_session(existing, feature, session_summary, tts_config, stt_config)
-
-
-def merge_interview_billing(
-    existing: dict[str, Any],
-    session_summary: dict[str, Any],
-    tts_config: Optional[dict] = None,
-    stt_config: Optional[dict] = None,
-) -> dict[str, Any]:
-    return BucketMerger.merge_session(existing, "interview", session_summary, tts_config, stt_config)
-
-
-# ===============================================================================
 # SECTION 7 -- PendingBuffer (OOP)
 #
 # Accumulates manual LLM usage records in memory during a session.
@@ -830,56 +664,447 @@ class PendingBuffer:
         """Read without removing (for snapshot building)."""
         return cls._store.get(org_id, [])
 
-    @classmethod
-    def build_session_summary(cls, model: str, usage: dict[str, Any]) -> dict[str, Any]:
-        """Wrap a single manual LLM usage record as a session_summary dict.
 
-        This lets BucketMerger.merge_session() handle manual LLM records the
-        same way it handles LiveKit AgentSessionUsage records.
+# ===============================================================================
+# SECTION 8A -- Entity Ledger (OOP)
+#
+# Upserts ONE row per (organizationId, feature, entity) into the "UsageEvent"
+# table — jd:{jobId}, resume:{applicationId}, interview:{applicationId} — instead
+# of one row per raw API call. Each row's `usage` JSONB holds the per-sub-feature,
+# per-model breakdown; `costUsd` is the running sum of every costUsd inside it.
+#
+# Three domain ledgers build the right usage fragment and share one upsert:
+#   - JdExtractionLedger  -> usage.jdExtraction.llm[]
+#   - ResumeLedger        -> usage.resumeExtraction.llm[] / usage.resumeReport.llm[]
+#   - InterviewLedger     -> usage.{eval,brief,llmGeneration,report}.llm[]
+#                            + usage.tts / usage.stt (top-level audio)
+#
+# The org blob remains the source of truth for TOTALS; this ledger powers the
+# super-admin per-item detail views. Every upsert is wrapped in try/except so a
+# ledger failure (e.g. the table not yet migrated on a stale deploy) can never
+# break the billing transaction that owns the blob.
+#
+# Context envelope: callers attach usage["context"] =
+#   {eventId, jobId, applicationId, interviewId, jobTitle, candidateName,
+#    label, ledgerFeature, createdAt, source, isTest}
+# ===============================================================================
+
+def _usage_context(usage: dict[str, Any]) -> dict[str, Any]:
+    """Extract the optional ledger context envelope from a usage dict."""
+    ctx = usage.get("context")
+    return dict(ctx) if isinstance(ctx, dict) else {}
+
+
+def _merge_model_array(existing: list, entry: dict) -> list:
+    """Merge one per-model LLM entry into a model-array, summing on (model, provider).
+
+    Entry shape: {model, provider, calls, inputTokens, cachedInputTokens,
+    outputTokens, costUsd}. Matching entries are summed in place; new ones append.
+    """
+    model = str(entry.get("model", "") or "").strip()
+    provider = str(entry.get("provider", "") or "").strip()
+    for cur in existing:
+        if str(cur.get("model", "")).strip() == model and str(cur.get("provider", "")).strip() == provider:
+            for k in ("calls", "inputTokens", "cachedInputTokens", "outputTokens"):
+                cur[k] = int(cur.get(k, 0) or 0) + int(entry.get(k, 0) or 0)
+            cur["costUsd"] = round(float(cur.get("costUsd", 0.0) or 0.0) + float(entry.get("costUsd", 0.0) or 0.0), 8)
+            return existing
+    existing.append({
+        "model": model, "provider": provider,
+        "calls": int(entry.get("calls", 0) or 0),
+        "inputTokens": int(entry.get("inputTokens", 0) or 0),
+        "cachedInputTokens": int(entry.get("cachedInputTokens", 0) or 0),
+        "outputTokens": int(entry.get("outputTokens", 0) or 0),
+        "costUsd": round(float(entry.get("costUsd", 0.0) or 0.0), 8),
+    })
+    return existing
+
+
+def _merge_audio_model_array(existing: list, entry: dict, *, unit_key: str) -> list:
+    """Merge one per-model TTS/STT entry (unit_key = 'characters' | 'seconds')."""
+    model = str(entry.get("model", "") or "").strip()
+    provider = str(entry.get("provider", "") or "").strip()
+    for cur in existing:
+        if str(cur.get("model", "")).strip() == model and str(cur.get("provider", "")).strip() == provider:
+            cur["calls"] = int(cur.get("calls", 0) or 0) + int(entry.get("calls", 0) or 0)
+            cur[unit_key] = (cur.get(unit_key, 0) or 0) + (entry.get(unit_key, 0) or 0)
+            cur["costUsd"] = round(float(cur.get("costUsd", 0.0) or 0.0) + float(entry.get("costUsd", 0.0) or 0.0), 8)
+            return existing
+    existing.append({
+        "model": model, "provider": provider,
+        "calls": int(entry.get("calls", 0) or 0),
+        unit_key: entry.get(unit_key, 0) or 0,
+        "costUsd": round(float(entry.get("costUsd", 0.0) or 0.0), 8),
+    })
+    return existing
+
+
+def _sum_usage_cost(usage: dict[str, Any]) -> float:
+    """Sum every `costUsd` found anywhere in the usage JSON tree."""
+    total = 0.0
+    def walk(node: Any) -> None:
+        nonlocal total
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if k == "costUsd":
+                    try:
+                        total += float(v or 0.0)
+                    except (TypeError, ValueError):
+                        pass
+                else:
+                    walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+    walk(usage)
+    return round(total, 8)
+
+
+class EntityLedger:
+    """Shared upsert for all three domain ledgers.
+
+    Each domain ledger builds a `usage` fragment (the sub-keys it owns) and calls
+    `upsert`, which reads the existing row FOR UPDATE, deep-merges the fragment
+    into the stored usage JSON (summing per-model arrays), recomputes costUsd, and
+    writes the row back. Idempotent-safe: a retry with the same numbers double-
+    counts, so callers keep the same call-level dedup they always had (the eventId
+    is the entity key, so the row is stable across a feature's many calls).
+    """
+
+    @staticmethod
+    def _apply_fragment(stored: dict[str, Any], fragment: dict[str, Any]) -> dict[str, Any]:
+        """Deep-merge `fragment` into `stored`, summing per-model arrays.
+
+        fragment sub-keys are one of:
+          {<subfeature>: {"llm": [modelEntry, ...]}}     (jd/resume/interview LLM)
+          {"tts"|"stt": {unit_total, "costUsd", "byModel": [audioEntry, ...]}}
         """
-        model = str(model or "").strip()
-        if not model:
-            raise ValueError("[BILLING] PendingBuffer.build_session_summary: model name is required")
-        input_t  = int(usage.get("inputTokens",       0) or 0)
-        cached_t = int(usage.get("cachedInputTokens", 0) or 0)
-        output_t = int(usage.get("outputTokens",      0) or 0)
-        dur      = float(usage.get("sessionDuration", 0) or 0)
-        return {
-            "llm": {
-                "sessions": 1,
-                "totals": {
-                    "inputTokens":       input_t,
-                    "inputCachedTokens": cached_t,
-                    "outputTokens":      output_t,
-                    "sessionDuration":   dur,
-                },
-                "byModel": {
-                    f"openai:{model}": {
-                        "provider":          "openai",
-                        "model":             model,
-                        "inputTokens":       input_t,
-                        "inputCachedTokens": cached_t,
-                        "outputTokens":      output_t,
-                        "sessionDuration":   dur,
-                    }
-                },
-            },
-            "tts": {"sessions": 0, "totals": {}, "byModel": {}},
-            "stt": {"sessions": 0, "totals": {}, "byModel": {}},
-        }
+        for sub, frag_val in fragment.items():
+            if not isinstance(frag_val, dict):
+                continue
+            cur = stored.setdefault(sub, {})
+            if "llm" in frag_val:
+                arr = cur.setdefault("llm", [])
+                if not isinstance(arr, list):
+                    arr = cur["llm"] = []
+                for entry in frag_val["llm"]:
+                    _merge_model_array(arr, entry)
+            if "byModel" in frag_val:  # audio (tts/stt)
+                unit_key = "characters" if sub == "tts" else "seconds"
+                arr = cur.setdefault("byModel", [])
+                if not isinstance(arr, list):
+                    arr = cur["byModel"] = []
+                for entry in frag_val["byModel"]:
+                    _merge_audio_model_array(arr, entry, unit_key=unit_key)
+                # Recompute the audio sub-key's rolled-up unit total + cost from byModel.
+                cur[unit_key] = sum((m.get(unit_key, 0) or 0) for m in arr)
+                cur["costUsd"] = round(sum(float(m.get("costUsd", 0.0) or 0.0) for m in arr), 8)
+        return stored
+
+    @classmethod
+    async def upsert(
+        cls, conn, *, org_id: str, feature: str, event_id: str,
+        fragment: dict[str, Any], job_id: Optional[str] = None,
+        application_id: Optional[str] = None, interview_id: Optional[str] = None,
+        job_title: Optional[str] = None, candidate_name: Optional[str] = None,
+        is_test: bool = False, created_at: Any = None,
+    ) -> None:
+        """Read-merge-write one entity row. Never raises — ledger must not break billing."""
+        if not org_id or not event_id or not fragment:
+            return
+        try:
+            existing = await conn.fetchrow(
+                'SELECT id, "usage", "jobTitle", "candidateName" FROM "UsageEvent" '
+                'WHERE "eventId" = $1 FOR UPDATE',
+                event_id,
+            )
+            if existing:
+                stored = _coerce_jsonish(existing["usage"])
+                cls._apply_fragment(stored, fragment)
+                cost = _sum_usage_cost(stored)
+                await conn.execute(
+                    'UPDATE "UsageEvent" SET "usage" = $1::jsonb, "costUsd" = $2, '
+                    '"jobTitle" = COALESCE($3, "jobTitle"), '
+                    '"candidateName" = COALESCE($4, "candidateName"), '
+                    '"jobId" = COALESCE("jobId", $5), '
+                    '"applicationId" = COALESCE("applicationId", $6), '
+                    '"interviewId" = COALESCE("interviewId", $7), '
+                    '"updatedAt" = NOW() WHERE id = $8',
+                    json.dumps(stored), cost, job_title, candidate_name,
+                    job_id, application_id, interview_id, existing["id"],
+                )
+            else:
+                stored = cls._apply_fragment({}, fragment)
+                cost = _sum_usage_cost(stored)
+                await conn.execute(
+                    'INSERT INTO "UsageEvent" '
+                    '("id","organizationId","feature","jobId","applicationId","interviewId",'
+                    '"jobTitle","candidateName","isTest","usage","costUsd","eventId","createdAt","updatedAt") '
+                    'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,COALESCE($13, NOW()),NOW()) '
+                    'ON CONFLICT ("eventId") DO NOTHING',
+                    "evt_" + uuid.uuid4().hex, org_id, feature, job_id, application_id, interview_id,
+                    job_title, candidate_name, bool(is_test), json.dumps(stored), cost, event_id,
+                    _to_ts(created_at),
+                )
+        except Exception as e:  # noqa: BLE001 — ledger must never break billing
+            logger.error("[BILLING] EntityLedger.upsert failed (non-fatal) event=%s: %s", event_id, e, exc_info=True)
+            return
+        await _refresh_org_usage_summary(conn, org_id)
 
 
-def merge_manual_billing_usage(
-    existing: dict[str, Any],
-    feature:  str,
-    usage:    dict[str, Any],
-) -> dict[str, Any]:
-    """Backward-compat function: merge one manual LLM usage record into the org billing dict."""
+async def _refresh_org_usage_summary(conn, org_id: str) -> None:
+    """Recompute OrgUsageSummary for one org from the UsageEvent ledger (mirrors
+    lib/usage-metrics.ts#computeOrgUsageBreakdown). Runs after every ledger
+    upsert so the cache is never stale. Never raises — summary is a read-side
+    cache, not the source of truth."""
+    try:
+        row = await conn.fetchrow(
+            """
+            SELECT
+              COALESCE(SUM(CASE WHEN feature = 'jdExtraction'
+                THEN (SELECT SUM((m->>'costUsd')::float8) FROM jsonb_array_elements(usage->'jdExtraction'->'llm') m) END), 0) AS "jdExtractionCostUsd",
+              COALESCE(SUM(CASE WHEN feature = 'resumeExtraction'
+                THEN (SELECT SUM((m->>'costUsd')::float8) FROM jsonb_array_elements(usage->'resumeExtraction'->'llm') m) END), 0) AS "resumeExtractionCostUsd",
+              COALESCE(SUM(CASE WHEN feature = 'resumeExtraction'
+                THEN (SELECT SUM((m->>'costUsd')::float8) FROM jsonb_array_elements(usage->'resumeReport'->'llm') m) END), 0) AS "resumeReportCostUsd",
+              COALESCE(SUM(CASE WHEN feature = 'interview'
+                THEN (SELECT SUM((m->>'costUsd')::float8) FROM jsonb_array_elements(usage->'eval'->'llm') m) END), 0) AS "interviewEvalCostUsd",
+              COALESCE(SUM(CASE WHEN feature = 'interview'
+                THEN (SELECT SUM((m->>'costUsd')::float8) FROM jsonb_array_elements(usage->'brief'->'llm') m) END), 0) AS "interviewBriefCostUsd",
+              COALESCE(SUM(CASE WHEN feature = 'interview'
+                THEN (SELECT SUM((m->>'costUsd')::float8) FROM jsonb_array_elements(usage->'llmGeneration'->'llm') m) END), 0) AS "interviewGenerationCostUsd",
+              COALESCE(SUM(CASE WHEN feature = 'interview'
+                THEN (SELECT SUM((m->>'costUsd')::float8) FROM jsonb_array_elements(usage->'report'->'llm') m) END), 0) AS "interviewReportCostUsd",
+              COALESCE(SUM(CASE WHEN feature = 'interview'
+                THEN (usage->'tts'->>'costUsd')::float8 END), 0) AS "interviewTtsCostUsd",
+              COALESCE(SUM(CASE WHEN feature = 'interview'
+                THEN (usage->'stt'->>'costUsd')::float8 END), 0) AS "interviewSttCostUsd"
+            FROM "UsageEvent"
+            WHERE "organizationId" = $1 AND "isTest" = false
+            """,
+            org_id,
+        )
+        if row is None:
+            return
+        jd = float(row["jdExtractionCostUsd"] or 0)
+        resume_ext = float(row["resumeExtractionCostUsd"] or 0)
+        resume_report = float(row["resumeReportCostUsd"] or 0)
+        interview_eval = float(row["interviewEvalCostUsd"] or 0)
+        interview_brief = float(row["interviewBriefCostUsd"] or 0)
+        interview_gen = float(row["interviewGenerationCostUsd"] or 0)
+        interview_report = float(row["interviewReportCostUsd"] or 0)
+        interview_tts = float(row["interviewTtsCostUsd"] or 0)
+        interview_stt = float(row["interviewSttCostUsd"] or 0)
+        total = jd + resume_ext + resume_report + interview_eval + interview_brief + interview_gen + interview_report + interview_tts + interview_stt
+        org_row = await conn.fetchrow('SELECT name FROM "OrganizationDetails" WHERE id = $1', org_id)
+        org_name = org_row["name"] if org_row else ""
+        await conn.execute(
+            """
+            INSERT INTO "OrgUsageSummary"
+              ("orgId","orgName","jdExtractionCostUsd","resumeExtractionCostUsd","resumeReportCostUsd",
+               "interviewLlmCostUsd","interviewEvalCostUsd","interviewBriefCostUsd","interviewGenerationCostUsd",
+               "interviewTtsCostUsd","interviewSttCostUsd","interviewReportCostUsd","totalCostUsd","lastComputedAt")
+            VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9,$10,$11,$12,NOW())
+            ON CONFLICT ("orgId") DO UPDATE SET
+              "orgName" = $2, "jdExtractionCostUsd" = $3, "resumeExtractionCostUsd" = $4, "resumeReportCostUsd" = $5,
+              "interviewLlmCostUsd" = $6, "interviewEvalCostUsd" = $6, "interviewBriefCostUsd" = $7,
+              "interviewGenerationCostUsd" = $8, "interviewTtsCostUsd" = $9, "interviewSttCostUsd" = $10,
+              "interviewReportCostUsd" = $11, "totalCostUsd" = $12, "lastComputedAt" = NOW()
+            """,
+            org_id, org_name, round(jd, 8), round(resume_ext, 8), round(resume_report, 8),
+            round(interview_eval, 8), round(interview_brief, 8), round(interview_gen, 8),
+            round(interview_tts, 8), round(interview_stt, 8), round(interview_report, 8), round(total, 8),
+        )
+        # NOTE: interviewLlmCostUsd historically mirrors interviewEvalCostUsd
+        # (see lib/usage-metrics.ts computeOrgUsageBreakdown) -- both bound to
+        # the $6 placeholder above is intentional, not a bug.
+    except Exception as e:  # noqa: BLE001 — summary refresh must never break billing
+        logger.error("[BILLING] _refresh_org_usage_summary failed (non-fatal) org=%s: %s", org_id, e, exc_info=True)
+
+
+def _llm_entry(usage: dict[str, Any], *, provider: str = "openai") -> Optional[dict[str, Any]]:
+    """Build one per-model LLM entry (with cost) from a manual usage dict, or None."""
     model = str(usage.get("model", "") or "").strip()
     if not model:
-        raise ValueError(f"[BILLING] merge_manual_billing_usage: model required for feature {feature!r}")
-    session_summary = PendingBuffer.build_session_summary(model, usage)
-    return BucketMerger.merge_session(existing, feature, session_summary)
+        return None
+    input_t = int(usage.get("inputTokens", 0) or 0)
+    cached_t = int(usage.get("cachedInputTokens", 0) or 0)
+    output_t = int(usage.get("outputTokens", 0) or 0)
+    cost = CostCalculator.openai(model, input_t, cached_t, output_t)
+    return {
+        "model": model, "provider": provider, "calls": 1,
+        "inputTokens": input_t, "cachedInputTokens": cached_t,
+        "outputTokens": output_t, "costUsd": round(cost, 8),
+    }
+
+
+# Call-site feature/ledgerFeature -> interview usage sub-key.
+_INTERVIEW_SUBKEY: dict[str, str] = {
+    "interviewEval": "eval",
+    "interview": "eval",
+    "interviewBrief": "brief",
+    "interviewLLMGeneration": "llmGeneration",
+    "interviewReport": "report",
+}
+
+
+class JdExtractionLedger:
+    """Upserts the jd:{jobId} row. usage.jdExtraction.llm[]."""
+
+    @classmethod
+    async def record(cls, conn, org_id: str, feature: str, usage: dict[str, Any]) -> None:
+        ctx = _usage_context(usage)
+        job_id = str(ctx.get("jobId") or "").strip()
+        if not job_id:
+            logger.warning("[BILLING] JdExtractionLedger: no jobId in context — skipping ledger row")
+            return
+        entry = _llm_entry(usage)
+        if not entry:
+            return
+        await EntityLedger.upsert(
+            conn, org_id=org_id, feature="jdExtraction", event_id=f"jd:{job_id}",
+            fragment={"jdExtraction": {"llm": [entry]}},
+            job_id=job_id, job_title=ctx.get("jobTitle"),
+            is_test=bool(ctx.get("isTest", False)),
+            created_at=ctx.get("createdAt"),
+        )
+
+
+class ResumeLedger:
+    """Upserts the resume:{applicationId} row. usage.resumeExtraction / .resumeReport."""
+
+    @classmethod
+    async def record(cls, conn, org_id: str, feature: str, usage: dict[str, Any]) -> None:
+        ctx = _usage_context(usage)
+        app_id = str(ctx.get("applicationId") or "").strip()
+        if not app_id:
+            logger.warning("[BILLING] ResumeLedger: no applicationId in context — skipping ledger row")
+            return
+        sub = "resumeReport" if feature == "resumeReport" else "resumeExtraction"
+        entry = _llm_entry(usage)
+        if not entry:
+            return
+        await EntityLedger.upsert(
+            conn, org_id=org_id, feature="resumeExtraction", event_id=f"resume:{app_id}",
+            fragment={sub: {"llm": [entry]}},
+            job_id=ctx.get("jobId"), application_id=app_id,
+            job_title=ctx.get("jobTitle"), candidate_name=ctx.get("candidateName"),
+            is_test=bool(ctx.get("isTest", False)), created_at=ctx.get("createdAt"),
+        )
+
+
+class InterviewLedger:
+    """Upserts the interview:{interviewId|applicationId} row.
+
+    LLM sub-features (eval/brief/llmGeneration/report) come through record_llm; the
+    session's TTS/STT come through record_audio. Both share the same entity row.
+    """
+
+    @staticmethod
+    def _entity(ctx: dict[str, Any]) -> tuple[Optional[str], Optional[str], Optional[str]]:
+        """Return (entity_key_id, application_id, interview_id).
+
+        Prefer interviewId when present; fall back to applicationId (report/eval/
+        brief/llmgen call sites only have applicationId at write time)."""
+        app_id = str(ctx.get("applicationId") or "").strip() or None
+        interview_id = str(ctx.get("interviewId") or "").strip() or None
+        key_id = interview_id or app_id
+        return key_id, app_id, interview_id
+
+    @classmethod
+    async def record_llm(cls, conn, org_id: str, feature: str, usage: dict[str, Any]) -> None:
+        ctx = _usage_context(usage)
+        ledger_feature = str(ctx.get("ledgerFeature") or "").strip()
+        sub = _INTERVIEW_SUBKEY.get(ledger_feature) or _INTERVIEW_SUBKEY.get(feature)
+        if not sub:
+            logger.warning("[BILLING] InterviewLedger: unknown sub-feature for feature=%r ledgerFeature=%r", feature, ledger_feature)
+            return
+        key_id, app_id, interview_id = cls._entity(ctx)
+        if not key_id:
+            logger.warning("[BILLING] InterviewLedger: no interviewId/applicationId — skipping ledger row")
+            return
+        entry = _llm_entry(usage)
+        if not entry:
+            return
+        job_id = str(ctx.get("jobId") or "").strip() or None
+        await EntityLedger.upsert(
+            conn, org_id=org_id, feature="interview", event_id=f"interview:{key_id}",
+            fragment={sub: {"llm": [entry]}},
+            job_id=job_id, application_id=app_id, interview_id=interview_id,
+            job_title=ctx.get("jobTitle"), candidate_name=ctx.get("candidateName"),
+            is_test=bool(ctx.get("isTest", False)), created_at=ctx.get("createdAt"),
+        )
+
+    @classmethod
+    async def record_audio(
+        cls, conn, org_id: str, *, app_id: Optional[str], interview_id: Optional[str],
+        job_id: Optional[str] = None,
+        summary: dict[str, Any], candidate_name: Optional[str], job_title: Optional[str],
+        is_test: bool,
+    ) -> None:
+        """Fold a session summary's tts/stt byModel maps into the interview row."""
+        key_id = (interview_id or "").strip() or (app_id or "").strip()
+        if not key_id:
+            return
+        fragment: dict[str, Any] = {}
+        for kind in ("tts", "stt"):
+            by_model = _coerce_jsonish(_coerce_jsonish(summary.get(kind)).get("byModel"))
+            entries: list[dict[str, Any]] = []
+            for msummary in by_model.values():
+                m = _coerce_jsonish(msummary)
+                provider = str(m.get("provider", "") or "").strip().upper() or ("DEEPGRAM" if kind == "stt" else "UNKNOWN")
+                model = str(m.get("model", "") or "").strip() or "unknown"
+                if kind == "tts":
+                    chars = int(m.get("charactersCount", 0) or 0)
+                    if chars <= 0:
+                        continue
+                    entries.append({"model": model, "provider": provider, "calls": 1,
+                                    "characters": chars, "costUsd": round(CostCalculator.tts(provider, model, chars), 8)})
+                else:
+                    secs = float(m.get("audioDuration", 0) or 0.0)
+                    if secs <= 0:
+                        continue
+                    entries.append({"model": model, "provider": provider, "calls": 1,
+                                    "seconds": secs, "costUsd": round(CostCalculator.stt(provider, model, secs), 8)})
+            if entries:
+                fragment[kind] = {"byModel": entries}
+        if not fragment:
+            return
+        await EntityLedger.upsert(
+            conn, org_id=org_id, feature="interview", event_id=f"interview:{key_id}",
+            fragment=fragment, application_id=(app_id or None), interview_id=(interview_id or None),
+            job_id=(job_id or None), job_title=job_title, candidate_name=candidate_name, is_test=is_test,
+        )
+
+
+async def _record_ledger_entry(conn, org_id: str, feature: str, usage: dict[str, Any]) -> None:
+    """Route one manual usage entry to the right domain ledger (LLM path)."""
+    ctx = _usage_context(usage)
+    ledger_feature = str(ctx.get("ledgerFeature") or "").strip()
+    # voicePreview has no interview/application entity — kept in the org blob only.
+    if ledger_feature == "voicePreview":
+        return
+    if feature == "jdExtraction":
+        await JdExtractionLedger.record(conn, org_id, feature, usage)
+    elif feature in ("resumeExtraction", "resumeReport"):
+        await ResumeLedger.record(conn, org_id, feature, usage)
+    else:  # interview / interviewBrief / interviewLLMGeneration / interviewReport / interviewEval
+        await InterviewLedger.record_llm(conn, org_id, feature, usage)
+
+
+# ponytail: retired LedgerWriter (per-call rows) in favour of the 3 entity ledgers
+# above. Every ledger write now upserts one entity row via EntityLedger.
+
+
+def _to_ts(v: Any):
+    """Coerce a ledger createdAt (epoch float or None) to a datetime or None."""
+    if v is None:
+        return None
+    try:
+        from datetime import datetime, timezone
+        return datetime.fromtimestamp(float(v), tz=timezone.utc)
+    except Exception:
+        return None
 
 
 # ===============================================================================
@@ -911,7 +1136,8 @@ class BillingRepository:
 
     @classmethod
     async def flush_pending(cls, org_id: str) -> None:
-        """Write all pending manual billing entries for an org in one transaction."""
+        """Write all pending manual billing entries for an org to the UsageEvent
+        ledger (the sole source of truth) in one transaction."""
         if not org_id or not DATABASE_URL:
             return
         pending = PendingBuffer.pop(org_id)
@@ -921,29 +1147,9 @@ class BillingRepository:
             pool = await cls._get_pool()
             async with pool.acquire() as conn:
                 async with conn.transaction():
-                    row = await conn.fetchrow(
-                        'SELECT COALESCE("platformUsageMetrics", \'{}\'::jsonb) AS "usageMetrics" '
-                        'FROM "OrganizationDetails" WHERE id = $1 FOR UPDATE',
-                        org_id,
-                    )
-                    if not row:
-                        logger.warning("[BILLING] flush_pending: org %s not found", org_id)
-                        return
-                    merged = _coerce_jsonish(row["usageMetrics"])
+                    # Per-entity ledger upserts (non-fatal on individual failure).
                     for feature, usage in pending:
-                        merged = merge_manual_billing_usage(merged, feature, usage)
-                        _fb = _coerce_jsonish(_coerce_jsonish(merged.get("billing")).get(feature))
-                        logger.info(
-                            "[BILLING] flush_pending merged feature=%s model=%s runs=%s "
-                            "inputTokens=%s outputTokens=%s costUsd=%s",
-                            feature, usage.get("model", "?"),
-                            _fb.get("runs"), _fb.get("inputTokens"),
-                            _fb.get("outputTokens"), _fb.get("costUsd"),
-                        )
-                    await conn.execute(
-                        'UPDATE "OrganizationDetails" SET "platformUsageMetrics" = $1::jsonb, "orgUpdatedAt" = NOW() WHERE id = $2',
-                        json.dumps(merged), org_id,
-                    )
+                        await _record_ledger_entry(conn, org_id, feature, usage)
             logger.info("[BILLING] Flushed %d pending entries for org=%s", len(pending), org_id)
         except Exception as e:
             logger.error("[BILLING] flush_pending failed for org=%s: %s", org_id, e, exc_info=True)
@@ -958,9 +1164,20 @@ class BillingRepository:
         tts_model:    Optional[str] = None,
         stt_provider: Optional[str] = None,
         stt_model:    Optional[str] = None,
+        *,
+        app_id:         Optional[str] = None,
+        interview_id:   Optional[str] = None,
+        job_id:         Optional[str] = None,
+        candidate_name: Optional[str] = None,
+        job_title:      Optional[str] = None,
+        is_test:        bool = False,
     ) -> None:
-        """Merge a session's LiveKit usage into Organization.usageMetrics (livekit bucket)."""
-        if not org_id or not DATABASE_URL:
+        """Record a session's TTS/STT into the interview UsageEvent entity row.
+
+        UsageEvent is the sole source of truth: real and test sessions write the
+        same interview:{interviewId|applicationId} row, differing only by is_test.
+        """
+        if not org_id or not DATABASE_URL or not app_id:
             return
         if not any(bucket.get("sessions") for bucket in session_summary.values()):
             return
@@ -968,189 +1185,23 @@ class BillingRepository:
             pool = await cls._get_pool()
             async with pool.acquire() as conn:
                 async with conn.transaction():
-                    row = await conn.fetchrow(
-                        'SELECT COALESCE("platformUsageMetrics", \'{}\'::jsonb) AS "usageMetrics" '
-                        'FROM "OrganizationDetails" WHERE id = $1 FOR UPDATE',
-                        org_id,
-                    )
-                    if not row:
-                        logger.warning("[BILLING] save_org_usage: org %s not found", org_id)
-                        return
-                    existing = _coerce_jsonish(row["usageMetrics"])
-                    merged   = dict(existing)
-                    livekit  = _coerce_jsonish(merged.get("livekit"))
-
-                    # Merge per-kind raw LiveKit buckets into the livekit namespace
-                    for kind, kind_summary in session_summary.items():
-                        if not isinstance(kind_summary, dict):
-                            continue
-                        cur = _coerce_jsonish(livekit.get(kind)) or UsageSummarizer._empty_bucket(kind)
-                        cur["sessions"] = int(cur.get("sessions", 0)) + int(kind_summary.get("sessions", 0))
-                        totals = cur.setdefault("totals", {pub: 0 for _, pub in _USAGE_BUCKET_FIELDS[kind]})
-                        for _, pub in _USAGE_BUCKET_FIELDS[kind]:
-                            totals[pub] = totals.get(pub, 0) + kind_summary.get("totals", {}).get(pub, 0)
-                        by_model = cur.setdefault("byModel", {})
-                        for mkey, msummary in kind_summary.get("byModel", {}).items():
-                            provider = str(msummary.get("provider", "") or "").strip().upper()
-                            model    = str(msummary.get("model",    "") or "").strip()
-                            if not provider or not model:
-                                raise ValueError(f"[BILLING] save_org_usage: provider/model missing in {kind}:{mkey}")
-                            mb = _coerce_jsonish(by_model.get(mkey)) or {
-                                "provider": provider, "model": model, "sessions": 0,
-                                **{pub: 0 for _, pub in _USAGE_BUCKET_FIELDS[kind]},
-                            }
-                            mb["sessions"] = int(mb.get("sessions", 0)) + int(msummary.get("sessions", 0))
-                            for _, pub in _USAGE_BUCKET_FIELDS[kind]:
-                                mb[pub] = mb.get(pub, 0) + msummary.get(pub, 0)
-                            by_model[mkey] = mb
-                        cur["updatedAt"] = time.time()
-                        livekit[kind]    = cur
-
-                    merged["livekit"]   = livekit
-                    merged["updatedAt"] = time.time()
-                    # Also merge into the structured interview billing bucket
-                    merged = BucketMerger.merge_session(
-                        merged, "interview", session_summary,
-                        tts_config={"provider": tts_provider or "", "model": tts_model or ""},
-                        stt_config={"provider": stt_provider or "", "model": stt_model or ""},
-                    )
-                    await conn.execute(
-                        'UPDATE "OrganizationDetails" SET "platformUsageMetrics" = $1::jsonb, "orgUpdatedAt" = NOW() WHERE id = $2',
-                        json.dumps(merged), org_id,
+                    await InterviewLedger.record_audio(
+                        conn, org_id, app_id=app_id, interview_id=interview_id, job_id=job_id,
+                        summary=session_summary,
+                        candidate_name=candidate_name, job_title=job_title,
+                        is_test=is_test,
                     )
             llm_t = session_summary["llm"]["totals"]
             logger.info(
-                "[BILLING] Saved org usage: org=%s llm_tokens=%d stt_secs=%.1f tts_secs=%.1f",
+                "[BILLING] Saved org usage: org=%s llm_tokens=%d stt_secs=%.1f tts_secs=%.1f test=%s",
                 org_id,
                 int(llm_t.get("inputTokens", 0)) + int(llm_t.get("outputTokens", 0)),
                 session_summary["stt"]["totals"].get("audioDuration", 0),
                 session_summary["tts"]["totals"].get("audioDuration", 0),
+                is_test,
             )
         except Exception as e:
             logger.error("[BILLING] save_org_usage failed for org=%s: %s", org_id, e, exc_info=True)
-            raise
-
-    @classmethod
-    async def save_interview_snapshot(
-        cls,
-        app_id:           str,
-        session_summary:  dict[str, Any],
-        pending:          list[tuple[str, dict]],
-        *,
-        candidate_name:   Optional[str]  = None,
-        job_title:        Optional[str]  = None,
-        duration_seconds: Optional[float]= None,
-        tts_provider:     Optional[str]  = None,
-        tts_model:        Optional[str]  = None,
-        stt_provider:     Optional[str]  = None,
-        stt_model:        Optional[str]  = None,
-    ) -> None:
-        """Write the per-interview billing snapshot to Interview.billingSnapshot."""
-        if not app_id or not DATABASE_URL:
-            return
-
-        snapshot_billing = BucketMerger.merge_session(
-            {}, "interview", session_summary,
-            tts_config={"provider": tts_provider or "", "model": tts_model or ""},
-            stt_config={"provider": stt_provider or "", "model": stt_model or ""},
-        )
-        ib = _coerce_jsonish(_coerce_jsonish(snapshot_billing.get("billing")).get("interview"))
-
-        # Fold in manual LLM entries for this interview's own LLM spend: eval/signal
-        # scoring ("interview"), brief generation ("interviewBrief"), and per-turn
-        # question generation ("interviewLLMGeneration"). All three happen inside
-        # this single interview session, so the per-interview snapshot's LLM total
-        # must include all three, not just eval.
-        _INTERVIEW_OWN_LLM_FEATURES = ("interview", "interviewBrief", "interviewLLMGeneration")
-        for feature, usage in pending:
-            if feature not in _INTERVIEW_OWN_LLM_FEATURES:
-                continue
-            model = str(usage.get("model", "") or "").strip()
-            if not model:
-                raise ValueError("[BILLING] save_interview_snapshot: model required in pending entry")
-            input_t  = int(usage.get("inputTokens",       0) or 0)
-            cached_t = int(usage.get("cachedInputTokens", 0) or 0)
-            output_t = int(usage.get("outputTokens",      0) or 0)
-            cost     = CostCalculator.openai(model, input_t, cached_t, output_t)
-            mkey     = f"openai:{model}"
-            ib["runs"]              = int(ib.get("runs",             0)) + 1
-            ib["inputTokens"]       = int(ib.get("inputTokens",      0)) + input_t
-            ib["cachedInputTokens"] = int(ib.get("cachedInputTokens",0)) + cached_t
-            ib["outputTokens"]      = int(ib.get("outputTokens",     0)) + output_t
-            ib["costUsd"]           = float(ib.get("costUsd",         0.0)) + cost
-            bm = _coerce_jsonish(ib.get("byModel"))
-            cur = _coerce_jsonish(bm.get(mkey))
-            cur["runs"]              = int(cur.get("runs",             0)) + 1
-            cur["inputTokens"]       = int(cur.get("inputTokens",      0)) + input_t
-            cur["cachedInputTokens"] = int(cur.get("cachedInputTokens",0)) + cached_t
-            cur["outputTokens"]      = int(cur.get("outputTokens",     0)) + output_t
-            cur["costUsd"]           = float(cur.get("costUsd",        0.0)) + cost
-            bm[mkey]                 = cur
-            ib["byModel"]            = bm
-
-        total_cost = (
-            float(ib.get("costUsd",    0.0))
-            + float(ib.get("ttsCostUsd", 0.0))
-            + float(ib.get("sttCostUsd", 0.0))
-        )
-        candidate_name = candidate_name or ""
-        job_title      = job_title or ""
-        snapshot = InterviewBillingSnapshot(
-            candidateName     = candidate_name,
-            jobTitle          = job_title,
-            interviewName     = f"{candidate_name or 'Candidate'} - {job_title or 'Interview'}",
-            durationSec       = int(duration_seconds or 0),
-            creditsUsed       = round((float(duration_seconds or 0) / 60.0) * 100) / 100,
-            llmCostUsd        = float(ib.get("costUsd",         0.0)),
-            ttsCostUsd        = float(ib.get("ttsCostUsd",      0.0)),
-            sttCostUsd        = float(ib.get("sttCostUsd",      0.0)),
-            totalCostUsd      = total_cost,
-            inputTokens       = int(ib.get("inputTokens",       0)),
-            outputTokens      = int(ib.get("outputTokens",      0)),
-            cachedInputTokens = int(ib.get("cachedInputTokens", 0)),
-            sessionDuration   = float(ib.get("sessionDuration", 0)),
-            ttsCharacters     = int(ib.get("ttsCharacters",     0)),
-            sttAudioSeconds   = float(ib.get("sttAudioSeconds", 0)),
-            llmByModel        = ib.get("byModel",   {}),
-            ttsByModel        = ib.get("ttsByModel", {}),
-            sttByModel        = ib.get("sttByModel", {}),
-        )
-        logger.info(
-            "[BILLING] Snapshot: app=%s dur=%ds llm=%.6f tts=%.6f stt=%.6f total=%.6f "
-            "inputTokens=%d outputTokens=%d ttsChars=%d",
-            app_id, snapshot.durationSec,
-            snapshot.llmCostUsd, snapshot.ttsCostUsd, snapshot.sttCostUsd, snapshot.totalCostUsd,
-            snapshot.inputTokens, snapshot.outputTokens, snapshot.ttsCharacters,
-        )
-        try:
-            pool = await cls._get_pool()
-            async with pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    'SELECT i.id, COALESCE(i."billingSnapshotAtCompletion", \'{}\'::jsonb) AS "billingSnapshot" '
-                    'FROM "Interview" i '
-                    'JOIN "Application" a ON a.id = i."applicationId" '
-                    'WHERE a.id = $1 LIMIT 1',
-                    app_id,
-                )
-                if not row:
-                    logger.error("[BILLING] save_interview_snapshot: no Interview row for app=%s", app_id)
-                    return
-                existing = _coerce_jsonish(row["billingSnapshot"])
-                persisted = {**existing, **snapshot.model_dump()}
-                # Never overwrite billedAt once set (idempotency guard)
-                if existing.get("billedAt") is not None:
-                    persisted["billedAt"] = existing["billedAt"]
-                await conn.execute(
-                    'UPDATE "Interview" SET "billingSnapshotAtCompletion" = $1::jsonb, "interviewUpdatedAt" = NOW() '
-                    'WHERE "applicationId" = $2',
-                    json.dumps(persisted), app_id,
-                )
-            logger.info(
-                "[BILLING] Snapshot saved: app=%s total=%.6f inputTokens=%d outputTokens=%d",
-                app_id, snapshot.totalCostUsd, snapshot.inputTokens, snapshot.outputTokens,
-            )
-        except Exception as e:
-            logger.error("[BILLING] save_interview_snapshot DB write failed for app=%s: %s", app_id, e, exc_info=True)
             raise
 
     @classmethod
@@ -1167,52 +1218,11 @@ class BillingRepository:
         await cls.flush_pending(org_id)
 
     @classmethod
-    async def record_test_report_llm_usage(cls, app_id: str, usage: dict[str, Any]) -> None:
-        """Add one report-pipeline LLM call's accurate cost to a test session's
-        testBillingMetrics.llmCost, instead of the org's real usageMetrics bucket.
-
-        Test-session report/summary calls run the exact same LLM code path as
-        real interviews, so without this the cost would land in
-        Organization.usageMetrics.billing.interviewReport indistinguishable from
-        real candidates. Routing it here at the single _persist_billing call
-        site (report_pipeline.py) keeps test spend fully separate at the source.
-        """
-        if not app_id or not usage or not DATABASE_URL:
-            return
-        model    = str(usage.get("model", "") or "")
-        input_t  = int(usage.get("inputTokens", 0) or 0)
-        cached_t = int(usage.get("cachedInputTokens", 0) or 0)
-        output_t = int(usage.get("outputTokens", 0) or 0)
-        if not model:
-            return
-        try:
-            cost = CostCalculator.openai(model, input_t, cached_t, output_t)
-        except ValueError:
-            return
-        try:
-            pool = await cls._get_pool()
-            async with pool.acquire() as conn:
-                await conn.execute(
-                    """UPDATE "Interview" SET "testSessionBillingMetrics" = jsonb_set(
-                           jsonb_set(
-                               COALESCE("testSessionBillingMetrics", '{}'::jsonb),
-                               '{reportLlmCost}',
-                               to_jsonb(COALESCE(("testSessionBillingMetrics"->>'reportLlmCost')::float, 0) + $1::float),
-                               true
-                           ),
-                           '{reportLlmRuns}',
-                           to_jsonb(COALESCE(("testSessionBillingMetrics"->>'reportLlmRuns')::int, 0) + 1),
-                           true
-                       ), "interviewUpdatedAt" = NOW()
-                       WHERE "applicationId" = $2""",
-                    cost, app_id,
-                )
-        except Exception as e:
-            logger.error("[BILLING] record_test_report_llm_usage failed for app=%s: %s", app_id, e)
-
-    @classmethod
     async def deduct_quota(cls, app_id: str, duration_seconds: Optional[float] = None) -> None:
-        """Atomically deduct one interview quota slot. Idempotent via billedAt guard."""
+        """Atomically deduct one interview quota slot. Idempotent via the
+        dedicated Interview.quotaDeductedAt column: a single
+        UPDATE ... WHERE "quotaDeductedAt" IS NULL RETURNING id is the atomic
+        claim — exactly one caller wins, the rest see no rows and skip."""
         if not DATABASE_URL:
             return
         try:
@@ -1238,13 +1248,8 @@ class BillingRepository:
                 dur = float(duration_seconds or 0) or float(row["interviewDuration"] or 0) or float(row["recordingDurationSec"] or 0)
                 marked = await conn.fetch(
                     """UPDATE "Interview"
-                       SET "billingSnapshotAtCompletion" = jsonb_set(
-                               COALESCE("billingSnapshotAtCompletion", '{}'::jsonb),
-                               '{billedAt}',
-                               to_jsonb(extract(epoch from now())::bigint)
-                           ), "interviewUpdatedAt" = NOW()
-                       WHERE "applicationId" = $1
-                         AND ("billingSnapshotAtCompletion" IS NULL OR "billingSnapshotAtCompletion"->'billedAt' IS NULL)
+                       SET "quotaDeductedAt" = NOW(), "interviewUpdatedAt" = NOW()
+                       WHERE "applicationId" = $1 AND "quotaDeductedAt" IS NULL
                        RETURNING id""",
                     app_id,
                 )
@@ -1300,61 +1305,6 @@ async def flush_billing(org_id: Optional[str]) -> None:
     await BillingRepository.flush_pending(org_id)
 
 
-async def save_interview_billing(
-    app_id:                   str,
-    session_usage:            Any,
-    *,
-    org_id:                   Optional[str]   = None,
-    candidate_name:           Optional[str]   = None,
-    job_title:                Optional[str]   = None,
-    duration_seconds:         Optional[float] = None,
-    tts_provider:             Optional[str]   = None,
-    tts_model:                Optional[str]   = None,
-    stt_provider:             Optional[str]   = None,
-    stt_model:                Optional[str]   = None,
-    plugin_tts_characters:    int   = 0,
-    plugin_tts_audio_seconds: float = 0.0,
-    plugin_stt_audio_seconds: float = 0.0,
-) -> None:
-    """Save per-interview billing snapshot (Interview.billingSnapshot).
-
-    Covers the full interview session: LLM (agent turns) + TTS + STT.
-    Replaces: persist_interview_billing_snapshot()
-    """
-    if not app_id or not DATABASE_URL:
-        return
-
-    has_any = (
-        bool(session_usage)
-        or bool(duration_seconds)
-        or int(plugin_tts_characters or 0) > 0
-        or float(plugin_stt_audio_seconds or 0) > 0
-        or bool(org_id and PendingBuffer.peek(org_id))
-    )
-    if not has_any:
-        logger.warning("[BILLING] save_interview_billing: no signal for app=%s — skipping", app_id)
-        return
-
-    summary = UsageSummarizer.from_session(session_usage)
-    summary = UsageSummarizer.override_plugin_metrics(
-        summary,
-        tts_provider=tts_provider, tts_model=tts_model,
-        tts_chars=plugin_tts_characters, tts_secs=plugin_tts_audio_seconds,
-        stt_provider=stt_provider, stt_model=stt_model,
-        stt_secs=plugin_stt_audio_seconds,
-    )
-    pending = PendingBuffer.peek(org_id) if org_id else []
-
-    await BillingRepository.save_interview_snapshot(
-        app_id, summary, pending,
-        candidate_name=candidate_name,
-        job_title=job_title,
-        duration_seconds=duration_seconds,
-        tts_provider=tts_provider, tts_model=tts_model,
-        stt_provider=stt_provider, stt_model=stt_model,
-    )
-
-
 async def save_org_usage_metrics(
     org_id:                   Optional[str],
     session_usage:            Any,
@@ -1366,6 +1316,12 @@ async def save_org_usage_metrics(
     plugin_tts_characters:    int   = 0,
     plugin_tts_audio_seconds: float = 0.0,
     plugin_stt_audio_seconds: float = 0.0,
+    app_id:                   Optional[str] = None,
+    interview_id:             Optional[str] = None,
+    job_id:                   Optional[str] = None,
+    candidate_name:           Optional[str] = None,
+    job_title:                Optional[str] = None,
+    is_test:                  bool = False,
 ) -> None:
     """Merge a session's usage into Organization.usageMetrics.
 
@@ -1392,6 +1348,8 @@ async def save_org_usage_metrics(
         org_id, summary,
         tts_provider=tts_provider, tts_model=tts_model,
         stt_provider=stt_provider, stt_model=stt_model,
+        app_id=app_id, interview_id=interview_id, job_id=job_id,
+        candidate_name=candidate_name, job_title=job_title, is_test=is_test,
     )
 
 
@@ -1403,18 +1361,16 @@ async def deduct_interview_quota(app_id: str, duration_seconds: Optional[float] 
     await BillingRepository.deduct_quota(app_id, duration_seconds)
 
 async def record_external_billing_usage(org_id: Optional[str], feature: str, usage: dict[str, Any]) -> None:
-    """Record a usage event from non-Python callers such as Next.js routes/workers."""
+    """Record a usage event from non-Python callers such as Next.js routes/workers.
+
+    Also the single path for interviewReport LLM usage from report_pipeline.py:
+    test sessions flow through here identically to real ones (usage["context"]
+    carries isTest=True), landing in the same interview:{app} UsageEvent row's
+    report sub-key just flagged isTest.
+    """
     if not org_id:
         return
     await BillingRepository.record_org_billing_usage(org_id, feature, usage)
-
-async def record_test_report_billing_usage(app_id: str, usage: dict[str, Any]) -> None:
-    """Record one report-pipeline LLM call's cost for a TEST session only.
-
-    Keeps test-session report/summary spend out of the org's real billing
-    totals — see BillingRepository.record_test_report_llm_usage for why.
-    """
-    await BillingRepository.record_test_report_llm_usage(app_id, usage)
 
 
 def _json_result(ok: bool, **payload: Any) -> None:

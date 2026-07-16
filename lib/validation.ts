@@ -13,6 +13,7 @@ export const createJobSchema = z.object({
   jdFileName: z.string().nullable().optional(),
   jdPreviewUrl: z.string().nullable().optional(),
   jdExtractedDetails: z.string().nullable().optional(),
+  jdExtractionJobId: z.string().nullable().optional(),
   timeLimit: z.number().int().min(5).max(120).default(30),
   aiGeneratedInterviewQuestions: z.array(z.any()).optional(),
   aiInterviewerVoiceId: z.string().nullable().optional(),

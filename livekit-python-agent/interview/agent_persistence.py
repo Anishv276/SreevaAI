@@ -185,7 +185,7 @@ async def get_interview_context(app_id: str) -> dict:
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL is not set")
     _QUERY = """
-    SELECT a."candidateFullName" AS "fullName", a."resumeRawText" AS "resumeText", a."resumeParsedData" AS "resumeData", d.title, d."jobRole" AS "role",
+    SELECT a."candidateFullName" AS "fullName", a."resumeRawText" AS "resumeText", a."resumeParsedData" AS "resumeData", d.id AS "jobId", d.title, d."jobRole" AS "role",
            d."jdExtractedDetails" AS "extractedDetails", d."resumeScreeningCriteria" AS "screeningCriteria", d."organizationId" AS "orgId",
            d."aiGeneratedInterviewQuestions" AS "interviewQuestions",
            COALESCE(d."aiInterviewerVoiceId", o."defaultVoiceId") AS "voiceId",
@@ -216,8 +216,8 @@ async def get_interview_context(app_id: str) -> dict:
                 "resumeData":         row["resumeData"],
                 "extractedDetails":   row["extractedDetails"],
                 "screeningCriteria":  row["screeningCriteria"],
-                "jobTitle":           row["role"] or row["title"],
-                "jobTitle":         row["title"],
+                "jobId":              row["jobId"],
+                "jobTitle":           row["title"],
                 "jd":                 _build_jd_from_extracted(row["extractedDetails"]),
                 "orgId":              row["orgId"],
                 "orgName":            row["orgName"],

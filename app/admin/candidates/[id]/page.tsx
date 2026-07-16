@@ -154,7 +154,7 @@ const _dims: { name: string; score: number; evidence: string }[] =
     ].filter(d => d.score > 0 || d.evidence);
 const _dimByName = (name: string) => _dims.find((d) => d.name.toLowerCase().includes(name.toLowerCase()))?.score ?? 0;
 const interviewReportScores = {
-    overall:               candidate?.resumeAiScore ? Number(candidate.resumeAiScore) : Number(interviewReportData?.overall ?? 0),
+    overall:               Number(interviewReportData?.overall ?? 0),
     engagement:            Number(interviewReportData?.engagement ?? 0),
     communication:         _dimByName("communication"),
     domain_knowledge:      _dimByName("domain"),

@@ -55,9 +55,12 @@ export function AdminOrgProvider({
                 ? `/api/admin/credits?orgId=${encodeURIComponent(orgId)}`
                 : "/api/admin/credits";
             // ⚡ Fetch org AND credits in PARALLEL -- single round-trip
+            // no-store: /api/admin/organization sends Cache-Control: max-age=120, so a
+            // manual refresh() right after a job delete could otherwise be served the
+            // browser's stale cached response and still show the pre-delete activeJobCount.
             const [orgRes, creditsRes] = await Promise.all([
-                fetch(orgUrl, { signal }),
-                fetch(creditsUrl, { signal }),
+                fetch(orgUrl, { signal, cache: "no-store" }),
+                fetch(creditsUrl, { signal, cache: "no-store" }),
             ]);
             if (signal?.aborted) return;
             const [orgJson, creditsJson] = await Promise.all([
