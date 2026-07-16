@@ -250,7 +250,11 @@ class TextSanitizer:
     _TTS_PHONETIC_FIXES: tuple[tuple[re.Pattern, str], ...] = (
         (re.compile(r"\s*[–—]\s*"), ", "),
         (re.compile(r"\s*-{2,}\s*"), ", "),
-        (re.compile(r"(?<=[a-zA-Z])-(?=[a-zA-Z])"), ""),
+        # Space, not "" -- stripping the hyphen entirely glued compound words into one
+        # unspoken run-on ("end-to-end" -> "endtoend", "multi-channel" -> "multichannel"),
+        # which Sarvam then mispronounces/garbles exactly like the word-glue bug fixed in
+        # make_tts_sanitize_transform. A space keeps the words separate and readable.
+        (re.compile(r"(?<=[a-zA-Z])-(?=[a-zA-Z])"), " "),
         (re.compile(r"\.{2,}"), ", "),
         (re.compile(r"[`*_~]"), ""),
         (re.compile(r"\b(Hmm|Mm|Ah|Oh|Right|Yeah|So|Well|Okay)\b(?!\s*[,.\?!])"), r"\1,"),
