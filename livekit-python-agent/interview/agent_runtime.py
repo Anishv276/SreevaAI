@@ -1211,25 +1211,55 @@ class InterviewAgent(Agent):
         if (conn_options.timeout or 0) < 25.0:
             conn_options = replace(conn_options, timeout=25.0)
         async def _push_sentences(tts_stream) -> None:
-            buf = ""
             n = 0
             is_elevenlabs = type(tts_engine).__module__.startswith("livekit.plugins.elevenlabs")
-            # NOTE: previously tried bypassing sentence-buffering for Sarvam too (raw
-            # LLM chunks straight to push_text), reasoning that Sarvam's own plugin
-            # tokenizer should be the only segmenter. Live testing made stumbling much
-            # worse (word-by-word with gaps), and this also isn't how Sarvam was
-            # configured 2 months ago when TTS quality was good -- reverted back to
-            # sentence-buffered pushes for Sarvam, matching the original working setup.
-            # Do NOT add a second grouping layer here either: the Sarvam plugin runs its
-            # OWN SentenceTokenizer over whatever is pushed and then applies
-            # min_buffer_size/max_chunk_length. Word-gap symptoms are a min_buffer_size
-            # problem (see agent_providers.py), not a push-cadence problem.
-            async for chunk in text:
-                if is_elevenlabs:
+            is_sarvam = type(tts_engine).__module__.startswith("livekit.plugins.sarvam")
+
+            if is_sarvam:
+                # SARVAM: accumulate the ENTIRE agent turn, then push once.
+                #
+                # Root cause of "I'm doing... [gap] ...well... [gap] ...how are you":
+                # Each push_text() call = one independent synthesis unit with its own
+                # prosody arc. The old loop pushed one sentence at a time, so every
+                # clause got synthesized separately with a reset-prosody gap between them.
+                #
+                # Fix: collect ALL cleaned chunks from the upstream transform stream into
+                # a single string, then push once. Sarvam receives the full text as one
+                # segment → synthesizes it as one continuous utterance with natural
+                # prosody from start to finish — identical to how session.say() works
+                # (which is why greeting/warmup always sounded perfect).
+                #
+                # Sarvam's own SentenceTokenizer and min_buffer_size/max_chunk_length
+                # still apply server-side: it handles commas, !, ?, and all other
+                # punctuation naturally without any client-side splitting.
+                full = ""
+                async for chunk in text:
+                    full += chunk
+                if full.strip():
+                    pushed = full.strip()
+                    self._record_tts_text(pushed)
+                    tts_stream.push_text(pushed)
+                    n = 1
+                tts_stream.end_input()
+                logger.info("[TTS] Sarvam single-segment push: %d chars", len(full.strip()))
+                return
+
+            # ElevenLabs: push each cleaned chunk directly as it arrives.
+            # ElevenLabs handles its own sentence segmentation server-side.
+            if is_elevenlabs:
+                async for chunk in text:
                     self._record_tts_text(chunk)
                     tts_stream.push_text(chunk)
                     n += 1
-                    continue
+                tts_stream.end_input()
+                logger.info("[TTS] ElevenLabs streamed %d chunk(s)", n)
+                return
+
+            # Cartesia / other providers: sentence-boundary buffer.
+            # These providers do NOT do their own server-side tokenization, so
+            # we segment manually before pushing.
+            buf = ""
+            async for chunk in text:
                 buf += chunk
                 while True:
                     m = _TTS_SENT_END_RE.search(buf)

@@ -273,25 +273,51 @@ class TextSanitizer:
     # Trailing fillers at end of turn
     _TRAILING_FILLER_RE = re.compile(r"(?:[,.\s]+)(?:um+|uh+)\s*[.!?]*\s*$", re.I)
 
-    # Matches ALL-CAPS words of 2–6 letters, optionally plural (APIs, LLMs).
-    _CAPS_ACRONYM_RE: re.Pattern = re.compile(r"\b([A-Z]{2,6})(s?)\b")
+    # Matches ALL-CAPS words of 2–8 letters, optionally followed by lowercase plural 's'.
+    # Group 1 = base acronym (e.g. "PDF", "API"), Group 2 = plural suffix ("s" or "").
+    # Max length raised to 8 to catch SFTP, HTTPS, SAML, CICD, etc.
+    _CAPS_ACRONYM_RE: re.Pattern = re.compile(r"\b([A-Z]{2,8})(s?)\b")
 
     # CamelCase splitter: insert a space before each uppercase letter that follows a
     # lowercase letter (e.g. "FineTuning" → "Fine Tuning", "GitHub" → "Git Hub").
     # This is only applied to CamelCase words (not ALL-CAPS, which are handled above).
     _CAMEL_RE: re.Pattern = re.compile(r"([a-z])([A-Z])")
 
-    # ponytail: positive allowlist only — an ALL-CAPS word is letter-spaced ONLY if it's
-    # a known acronym here. Everything else (MINUTES, STOP, HELLO, any capitalized
-    # common word the LLM emits) is left untouched. This is the inverse of the old
-    # "expand everything, allowlist the exceptions" design, which mispronounced any
-    # capitalized English word not yet added to an exceptions list (the "m-i-n-u-t-e-s"
-    # bug). Add new real acronyms here as they come up; forgetting to add one just means
-    # Sarvam reads it as a word (safe), not that it gets spelled out (broken).
+    # ponytail: positive allowlist only — an ALL-CAPS word is letter-spaced ONLY if its
+    # BASE form (without the plural 's') is listed here. _CAPS_ACRONYM_RE always splits
+    # 'PDFs' into base='PDF' + suffix='s', so listing 'PDF' is enough for both 'PDF'
+    # and 'PDFs' → output 'P D F' and 'P D F s'. Adding 'PDFs' separately is dead code.
+    # Everything else (MINUTES, STOP, HELLO, any plain English word the LLM capitalises)
+    # is left untouched. Add new real acronyms here as they come up; forgetting to add
+    # one just means Sarvam reads it as a word (safe), not that it gets spelled out.
     _KNOWN_ACRONYMS: frozenset[str] = frozenset({
-        "RAG", "LLM", "LLMs", "NLP", "API", "APIs", "CICD",
-        "SQL", "AWS", "GCP", "GIT", "SSH", "PDF", "URL", "HTTP", "HTML", "CSS",
-        "JSON", "YAML", "REST", "CRUD", "CORS", "UUID", "GPU", "CPU", "RAM",
+        # LLM / AI
+        "AI", "ML", "NLP", "LLM", "RAG", "GPT", "BERT", "CNN", "RNN",
+        "LSTM", "GAN", "RL", "CV", "OCR", "NER", "QA",
+        # Cloud / infra
+        "AWS", "GCP", "GKE", "EKS", "ECS", "EC2", "RDS", "SQS", "SNS",
+        "IAM", "VPC", "CDN", "DNS", "SSL", "TLS", "SSH", "FTP", "SFTP",
+        "TCP", "UDP", "HTTP", "HTTPS", "REST", "GRPC", "SOAP",
+        # DevOps / CI-CD
+        "CI", "CD", "CICD", "YAML", "JSON", "XML", "CSV", "TSV", "TOML",
+        "ELK", "SRE",
+        # Databases
+        "SQL", "ACID", "CRUD", "ORM", "ETL", "ELT", "OLAP", "OLTP",
+        # Security / auth
+        "JWT", "SSO", "MFA", "RBAC", "SAML", "LDAP", "XSS", "CSRF", "CORS",
+        "UUID", "GUID",
+        # Web / frontend
+        "HTML", "CSS", "DOM", "API", "SDK", "CLI", "GUI", "UI", "UX",
+        "SPA", "PWA", "SSR", "CSR", "SEO", "CMS",
+        # Hardware / system
+        "CPU", "GPU", "RAM", "ROM", "SSD", "HDD", "IO",
+        "OS", "VM", "JVM", "JDK", "JRE",
+        # Data / formats
+        "PDF", "URL", "URI",
+        # Communication / PM
+        "PR", "MR", "RFC", "SLA", "SLO", "KPI", "OKR",
+        # Misc tech
+        "IDE", "GIT", "OOP", "REPL",
     })
 
     @staticmethod
