@@ -57,9 +57,25 @@ image = (
         "livekit-python-agent/interview/brief_extraction.py",
         remote_path="/root/interview/brief_extraction.py",
     )
+    # generate_brief.py imports interview.tech.brief / interview.conversational.brief
+    # (post tech/convo split). Ship both packages whole so the flat image resolves them.
+    .add_local_dir(
+        "livekit-python-agent/interview/tech",
+        remote_path="/root/interview/tech",
+    )
+    .add_local_dir(
+        "livekit-python-agent/interview/conversational",
+        remote_path="/root/interview/conversational",
+    )
     .add_local_file(
         "livekit-python-agent/interview/agent_utils.py",
         remote_path="/root/interview/agent_utils.py",
+    )
+    # tech/__init__.py eagerly imports .eval and .report, which import
+    # interview.slack_error_logger -- ship it so the package import resolves.
+    .add_local_file(
+        "livekit-python-agent/interview/slack_error_logger.py",
+        remote_path="/root/interview/slack_error_logger.py",
     )
     .add_local_file(
         "livekit-python-agent/interview/agent_runtime_support.py",
