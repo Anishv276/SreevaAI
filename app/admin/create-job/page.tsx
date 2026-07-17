@@ -11,6 +11,7 @@ import { getInterviewActionBlockedMessage, getInterviewQuotaSupportMessage, getS
 import { canUseMultilingual } from "@/lib/org-plans";
 import { parseJobScreeningSettings, sanitizeScreeningCriteria, type ScreeningCriteria } from "@/lib/screening-criteria";
 import { formatJobLimit, getActiveJobCount, isJobCreationLocked } from "@/lib/job-limits";
+import { classifyInterviewType } from "@/lib/interview-type";
 import { CheckCircle2, Rocket, ChevronLeft, ChevronRight, Loader2, Lock, Zap, LayoutList, Calendar, FileText, Mic, SlidersHorizontal } from "lucide-react";
 import { useAdminOrg } from "@/context/admin-org-context";
 import { Input } from "@/components/ui/input";
@@ -122,6 +123,7 @@ function CreateJobForm() {
             allowedVoiceIds: Array.isArray(adminOrg?.allowedVoiceIds) ? adminOrg.allowedVoiceIds : fallbackAllowedVoices,
             aiInterviewerName: (job as any).aiInterviewerName || "Ishitha",
             interviewMode: (job as any).interviewMode || "ats",
+            interviewType: (job as any).interviewType || "tech",
           }));
         } catch (err) {
           console.error("Failed to load job:", err);
@@ -141,7 +143,7 @@ function CreateJobForm() {
           aiGeneratedInterviewQuestions: [],
           resumeScreeningThreshold: 60, resumeScreeningCriteria: {},
           aiInterviewerVoiceId: fallbackVoiceId, allowedVoiceIds: fallbackAllowedVoices,
-          aiInterviewerName: "Ishitha", jdExtractedDetails: null, interviewMode: "ats",
+          aiInterviewerName: "Ishitha", jdExtractedDetails: null, interviewMode: "ats", interviewType: "tech",
         });
         setIsAnalyzing(false);
         setAnalysisError(null);
@@ -197,6 +199,7 @@ function CreateJobForm() {
             ? extracted.interview_questions : prev.aiGeneratedInterviewQuestions,
           jdExtractedDetails: extracted,
           jdPreviewUrl: r2Url || prev.jdPreviewUrl,
+          interviewType: classifyInterviewType(extracted?.job_title || prev.jobRole),
         }));
       } else {
         const rawErrorText = await res.text().catch(() => "");
@@ -248,6 +251,7 @@ function CreateJobForm() {
       aiInterviewerVoiceId: currentFormData.aiInterviewerVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
       aiInterviewerName: currentFormData.aiInterviewerName || "Ishitha",
       interviewMode: currentFormData.interviewMode || "ats",
+      interviewType: currentFormData.interviewType || classifyInterviewType(currentFormData.jobRole) || "tech",
     };
     try {
       let savedId: string | null = null;

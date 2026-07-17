@@ -78,6 +78,7 @@ export async function GET(request: Request) {
                     aiInterviewerName: true,
                     aiInterviewerVoiceId: true,
                     interviewMode: true,
+                    interviewType: true,
                     _count: {
                         select: { applications: { where: { isDeleted: false } } },
                     },
@@ -215,6 +216,7 @@ export async function POST(request: Request) {
                 aiGeneratedInterviewQuestions: data.aiGeneratedInterviewQuestions ? JSON.stringify(data.aiGeneratedInterviewQuestions) : "[]",
                 aiInterviewerName: data.aiInterviewerName || "Ishitha",
                 interviewMode: data.interviewMode || "ats",
+                interviewType: data.interviewType || "tech",
                 organizationId: session.orgId!,
                 createdByCredentialId: session.userId,
                 ...aiConfig,

@@ -186,6 +186,7 @@ async def get_interview_context(app_id: str) -> dict:
         raise RuntimeError("DATABASE_URL is not set")
     _QUERY = """
     SELECT a."candidateFullName" AS "fullName", a."resumeRawText" AS "resumeText", a."resumeParsedData" AS "resumeData", d.id AS "jobId", d.title, d."jobRole" AS "role",
+           d."interviewType" AS "interviewType",
            d."jdExtractedDetails" AS "extractedDetails", d."resumeScreeningCriteria" AS "screeningCriteria", d."organizationId" AS "orgId",
            d."aiGeneratedInterviewQuestions" AS "interviewQuestions",
            COALESCE(d."aiInterviewerVoiceId", o."defaultVoiceId") AS "voiceId",
@@ -218,6 +219,7 @@ async def get_interview_context(app_id: str) -> dict:
                 "screeningCriteria":  row["screeningCriteria"],
                 "jobId":              row["jobId"],
                 "jobTitle":           row["title"],
+                "interviewType":      row["interviewType"] or "tech",
                 "jd":                 _build_jd_from_extracted(row["extractedDetails"]),
                 "orgId":              row["orgId"],
                 "orgName":            row["orgName"],
@@ -651,7 +653,7 @@ async def update_interview_status(app_id: str, duration_seconds: Optional[float]
 # ===============================================================================
 # Re-exports -- report pipeline
 # ===============================================================================
-from interview.report_pipeline import (  # noqa: E402
+from interview.tech.report import (  # noqa: E402
     generate_interview_report,
     generate_interview_summary,
     LLMEvalResponse,

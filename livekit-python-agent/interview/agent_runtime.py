@@ -12,16 +12,16 @@ from interview.agent_utils import (
     parse_dispatch_metadata,
     first_name_from_full_name,
 )
-from interview.interview_phases import (
+from interview.tech.phases import (
     build_greeting_text,
     build_interview_directive,
 )
-from interview.interview_brief import (
+from interview.tech.brief import (
     InterviewBrief,
     TopicItem,
     generate_interview_brief,
 )
-from interview.band_classifier import classify_band
+from interview.tech.band import classify_band
 from interview.agent_providers import (
     build_cartesia_tts,
     build_elevenlabs_tts,
@@ -311,7 +311,7 @@ from livekit.agents import (
 from livekit.agents.metrics import AgentSessionUsage
 from livekit.agents.voice import room_io
 from livekit.agents.voice.turn import InterruptionOptions
-from interview.prompt_layers import (
+from interview.tech.prompts import (
     build_voice_layer_prompt,
     build_evaluation_layer_prompt,
     build_system_prompt,
@@ -455,6 +455,7 @@ def _build_probe_directive(
     topic_transcript: list[str],
     signals_history: list[str] | None = None,
     probe_rotation_index: int = 0,
+    interview_type: str = "tech",
 ) -> str:
     """
     Builds the probe directive synchronously — no LLM call.
@@ -467,8 +468,14 @@ def _build_probe_directive(
     consecutive follow-ups on the same topic hit DIFFERENT sub-concepts from the
     topic's probe_focus list — never asking about the same sub-concept twice on
     one topic when other sub-concepts are still un-probed.
+
+    interview_type: routes to interview.tech.probe or interview.conversational.probe
+    for the signal-specific probe directive (different signal sets per module).
     """
-    from interview.probe_strategy import get_probe_context
+    if interview_type == "conversational":
+        from interview.conversational.probe import get_probe_context
+    else:
+        from interview.tech.probe import get_probe_context
 
     # Determine the mandatory sub-concept for THIS turn by rotating through the
     # probe_focus list. This forces "chunking" then "embeddings" then "retrieval"
@@ -1267,6 +1274,7 @@ class InterviewContext(BaseModel):
     fullName: str
     jobId: Optional[str] = None
     jobTitle: str
+    interviewType: Optional[str] = "tech"
     language: str
     orgId: Optional[str] = None
     orgName: Optional[str] = None
@@ -1446,6 +1454,27 @@ async def entrypoint(ctx: JobContext):
     candidate_name = ctx_data.fullName
     candidate_first_name = first_name_from_full_name(candidate_name)
     job_title = ctx_data.jobTitle
+    # Routes which interview module (interview.tech.* vs interview.conversational.*)
+    # supplies brief/eval/scoring/prompts for this session. Falls back to "tech" for
+    # any unrecognized or missing value.
+    interview_type = ctx_data.interviewType if ctx_data.interviewType == "conversational" else "tech"
+    logger.info(f"[INTERVIEW] interview_type={interview_type} job_title={job_title!r}")
+    if interview_type == "conversational":
+        from interview.conversational.brief import generate_interview_brief
+        from interview.conversational.phases import build_greeting_text, build_interview_directive
+        from interview.conversational.prompts import (
+            build_voice_layer_prompt,
+            build_evaluation_layer_prompt,
+            build_system_prompt,
+        )
+    else:
+        from interview.tech.brief import generate_interview_brief
+        from interview.tech.phases import build_greeting_text, build_interview_directive
+        from interview.tech.prompts import (
+            build_voice_layer_prompt,
+            build_evaluation_layer_prompt,
+            build_system_prompt,
+        )
     # Consolidated startup fetch log
     # JD extraction produces criteria[].{name, priority} where priority=critical/high  must-have, medium  nice-to-have.
     # Legacy format used mustHaveSkills/niceToHaveSkills flat arrays  fall back to those if criteria absent.
@@ -2931,7 +2960,10 @@ async def entrypoint(ctx: JobContext):
                 # Agent then decides: PROBE (stay, build probe directive) or
                 # MOVE_ON (pick next topic, build move-on directive).
                 # Eval never picks topics or builds directives.
-                from interview.eval_pipeline import run_eval_and_build_directive
+                if interview_type == "conversational":
+                    from interview.conversational.eval import run_eval_and_build_directive
+                else:
+                    from interview.tech.eval import run_eval_and_build_directive
                 # Time guard -- no new questions in final 20s
                 if _closing_triggered:
                     logger.info("[CLOSING] eval skipped at turn=%d -- closing in progress", turn_snapshot)
@@ -3464,6 +3496,7 @@ async def entrypoint(ctx: JobContext):
                         topic_transcript=_topic_thread_lines,
                         signals_history=_signals_history_this_topic,
                         probe_rotation_index=_rotation_idx,
+                        interview_type=interview_type,
                     )
                     remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
                     chat_ctx.add_message(role="system", content=_directive)
@@ -4520,6 +4553,7 @@ async def entrypoint(ctx: JobContext):
                 "appId": app_id,
                 "orgId": org_id,
                 "jobTitle": job_title,
+                "interviewType": interview_type,
                 "candidateName": candidate_name,
                 "llmInterviewReport": str(ctx_data.llmInterviewReport).strip(),
                 "isTest": _is_test_session,

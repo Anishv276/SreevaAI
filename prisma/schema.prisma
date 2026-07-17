@@ -107,6 +107,7 @@ model Job {
   aiInterviewerName             String?                 @default("Ishitha")
   aiInterviewerVoiceId          String?                 @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
   interviewMode                 String?                 @default("ats")
+  interviewType                 String?                 @default("tech")
   isDeleted                     Boolean                 @default(false)
   applications                  Application[]
   creator                       OrganizationCredentials @relation("CreatedJobs", fields: [createdByCredentialId], references: [id], onDelete: Cascade)

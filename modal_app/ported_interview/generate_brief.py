@@ -45,7 +45,7 @@ if str(_repo_root) not in sys.path:
     sys.path.insert(0, str(_repo_root))
 
 from interview.band_classifier import classify_band
-from interview.interview_brief import InterviewBrief, generate_interview_brief
+from interview.interview_brief import InterviewBrief
 from billing.billing import record_manual_usage, flush_billing, BillingRepository
 
 # ---------------------------------------------------------------------------
@@ -75,6 +75,7 @@ class ApplicationRow(BaseModel):
     interviewQuestions: Any = None
     orgId: Optional[str] = None
     llmInterviewBrief: Optional[str] = None
+    interviewType: Optional[str] = None
 
     @model_validator(mode="after")
     def _resolve_job_title(self) -> "ApplicationRow":
@@ -93,6 +94,10 @@ class ApplicationRow(BaseModel):
     @property
     def llm_model(self) -> str:
         return (self.llmInterviewBrief or "gpt-4.1").strip()
+
+    @property
+    def interview_type(self) -> str:
+        return self.interviewType if self.interviewType == "conversational" else "tech"
 
     @property
     def resume_json(self) -> dict:
@@ -172,6 +177,7 @@ class BriefRepository:
         d."jdExtractedDetails"                      AS "extractedDetails",
         d."aiGeneratedInterviewQuestions"           AS "interviewQuestions",
         d."organizationId"                          AS "orgId",
+        d."interviewType",
         o."llmInterviewBrief"
     FROM "Application" a
     JOIN "Job" d ON a."jobId" = d.id
@@ -277,16 +283,20 @@ class BriefPipeline:
         band_seed: str = state["band_seed"]
         llm_model = row.llm_model
         logger.info(
-            "[NODE:generate_llm_brief] started | model=%s | candidate=%s | role=%s",
-            llm_model, row.fullName, row.job_title,
+            "[NODE:generate_llm_brief] started | model=%s | candidate=%s | role=%s | interview_type=%s",
+            llm_model, row.fullName, row.job_title, row.interview_type,
         )
+        if row.interview_type == "conversational":
+            from interview.conversational.brief import generate_interview_brief as _generate_interview_brief
+        else:
+            from interview.tech.brief import generate_interview_brief as _generate_interview_brief
         # Real candidates' brief LLM calls happen here (slot-booking time), NOT
         # in agent_runtime.py (that path is test-session-only -- see module
         # docstring). Without this sink, real-candidate brief cost was never
         # recorded anywhere in Organization.usageMetrics.billing.interviewBrief.
         _brief_usages: list[dict] = []
         t0 = time.perf_counter()
-        brief = await generate_interview_brief(
+        brief = await _generate_interview_brief(
             candidate_name=row.fullName,
             job_title=row.job_title,
             candidate_band=band_seed,

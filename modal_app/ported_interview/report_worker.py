@@ -49,10 +49,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("report-worker")
 
-from interview.agent_persistence import (
-    generate_interview_report,
-    generate_interview_summary,
-)
 from interview.debug_report import generate_and_send_debug_report
 from billing.billing import (
     flush_billing as flush_pending_manual_billing,
@@ -76,6 +72,15 @@ async def _run(payload: dict) -> None:
     answer_scores = payload.get("answerScores") or []
     topic_records = payload.get("topicRecords") or []
 
+    # Routes report/summary generation to the sales-specific eval rubric for
+    # conversational interviews; falls back to tech for anything unrecognized.
+    interview_type = payload.get("interviewType") if payload.get("interviewType") == "conversational" else "tech"
+    if interview_type == "conversational":
+        from interview.conversational.report import generate_interview_report, generate_interview_summary
+    else:
+        from interview.tech.report import generate_interview_report, generate_interview_summary
+    logger.info("[REPORT] interview_type=%s app_id=%s", interview_type, app_id)
+
     # Slack debug PDF goes FIRST for test sessions so it lands immediately, before
     # the ~300s report/summary/billing tail below even starts. Independent of
     # everything else -- its own try/except contains any failure locally.
@@ -91,6 +96,7 @@ async def _run(payload: dict) -> None:
                 topic_pool=_namespace_topic_pool(debug_report.get("topicPool")),
                 covered_topics=debug_report.get("coveredTopics"),
                 topic_records=list(topic_records),
+                interview_type=interview_type,
             )
         except Exception as pdf_err:
             logger.error("[DEBUG_REPORT] Outer exception sending debug PDF: %s", pdf_err, exc_info=True)
