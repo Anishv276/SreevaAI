@@ -53,16 +53,25 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel, field_validator
 import urllib.request
 import urllib.error
+import urllib.parse
 from dataclasses import dataclass, field
 from enum import Enum
 
 # --- Test Event Logger (for /test page debugging) ------------------------------
+# Derived from APP_URL/NEXT_PUBLIC_APP_URL (same domain the rest of the app uses:
+# localhost in .env, https://www.sreevaai.com in .envprod) so there's one place
+# that sets the domain. Explicit TEST_EVENT_LOG_URL still wins if set.
 _TEST_EVENT_LOG_URL = os.environ.get("TEST_EVENT_LOG_URL", "").strip()
+if not _TEST_EVENT_LOG_URL:
+    _app_url = (os.environ.get("APP_URL") or os.environ.get("NEXT_PUBLIC_APP_URL") or "").strip().rstrip("/")
+    if _app_url:
+        _TEST_EVENT_LOG_URL = f"{_app_url}/api/test/events"
 
 async def log_test_event(app_id: str, event_type: str, message: str, data: dict | None = None) -> None:
     """Send event to /api/test/events for live debugging on /test page.
-    No-op unless TEST_EVENT_LOG_URL is set -- prod agents don't run a local
-    Next.js app, so this used to fire (and fail) on every interview event.
+    No-op unless a URL could be resolved (TEST_EVENT_LOG_URL or APP_URL) -- prod
+    agents don't run a local Next.js app, so this used to fire (and fail) on
+    every interview event before this was made configurable.
     """
     if not app_id or not _TEST_EVENT_LOG_URL:
         return
@@ -864,11 +873,6 @@ async def _generate_move_on_directive(
                 stream_options={"include_usage": True},
                 store=True,
                 metadata={"call_type": "move_on_directive", "band": band, "source": source},
-                prediction={"type": "content", "content": (
-                    "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                    "DECISION: MOVE_ON\n"
-                    f"TOPIC YOU ARE LEAVING: {old_topic_title} -- CLOSED.\n"
-                )},
             )
             async for chunk in stream:
                 if chunk.choices and chunk.choices[0].delta.content:
@@ -894,27 +898,34 @@ async def _generate_move_on_directive(
         # not a generic list it ignores.
         _prev_trimmed = (prev_answer or "").strip()[:300]
         if _prev_trimmed:
-            # Classify the candidate's answer intent so the filler is contextually correct
+            # Describe the situation (not a phrase to say) so the model composes its own reaction
             _prev_lc = _prev_trimmed.lower()
             if not _prev_lc or any(p in _prev_lc for p in ("i don't know", "i forgot", "i don't remember", "not sure", "can't recall")):
-                _intent_hint = "They couldn't recall or said they don't know → e.g. 'No worries.' / 'Fair enough.' / 'That's alright.' / 'Understood.'"
+                _intent_hint = "They couldn't recall or said they don't know."
             elif len(_prev_lc.split()) <= 8:
-                _intent_hint = "Very short answer, possibly surface-level → e.g. 'Hmm, okay.' / 'Right.' / 'Got it.' / 'I see.'"
+                _intent_hint = "Very short answer, possibly surface-level."
             elif any(p in _prev_lc for p in ("i think", "probably", "maybe", "i believe", "kind of", "sort of")):
-                _intent_hint = "They hedged or were vague → e.g. 'Hmm, okay.' / 'Mm.' / 'Alright.' / 'I see.' to acknowledge without validating"
+                _intent_hint = "They hedged or were vague — acknowledge without validating."
             else:
-                _intent_hint = "Substantive answer → e.g. 'Ah, makes sense.' / 'Got it.' / 'That tracks.' / 'Interesting.'"
+                _intent_hint = "Substantive answer."
             _filler_instruction = (
-                f"\n\nOPENING REACTION — must respond to what the candidate actually said:\n"
+                f"\n\nOPENING REACTION — compose fresh, do not pick from a phrase bank:\n"
                 f"THEIR LAST ANSWER: \"{_prev_trimmed}\"\n"
-                f"ANSWER INTENT: {_intent_hint}\n"
-                "The examples above are illustrative, not a fixed list — invent your own short, natural "
-                "micro-reaction (3-8 words) that fits the intent. Do not default to picking only from the examples.\n"
+                f"SITUATION: {_intent_hint}\n"
+                "Feel out how this actually landed for you (surprised, unimpressed, amused, unsure, relieved) "
+                "and react to that, in your own short words (1-6 words), not a category label.\n"
+                "Default to NO filler — a filler is the exception, not the norm. Only add one (umm, hmm, uhh, "
+                "ohh, haha) when this specific answer genuinely surprised you, needs a beat to process, or the "
+                "moment calls for warmth. Roughly 1 in 3 turns should have a filler at most — never two turns in a row.\n"
+                "If a filler fits, it belongs at a real planning boundary — turn-initial (most common), at a "
+                "clause break, or right before a specific word you're retrieving — e.g. 'Hmm, okay, so —' or "
+                "'Right, so — uhh — what happened next?' NEVER mid-phrase inside an already-fused expression "
+                "like 'pretty good' or 'makes sense' — real speakers don't split a decided phrase.\n"
+                "Never reuse a filler word or reaction phrasing you've used in the last 2-3 turns of this interview.\n"
                 "The reaction and the new question must feel like one connected turn — "
                 "not a reaction to silence followed by an unrelated question.\n"
                 "NEVER say 'Great!', 'Awesome!', 'Fantastic!', 'Amazing!', or any hollow praise.\n"
                 "NEVER say 'Thanks for sharing' or any 'thanks for [verb]ing' phrase.\n"
-                "NEVER reuse the same reaction word/phrase you've used in recent turns of this interview.\n"
                 f"NEVER reference the old topic '{old_topic_title}' — it is closed.\n"
                 "DO NOT wrap up, say goodbye, or add any closing phrase.\n"
             )
@@ -1348,6 +1359,13 @@ async def entrypoint(ctx: JobContext):
     _skip_report: bool = bool(dispatch_metadata.get("skipReport", False))
     if _is_test_session:
         logger.info("[TEST_SESSION] Running in TEST mode | skipReport=%s", _skip_report)
+        # /api/test/events requires the same DB-stored test key the /test page
+        # used to get dispatched here -- without it every log_test_event POST
+        # gets a silent 403 and the UI shows no pipeline logs.
+        global _TEST_EVENT_LOG_URL
+        _test_event_key = dispatch_metadata.get("testEventKey")
+        if _TEST_EVENT_LOG_URL and _test_event_key:
+            _TEST_EVENT_LOG_URL = f"{_TEST_EVENT_LOG_URL}?key={urllib.parse.quote(_test_event_key)}"
     session_log_context: dict[str, Any] = {
         "session_id": app_id,
         "app_id": app_id,

@@ -13,6 +13,7 @@ export const LLM_MODELS = [
   { id: "gpt-4o-mini",    label: "GPT-4o Mini",     provider: "openai", tier: "economy",  description: "Affordable and fast" },
   // GPT-5 family
   { id: "gpt-5.4-mini",   label: "GPT-5.4 Mini",   provider: "openai", tier: "balanced", description: "Next-gen mini, best for extraction tasks" },
+  { id: "gpt-5-mini",     label: "GPT-5 Mini",     provider: "openai", tier: "economy",  description: "Cheaper GPT-5 mini, same reasoning-tuned family as 5.4" },
 ] as const;
 
 export const STT_MODELS = [

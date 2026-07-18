@@ -281,9 +281,15 @@ GOOD vs BAD example (topic: multi-channel lead capture unifying Instagram/Facebo
         — three overlapping phrasings of "how the system works", no failure/outcome angle,
         forces the interviewer back onto generic "what did you build/own".
   GOOD: ["channel-to-CRM routing rule", "what happens on a duplicate lead across channels",
-         "booking reminder open/response rate"]
+         "lead-to-reply conversion rate"]
         — one mechanism, one edge-case/failure angle, one outcome angle. Each is answerable
         only by someone who actually built this exact system.
+
+  This is a STRUCTURE example, not content to reuse. Never emit a probe_focus item
+  naming a feature, metric, or scenario (e.g. "booking reminder", "checkout flow")
+  that does not appear in THIS topic's own full_description/tech_stack/impact —
+  copying an example's specific noun onto an unrelated candidate's topic produces a
+  probe about something they never built.
 
 ━━━ DEDUP — NO CONCEPT MAY APPEAR TWICE ━━━
 Before finalizing topic_pool, verify: no two TopicItems test the same
@@ -607,6 +613,7 @@ async def generate_interview_brief(
 
     brief = InterviewBrief.model_validate(parsed)
     brief.topic_pool = _dedup_jd_vs_resume(brief.topic_pool)
+    brief.topic_pool = _dedup_any_overlap(brief.topic_pool)
 
     # Dedup can pull the pool below the 12-topic target (dropped duplicates
     # aren't re-admitted). Top back up with fresh, non-duplicate role topics
@@ -676,6 +683,48 @@ def _dedup_jd_vs_resume(topics: list[TopicItem]) -> list[TopicItem]:
                 t.title, match.title, jd_tech & _tech_tokens(match),
             )
             match.is_jd_must_have = match.is_jd_must_have or t.is_jd_must_have
+            continue
+        kept.append(t)
+    return kept
+
+
+def _probe_tokens(t: TopicItem) -> set[str]:
+    """Normalized word tokens from probe_focus -- catches concept overlap
+    (e.g. 'duplicate lead handling' vs 'duplicate handling rule') that
+    tech_stack comparison misses because both topics may share no listed tech."""
+    words: set[str] = set()
+    for phrase in t.probe_focus:
+        words.update(w.strip().lower() for w in phrase.split() if len(w.strip()) > 3)
+    return words
+
+
+def _dedup_any_overlap(topics: list[TopicItem]) -> list[TopicItem]:
+    """Second dedup pass across ALL tag pairs (not just JD-vs-RESUME): if two
+    topics share tech_stack overlap AND probe_focus wording overlap, they're
+    testing the same concept under different titles -- drop the lower-priority
+    one (custom > resume/jd > role_topic; earlier item wins ties, since anchor
+    and higher-relevance items are placed first by the LLM)."""
+    kept: list[TopicItem] = []
+    for t in topics:
+        if t.is_custom_question:
+            kept.append(t)
+            continue
+        t_tech = _tech_tokens(t)
+        t_probe = _probe_tokens(t)
+        dup_of = next(
+            (
+                k for k in kept
+                if not k.is_custom_question
+                and t_tech and t_tech & _tech_tokens(k)
+                and t_probe and len(t_probe & _probe_tokens(k)) >= 2
+            ),
+            None,
+        )
+        if dup_of is not None:
+            logger.info(
+                "[DEDUP] dropping %r (%s) -- overlaps %r (%s) on tech+probe concept",
+                t.title, t.tag, dup_of.title, dup_of.tag,
+            )
             continue
         kept.append(t)
     return kept
