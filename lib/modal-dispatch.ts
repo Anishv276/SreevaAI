@@ -195,10 +195,12 @@ export async function processResumeScreeningViaModal(job: Job, token: string | u
           threshold,
           screening_criteria: screeningCriteria,
         }));
-        result = await callModalFormEndpoint(MODAL_ENDPOINTS.resumeAndScore, form, 180_000);
+        // fetch timeout > Modal fn timeout (180s) so Modal fails cleanly with a
+        // real error instead of racing our AbortError at the same instant.
+        result = await callModalFormEndpoint(MODAL_ENDPOINTS.resumeAndScore, form, 200_000);
       } else {
         form.append("model", org.llmResumeExtraction);
-        result = await callModalFormEndpoint(MODAL_ENDPOINTS.resumeExtraction, form, 120_000);
+        result = await callModalFormEndpoint(MODAL_ENDPOINTS.resumeExtraction, form, 140_000);
       }
       console.log(`[MODAL-DISPATCH] Extraction${hasJd ? "+score" : ""} done for ${applicationId}`);
       return result;
@@ -382,7 +384,7 @@ export async function processResumeFileExtractViaModal(job: Job, token: string |
       const form = new FormData();
       form.append("file", new Blob([new Uint8Array(sourceBuffer)]), fileName);
       form.append("model", orgOpenAIModel);
-      const result = await callModalFormEndpoint(MODAL_ENDPOINTS.resumeExtraction, form, 120_000);
+      const result = await callModalFormEndpoint(MODAL_ENDPOINTS.resumeExtraction, form, 140_000);
       console.log(`[MODAL-DISPATCH] File extraction done, job=${job.id}`);
       return result;
     },
@@ -441,7 +443,7 @@ export async function processJdExtractionViaModal(job: Job, token: string | unde
         form.append("file", new Blob([new Uint8Array(buf)]), fileName || "jd.pdf");
       }
       form.append("model", orgOpenAIModel);
-      const result = await callModalFormEndpoint(MODAL_ENDPOINTS.jdExtraction, form, 120_000);
+      const result = await callModalFormEndpoint(MODAL_ENDPOINTS.jdExtraction, form, 140_000);
       console.log(`[MODAL-DISPATCH] JD extraction done, job=${job.id}`);
 
       if (orgId && result?.usage) {
@@ -514,7 +516,8 @@ export async function processBriefGenerationViaModal(job: Job, token: string | u
     MODAL_ORG_CONCURRENCY.briefGeneration,
     async () => {
       console.log(`[MODAL-DISPATCH] Slot acquired for org=${orgId}, generating brief for ${applicationId}`);
-      const result = await callModalJsonEndpoint(MODAL_ENDPOINTS.briefGeneration, { applicationId }, 180_000);
+      // fetch timeout > Modal fn timeout (180s) so Modal fails cleanly instead of racing our AbortError.
+      const result = await callModalJsonEndpoint(MODAL_ENDPOINTS.briefGeneration, { applicationId }, 200_000);
       console.log(`[MODAL-DISPATCH] Brief generation done for ${applicationId}`);
       return result;
     },

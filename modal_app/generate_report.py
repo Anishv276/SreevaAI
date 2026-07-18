@@ -99,7 +99,7 @@ image = (
         remote_path="/root/billing/__init__.py",
     )
     .add_local_file(
-        "livekit-python-agent/certs/supabase-root-ca.pem",
+        "certs/supabase-root-ca.pem",
         remote_path="/root/certs/supabase-root-ca.pem",
     )
     .add_local_file("modal_app/_modal_shared.py", remote_path="/root/_modal_shared.py")
@@ -113,7 +113,8 @@ secrets = [
 ]
 
 
-@app.function(image=image, secrets=secrets, timeout=400, max_containers=100)
+# ponytail: 5 of the workspace's shared 100-container pool (see extract_and_score.py).
+@app.function(image=image, secrets=secrets, timeout=400, max_containers=5)
 def generate_report(payload: dict) -> dict:
     """Mirrors report_worker.py's _run() -- same payload shape, piped via
     function argument instead of stdin JSON."""
