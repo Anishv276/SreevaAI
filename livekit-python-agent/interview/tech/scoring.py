@@ -18,6 +18,7 @@ from typing import Any, Optional
 
 logger = logging.getLogger("interview-agent")
 from interview.agent_runtime_support import EVAL_TEMPERATURE
+from interview.agent_runtime_utils import token_limit_kwarg
 
 
 # ---------------------------------------------------------------------------
@@ -377,7 +378,7 @@ async def _classify_signal_from_answer(
             client.chat.completions.create(
                 model=llm_model,
                 temperature=0.0,
-                max_tokens=80,
+                **token_limit_kwarg(llm_model, 80),
                 messages=[
                     {"role": "system", "content": _system},
                     {"role": "user", "content": _user},
@@ -534,7 +535,7 @@ async def _call_scoring(
         client.chat.completions.create(
             model=llm_model,
             temperature=EVAL_TEMPERATURE,
-            max_tokens=120,
+            **token_limit_kwarg(llm_model, 120),
             stream=True,
             messages=[
                 {"role": "system", "content": _build_scoring_system_prompt()},
@@ -653,7 +654,7 @@ async def _call_signal_classification(
         client.chat.completions.create(
             model=llm_model,
             temperature=0.0,
-            max_tokens=500,
+            **token_limit_kwarg(llm_model, 500),
             messages=[
                 {"role": "system", "content": _build_signal_system_prompt()},
                 {

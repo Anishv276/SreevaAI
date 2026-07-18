@@ -50,6 +50,8 @@ load_dotenv()
 
 from openai import AsyncOpenAI
 
+from interview.agent_runtime_utils import token_limit_kwarg
+
 OUTPUT_DIR = Path(__file__).resolve().parent / "verify_output"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
@@ -208,7 +210,7 @@ async def _simulate_candidate_answer(
     resp = await client.chat.completions.create(
         model=CANDIDATE_LLM_MODEL,
         temperature=0.7,
-        max_tokens=180,
+        **token_limit_kwarg(CANDIDATE_LLM_MODEL, 180),
         messages=[
             {"role": "system", "content": CANDIDATE_PERSONA_SYSTEM},
             {
@@ -239,7 +241,7 @@ async def _generate_next_question(
     resp = await client.chat.completions.create(
         model=INTERVIEW_LLM_MODEL,
         temperature=0.4,
-        max_tokens=150,
+        **token_limit_kwarg(INTERVIEW_LLM_MODEL, 150),
         messages=[
             {"role": "system", "content": system_prompt},
             {

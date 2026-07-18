@@ -22,6 +22,7 @@ from interview.tech.brief import (
     generate_interview_brief,
 )
 from interview.tech.band import classify_band
+from interview.agent_runtime_utils import token_limit_kwarg
 from interview.agent_providers import (
     build_elevenlabs_tts,
     build_llm,
@@ -858,7 +859,7 @@ async def _generate_move_on_directive(
                     {"role": "user", "content": _user},
                 ],
                 temperature=0.3,
-                max_tokens=550,
+                **token_limit_kwarg(llm_model, 550),
                 stream=True,
                 stream_options={"include_usage": True},
                 store=True,

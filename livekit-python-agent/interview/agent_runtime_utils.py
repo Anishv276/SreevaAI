@@ -23,6 +23,27 @@ logger = logging.getLogger("interview-agent")
 
 
 # ===============================================================================
+# SECTION 0 -- OpenAI chat.completions token-limit kwarg
+# ===============================================================================
+
+# Reasoning-family models (gpt-5*, o1*, o3*, o4*, ...) reject the legacy
+# `max_tokens` param and require `max_completion_tokens` instead. Older chat
+# models (gpt-4o, gpt-4-turbo, ...) still expect `max_tokens`. Which family a
+# call hits depends on `llm_model`, which is org-configurable (job/org config),
+# so callers can't hardcode either name.
+_MAX_COMPLETION_TOKENS_PREFIXES = ("gpt-5", "o1", "o3", "o4")
+
+
+def token_limit_kwarg(llm_model: str, max_tokens: int) -> Dict[str, int]:
+    """Returns {"max_tokens": n} or {"max_completion_tokens": n}, whichever the
+    given model accepts, for use in openai_client.chat.completions.create(**kwargs)."""
+    model = (llm_model or "").strip().lower()
+    if model.startswith(_MAX_COMPLETION_TOKENS_PREFIXES):
+        return {"max_completion_tokens": max_tokens}
+    return {"max_tokens": max_tokens}
+
+
+# ===============================================================================
 # SECTION 1 -- AgentConfig (Singleton Configuration)
 # ===============================================================================
 

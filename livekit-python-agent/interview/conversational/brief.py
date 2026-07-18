@@ -26,6 +26,7 @@ from typing import Any
 
 from openai import AsyncOpenAI
 
+from interview.agent_runtime_utils import token_limit_kwarg
 from interview.conversational.brief_extraction import run_extraction
 from interview.tech.brief import InterviewBrief, TopicItem, RoleContext, _dedup_jd_vs_resume  # noqa: F401 -- RoleContext re-exported for interview.conversational.__init__
 
@@ -354,7 +355,7 @@ async def _understand_role(
     response = await openai_client.chat.completions.create(
         model=llm_model,
         temperature=0,
-        max_tokens=400,
+        **token_limit_kwarg(llm_model, 400),
         messages=[
             {"role": "system", "content": _ROLE_UNDERSTANDING_SYSTEM},
             {"role": "user", "content": user_prompt},
@@ -435,7 +436,7 @@ async def _topup_role_topics(
             response = await openai_client.chat.completions.create(
                 model=llm_model,
                 temperature=0,
-                max_tokens=max_tokens,
+                **token_limit_kwarg(llm_model, max_tokens),
                 response_format={"type": "json_object"},
                 messages=[
                     {"role": "system", "content": _TOPUP_SYSTEM},
@@ -512,7 +513,7 @@ async def generate_interview_brief(
             model=llm_model,
             temperature=0,
             response_format={"type": "json_object"},
-            max_tokens=max_tokens,
+            **token_limit_kwarg(llm_model, max_tokens),
             stream=True,
             stream_options={"include_usage": True},
             messages=[

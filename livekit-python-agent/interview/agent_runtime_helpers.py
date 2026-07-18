@@ -15,7 +15,7 @@ Improvements over original:
 """
 import re
 from interview.agent_runtime_support import logger
-from interview.agent_runtime_utils import TextSanitizer, TranscriptManager
+from interview.agent_runtime_utils import TextSanitizer, TranscriptManager, token_limit_kwarg
 
 # -- ElevenLabs text normalization ---------------------------------------------
 # flash_v2_5 has weaker normalization than multilingual_v2. Pre-normalize before
@@ -192,7 +192,7 @@ def make_sarvam_llm_rewrite_transform(openai_client, model: str):
                     {"role": "user", "content": sentence},
                 ],
                 temperature=0.0,
-                max_tokens=len(sentence) * 3,  # rewrite can't be much longer
+                **token_limit_kwarg(model, len(sentence) * 3),  # rewrite can't be much longer
                 timeout=3.0,  # hard cap — never block TTS for more than 3s
             )
             rewritten = resp.choices[0].message.content or sentence

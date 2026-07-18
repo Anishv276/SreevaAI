@@ -48,6 +48,7 @@ from typing_extensions import TypedDict
 
 from interview.agent_utils import truncate_to_tokens
 from interview.agent_runtime_support import logger, DATABASE_URL
+from interview.agent_runtime_utils import token_limit_kwarg
 from interview.tech.brief_extraction import RawResumeJSON, ResumeExtractor
 
 from billing.billing import record_external_billing_usage as _persist_billing
@@ -318,7 +319,7 @@ class ReportLLMClient:
                 kwargs: dict[str, Any] = dict(
                     model=spec._LLM_DEFAULT,
                     temperature=spec.temperature,
-                    max_completion_tokens=spec.max_tokens,
+                    **token_limit_kwarg(spec._LLM_DEFAULT, spec.max_tokens),
                     stream=True,
                     stream_options={"include_usage": True},
                     response_format=spec.response_format,
