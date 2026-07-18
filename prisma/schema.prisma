@@ -23,7 +23,6 @@ model OrganizationDetails {
   ttsProvider              String                    @default("ELEVENLABS")
   ttsModel                 String                    @default("eleven_turbo_v2_5")
   ttsSpeed                 Float                     @default(1)
-  defaultVoiceId           String                    @default("EXAVITQu4vr4xnSDxMaL")
   allowedVoiceIds          String[]                  @default([])
   llmResumeExtraction      String                    @default("gpt-5.4-mini")
   llmJdExtraction          String                    @default("gpt-5.4-mini")
@@ -105,7 +104,7 @@ model Job {
   organizationId                String?
   applicationDeadline           DateTime?
   aiInterviewerName             String?                 @default("Ishitha")
-  aiInterviewerVoiceId          String?                 @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
+  aiInterviewerVoiceId          String?
   interviewMode                 String?                 @default("ats")
   interviewType                 String?                 @default("tech")
   isDeleted                     Boolean                 @default(false)

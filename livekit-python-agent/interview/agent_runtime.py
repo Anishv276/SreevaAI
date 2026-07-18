@@ -23,7 +23,6 @@ from interview.tech.brief import (
 )
 from interview.tech.band import classify_band
 from interview.agent_providers import (
-    build_cartesia_tts,
     build_elevenlabs_tts,
     build_llm,
     build_sarvam_tts,
@@ -283,14 +282,12 @@ from interview.agent_runtime_helpers import (
     _build_recent_context_block,
     append_transcript_line,
     make_tts_sanitize_transform,
-    _tts_acronym_transform,
     _elevenlabs_normalize_transform,
     _sarvam_normalize_transform,
     make_sarvam_llm_rewrite_transform,
     polish_candidate_facing_text,
     remove_system_messages,
     remove_system_messages_multi,
-    tts_phonetic_processor,
 )
 from interview.agent_runtime_support import (
     INTERVIEW_TEMPERATURE,
@@ -1220,7 +1217,7 @@ def prewarm(proc: JobProcess):
     except Exception as e:
         logger.warning(f"Failed to prewarm default STT: {e}")
     try:
-        proc.userdata["default_tts"] = build_cartesia_tts()
+        proc.userdata["default_tts"] = build_sarvam_tts()
         logger.info("Default TTS prewarmed.")
     except Exception as e:
         logger.warning(f"Failed to prewarm default TTS: {e}")
@@ -1573,7 +1570,17 @@ async def entrypoint(ctx: JobContext):
     org_tts_provider: str = str(ctx_data.ttsProvider).strip().upper()
     org_tts_model: str   = str(ctx_data.ttsModel).strip()
     org_tts_speed: float | None = ctx_data.ttsSpeed
-    voice_id: str        = str(ctx_data.voiceId).strip()
+    voice_id: str        = str(ctx_data.voiceId or "").strip()
+    # Cartesia was removed. Any orphaned CARTESIA row (or a missing voice) falls
+    # back to Sarvam priya so the interview never crashes on a stale provider.
+    if org_tts_provider == "CARTESIA" or not voice_id:
+        logger.warning(
+            "[TTS] provider=%r voice=%r -> falling back to Sarvam priya",
+            org_tts_provider, voice_id,
+        )
+        org_tts_provider = "SARVAM"
+        org_tts_model = "bulbul:v3"
+        voice_id = "priya"
     interview_llm_model: str         = str(ctx_data.llmInterviewLive).strip()
     interview_llm_temperature: float = INTERVIEW_TEMPERATURE
     analysis_model: str              = str(ctx_data.llmInterviewEval).strip()
@@ -1674,9 +1681,6 @@ async def entrypoint(ctx: JobContext):
             ",".join(_t.probe_focus[:3]) or "-",
         )
     # Compact text block for eval layer prompt
-    # Register all session keywords with the phonetic processor
-    tts_phonetic_processor.add_keywords(_tts_keywords)  # type: ignore[union-attr]
-    logger.info("[TTS_PHONETIC] Registered %d keywords for this session", len(_tts_keywords))
     interview_directive_cached = build_interview_directive(
         band=candidate_band,
         resume_brief=None,
@@ -1812,7 +1816,6 @@ async def entrypoint(ctx: JobContext):
     _TTS_BUILDERS = {
         "SARVAM":     build_sarvam_tts,
         "ELEVENLABS": build_elevenlabs_tts,
-        "CARTESIA":   build_cartesia_tts,
     }
     if org_tts_provider not in _TTS_BUILDERS:
         raise ValueError(f"Unknown org ttsProvider {org_tts_provider!r} (expected one of {sorted(_TTS_BUILDERS)})")
@@ -1847,11 +1850,12 @@ async def entrypoint(ctx: JobContext):
         )
         _sarvam_api_key = os.environ.get("SARVAM_API_KEY", "")
         if _sarvam_api_key:
-            _base_dict_id = await _get_base_dict_id(_sarvam_api_key)
+            _base_dict_id = await _get_base_dict_id(_sarvam_api_key, mode=interview_type)
             _sarvam_dict_id = await _get_session_dict_id(
                 _sarvam_api_key,
                 _tts_keywords,
                 base_dict_id=_base_dict_id,
+                mode=interview_type,
             )
         # LLM rewrite transform: rewrites tech acronyms/terms to be TTS-friendly.
         # Uses the shared OpenAI client (no extra connection cost) with gpt-4.1-nano.
@@ -1981,13 +1985,11 @@ async def entrypoint(ctx: JobContext):
             ),
         ),
         "use_tts_aligned_transcript": False,
-        # Client-side acronym transform:
-        # - Cartesia: needs it (no server-side normalization)
+        # Provider-aware text normalization:
         # - ElevenLabs: apply_text_normalization='auto' handles it server-side -- skip
         # - Sarvam: dict_id + enable_preprocessing always-on -- skip (caused letter-reading bug)
         "tts_text_transforms": [
             "filter_emoji",
-            *([_tts_acronym_transform] if org_tts_provider == "CARTESIA" else []),
             *([_elevenlabs_normalize_transform] if org_tts_provider == "ELEVENLABS" else []),
             # Sarvam path: regex normalizer first, then LLM rewriter for ambiguous terms.
             *([_sarvam_normalize_transform] if org_tts_provider == "SARVAM" else []),

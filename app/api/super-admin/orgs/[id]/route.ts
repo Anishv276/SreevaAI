@@ -91,7 +91,7 @@ export async function PATCH(
             proctoringSignals,
             adminEmail,
             adminPassword,
-            defaultVoiceId, allowedVoiceIds,
+            allowedVoiceIds,
             totalInterviewsAllowed,
             interviewQuotaTopUp,
             maxConcurrentSlots,
@@ -112,7 +112,6 @@ export async function PATCH(
                 totalInterviewsAllowed: true,
                 totalInterviewsUsed: true,
                 billingPlan: true,
-                defaultVoiceId: true,
                 allowedVoiceIds: true,
                 isRecordingEnabled: true,
                 recordingKeepForDays: true,
@@ -161,7 +160,6 @@ export async function PATCH(
             proctoringSignals === undefined &&
             adminEmail === undefined &&
             adminPassword === undefined &&
-            defaultVoiceId === undefined &&
             allowedVoiceIds === undefined &&
             interviewQuotaTopUp === undefined;
         const shouldSyncQuotaStatus = shouldUpdateInterviewQuotaTotal || shouldApplyInterviewQuotaTopUp;
@@ -255,7 +253,7 @@ export async function PATCH(
         }
         Object.assign(
             updateData,
-            normalizeOrgAiConfig({ defaultVoiceId, allowedVoiceIds })
+            normalizeOrgAiConfig({ allowedVoiceIds })
         );
         // ponytail: removed super-admin platformUsageMetrics override — that column
         // is gone; UsageEvent is now the sole source of truth for cost totals and

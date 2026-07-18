@@ -18,7 +18,6 @@ import logging
 import re
 from typing import Any, Optional, Dict
 
-from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger("interview-agent")
 
@@ -26,19 +25,6 @@ logger = logging.getLogger("interview-agent")
 # ===============================================================================
 # SECTION 1 -- AgentConfig (Singleton Configuration)
 # ===============================================================================
-
-class VoiceProviderMapping(BaseModel):
-    """Type-safe voice provider mapping."""
-    provider: str = Field(..., pattern="^(CARTESIA|SARVAM|ELEVENLABS)$")
-    model: str = Field(..., min_length=1)
-
-    @field_validator("provider", "model", mode="before")
-    @classmethod
-    def strip_whitespace(cls, v: Any) -> str:
-        if isinstance(v, str):
-            return v.strip()
-        return str(v)
-
 
 class AgentConfig:
     """Singleton configuration manager for the interview agent.
@@ -249,7 +235,7 @@ class TextSanitizer:
     )
 
     # TTS phonetic fixes (preserve speech flow for voice synthesis)
-    # Fixes for Sarvam/Cartesia: collapse em-dashes and ellipses they can't handle
+    # Fixes for Sarvam: collapse em-dashes and ellipses it can't handle
     _TTS_PHONETIC_FIXES: tuple[tuple[re.Pattern, str], ...] = (
         (re.compile(r"\s*[–—]\s*"), ", "),
         (re.compile(r"\s*-{2,}\s*"), ", "),
@@ -405,7 +391,7 @@ class TextSanitizer:
         """Apply phonetic fixes for TTS speech synthesis.
 
         ElevenLabs preserves em-dashes and ellipses as natural pause cues.
-        Sarvam/Cartesia collapse them to commas to avoid mispronunciation.
+        Sarvam collapses them to commas to avoid mispronunciation.
         """
         fixes = (
             TextSanitizer._TTS_PHONETIC_FIXES_ELEVENLABS

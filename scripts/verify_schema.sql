@@ -21,7 +21,6 @@ FROM (VALUES
   ('OrganizationDetails', 'orgCreatedAt'),
   ('OrganizationDetails', 'orgUpdatedAt'),
   ('OrganizationDetails', 'isOnboardingComplete'),
-  ('OrganizationDetails', 'defaultVoiceId'),
   ('OrganizationDetails', 'allowedVoiceIds'),
   ('OrganizationDetails', 'totalInterviewsAllowed'),
   ('OrganizationDetails', 'totalInterviewsUsed'),

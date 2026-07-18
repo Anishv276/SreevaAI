@@ -44,7 +44,6 @@ interface OrgDetail {
     totalInterviewsAllowed?: number;
     totalInterviewsUsed?: number;
     billingCreditsUsed?: number;
-    defaultVoiceId?: string;
     allowedVoiceIds?: string[];
     sttModel?: string;
     ttsProvider?: string;
@@ -218,9 +217,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
         return providers.length ? Array.from(new Set(providers)).join(", ") : "-";
     };
     const getConfiguredTtsVoices = () => {
-        const ids = Array.isArray(org?.allowedVoiceIds) && org.allowedVoiceIds.length > 0
-            ? org.allowedVoiceIds
-            : org?.defaultVoiceId ? [org.defaultVoiceId] : [];
+        const ids = Array.isArray(org?.allowedVoiceIds) ? org.allowedVoiceIds : [];
         return ids
             .map((id) => ALL_VOICES.find((v) => v.id === id))
             .filter(Boolean) as typeof ALL_VOICES;
@@ -629,10 +626,9 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                             {/* SECTION 3: TTS Hub */}
                             <div>
                                 <h4 className="text-[12px] font-black uppercase tracking-[0.15em] text-gray-500 mb-4">TTS Hub - Characters & Pricing</h4>
-                                <div className="grid gap-4 md:grid-cols-3">
+                                <div className="grid gap-4 md:grid-cols-2">
                                     {[
                                         { label: "ElevenLabs", provider: "ELEVENLABS" },
-                                        { label: "Cartesia", provider: "CARTESIA" },
                                         { label: "Sarvam", provider: "SARVAM" },
                                     ].map((tts) => {
                                         const interviewBilling = (billingAll["interview"] ?? {}) as BillingFeatureMetrics;

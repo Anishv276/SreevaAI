@@ -176,48 +176,6 @@ export async function createVoicePreviewResponse(input: VoicePreviewInput) {
     await recordVoicePreviewUsage({ orgId, provider: voice.provider, model: payload.model_id, text });
     return toAudioResponse(audioBuffer, "audio/mpeg");
   }
-  // CARTESIA
-  const apiKey = process.env.CARTESIA_API_KEY;
-  if (!apiKey) {
-    console.error("[VoicePreview] CARTESIA_API_KEY missing");
-    return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
-  }
-  const modelId = voice.model.replace(/^cartesia\//, "");
-  const text = transcript || "Hello, I am ready to be your AI interviewer.";
-  const payload = {
-    model_id: modelId,
-    transcript: text,
-    voice: { mode: "id", id: voiceId },
-    output_format: { container: "mp3", sample_rate: 44100, bit_rate: 128000 },
-  };
-  const response = await fetch("https://api.cartesia.ai/tts/bytes", {
-    method: "POST",
-    headers: {
-      "X-API-Key": apiKey,
-      "Cartesia-Version": "2024-06-10",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    let errorMsg = response.statusText;
-    try {
-      const text = await response.text();
-      if (text) {
-        try {
-          const errorData = JSON.parse(text);
-          errorMsg = errorData.error?.message || errorData.message || errorMsg;
-        } catch {
-          errorMsg = text;
-        }
-      }
-    } catch { /* keep statusText */ }
-    if (response.status === 402) {
-      logCreditRechargeNeeded("Cartesia");
-    }
-    return NextResponse.json({ error: `Cartesia: ${errorMsg}` }, { status: response.status });
-  }
-  const audioBuffer = await response.arrayBuffer();
-  await recordVoicePreviewUsage({ orgId, provider: voice.provider, model: modelId, text });
-  return toAudioResponse(audioBuffer, "audio/mpeg");
+  // Only SARVAM and ELEVENLABS are supported. Anything else is a stale row.
+  return NextResponse.json({ error: `Unsupported voice provider: ${voice.provider}` }, { status: 400 });
 }

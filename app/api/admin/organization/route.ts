@@ -29,7 +29,6 @@ export async function GET(request: Request) {
             isOnboardingComplete: boolean | null;
             orgStatus: string | null;
             quotaControlMode: string | null;
-            defaultVoiceId: string | null;
             allowedVoiceIds: string[] | null;
             sttModel: string | null;
             maxActiveJobs: string | null;
@@ -45,7 +44,6 @@ export async function GET(request: Request) {
                     o."isOnboardingComplete",
                     o."orgStatus",
                     o."quotaControlMode",
-                    o."defaultVoiceId",
                     o."allowedVoiceIds",
                     o."sttModel",
                     o."maxActiveJobs",

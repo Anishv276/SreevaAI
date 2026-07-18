@@ -38,7 +38,8 @@ function CreateJobForm() {
   const isEditAction = searchParams.get("mode") === "edit";
   const { addJob, jobs, updateJob, organization } = useJobs();
   const adminOrg = useAdminOrg();
-  const fallbackVoiceId = adminOrg?.defaultVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc";
+  // No hardcoded default voice: admin must pick from the org's allowed list.
+  const fallbackVoiceId = "";
   const adminAllowedVoices = adminOrg?.allowedVoiceIds;
   const fallbackAllowedVoices = useMemo(() => adminAllowedVoices ?? [], [adminAllowedVoices]);
 
@@ -93,9 +94,6 @@ function CreateJobForm() {
   }, [formData.jdPreviewUrl]);
 
   useEffect(() => {
-  }, [formData.aiInterviewerVoiceId]);
-
-  useEffect(() => {
     if (isEditMode && hasInitialLoadedRef.current !== jobId) {
       const loadJob = async () => {
         try {
@@ -119,7 +117,7 @@ function CreateJobForm() {
             jdFileName: (job as any).jdFileName || "",
             jdPreviewUrl: (job as any).jdPreviewUrl || "",
             jdExtractedDetails: (job as any).jdExtractedDetails || null,
-            aiInterviewerVoiceId: (job as any).aiInterviewerVoiceId || adminOrg?.defaultVoiceId || fallbackVoiceId,
+            aiInterviewerVoiceId: (job as any).aiInterviewerVoiceId || "",
             allowedVoiceIds: Array.isArray(adminOrg?.allowedVoiceIds) ? adminOrg.allowedVoiceIds : fallbackAllowedVoices,
             aiInterviewerName: (job as any).aiInterviewerName || "Ishitha",
             interviewMode: (job as any).interviewMode || "ats",
@@ -132,7 +130,7 @@ function CreateJobForm() {
       };
       loadJob();
     }
-  }, [isEditMode, jobId, adminOrg?.defaultVoiceId, fallbackVoiceId, fallbackAllowedVoices]);
+  }, [isEditMode, jobId, fallbackVoiceId, fallbackAllowedVoices]);
 
   useEffect(() => {
     if (!isEditMode && !searchParams.get("id")) {
@@ -248,7 +246,7 @@ function CreateJobForm() {
       aiGeneratedInterviewQuestions: parsedQuestions,
       resumeScreeningThreshold: Number(currentFormData.resumeScreeningThreshold ?? 60),
       resumeScreeningCriteria: sanitizeScreeningCriteria(currentFormData.resumeScreeningCriteria || {}),
-      aiInterviewerVoiceId: currentFormData.aiInterviewerVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
+      aiInterviewerVoiceId: currentFormData.aiInterviewerVoiceId || "",
       aiInterviewerName: currentFormData.aiInterviewerName || "Ishitha",
       interviewMode: currentFormData.interviewMode || "ats",
       interviewType: currentFormData.interviewType || classifyInterviewType(currentFormData.jobRole) || "tech",

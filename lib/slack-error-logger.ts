@@ -265,7 +265,7 @@ export async function logTTSError(params: {
   orgName?: string;
   jobName?: string;
   candidateName?: string;
-  provider: string; // cartesia, elevenlabs, sarvam, etc.
+  provider: string; // elevenlabs, sarvam, etc.
   error: Error | string;
   reason?: string;
 }): Promise<void> {

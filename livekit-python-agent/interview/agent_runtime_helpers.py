@@ -138,33 +138,6 @@ def _enforce_single_question(text: str) -> str:
 # TTS TRANSFORMS (async generators for streaming)
 # ===============================================================================
 
-# Initialize TTS processor for acronym/phonetic handling
-try:
-    from interview.tts_phonetic_processor import TTSPhoneticProcessor
-    tts_phonetic_processor = TTSPhoneticProcessor().initialize_defaults()
-except Exception as e:
-    logger.warning(f"Failed to initialize TTSPhoneticProcessor: {e}")
-    tts_phonetic_processor = None
-
-
-async def _tts_acronym_transform(text_stream):
-    """Transform text stream through TTS acronym processor.
-
-    Args:
-        text_stream: async iterable of text chunks
-
-    Yields:
-        Transformed text chunks
-    """
-    if tts_phonetic_processor is None:
-        async for chunk in text_stream:
-            yield chunk
-        return
-
-    async for chunk in text_stream:
-        yield tts_phonetic_processor.transform(chunk)
-
-
 async def _sarvam_normalize_transform(text_stream):
     """Regex-based fallback: letter-space ALL-CAPS acronyms and split CamelCase.
 
@@ -261,7 +234,7 @@ def make_tts_sanitize_transform(provider: str = ""):
     """Return a tts_sanitize transform bound to the given TTS provider.
 
     ElevenLabs preserves em-dashes and ellipses for natural pacing.
-    Sarvam/Cartesia collapse them to commas.
+    Sarvam collapses them to commas.
     """
     async def _transform(text_stream):
         emitted_any = False
@@ -283,7 +256,7 @@ def make_tts_sanitize_transform(provider: str = ""):
 
 
 async def _tts_sanitize_transform(text_stream):
-    """Default sanitize transform (Sarvam/Cartesia). Use make_tts_sanitize_transform() for provider-aware version."""
+    """Default sanitize transform (Sarvam). Use make_tts_sanitize_transform() for provider-aware version."""
     async for chunk in make_tts_sanitize_transform()(text_stream):
         yield chunk
 
