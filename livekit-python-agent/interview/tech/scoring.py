@@ -786,8 +786,8 @@ async def evaluate_answer(
         )
 
         # One usage entry PER real LLM call made -- never merged -- so
-        # downstream "runs" counts (billing.py, report_worker.py testBillingMetrics)
-        # reflect actual API calls billed, not conversational turns.
+        # downstream "runs" counts (billing.py, report_worker.py) reflect
+        # actual API calls billed, not conversational turns.
         _eval_llm_usages: list[dict] = [_scoring_usage, _signal_usage]
 
         data = scoring_data

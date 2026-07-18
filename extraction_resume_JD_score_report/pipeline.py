@@ -90,7 +90,7 @@ class Pipeline:
         usage = result.get("usage", {})
         sys.stderr.write(f"--- [AI Usage] Model: {usage.get('model')} | Tokens: {usage.get('inputTokens')} in, {usage.get('outputTokens')} out ---\n")
         sys.stderr.write("--- [100%] Resume extraction complete. ---\n"); sys.stderr.flush()
-        return {"text": raw_text, "data": result["data"], "usage": usage}
+        return {"text": raw_text, "data": result["data"], "usage": usage, "usages": result.get("usages", [])}
 
     def run_resume_and_score(self, file_path: str, jd_payload: dict, extract_model: str, score_model: str) -> dict:
         # Step 1: extract text
@@ -110,6 +110,7 @@ class Pipeline:
             return resume_result
         structured_resume = resume_result["data"]
         usage_extract = resume_result.get("usage", {})
+        usages_extract = resume_result.get("usages", [])
         sys.stderr.write(f"--- [AI Extract] Model: {usage_extract.get('model')} | Tokens: {usage_extract.get('inputTokens')} in, {usage_extract.get('outputTokens')} out ---\n")
 
         # Step 3: score + report
@@ -133,6 +134,11 @@ class Pipeline:
             "score": score_result.get("data", {}),
             "usage_extract": usage_extract,
             "usage_score": score_result.get("usage", {}),
+            # Per-call breakdown behind each merged total above: usages_extract is
+            # the 2 resume-extraction LLM calls, usages_score is the report LLM
+            # call + the previously-untracked embeddings call.
+            "usages_extract": usages_extract,
+            "usages_score": score_result.get("usages", []),
         }
 
 

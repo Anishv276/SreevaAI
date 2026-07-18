@@ -31,13 +31,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                     isOnboardingComplete: true,
                     billingPlan: true,
                     name: true,
-                    defaultVoiceId: true,
                     allowedVoiceIds: true,
                     sttModel: true,
                     totalInterviewsAllowed: true,
                     totalInterviewsUsed: true,
                     maxActiveJobs: true,
-                    _count: { select: { jobs: true } },
+                    _count: { select: { jobs: { where: { isDeleted: false } } } },
                 },
             });
             if (org) {
@@ -74,7 +73,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                     status: orgData.status,
                     name: orgData.name,
                     billingPlan: orgData.billingPlan,
-                    defaultVoiceId: orgData.defaultVoiceId,
                     allowedVoiceIds: orgData.allowedVoiceIds,
                     sttModel: orgData.sttModel,
                     totalInterviewsAllowed: orgData.totalInterviewsAllowed != null ? Number(orgData.totalInterviewsAllowed) : undefined,

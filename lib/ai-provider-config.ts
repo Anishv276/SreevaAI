@@ -5,19 +5,19 @@ export function normalizeJobAiConfig(args: { current?: Record<string, unknown> |
     const fields = ("next" in args || "current" in args)
         ? ({ ...(args as any).current, ...(args as any).next } as Record<string, unknown>)
         : args as Record<string, unknown>;
-    const aiInterviewerVoiceId = String(fields.aiInterviewerVoiceId || DEFAULT_ORG_AI_CONFIG.voiceId).trim() || DEFAULT_ORG_AI_CONFIG.voiceId;
+    // No baked-in default: voice is chosen per job from the org's allowed list.
+    // Empty is valid -- the interview runtime falls back to Sarvam priya.
+    const aiInterviewerVoiceId = String(fields.aiInterviewerVoiceId || "").trim();
     return { aiInterviewerVoiceId };
 }
 
 export function normalizeOrgAiConfig(fields: Record<string, unknown>): Record<string, unknown> {
-    const defaultVoiceId = String(fields.defaultVoiceId || DEFAULT_ORG_AI_CONFIG.voiceId).trim() || DEFAULT_ORG_AI_CONFIG.voiceId;
     const allowedVoiceIds: string[] = (() => {
         const raw = fields.allowedVoiceIds;
         if (!Array.isArray(raw)) return [];
         return Array.from(new Set(raw.map((id) => String(id || "").trim()).filter(Boolean)));
     })();
     return {
-        defaultVoiceId,
         allowedVoiceIds,
         sttModel:           String(fields.sttModel           || DEFAULT_ORG_AI_CONFIG.sttModel).trim(),
         ttsProvider:        String(fields.ttsProvider        || DEFAULT_ORG_AI_CONFIG.ttsProvider).trim().toUpperCase(),

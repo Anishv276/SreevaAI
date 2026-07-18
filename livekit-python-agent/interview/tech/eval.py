@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
 
-from interview.agent_scoring import evaluate_answer
+from interview.tech.scoring import evaluate_answer
 from interview.slack_error_logger import log_llm_error
 
 logger = logging.getLogger("interview-agent")

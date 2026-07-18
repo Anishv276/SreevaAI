@@ -3,7 +3,25 @@ import { prisma } from "@/lib/prisma";
 import { getSession, isSuperAdminRole } from "@/lib/auth";
 import { apiErrorResponse } from "@/lib/slack-error-logger";
 
-// Returns aggregated test billing metrics per org for super-admin billing page
+// Test-session billing, sourced from UsageEvent (isTest=true) — the same
+// entity-ledger rows real billing uses, just excluded from real cost totals.
+// Returns aggregated + per-interview test spend for the super-admin billing page.
+
+function n(v: unknown): number {
+  const x = Number(v);
+  return Number.isFinite(x) ? x : 0;
+}
+
+function llmCost(usage: Record<string, any>, path: string): number {
+  const arr = Array.isArray(usage[path]?.llm) ? usage[path].llm : [];
+  return arr.reduce((s: number, m: any) => s + n(m.costUsd), 0);
+}
+
+function llmCalls(usage: Record<string, any>, path: string): number {
+  const arr = Array.isArray(usage[path]?.llm) ? usage[path].llm : [];
+  return arr.reduce((s: number, m: any) => s + n(m.calls), 0);
+}
+
 export async function GET(request: Request) {
     try {
         const session = await getSession();
@@ -14,64 +32,60 @@ export async function GET(request: Request) {
         const orgId = searchParams.get("orgId");
         if (!orgId) return NextResponse.json({ error: "orgId required" }, { status: 400 });
 
-        const testInterviews = await prisma.interview.findMany({
-            where: {
-                isTestSession: true,
-                isDeleted: false,
-                application: { job: { organizationId: orgId } },
-            },
-            select: {
-                id: true,
-                interviewCompletedAt: true,
-                interviewUpdatedAt: true,
-                durationInSeconds: true,
-                testSessionBillingMetrics: true,
-                application: {
-                    select: {
-                        candidateFullName: true,
-                        job: { select: { title: true, jobRole: true } },
-                    },
-                },
-            },
-            orderBy: { interviewUpdatedAt: "desc" },
+        const entities = await prisma.usageEvent.findMany({
+            where: { organizationId: orgId, feature: "interview", isTest: true },
+            orderBy: { createdAt: "desc" },
             take: 100,
+            select: {
+                id: true, createdAt: true, updatedAt: true, usage: true,
+                jobTitle: true, candidateName: true, applicationId: true,
+            },
         });
 
-        let totalLlm = 0, totalTts = 0, totalStt = 0, totalReport = 0, totalCost = 0;
+        let totalTts = 0, totalStt = 0, totalEval = 0, totalGeneration = 0, totalBrief = 0, totalReport = 0, totalCost = 0;
 
-        const rows = testInterviews.map((iv) => {
-            const m = (iv.testSessionBillingMetrics && typeof iv.testSessionBillingMetrics === "object")
-                ? iv.testSessionBillingMetrics as Record<string, number>
-                : {};
-            const llm = Number(m.llmCost ?? 0);
-            const tts = Number(m.ttsCost ?? 0);
-            const stt = Number(m.sttCost ?? 0);
-            // reportLlmCost: accumulated separately by billing.record_test_report_billing_usage
-            // whenever a test session's report/summary/verdict LLM calls run (report not skipped).
-            const report = Number(m.reportLlmCost ?? 0);
-            const cost = llm + tts + stt + report;
-            totalLlm += llm; totalTts += tts; totalStt += stt; totalReport += report; totalCost += cost;
+        const rows = entities.map((e) => {
+            const usage = (e.usage && typeof e.usage === "object") ? (e.usage as Record<string, any>) : {};
+            const evalCost = llmCost(usage, "eval");
+            const generationCost = llmCost(usage, "llmGeneration");
+            const briefCost = llmCost(usage, "brief");
+            const reportCost = llmCost(usage, "report");
+            const tts = n(usage.tts?.costUsd);
+            const stt = n(usage.stt?.costUsd);
+            const cost = evalCost + generationCost + briefCost + reportCost + tts + stt;
+            totalTts += tts; totalStt += stt; totalEval += evalCost;
+            totalGeneration += generationCost; totalBrief += briefCost; totalReport += reportCost;
+            totalCost += cost;
 
-            const durationSec = Number(iv.durationInSeconds ?? 0);
             return {
-                id: iv.id,
-                candidate: iv.application?.candidateFullName || "Unknown",
-                job: iv.application?.job?.jobRole || iv.application?.job?.title || "—",
-                date: (iv.interviewCompletedAt ?? iv.interviewUpdatedAt).toISOString(),
-                duration: durationSec ? `${Math.floor(durationSec / 60)}m ${durationSec % 60}s` : "—",
-                llmCost: llm,
+                id: e.id,
+                candidate: e.candidateName || "Unknown",
+                job: e.jobTitle || "—",
+                date: e.createdAt.toISOString(),
+                ttsCharacters: n(usage.tts?.characters),
+                sttAudioSeconds: n(usage.stt?.seconds),
                 ttsCost: tts,
                 sttCost: stt,
-                reportCost: report,
-                reportEnabled: !m.skipReport,
+                evalCost,
+                evalCalls: llmCalls(usage, "eval"),
+                generationCost,
+                generationCalls: llmCalls(usage, "llmGeneration"),
+                briefCost,
+                briefCalls: llmCalls(usage, "brief"),
+                reportCost,
+                reportCalls: llmCalls(usage, "report"),
                 totalCost: cost,
             };
         });
 
         return NextResponse.json({
             rows,
-            totals: { llmCost: totalLlm, ttsCost: totalTts, sttCost: totalStt, reportCost: totalReport, totalCost },
-            count: testInterviews.length,
+            totals: {
+                ttsCost: totalTts, sttCost: totalStt, evalCost: totalEval,
+                generationCost: totalGeneration, briefCost: totalBrief, reportCost: totalReport,
+                totalCost,
+            },
+            count: entities.length,
         });
     } catch (e) {
         return apiErrorResponse({

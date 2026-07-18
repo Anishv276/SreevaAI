@@ -196,7 +196,7 @@ class _RuntimeWarningSampler(logging.Filter):
 
 
 # Apply sampler to noisy dependencies
-for logger_name in ("livekit.plugins.cartesia", "livekit"):
+for logger_name in ("livekit.plugins.sarvam", "livekit.plugins.elevenlabs", "livekit"):
     _logger = logging.getLogger(logger_name)
     _logger.addFilter(_RuntimeWarningSampler())
 

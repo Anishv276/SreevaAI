@@ -7,6 +7,7 @@ import { join } from 'path'
 // CA (not a public CA), so Node's default trust store can't verify it. Pin
 // that root explicitly instead of disabling verification.
 const SUPABASE_CA = readFileSync(join(process.cwd(), 'certs', 'supabase-root-ca.pem'), 'utf8')
+const LOCAL_DB_HOSTS = new Set(['localhost', '127.0.0.1'])
 
 function createPrismaClient() {
     // Supabase recommends using the direct/session connection for persistent
@@ -27,6 +28,10 @@ function createPrismaClient() {
     // Move pool tuning out of the URL so we can control Prisma's pool directly.
     connectionUrl.searchParams.delete('connect_timeout')
     connectionUrl.searchParams.delete('connection_limit')
+    // Local Docker Postgres (used in dev via .env.local) doesn't support SSL at
+    // all, unlike Supabase. Only pin the Supabase CA when we're actually talking
+    // to a remote host.
+    const isLocalDb = LOCAL_DB_HOSTS.has(connectionUrl.hostname)
     const adapter = new PrismaPg({
         connectionString: connectionUrl.toString(),
         connectionTimeoutMillis: 10_000,
@@ -34,7 +39,7 @@ function createPrismaClient() {
         min: 1,
         idleTimeoutMillis: 60000,
         allowExitOnIdle: false,
-        ssl: { rejectUnauthorized: true, ca: SUPABASE_CA },
+        ssl: isLocalDb ? false : { rejectUnauthorized: true, ca: SUPABASE_CA },
     })
     const baseClient = new PrismaClient({
         adapter,

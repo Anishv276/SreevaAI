@@ -1,6 +1,6 @@
 "use client";
 import { useState, useRef } from "react";
-import { Upload, Loader2, FileText, X, CheckCircle2, Eye } from "lucide-react";
+import { Upload, Loader2, FileText, X, CheckCircle2, Eye, FlaskConical, MessageCircle, ChevronDown } from "lucide-react";
 
 export function JobDescription({
     formData,
@@ -18,7 +18,9 @@ export function JobDescription({
     abortAnalysis?: () => void;
 }) {
     const [dragOver, setDragOver] = useState(false);
+    const [showTypePicker, setShowTypePicker] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const interviewType = formData.interviewType || "tech";
 
     const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -46,37 +48,77 @@ export function JobDescription({
     // Analyzed state
     if (formData.jdFileName && !isAnalyzing) {
         return (
-            <div className="flex items-center gap-3 rounded-xl px-4 py-3.5"
-                style={{ border: "1px solid #A7F3D0", background: "#F0FDF4" }}>
-                <div className="h-9 w-9 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                    <FileText className="h-4 w-4 text-emerald-600" />
-                </div>
-                <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-800 truncate">{formData.jdFileName}</p>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                        <CheckCircle2 className="h-3 w-3 text-emerald-500 flex-shrink-0" />
-                        <p className="text-xs text-emerald-600">Analyzed — fields auto-filled below</p>
+            <div className="space-y-2">
+                <div className="flex items-center gap-3 rounded-xl px-4 py-3.5"
+                    style={{ border: "1px solid #A7F3D0", background: "#F0FDF4" }}>
+                    <div className="h-9 w-9 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                        <FileText className="h-4 w-4 text-emerald-600" />
                     </div>
-                </div>
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                    {formData.jdPreviewUrl && (
+                    <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-800 truncate">{formData.jdFileName}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                            <CheckCircle2 className="h-3 w-3 text-emerald-500 flex-shrink-0" />
+                            <p className="text-xs text-emerald-600">Analyzed — fields auto-filled below</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {formData.jdPreviewUrl && (
+                            <button
+                                type="button"
+                                onClick={() => window.open(formData.jdPreviewUrl, "_blank")}
+                                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white text-xs font-medium text-gray-600 hover:text-violet-600 hover:bg-violet-50 transition-all"
+                                style={{ border: "1px solid #E9E7FF" }}
+                            >
+                                <Eye className="h-3 w-3" /> Preview
+                            </button>
+                        )}
                         <button
                             type="button"
-                            onClick={() => window.open(formData.jdPreviewUrl, "_blank")}
-                            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white text-xs font-medium text-gray-600 hover:text-violet-600 hover:bg-violet-50 transition-all"
+                            onClick={clearFile}
+                            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white text-xs font-medium text-gray-500 hover:text-red-500 hover:border-red-200 transition-all"
                             style={{ border: "1px solid #E9E7FF" }}
                         >
-                            <Eye className="h-3 w-3" /> Preview
+                            <X className="h-3 w-3" /> Replace
                         </button>
-                    )}
+                    </div>
+                </div>
+                <div className="flex items-center gap-2 px-1 relative">
+                    <span
+                        className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-xs font-medium"
+                        style={interviewType === "tech"
+                            ? { background: "#EEF2FF", color: "#4338CA", border: "1px solid #C7D2FE" }
+                            : { background: "#FDF4FF", color: "#A21CAF", border: "1px solid #F0ABFC" }}
+                    >
+                        {interviewType === "tech"
+                            ? <><FlaskConical className="h-3 w-3" /> Tech Interview</>
+                            : <><MessageCircle className="h-3 w-3" /> Conversational Interview</>}
+                    </span>
                     <button
                         type="button"
-                        onClick={clearFile}
-                        className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white text-xs font-medium text-gray-500 hover:text-red-500 hover:border-red-200 transition-all"
-                        style={{ border: "1px solid #E9E7FF" }}
+                        onClick={() => setShowTypePicker((v) => !v)}
+                        className="inline-flex items-center gap-1 h-7 px-2 rounded-lg text-xs font-medium text-gray-500 hover:text-violet-600 hover:bg-violet-50 transition-all"
                     >
-                        <X className="h-3 w-3" /> Replace
+                        Change <ChevronDown className="h-3 w-3" />
                     </button>
+                    {showTypePicker && (
+                        <div className="absolute top-8 left-0 z-10 flex flex-col rounded-lg bg-white shadow-lg overflow-hidden"
+                            style={{ border: "1px solid #E9E7FF" }}>
+                            {(["tech", "conversational"] as const).map((opt) => (
+                                <button
+                                    key={opt}
+                                    type="button"
+                                    onClick={() => {
+                                        updateFormData((prev: any) => ({ ...prev, interviewType: opt }));
+                                        setShowTypePicker(false);
+                                    }}
+                                    className="flex items-center gap-2 px-3 py-2 text-xs text-left text-gray-700 hover:bg-violet-50 transition-all whitespace-nowrap"
+                                >
+                                    {opt === "tech" ? <FlaskConical className="h-3 w-3 text-indigo-500" /> : <MessageCircle className="h-3 w-3 text-fuchsia-500" />}
+                                    {opt === "tech" ? "Tech Interview" : "Conversational Interview"}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
         );

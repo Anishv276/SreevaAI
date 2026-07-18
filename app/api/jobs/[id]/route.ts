@@ -51,6 +51,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 aiInterviewerName: true,
                 aiInterviewerVoiceId: true,
                 interviewMode: true,
+                interviewType: true,
                 organization: {
                     select: {
                         orgStatus: true,
@@ -217,6 +218,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         );
         if (data.aiInterviewerName !== undefined) updateData.aiInterviewerName = data.aiInterviewerName;
         if (data.interviewMode !== undefined) updateData.interviewMode = data.interviewMode;
+        if (data.interviewType !== undefined) updateData.interviewType = data.interviewType;
         if (Object.keys(updateData).length === 0) {
             return NextResponse.json(
                 { error: "No valid fields provided for update" },
@@ -263,9 +265,8 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
             const timestamp = Date.now().toString();
             // 1. Soft Delete Job
             await tx.$executeRaw`UPDATE "Job" SET "isDeleted" = true WHERE "id" = ${jobId}`;
-            // 2. Soft Delete Resume Candidates
-            await tx.$executeRaw`UPDATE "ResumeCandidate" SET "isDeleted" = true WHERE "jobId" = ${jobId}`;
-            // 4. Soft Delete Applications
+            // 4. Soft Delete Applications (Application holds candidate/resume data directly --
+            // the separate ResumeCandidate table no longer exists)
             await tx.$executeRaw`UPDATE "Application" SET "isDeleted" = true WHERE "jobId" = ${jobId}`;
             // 5. Soft Delete Interviews (rename applicationId and accessToken)
             await tx.$executeRaw`

@@ -12,18 +12,17 @@ from interview.agent_utils import (
     parse_dispatch_metadata,
     first_name_from_full_name,
 )
-from interview.interview_phases import (
+from interview.tech.phases import (
     build_greeting_text,
     build_interview_directive,
 )
-from interview.interview_brief import (
+from interview.tech.brief import (
     InterviewBrief,
     TopicItem,
     generate_interview_brief,
 )
-from interview.band_classifier import classify_band
+from interview.tech.band import classify_band
 from interview.agent_providers import (
-    build_cartesia_tts,
     build_elevenlabs_tts,
     build_llm,
     build_sarvam_tts,
@@ -44,6 +43,7 @@ from interview.slack_error_logger import (
     log_llm_error,
     log_stt_error,
     log_tts_error,
+    log_worker_error,
 )
 from billing.billing import (
     save_org_usage_metrics as persist_org_usage_metrics,
@@ -128,34 +128,52 @@ _INTERNAL_API_SECRET = os.environ.get("INTERNAL_API_SECRET", "")
 async def _enqueue_report_job(app_id: str, payload: dict) -> None:
     """Hand the report/summary/billing/debug-PDF tail off to the interview-report
     BullMQ queue via an internal Next.js route, instead of running it inline in
-    this (LiveKit-Cloud-recycled) agent job. Fire-and-forget: never blocks or
-    raises into the caller -- a failed handoff is logged and the session still
-    shuts down; the interview keeps its transcript/status either way."""
+    this (LiveKit-Cloud-recycled) agent job. This single HTTP hop is also the
+    only transport for this session's eval/brief/llmgen usage (the payload's
+    "usage" key) -- report_worker.py is what actually bills it. A silently
+    dropped enqueue therefore means BOTH the report AND this session's
+    non-session-level billing are lost, so this retries a few times before
+    giving up, and alerts on final failure instead of just logging it."""
     body = json.dumps(payload, default=str).encode("utf-8")
     headers = {"Content-Type": "application/json", "x-internal-secret": _INTERNAL_API_SECRET}
-    try:
-        import aiohttp
-        async with aiohttp.ClientSession() as http_session:
-            async with http_session.post(
-                _REPORT_ENQUEUE_URL, data=body, headers=headers,
-                timeout=aiohttp.ClientTimeout(total=5),
-            ) as resp:
-                if resp.status >= 300:
-                    logger.error(
-                        "[REPORT] Enqueue failed for %s: HTTP %s", app_id, resp.status,
-                    )
-                    return
-    except (ImportError, ModuleNotFoundError):
+    attempts = 3
+    last_error: str = ""
+    for attempt in range(1, attempts + 1):
         try:
-            req = urllib.request.Request(_REPORT_ENQUEUE_URL, data=body, headers=headers, method="POST")
-            urllib.request.urlopen(req, timeout=5)
+            try:
+                import aiohttp
+                async with aiohttp.ClientSession() as http_session:
+                    async with http_session.post(
+                        _REPORT_ENQUEUE_URL, data=body, headers=headers,
+                        timeout=aiohttp.ClientTimeout(total=5),
+                    ) as resp:
+                        if resp.status >= 300:
+                            last_error = f"HTTP {resp.status}"
+                        else:
+                            logger.info("[REPORT] Enqueued interview-report job for %s", app_id)
+                            return
+            except (ImportError, ModuleNotFoundError):
+                req = urllib.request.Request(_REPORT_ENQUEUE_URL, data=body, headers=headers, method="POST")
+                urllib.request.urlopen(req, timeout=5)
+                logger.info("[REPORT] Enqueued interview-report job for %s", app_id)
+                return
         except Exception as e:
-            logger.error("[REPORT] Enqueue failed for %s: %s", app_id, e)
-            return
-    except Exception as e:
-        logger.error("[REPORT] Enqueue failed for %s: %s", app_id, e)
-        return
-    logger.info("[REPORT] Enqueued interview-report job for %s", app_id)
+            last_error = str(e)
+        if attempt < attempts:
+            logger.warning(
+                "[REPORT] Enqueue attempt %d/%d failed for %s: %s -- retrying",
+                attempt, attempts, app_id, last_error,
+            )
+            await asyncio.sleep(1.5 * attempt)
+    logger.error("[REPORT] Enqueue failed for %s after %d attempts: %s", app_id, attempts, last_error)
+    try:
+        await log_worker_error(
+            error=last_error,
+            reason=f"interview-report enqueue failed after {attempts} attempts -- report AND eval/brief/llmgen billing lost for this session",
+            context={"appId": app_id},
+        )
+    except Exception:
+        pass  # alerting must never mask the original failure
 
 
 class CoverageSource(str, Enum):
@@ -264,14 +282,12 @@ from interview.agent_runtime_helpers import (
     _build_recent_context_block,
     append_transcript_line,
     make_tts_sanitize_transform,
-    _tts_acronym_transform,
     _elevenlabs_normalize_transform,
     _sarvam_normalize_transform,
     make_sarvam_llm_rewrite_transform,
     polish_candidate_facing_text,
     remove_system_messages,
     remove_system_messages_multi,
-    tts_phonetic_processor,
 )
 from interview.agent_runtime_support import (
     INTERVIEW_TEMPERATURE,
@@ -292,7 +308,7 @@ from livekit.agents import (
 from livekit.agents.metrics import AgentSessionUsage
 from livekit.agents.voice import room_io
 from livekit.agents.voice.turn import InterruptionOptions
-from interview.prompt_layers import (
+from interview.tech.prompts import (
     build_voice_layer_prompt,
     build_evaluation_layer_prompt,
     build_system_prompt,
@@ -436,6 +452,7 @@ def _build_probe_directive(
     topic_transcript: list[str],
     signals_history: list[str] | None = None,
     probe_rotation_index: int = 0,
+    interview_type: str = "tech",
 ) -> str:
     """
     Builds the probe directive synchronously — no LLM call.
@@ -448,8 +465,14 @@ def _build_probe_directive(
     consecutive follow-ups on the same topic hit DIFFERENT sub-concepts from the
     topic's probe_focus list — never asking about the same sub-concept twice on
     one topic when other sub-concepts are still un-probed.
+
+    interview_type: routes to interview.tech.probe or interview.conversational.probe
+    for the signal-specific probe directive (different signal sets per module).
     """
-    from interview.probe_strategy import get_probe_context
+    if interview_type == "conversational":
+        from interview.conversational.probe import get_probe_context
+    else:
+        from interview.tech.probe import get_probe_context
 
     # Determine the mandatory sub-concept for THIS turn by rotating through the
     # probe_focus list. This forces "chunking" then "embeddings" then "retrieval"
@@ -1194,7 +1217,7 @@ def prewarm(proc: JobProcess):
     except Exception as e:
         logger.warning(f"Failed to prewarm default STT: {e}")
     try:
-        proc.userdata["default_tts"] = build_cartesia_tts()
+        proc.userdata["default_tts"] = build_sarvam_tts()
         logger.info("Default TTS prewarmed.")
     except Exception as e:
         logger.warning(f"Failed to prewarm default TTS: {e}")
@@ -1246,7 +1269,9 @@ class InterviewContext(BaseModel):
     Required fields raise ValidationError on construction  no manual require_db_value calls needed.
     """
     fullName: str
+    jobId: Optional[str] = None
     jobTitle: str
+    interviewType: Optional[str] = "tech"
     language: str
     orgId: Optional[str] = None
     orgName: Optional[str] = None
@@ -1426,6 +1451,27 @@ async def entrypoint(ctx: JobContext):
     candidate_name = ctx_data.fullName
     candidate_first_name = first_name_from_full_name(candidate_name)
     job_title = ctx_data.jobTitle
+    # Routes which interview module (interview.tech.* vs interview.conversational.*)
+    # supplies brief/eval/scoring/prompts for this session. Falls back to "tech" for
+    # any unrecognized or missing value.
+    interview_type = ctx_data.interviewType if ctx_data.interviewType == "conversational" else "tech"
+    logger.info(f"[INTERVIEW] interview_type={interview_type} job_title={job_title!r}")
+    if interview_type == "conversational":
+        from interview.conversational.brief import generate_interview_brief
+        from interview.conversational.phases import build_greeting_text, build_interview_directive
+        from interview.conversational.prompts import (
+            build_voice_layer_prompt,
+            build_evaluation_layer_prompt,
+            build_system_prompt,
+        )
+    else:
+        from interview.tech.brief import generate_interview_brief
+        from interview.tech.phases import build_greeting_text, build_interview_directive
+        from interview.tech.prompts import (
+            build_voice_layer_prompt,
+            build_evaluation_layer_prompt,
+            build_system_prompt,
+        )
     # Consolidated startup fetch log
     # JD extraction produces criteria[].{name, priority} where priority=critical/high  must-have, medium  nice-to-have.
     # Legacy format used mustHaveSkills/niceToHaveSkills flat arrays  fall back to those if criteria absent.
@@ -1524,7 +1570,17 @@ async def entrypoint(ctx: JobContext):
     org_tts_provider: str = str(ctx_data.ttsProvider).strip().upper()
     org_tts_model: str   = str(ctx_data.ttsModel).strip()
     org_tts_speed: float | None = ctx_data.ttsSpeed
-    voice_id: str        = str(ctx_data.voiceId).strip()
+    voice_id: str        = str(ctx_data.voiceId or "").strip()
+    # Cartesia was removed. Any orphaned CARTESIA row (or a missing voice) falls
+    # back to Sarvam priya so the interview never crashes on a stale provider.
+    if org_tts_provider == "CARTESIA" or not voice_id:
+        logger.warning(
+            "[TTS] provider=%r voice=%r -> falling back to Sarvam priya",
+            org_tts_provider, voice_id,
+        )
+        org_tts_provider = "SARVAM"
+        org_tts_model = "bulbul:v3"
+        voice_id = "priya"
     interview_llm_model: str         = str(ctx_data.llmInterviewLive).strip()
     interview_llm_temperature: float = INTERVIEW_TEMPERATURE
     analysis_model: str              = str(ctx_data.llmInterviewEval).strip()
@@ -1625,9 +1681,6 @@ async def entrypoint(ctx: JobContext):
             ",".join(_t.probe_focus[:3]) or "-",
         )
     # Compact text block for eval layer prompt
-    # Register all session keywords with the phonetic processor
-    tts_phonetic_processor.add_keywords(_tts_keywords)  # type: ignore[union-attr]
-    logger.info("[TTS_PHONETIC] Registered %d keywords for this session", len(_tts_keywords))
     interview_directive_cached = build_interview_directive(
         band=candidate_band,
         resume_brief=None,
@@ -1763,7 +1816,6 @@ async def entrypoint(ctx: JobContext):
     _TTS_BUILDERS = {
         "SARVAM":     build_sarvam_tts,
         "ELEVENLABS": build_elevenlabs_tts,
-        "CARTESIA":   build_cartesia_tts,
     }
     if org_tts_provider not in _TTS_BUILDERS:
         raise ValueError(f"Unknown org ttsProvider {org_tts_provider!r} (expected one of {sorted(_TTS_BUILDERS)})")
@@ -1798,11 +1850,12 @@ async def entrypoint(ctx: JobContext):
         )
         _sarvam_api_key = os.environ.get("SARVAM_API_KEY", "")
         if _sarvam_api_key:
-            _base_dict_id = await _get_base_dict_id(_sarvam_api_key)
+            _base_dict_id = await _get_base_dict_id(_sarvam_api_key, mode=interview_type)
             _sarvam_dict_id = await _get_session_dict_id(
                 _sarvam_api_key,
                 _tts_keywords,
                 base_dict_id=_base_dict_id,
+                mode=interview_type,
             )
         # LLM rewrite transform: rewrites tech acronyms/terms to be TTS-friendly.
         # Uses the shared OpenAI client (no extra connection cost) with gpt-4.1-nano.
@@ -1932,13 +1985,11 @@ async def entrypoint(ctx: JobContext):
             ),
         ),
         "use_tts_aligned_transcript": False,
-        # Client-side acronym transform:
-        # - Cartesia: needs it (no server-side normalization)
+        # Provider-aware text normalization:
         # - ElevenLabs: apply_text_normalization='auto' handles it server-side -- skip
         # - Sarvam: dict_id + enable_preprocessing always-on -- skip (caused letter-reading bug)
         "tts_text_transforms": [
             "filter_emoji",
-            *([_tts_acronym_transform] if org_tts_provider == "CARTESIA" else []),
             *([_elevenlabs_normalize_transform] if org_tts_provider == "ELEVENLABS" else []),
             # Sarvam path: regex normalizer first, then LLM rewriter for ambiguous terms.
             *([_sarvam_normalize_transform] if org_tts_provider == "SARVAM" else []),
@@ -2911,7 +2962,10 @@ async def entrypoint(ctx: JobContext):
                 # Agent then decides: PROBE (stay, build probe directive) or
                 # MOVE_ON (pick next topic, build move-on directive).
                 # Eval never picks topics or builds directives.
-                from interview.eval_pipeline import run_eval_and_build_directive
+                if interview_type == "conversational":
+                    from interview.conversational.eval import run_eval_and_build_directive
+                else:
+                    from interview.tech.eval import run_eval_and_build_directive
                 # Time guard -- no new questions in final 20s
                 if _closing_triggered:
                     logger.info("[CLOSING] eval skipped at turn=%d -- closing in progress", turn_snapshot)
@@ -3444,6 +3498,7 @@ async def entrypoint(ctx: JobContext):
                         topic_transcript=_topic_thread_lines,
                         signals_history=_signals_history_this_topic,
                         probe_rotation_index=_rotation_idx,
+                        interview_type=interview_type,
                     )
                     remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
                     chat_ctx.add_message(role="system", content=_directive)
@@ -4478,6 +4533,12 @@ async def entrypoint(ctx: JobContext):
         plugin_tts_characters=billable_tts_characters,
         plugin_tts_audio_seconds=plugin_tts_audio_seconds,
         plugin_stt_audio_seconds=plugin_stt_audio_seconds,
+        # Per-event ledger attribution for interviewSession STT/TTS rows.
+        app_id=app_id,
+        job_id=ctx_data.jobId,
+        candidate_name=candidate_name,
+        job_title=job_title,
+        is_test=_is_test_session,
     )
     # AI Scorecard + billing snapshot + debug PDF -- handed off to the durable
     # Node/BullMQ worker (interview-report queue -> report_worker.py) instead of
@@ -4494,6 +4555,7 @@ async def entrypoint(ctx: JobContext):
                 "appId": app_id,
                 "orgId": org_id,
                 "jobTitle": job_title,
+                "interviewType": interview_type,
                 "candidateName": candidate_name,
                 "llmInterviewReport": str(ctx_data.llmInterviewReport).strip(),
                 "isTest": _is_test_session,

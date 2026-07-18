@@ -11,6 +11,7 @@ import { getInterviewActionBlockedMessage, getInterviewQuotaSupportMessage, getS
 import { canUseMultilingual } from "@/lib/org-plans";
 import { parseJobScreeningSettings, sanitizeScreeningCriteria, type ScreeningCriteria } from "@/lib/screening-criteria";
 import { formatJobLimit, getActiveJobCount, isJobCreationLocked } from "@/lib/job-limits";
+import { classifyInterviewType } from "@/lib/interview-type";
 import { CheckCircle2, Rocket, ChevronLeft, ChevronRight, Loader2, Lock, Zap, LayoutList, Calendar, FileText, Mic, SlidersHorizontal } from "lucide-react";
 import { useAdminOrg } from "@/context/admin-org-context";
 import { Input } from "@/components/ui/input";
@@ -37,7 +38,8 @@ function CreateJobForm() {
   const isEditAction = searchParams.get("mode") === "edit";
   const { addJob, jobs, updateJob, organization } = useJobs();
   const adminOrg = useAdminOrg();
-  const fallbackVoiceId = adminOrg?.defaultVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc";
+  // No hardcoded default voice: admin must pick from the org's allowed list.
+  const fallbackVoiceId = "";
   const adminAllowedVoices = adminOrg?.allowedVoiceIds;
   const fallbackAllowedVoices = useMemo(() => adminAllowedVoices ?? [], [adminAllowedVoices]);
 
@@ -92,9 +94,6 @@ function CreateJobForm() {
   }, [formData.jdPreviewUrl]);
 
   useEffect(() => {
-  }, [formData.aiInterviewerVoiceId]);
-
-  useEffect(() => {
     if (isEditMode && hasInitialLoadedRef.current !== jobId) {
       const loadJob = async () => {
         try {
@@ -118,10 +117,11 @@ function CreateJobForm() {
             jdFileName: (job as any).jdFileName || "",
             jdPreviewUrl: (job as any).jdPreviewUrl || "",
             jdExtractedDetails: (job as any).jdExtractedDetails || null,
-            aiInterviewerVoiceId: (job as any).aiInterviewerVoiceId || adminOrg?.defaultVoiceId || fallbackVoiceId,
+            aiInterviewerVoiceId: (job as any).aiInterviewerVoiceId || "",
             allowedVoiceIds: Array.isArray(adminOrg?.allowedVoiceIds) ? adminOrg.allowedVoiceIds : fallbackAllowedVoices,
             aiInterviewerName: (job as any).aiInterviewerName || "Ishitha",
             interviewMode: (job as any).interviewMode || "ats",
+            interviewType: (job as any).interviewType || "tech",
           }));
         } catch (err) {
           console.error("Failed to load job:", err);
@@ -130,7 +130,7 @@ function CreateJobForm() {
       };
       loadJob();
     }
-  }, [isEditMode, jobId, adminOrg?.defaultVoiceId, fallbackVoiceId, fallbackAllowedVoices]);
+  }, [isEditMode, jobId, fallbackVoiceId, fallbackAllowedVoices]);
 
   useEffect(() => {
     if (!isEditMode && !searchParams.get("id")) {
@@ -141,7 +141,7 @@ function CreateJobForm() {
           aiGeneratedInterviewQuestions: [],
           resumeScreeningThreshold: 60, resumeScreeningCriteria: {},
           aiInterviewerVoiceId: fallbackVoiceId, allowedVoiceIds: fallbackAllowedVoices,
-          aiInterviewerName: "Ishitha", jdExtractedDetails: null, interviewMode: "ats",
+          aiInterviewerName: "Ishitha", jdExtractedDetails: null, interviewMode: "ats", interviewType: "tech",
         });
         setIsAnalyzing(false);
         setAnalysisError(null);
@@ -170,6 +170,7 @@ function CreateJobForm() {
         let r2Url: string | null = responseData.url ?? null;
         if (responseData.jobId) {
           const jobId = responseData.jobId as string;
+          setFormData((prev: any) => ({ ...prev, jdExtractionJobId: jobId }));
           const deadline = Date.now() + 120000;
           while (Date.now() < deadline) {
             await new Promise((r) => setTimeout(r, 2000));
@@ -196,6 +197,7 @@ function CreateJobForm() {
             ? extracted.interview_questions : prev.aiGeneratedInterviewQuestions,
           jdExtractedDetails: extracted,
           jdPreviewUrl: r2Url || prev.jdPreviewUrl,
+          interviewType: classifyInterviewType(extracted?.job_title || prev.jobRole),
         }));
       } else {
         const rawErrorText = await res.text().catch(() => "");
@@ -240,12 +242,14 @@ function CreateJobForm() {
       jdExtractedDetails: currentFormData.jdExtractedDetails
         ? typeof currentFormData.jdExtractedDetails === "string" ? currentFormData.jdExtractedDetails : JSON.stringify(currentFormData.jdExtractedDetails)
         : null,
+      jdExtractionJobId: currentFormData.jdExtractionJobId || null,
       aiGeneratedInterviewQuestions: parsedQuestions,
       resumeScreeningThreshold: Number(currentFormData.resumeScreeningThreshold ?? 60),
       resumeScreeningCriteria: sanitizeScreeningCriteria(currentFormData.resumeScreeningCriteria || {}),
-      aiInterviewerVoiceId: currentFormData.aiInterviewerVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
+      aiInterviewerVoiceId: currentFormData.aiInterviewerVoiceId || "",
       aiInterviewerName: currentFormData.aiInterviewerName || "Ishitha",
       interviewMode: currentFormData.interviewMode || "ats",
+      interviewType: currentFormData.interviewType || classifyInterviewType(currentFormData.jobRole) || "tech",
     };
     try {
       let savedId: string | null = null;

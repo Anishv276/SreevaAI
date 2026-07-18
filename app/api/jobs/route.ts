@@ -32,7 +32,7 @@ export async function GET(request: Request) {
         const orgId = searchParams.get("orgId");
         const startDate = searchParams.get("startDate");
         const endDate = searchParams.get("endDate");
-        const where: Prisma.JobWhereInput = {};
+        const where: Prisma.JobWhereInput = { isDeleted: false };
         if (startDate || endDate) {
             where.jobCreatedAt = {};
             if (startDate) (where.jobCreatedAt as Prisma.DateTimeFilter).gte = new Date(startDate);
@@ -78,6 +78,7 @@ export async function GET(request: Request) {
                     aiInterviewerName: true,
                     aiInterviewerVoiceId: true,
                     interviewMode: true,
+                    interviewType: true,
                     _count: {
                         select: { applications: { where: { isDeleted: false } } },
                     },
@@ -154,7 +155,7 @@ export async function POST(request: Request) {
             const maxActiveJobs = parseOrgLimitValue(org?.maxActiveJobs);
             if (maxActiveJobs !== null) {
                 const activeJobCount = await prisma.job.count({
-                    where: { organizationId: session.orgId }
+                    where: { organizationId: session.orgId, isDeleted: false }
                 });
                 if (isJobCreationLocked(maxActiveJobs, activeJobCount)) {
                     return NextResponse.json(
@@ -215,11 +216,23 @@ export async function POST(request: Request) {
                 aiGeneratedInterviewQuestions: data.aiGeneratedInterviewQuestions ? JSON.stringify(data.aiGeneratedInterviewQuestions) : "[]",
                 aiInterviewerName: data.aiInterviewerName || "Ishitha",
                 interviewMode: data.interviewMode || "ats",
+                interviewType: data.interviewType || "tech",
                 organizationId: session.orgId!,
                 createdByCredentialId: session.userId,
                 ...aiConfig,
             },
         });
+        if (data.jdExtractionJobId) {
+            // Ledger row was created at extraction time keyed off the BullMQ queue
+            // job id (no real Job existed yet) -- now that the Job row exists,
+            // point jobId at it so the raw ledger data reflects the real Job.id.
+            // eventId stays `jd:{queueJobId}` -- it's the row's idempotency key,
+            // not shown anywhere, so changing it would just orphan the row.
+            await prisma.usageEvent.updateMany({
+                where: { eventId: `jd:${data.jdExtractionJobId}`, organizationId: session.orgId! },
+                data: { jobId: job.id, jobTitle: job.title },
+            }).catch((err) => console.error("[jobs] Failed to backfill jdExtraction ledger jobId:", err));
+        }
         return NextResponse.json(job);
     } catch (error: any) {
         return apiErrorResponse({

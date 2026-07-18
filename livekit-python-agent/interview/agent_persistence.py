@@ -35,7 +35,14 @@ from interview.agent_runtime_support import (
 # CA (not a public CA), so the default trust store can't verify it. Pin that
 # root explicitly instead of disabling verification (ssl=False).
 _SUPABASE_CA_PATH = Path(__file__).resolve().parent.parent / "certs" / "supabase-root-ca.pem"
-_SSL_CONTEXT = ssl.create_default_context(cafile=str(_SUPABASE_CA_PATH))
+# Pin the Supabase root when the cert is bundled (Modal images / prod); fall back
+# to the default trust store when it's absent (e.g. a local dev checkout) so a
+# missing file can't crash this module at import time.
+if _SUPABASE_CA_PATH.is_file():
+    _SSL_CONTEXT = ssl.create_default_context(cafile=str(_SUPABASE_CA_PATH))
+else:
+    logger.warning("[DB] Supabase CA not found at %s -- using default trust store", _SUPABASE_CA_PATH)
+    _SSL_CONTEXT = ssl.create_default_context()
 # Supabase's intermediate cert omits the keyUsage extension, which Python's
 # strict X.509 checking (on by default since 3.13) rejects even though the
 # chain and hostname are otherwise valid. CA pinning + hostname verification
@@ -185,10 +192,11 @@ async def get_interview_context(app_id: str) -> dict:
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL is not set")
     _QUERY = """
-    SELECT a."candidateFullName" AS "fullName", a."resumeRawText" AS "resumeText", a."resumeParsedData" AS "resumeData", d.title, d."jobRole" AS "role",
+    SELECT a."candidateFullName" AS "fullName", a."resumeRawText" AS "resumeText", a."resumeParsedData" AS "resumeData", d.id AS "jobId", d.title, d."jobRole" AS "role",
+           d."interviewType" AS "interviewType",
            d."jdExtractedDetails" AS "extractedDetails", d."resumeScreeningCriteria" AS "screeningCriteria", d."organizationId" AS "orgId",
            d."aiGeneratedInterviewQuestions" AS "interviewQuestions",
-           COALESCE(d."aiInterviewerVoiceId", o."defaultVoiceId") AS "voiceId",
+           d."aiInterviewerVoiceId" AS "voiceId",
            COALESCE(d."aiInterviewerName", 'Ishitha') AS "aiName", o.name AS "orgName",
            o."enabledProctoringSignals" AS "proctoringSignals",
            o."sttModel", o."ttsProvider", o."ttsModel", o."ttsSpeed",
@@ -216,8 +224,9 @@ async def get_interview_context(app_id: str) -> dict:
                 "resumeData":         row["resumeData"],
                 "extractedDetails":   row["extractedDetails"],
                 "screeningCriteria":  row["screeningCriteria"],
-                "jobTitle":           row["role"] or row["title"],
-                "jobTitle":         row["title"],
+                "jobId":              row["jobId"],
+                "jobTitle":           row["title"],
+                "interviewType":      row["interviewType"] or "tech",
                 "jd":                 _build_jd_from_extracted(row["extractedDetails"]),
                 "orgId":              row["orgId"],
                 "orgName":            row["orgName"],
@@ -651,7 +660,7 @@ async def update_interview_status(app_id: str, duration_seconds: Optional[float]
 # ===============================================================================
 # Re-exports -- report pipeline
 # ===============================================================================
-from interview.report_pipeline import (  # noqa: E402
+from interview.tech.report import (  # noqa: E402
     generate_interview_report,
     generate_interview_summary,
     LLMEvalResponse,

@@ -4,82 +4,19 @@ import { prisma } from "@/lib/prisma";
 import { ALL_VOICES } from "@/lib/constants/voices";
 import { listSelectableVoices } from "@/lib/engine-voices";
 import { apiErrorResponse } from "@/lib/slack-error-logger";
-function asProvider(value: unknown): "CARTESIA" | "SARVAM" | "ELEVENLABS" | null {
+function asProvider(value: unknown): "SARVAM" | "ELEVENLABS" | null {
   const normalized = String(value || "").trim().toUpperCase();
-  if (normalized === "CARTESIA" || normalized === "SARVAM" || normalized === "ELEVENLABS") return normalized;
+  if (normalized === "SARVAM" || normalized === "ELEVENLABS") return normalized;
   return null;
 }
-function defaultModelForProvider(provider: "CARTESIA" | "SARVAM" | "ELEVENLABS") {
-  if (provider === "ELEVENLABS") return "eleven_flash_v2_5";
-  return provider === "SARVAM" ? "bulbul:v3" : "cartesia/sonic-3";
+function defaultModelForProvider(provider: "SARVAM" | "ELEVENLABS") {
+  return provider === "SARVAM" ? "bulbul:v3" : "eleven_flash_v2_5";
 }
 function normalizeGender(value: unknown): "male" | "female" | null {
   const raw = String(value || "").trim().toLowerCase();
   if (raw === "male" || raw === "masculine") return "male";
   if (raw === "female" || raw === "feminine") return "female";
   return null;
-}
-async function fetchCartesiaVoiceMetadata(id: string): Promise<{
-  name: string;
-  description: string | null;
-  gender: "male" | "female" | null;
-}> {
-  const apiKey = process.env.CARTESIA_API_KEY;
-  if (!apiKey) {
-    throw new Error("CARTESIA_API_KEY is missing");
-  }
-  const response = await fetch(`https://api.cartesia.ai/voices/${encodeURIComponent(id)}`, {
-    method: "GET",
-    headers: {
-      "X-API-Key": apiKey,
-      "Cartesia-Version": "2024-06-10",
-      "Content-Type": "application/json",
-    },
-  });
-  if (!response.ok) {
-    if (response.status === 404) {
-      // Fallback: some accounts only resolve voice IDs from the catalog list.
-      const listResponse = await fetch("https://api.cartesia.ai/voices", {
-        method: "GET",
-        headers: {
-          "X-API-Key": apiKey,
-          "Cartesia-Version": "2024-06-10",
-          "Content-Type": "application/json",
-        },
-      });
-      if (listResponse.ok) {
-        const listPayload = await listResponse.json();
-        const voices = Array.isArray(listPayload) ? listPayload : listPayload?.voices;
-        if (Array.isArray(voices)) {
-          const matched = voices.find((voice: unknown) => {
-            const item = voice as { id?: unknown };
-            return String(item?.id || "") === id;
-          }) as { name?: unknown; description?: unknown; gender?: unknown } | undefined;
-          if (matched) {
-            return {
-              name: String(matched?.name || "").trim() || id,
-              description: matched?.description ? String(matched.description) : null,
-              gender: normalizeGender(matched?.gender),
-            };
-          }
-        }
-      }
-      throw new Error("Please check your voice ID and try again.");
-    }
-    let reason = response.statusText || "Unable to fetch voice from Cartesia";
-    try {
-      const data = await response.json();
-      reason = data?.message || data?.error?.message || reason;
-    } catch {
-      // keep status text fallback
-    }
-    throw new Error(`Cartesia voice lookup failed: ${reason}`);
-  }
-  const payload = await response.json();
-  const name = String(payload?.name || "").trim() || id;
-  const description = payload?.description ? String(payload.description) : null;
-  const gender = normalizeGender(payload?.gender);
-  return { name, description, gender };
 }
 async function fetchElevenLabsVoiceMetadata(id: string): Promise<{
   name: string;
@@ -203,8 +140,8 @@ export async function POST(request: Request) {
           create: {
             id,
             voiceName: id,
-            voiceProvider: provider || "CARTESIA",
-            voiceModel: defaultModelForProvider(provider || "CARTESIA"),
+            voiceProvider: provider || "ELEVENLABS",
+            voiceModel: defaultModelForProvider(provider || "ELEVENLABS"),
             voiceDescription: null,
             voiceGender: null,
             voiceTags: [],
@@ -234,17 +171,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true });
     }
     if (!provider) {
-      return NextResponse.json({ error: "provider must be CARTESIA, SARVAM, or ELEVENLABS for custom voices" }, { status: 400 });
+      return NextResponse.json({ error: "provider must be SARVAM or ELEVENLABS for custom voices" }, { status: 400 });
     }
     let voiceName = id;
     let voiceDescription: string | null = null;
     let voiceGender: "male" | "female" | null = null;
-    if (provider === "CARTESIA") {
-      const metadata = await fetchCartesiaVoiceMetadata(id);
-      voiceName = metadata.name;
-      voiceDescription = metadata.description;
-      voiceGender = metadata.gender;
-    } else if (provider === "ELEVENLABS") {
+    if (provider === "ELEVENLABS") {
       const metadata = await fetchElevenLabsVoiceMetadata(id);
       voiceName = metadata.name;
       voiceDescription = metadata.description;

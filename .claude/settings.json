@@ -529,7 +529,8 @@
       "Bash(curl -s https://checkip.amazonaws.com)",
       "Bash(ssh -o ConnectTimeout=10 -i \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\SreevaAI\\\\sreeva-prod-key.pem\" ubuntu@3.7.42.105 \"echo connected && docker ps\")",
       "Bash(curl -s -o /dev/null -w \"HTTPS status: %{http_code}\\\\n\" --max-time 10 https://sreevaai.com)",
-      "Bash(ssh -o ConnectTimeout=8 -i \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\SreevaAI\\\\sreeva-prod-key.pem\" ubuntu@3.7.42.105 \"echo ok\")"
+      "Bash(ssh -o ConnectTimeout=8 -i \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\SreevaAI\\\\sreeva-prod-key.pem\" ubuntu@3.7.42.105 \"echo ok\")",
+      "Bash(node --env-file=.env _tmp_final_audit.mjs)"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",

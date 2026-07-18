@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 type BuiltInVoice = {
   id: string;
   name: string;
-  provider: "CARTESIA" | "SARVAM" | "ELEVENLABS";
+  provider: "SARVAM" | "ELEVENLABS";
   model: string;
   description: string;
   gender: "male" | "female";
@@ -30,17 +30,8 @@ type VoiceRegistry = {
   }>;
   builtInVoices: BuiltInVoice[];
 };
-type Provider = "CARTESIA" | "SARVAM" | "ELEVENLABS";
+type Provider = "SARVAM" | "ELEVENLABS";
 const PROVIDER_META: Record<Provider, { label: string; color: string; bg: string; border: string; dot: string; activeBg: string; activeText: string }> = {
-  CARTESIA: {
-    label: "Cartesia",
-    color: "text-gray-600",
-    bg: "bg-violet-50",
-    border: "border-gray-200",
-    dot: "bg-slate-400",
-    activeBg: "bg-gray-100",
-    activeText: "text-gray-800",
-  },
   SARVAM: {
     label: "Sarvam",
     color: "text-violet-600",
@@ -65,11 +56,11 @@ export default function SuperAdminVoicesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
-  const [activeTab, setActiveTab] = useState<Provider>("CARTESIA");
+  const [activeTab, setActiveTab] = useState<Provider>("ELEVENLABS");
   const [showSarvamPicker, setShowSarvamPicker] = useState(false);
   const [selectedSarvamIds, setSelectedSarvamIds] = useState<string[]>([]);
   const [registry, setRegistry] = useState<VoiceRegistry | null>(null);
-  const [form, setForm] = useState({ provider: "CARTESIA" as Provider, id: "" });
+  const [form, setForm] = useState({ provider: "ELEVENLABS" as Provider, id: "" });
   // Preview state
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -135,7 +126,7 @@ export default function SuperAdminVoicesPage() {
     return registry.builtInVoices.find((v) => v.id === id) ?? null;
   }, [form.id, registry]);
   const byProvider = useMemo(() => {
-    if (!registry) return { CARTESIA: [], SARVAM: [], ELEVENLABS: [] } as Record<Provider, BuiltInVoice[]>;
+    if (!registry) return { SARVAM: [], ELEVENLABS: [] } as Record<Provider, BuiltInVoice[]>;
     const term = search.trim().toLowerCase();
     const voices = term
       ? registry.selectableVoices.filter((v) =>
@@ -143,7 +134,6 @@ export default function SuperAdminVoicesPage() {
         )
       : registry.selectableVoices;
     return {
-      CARTESIA: voices.filter((v) => v.provider === "CARTESIA"),
       SARVAM: voices.filter((v) => v.provider === "SARVAM"),
       ELEVENLABS: voices.filter((v) => v.provider === "ELEVENLABS"),
     } as Record<Provider, BuiltInVoice[]>;
@@ -224,11 +214,11 @@ export default function SuperAdminVoicesPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Voice Engine</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Manage TTS voices across Cartesia, Sarvam, and ElevenLabs</p>
+          <p className="text-sm text-gray-400 mt-0.5">Manage TTS voices across Sarvam and ElevenLabs</p>
         </div>
         {/* Quick stats — always visible in header */}
         <div className="flex items-center gap-2">
-          {(["CARTESIA", "SARVAM", "ELEVENLABS"] as Provider[]).map((p) => {
+          {(["SARVAM", "ELEVENLABS"] as Provider[]).map((p) => {
             const meta = PROVIDER_META[p];
             const count = byProvider[p].length;
             return (
@@ -264,8 +254,8 @@ export default function SuperAdminVoicesPage() {
             {/* Provider selector */}
             <div className="space-y-1">
               <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Provider</label>
-              <div className="grid grid-cols-3 gap-0.5 rounded-lg border border-gray-200 bg-violet-50 p-0.5">
-                {(["CARTESIA", "SARVAM", "ELEVENLABS"] as Provider[]).map((p) => {
+              <div className="grid grid-cols-2 gap-0.5 rounded-lg border border-gray-200 bg-violet-50 p-0.5">
+                {(["SARVAM", "ELEVENLABS"] as Provider[]).map((p) => {
                   const meta = PROVIDER_META[p];
                   const active = form.provider === p;
                   return (
@@ -297,7 +287,7 @@ export default function SuperAdminVoicesPage() {
                 <input
                   value={form.id}
                   onChange={(e) => setForm((p) => ({ ...p, id: e.target.value }))}
-                  placeholder={form.provider === "CARTESIA" ? "Paste Cartesia voice ID…" : "Paste ElevenLabs voice ID…"}
+                  placeholder="Paste ElevenLabs voice ID…"
                   className="h-9 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
                 />
               </div>
@@ -419,7 +409,7 @@ export default function SuperAdminVoicesPage() {
           </div>
           {/* Provider tabs */}
           <div className="flex shrink-0 border-b border-gray-100 px-4">
-            {(["CARTESIA", "SARVAM", "ELEVENLABS"] as Provider[]).map((p) => {
+            {(["SARVAM", "ELEVENLABS"] as Provider[]).map((p) => {
               const meta = PROVIDER_META[p];
               const count = byProvider[p].length;
               const active = activeTab === p;

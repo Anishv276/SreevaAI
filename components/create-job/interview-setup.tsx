@@ -1,8 +1,8 @@
 "use client";
 import { useState, useRef, useEffect, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { Plus, Trash2, BrainCircuit, ChevronDown, Globe, Play, Pause, RefreshCw, AudioLines, Search } from "lucide-react";
+import { Plus, Trash2, BrainCircuit, ChevronDown, Globe, Play, Pause, RefreshCw, AudioLines, Search, FlaskConical, MessageCircle } from "lucide-react";
 import { toast } from "@/components/ui/toast-custom";
-import { ALL_VOICES, DEFAULT_VOICE_ID, type Voice } from "@/lib/constants/voices";
+import { ALL_VOICES, type Voice } from "@/lib/constants/voices";
 
 interface InterviewProps {
     formData: any;
@@ -72,7 +72,9 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
         return selected.gender === "male" ? "Ishaan" : "Ishitha";
     };
 
-    const currentVoiceId = formData.aiInterviewerVoiceId || DEFAULT_VOICE_ID;
+    // No baked-in default: the voice must be chosen from the org's allowed list
+    // (Super Admin → AI Models). Empty renders "Select a voice" and disables preview.
+    const currentVoiceId = formData.aiInterviewerVoiceId || "";
 
     const getAvailableVoices = () => {
         const whitelist: string[] = Array.isArray(formData.allowedVoiceIds) ? formData.allowedVoiceIds : [];
@@ -168,6 +170,25 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
 
     return (
         <div className="space-y-6">
+            <div className="h-px" style={{ background: "#F0EEF8" }} />
+
+            {/* Interview Mode (read-only, set from JD analysis) */}
+            <div className="flex items-center gap-2">
+                <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    Interview Type
+                </label>
+                <span
+                    className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full text-xs font-medium"
+                    style={(formData.interviewType || "tech") === "tech"
+                        ? { background: "#EEF2FF", color: "#4338CA", border: "1px solid #C7D2FE" }
+                        : { background: "#FDF4FF", color: "#A21CAF", border: "1px solid #F0ABFC" }}
+                >
+                    {(formData.interviewType || "tech") === "tech"
+                        ? <><FlaskConical className="h-3 w-3" /> Tech Interview</>
+                        : <><MessageCircle className="h-3 w-3" /> Conversational Interview</>}
+                </span>
+            </div>
+
             <div className="h-px" style={{ background: "#F0EEF8" }} />
 
             {/* Interviewer Persona */}

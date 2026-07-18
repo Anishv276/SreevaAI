@@ -19,17 +19,7 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: "Organization required" }, { status: 400 });
         }
         const status = await getOrgBillingStatus(orgId);
-        let usageMetrics: Record<string, unknown> | null = null;
-        if (isSuperAdminRole(session.role)) {
-            const { prisma } = await import("@/lib/prisma");
-            const { Prisma } = await import("@prisma/client");
-            const rows = await prisma.$queryRaw<Array<{ platformUsageMetrics: unknown }>>(
-                Prisma.sql`SELECT "platformUsageMetrics" FROM "OrganizationDetails" WHERE id = ${orgId} LIMIT 1`
-            );
-            const raw = rows[0]?.platformUsageMetrics;
-            usageMetrics = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
-        }
-        return NextResponse.json({ ...status, ...(usageMetrics !== null ? { usageMetrics } : {}) }, {
+        return NextResponse.json(status, {
             headers: { 'Cache-Control': 'private, max-age=60' }
         });
     } catch (error) {

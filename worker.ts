@@ -1576,6 +1576,9 @@ if (isQueueEnabled("jd-extraction")) {
       connection: redisConnection,
       prefix: BULL_PREFIX,
       concurrency: 70, // global cap -- Modal handles ~100 concurrent jobs; per-org cap enforced inside processJdExtractionViaModal (lib/modal-concurrency.ts)
+      lockDuration: 3 * 60 * 1000,  // 3 min — longer than the 120s Modal JD timeout, else a slow extract looks "stalled" and re-runs (double-billing)
+      stalledInterval: 60 * 1000,
+      maxStalledCount: 1,
       removeOnComplete: { count: 10 },
       removeOnFail: { count: 25 },
     }

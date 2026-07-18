@@ -375,7 +375,6 @@ export async function POST(request: Request) {
             // Build org data explicitly to ensure exclusivity
             const orgData: Prisma.OrganizationDetailsCreateInput & {
                 id: string;
-                platformUsageMetrics: Prisma.InputJsonValue;
             } = {
                 id: generateId("org", orgName),
                 name: orgName,
@@ -390,7 +389,6 @@ export async function POST(request: Request) {
                 billingCreditsUsed: 0,
                 isRecordingEnabled: resolvedRecordingEnabled ? true : null,
                 recordingKeepForDays: resolvedRecordingEnabled ? resolvedRecordingRetentionDays : null,
-                platformUsageMetrics: {},
             };
             if (resolvedSignals !== undefined) {
                 orgData.enabledProctoringSignals = resolvedSignals;
