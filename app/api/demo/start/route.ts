@@ -17,7 +17,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/prisma-demo";
 import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
-import { isBusinessEmail } from "@/lib/demo-email-gate";
+import { normalizeEmail } from "@/lib/email";
 
 const DEMO_DURATION_MINS = 5;
 const DEMO_KILL_SWITCH_SECS = 294; // 4.9 minutes
@@ -30,10 +30,15 @@ export async function POST(request: Request) {
         if (!templateId || !clientName?.trim() || !clientEmail?.trim()) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
-        if (!isBusinessEmail(clientEmail)) {
+        // Require the email to have completed OTP verification (see
+        // /api/demo/otp/send + /api/demo/otp/verify) -- this proves the visitor
+        // actually controls the inbox, not just that the domain has mail service.
+        const normalizedEmail = normalizeEmail(clientEmail);
+        const verification = await db.demoEmailVerification.findUnique({ where: { email: normalizedEmail } });
+        if (!verification || !verification.verified || verification.expiresAt.getTime() < Date.now()) {
             return NextResponse.json({
-                error: "Please use your work email address to try the demo.",
-                code: "PERSONAL_EMAIL",
+                error: "Please verify your email before starting the interview.",
+                code: "EMAIL_NOT_VERIFIED",
             }, { status: 400 });
         }
 
@@ -53,7 +58,7 @@ export async function POST(request: Request) {
             data: {
                 templateId,
                 clientName: clientName.trim(),
-                clientEmail: clientEmail.trim().toLowerCase(),
+                clientEmail: normalizedEmail,
                 status: "LAUNCHING",
             },
         });

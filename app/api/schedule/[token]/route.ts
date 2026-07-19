@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, isLive } from "@/lib/prisma";
 import { sendInterviewScheduledEmail } from "@/lib/mail";
 import { briefGenerationQueue } from "@/lib/queue";
 
@@ -38,14 +38,16 @@ export async function GET(
             application: {
                 include: {
                     job: {
-                        include: { organization: { select: { id: true, name: true, maxConcurrentInterviews: true } } },
+                        include: { organization: { select: { id: true, name: true, maxConcurrentInterviews: true, isDeleted: true } } },
                     },
                 },
             },
         },
     });
 
-    if (!interview) return NextResponse.json({ error: "Invalid link" }, { status: 404 });
+    if (!interview || !isLive(interview.application, interview.application?.job, interview.application?.job?.organization)) {
+        return NextResponse.json({ error: "Invalid link" }, { status: 404 });
+    }
     if (interview.interviewScheduledAt) {
         return NextResponse.json({ error: "Slot already booked", alreadyBooked: true, scheduledAt: interview.interviewScheduledAt }, { status: 409 });
     }
@@ -129,14 +131,16 @@ export async function POST(
             application: {
                 include: {
                     job: {
-                        include: { organization: { select: { name: true, maxConcurrentInterviews: true, id: true } } },
+                        include: { organization: { select: { name: true, maxConcurrentInterviews: true, id: true, isDeleted: true } } },
                     },
                 },
             },
         },
     });
 
-    if (!interview) return NextResponse.json({ error: "Invalid link" }, { status: 404 });
+    if (!interview || !isLive(interview.application, interview.application?.job, interview.application?.job?.organization)) {
+        return NextResponse.json({ error: "Invalid link" }, { status: 404 });
+    }
     if (interview.interviewScheduledAt) return NextResponse.json({ error: "Already booked", alreadyBooked: true }, { status: 409 });
 
     const org = interview.application.job?.organization;

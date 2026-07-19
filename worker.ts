@@ -7,7 +7,7 @@ import { putObject, getObjectBuffer, headObjectStrict, deleteObjectStrict, getKe
 import { generateId } from "./lib/ids";
 import { isInterviewTokenRequired } from "./lib/interview-access";
 import { appendCandidateActivity } from "./lib/candidate-activity";
-import { recordOrgBillingUsage } from "./lib/usage-metrics";
+import { recordOrgBillingUsage, priceLlmUsage } from "./lib/usage-metrics";
 import { Prisma } from "@prisma/client";
 import { recordingRetentionQueue, invitationDeliveryQueue } from "./lib/queue";
 import { JD_EXTRACTION_QUEUE_NAME } from "./lib/jd-extraction";
@@ -1752,6 +1752,7 @@ if (isQueueEnabled("demo-brief-generation")) {
 
       // ── 1. Wait for JD extraction ─────────────────────────────────────
       let jdText: string | null = null;
+      let jdUsage: { model?: string; inputTokens?: number; outputTokens?: number; cachedInputTokens?: number } | null = null;
       if (jdExtractionJobId) {
         const { Queue: BullQueue } = await import("bullmq");
         const jdQueue = new BullQueue("jd-extraction", { connection: createRedisConnection(), prefix: BULL_PREFIX });
@@ -1759,7 +1760,11 @@ if (isQueueEnabled("demo-brief-generation")) {
           const jdJob = await jdQueue.getJob(jdExtractionJobId).catch(() => null);
           if (!jdJob) { await new Promise(r => setTimeout(r, 3000)); continue; }
           const state = await jdJob.getState();
-          if (state === "completed") { jdText = jdJob.returnvalue?.text || ""; break; }
+          if (state === "completed") {
+            jdText = jdJob.returnvalue?.text || "";
+            jdUsage = jdJob.returnvalue?.usage || null;
+            break;
+          }
           if (state === "failed") throw new Error(`JD extraction job ${jdExtractionJobId} failed`);
           await new Promise(r => setTimeout(r, 3000));
         }
@@ -1778,7 +1783,7 @@ if (isQueueEnabled("demo-brief-generation")) {
         "../../livekit-python-agent/scripts/generate_demo_brief.py"
       );
       const jdB64 = Buffer.from(jdText, "utf8").toString("base64");
-      const briefJson: Record<string, any> = await new Promise((resolve, reject) => {
+      const rawResult: Record<string, any> = await new Promise((resolve, reject) => {
         const py = spawn(
           process.env.PYTHON_BIN || "python3",
           [scriptPath, roleTitle || "", mode || "TECH", jdB64],
@@ -1800,6 +1805,7 @@ if (isQueueEnabled("demo-brief-generation")) {
         });
         py.on("error", reject);
       });
+      const { usage: briefUsage, ...briefJson } = rawResult;
 
       // ── 4. Persist brief + mark ready ───────────────────────────────
       await (prisma as any).demoTemplate.update({
@@ -1807,6 +1813,49 @@ if (isQueueEnabled("demo-brief-generation")) {
         data: { briefJson, status: "ready" },
       });
       console.log(`[DEMO-BRIEF] ✓ Template ${templateId} ready (${briefJson.topic_pool?.length ?? 0} topics)`);
+
+      // ── 5. Price + persist template usage (JD extraction + brief LLM calls) ──
+      // One-time cost, shared by every DemoSession that reuses this template --
+      // never re-billed per session. Same pricing (billing.py's rate table) as
+      // every other feature, via priceLlmUsage -- no separate rate table here.
+      try {
+        // "llm" (not "byModel") matches billing.py's _llm_entry/EntityLedger
+        // convention -- save_demo_session_usage and the /api/super-admin/
+        // billing/demo* read routes both key LLM entries as usage[sub].llm[].
+        // ("byModel" is reserved for TTS/STT audio entries, a different shape.)
+        const usageFragment: Record<string, { runs: number; llm: any[] }> = {};
+        if (jdUsage?.model) {
+          const entry = await priceLlmUsage({
+            model: jdUsage.model,
+            inputTokens: jdUsage.inputTokens,
+            outputTokens: jdUsage.outputTokens,
+            cachedInputTokens: jdUsage.cachedInputTokens,
+          });
+          usageFragment.jdExtraction = { runs: 1, llm: [entry] };
+        }
+        if (briefUsage?.model) {
+          const entry = await priceLlmUsage({
+            model: briefUsage.model,
+            inputTokens: briefUsage.inputTokens,
+            outputTokens: briefUsage.outputTokens,
+            cachedInputTokens: briefUsage.cachedInputTokens,
+          });
+          usageFragment.brief = { runs: 1, llm: [entry] };
+        }
+        if (Object.keys(usageFragment).length > 0) {
+          const costUsd = Object.values(usageFragment).reduce(
+            (sum, f) => sum + (f.llm?.[0]?.costUsd || 0), 0
+          );
+          await (prisma as any).demoTemplate.update({
+            where: { id: templateId },
+            data: { usageJson: usageFragment, usageCostUsd: costUsd },
+          });
+          console.log(`[DEMO-BRIEF] Usage recorded for template ${templateId}: $${costUsd.toFixed(6)}`);
+        }
+      } catch (e) {
+        // Billing must never block the demo from becoming usable.
+        console.error(`[DEMO-BRIEF] Usage pricing/persist failed for template ${templateId}:`, e);
+      }
       return { ok: true, templateId, topicCount: briefJson.topic_pool?.length ?? 0 };
     },
     {

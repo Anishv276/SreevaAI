@@ -235,12 +235,19 @@ async def generate_demo_brief(
     mode: str,                        # "TECH" | "CONVERSATION"
     openai_client: "AsyncOpenAI",
     llm_model: str = "gpt-4.1",
-) -> DemoBrief:
+) -> tuple[DemoBrief, dict]:
     """
     Generate an 8-topic DemoBrief from JD text only (no resume).
     Output is stored in DemoTemplate.briefJson and sent to the agent via
     LiveKit dispatch metadata. The agent passes it to the shared tech/conv
     prompt pipeline without modification.
+
+    Returns (brief, usage) where usage is a raw token-count dict
+    ({model, inputTokens, outputTokens, cachedInputTokens}) from the LAST
+    completion call (retries on truncated JSON count once, using the final
+    successful call's tokens) -- callers price it via billing.py's ONE rate
+    table (CostCalculator.openai / the price-llm-usage CLI command) instead
+    of duplicating pricing logic here.
     """
     mode_upper = (mode or "TECH").upper()
     system_prompt = _TECH_SYSTEM if mode_upper == "TECH" else _CONV_SYSTEM
@@ -251,6 +258,10 @@ async def generate_demo_brief(
     )
 
     raw = ""
+    # Every attempt (including a discarded truncated one) is a real, billed
+    # call -- accumulate tokens across retries so the caller prices the full
+    # cost incurred, not just the successful attempt's tokens.
+    input_t = cached_t = output_t = 0
     for max_tokens in (3000, 5000):
         resp = await openai_client.chat.completions.create(
             model=llm_model,
@@ -263,6 +274,12 @@ async def generate_demo_brief(
             ],
             timeout=30,
         )
+        _usage = getattr(resp, "usage", None)
+        if _usage:
+            input_t += int(getattr(_usage, "prompt_tokens", 0) or 0)
+            output_t += int(getattr(_usage, "completion_tokens", 0) or 0)
+            _details = getattr(_usage, "prompt_tokens_details", None)
+            cached_t += int(getattr(_details, "cached_tokens", 0) or 0) if _details else 0
         raw = (resp.choices[0].message.content or "").strip()
         if not raw:
             raise ValueError("[DEMO/BRIEF] Empty LLM response")
@@ -274,6 +291,10 @@ async def generate_demo_brief(
             continue
     else:
         raise ValueError(f"[DEMO/BRIEF] JSON truncated after retries: {raw[-200:]!r}")
+    usage = {
+        "model": llm_model, "inputTokens": input_t,
+        "outputTokens": output_t, "cachedInputTokens": cached_t,
+    }
 
     # Inject fixed demo fields before validation
     parsed.setdefault("candidate_summary", f"Demo interview: role-based {'technical' if mode_upper == 'TECH' else 'conversational'} assessment for {role_title}.")
@@ -293,4 +314,4 @@ async def generate_demo_brief(
         "[DEMO/BRIEF] ✓ %s brief: %d topics, anchor=%r",
         mode_upper, len(brief.topic_pool), brief.anchor_topic.title,
     )
-    return brief
+    return brief, usage

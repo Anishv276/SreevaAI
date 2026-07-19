@@ -1,6 +1,6 @@
 import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, isLive } from "@/lib/prisma";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/job-limits";
 import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
@@ -14,17 +14,19 @@ const LATE_CLOSE_MS = 5 * 60 * 1000; // window closes 5 min after slot start
 const LAUNCH_TIMEOUT_MS = 5 * 60 * 1000;
 
 async function resolveInterview(applicationId: string) {
-    return prisma.application.findUnique({
+    const result = await prisma.application.findUnique({
         where: { id: applicationId },
         include: {
             job: {
                 include: {
-                    organization: { select: { name: true, enabledProctoringSignals: true } },
+                    organization: { select: { name: true, enabledProctoringSignals: true, isDeleted: true } },
                 },
             },
             interview: true,
         },
     });
+    if (!isLive(result?.job, result?.job?.organization, result?.interview)) return null;
+    return result;
 }
 
 function checkJobExpiration(job: { closedAt?: Date | null; applicationDeadline?: Date | null } | null | undefined): {
@@ -250,11 +252,11 @@ export async function GET(
         const application = await prisma.application.findUnique({
             where: { id: applicationId },
             include: {
-                job: { include: { organization: { select: { name: true } } } },
+                job: { include: { organization: { select: { name: true, isDeleted: true } } } },
                 interview: true
             },
         });
-        if (!application || !application.interview) {
+        if (!application || !application.interview || !isLive(application.job, application.job?.organization, application.interview)) {
             return NextResponse.json({ error: "Interview session not found" }, { status: 404 });
         }
         const interview = application.interview;

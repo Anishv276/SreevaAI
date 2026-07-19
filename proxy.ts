@@ -18,6 +18,7 @@ const PUBLIC_PREFIXES = [
     "/api/health",
     "/api/schedule/",
     "/api/interview/",
+    "/api/demo/",
     "/api/upload/interview-snapshot",
     "/api/internal/",
     "/api/webhooks/",

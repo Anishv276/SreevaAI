@@ -113,7 +113,7 @@ export async function POST(request: Request) {
           { status: 400 }
         );
       }
-      await prisma.aIVoice.deleteMany({ where: { id } });
+      await prisma.aIVoice.updateMany({ where: { id }, data: { isDeleted: true, isAvailable: false } });
       return NextResponse.json({ success: true });
     }
     if (action === "remove") {

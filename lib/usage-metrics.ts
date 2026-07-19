@@ -99,8 +99,8 @@ function billingSubprocessEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-function runBillingCommand(command: string, payload: Record<string, unknown>) {
-  return new Promise<void>((resolve, reject) => {
+function runBillingCommandRaw(command: string, payload: Record<string, unknown>) {
+  return new Promise<Record<string, unknown>>((resolve, reject) => {
     const child = spawn(getPythonExecutable(), ["-m", "billing.billing", command], {
       cwd: BILLING_CWD,
       env: billingSubprocessEnv(),
@@ -116,14 +116,14 @@ function runBillingCommand(command: string, payload: Record<string, unknown>) {
     });
     child.on("error", reject);
     child.on("close", (code) => {
-      let parsed: { ok?: boolean; error?: string } | null = null;
+      let parsed: { ok?: boolean; error?: string;[k: string]: unknown } | null = null;
       try {
         parsed = stdout.trim() ? JSON.parse(stdout.trim().split(/\r?\n/).at(-1) || "{}") : null;
       } catch {
         parsed = null;
       }
       if (code === 0 && parsed?.ok !== false) {
-        resolve();
+        resolve(parsed || {});
         return;
       }
       const errorMsg = parsed?.error || stderr?.trim() || `billing command ${command} failed with code ${code}`;
@@ -132,6 +132,37 @@ function runBillingCommand(command: string, payload: Record<string, unknown>) {
     });
     child.stdin.end(JSON.stringify(payload));
   });
+}
+
+async function runBillingCommand(command: string, payload: Record<string, unknown>): Promise<void> {
+  await runBillingCommandRaw(command, payload);
+}
+
+// Priced OpenAI usage entry -- shape returned by billing.py's _llm_entry(),
+// the same per-model shape every ledger stores (UsageEvent, and DemoTemplate/
+// DemoSession's usageJson columns).
+export type PricedLlmEntry = {
+  model: string;
+  provider: string;
+  calls: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+};
+
+/** Price one OpenAI usage dict via billing.py's ONE rate table (_OPENAI_RATES)
+ * without writing anything to the DB or requiring an orgId. Used by callers
+ * that have no OrganizationDetails row to bill against (demo templates) but
+ * still want the exact same pricing logic as every other feature. */
+export async function priceLlmUsage(usage: {
+  model: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedInputTokens?: number;
+}): Promise<PricedLlmEntry> {
+  const result = await runBillingCommandRaw("price-llm-usage", { usage });
+  return result.entry as PricedLlmEntry;
 }
 
 export function usageFromOpenAICompletion(completion: {

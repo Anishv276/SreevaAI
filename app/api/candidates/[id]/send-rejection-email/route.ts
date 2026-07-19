@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, isLive } from "@/lib/prisma";
 import { getSession, isAdminRole } from "@/lib/auth";
 import { sendRejectionEmail } from "@/lib/mail";
 import { appendCandidateActivity } from "@/lib/candidate-activity";
@@ -15,11 +15,11 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
             where: { id: applicationId },
             include: {
                 job: {
-                    include: { organization: { select: { name: true } } },
+                    include: { organization: { select: { name: true, isDeleted: true } } },
                 },
             },
         });
-        if (!application) {
+        if (!application || !isLive(application.job, application.job?.organization)) {
             return NextResponse.json({ error: "Application not found" }, { status: 404 });
         }
         if (session.orgId && application.job?.organizationId !== session.orgId) {

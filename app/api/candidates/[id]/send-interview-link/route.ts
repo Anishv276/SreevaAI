@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, isLive } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { sendScheduleInviteEmail } from "@/lib/mail";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
@@ -29,6 +29,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
                         organization: {
                             select: {
                                 name: true,
+                                isDeleted: true,
                             },
                         },
                     },
@@ -36,7 +37,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
                 interview: true
             }
         });
-        if (!application) {
+        if (!application || !isLive(application.job, application.job?.organization)) {
             console.error(`[INTERVIEW] Application not found for ID: ${applicationId}`);
             return NextResponse.json({ error: "Application not found" }, { status: 404 });
         }

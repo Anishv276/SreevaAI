@@ -995,13 +995,27 @@ class InterviewLedger:
     """
 
     @staticmethod
-    def _entity(ctx: dict[str, Any]) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    async def _resolve_interview_id(conn, app_id: Optional[str]) -> Optional[str]:
+        """Look up Interview.id by applicationId (unique) -- call-site context
+        for report/eval/brief/llmgen usage only carries applicationId, so
+        without this every such UsageEvent row is written with interviewId=NULL
+        even though a matching Interview row exists."""
+        if not app_id:
+            return None
+        row = await conn.fetchrow('SELECT id FROM "Interview" WHERE "applicationId" = $1', app_id)
+        return row["id"] if row else None
+
+    @staticmethod
+    async def _entity(conn, ctx: dict[str, Any]) -> tuple[Optional[str], Optional[str], Optional[str]]:
         """Return (entity_key_id, application_id, interview_id).
 
-        Prefer interviewId when present; fall back to applicationId (report/eval/
-        brief/llmgen call sites only have applicationId at write time)."""
+        Prefer interviewId when present; otherwise resolve it from applicationId
+        via the Interview table (report/eval/brief/llmgen call sites only have
+        applicationId at write time)."""
         app_id = str(ctx.get("applicationId") or "").strip() or None
         interview_id = str(ctx.get("interviewId") or "").strip() or None
+        if not interview_id:
+            interview_id = await InterviewLedger._resolve_interview_id(conn, app_id)
         key_id = interview_id or app_id
         return key_id, app_id, interview_id
 
@@ -1013,7 +1027,7 @@ class InterviewLedger:
         if not sub:
             logger.warning("[BILLING] InterviewLedger: unknown sub-feature for feature=%r ledgerFeature=%r", feature, ledger_feature)
             return
-        key_id, app_id, interview_id = cls._entity(ctx)
+        key_id, app_id, interview_id = await cls._entity(conn, ctx)
         if not key_id:
             logger.warning("[BILLING] InterviewLedger: no interviewId/applicationId — skipping ledger row")
             return
@@ -1037,7 +1051,11 @@ class InterviewLedger:
         is_test: bool,
     ) -> None:
         """Fold a session summary's tts/stt byModel maps into the interview row."""
-        key_id = (interview_id or "").strip() or (app_id or "").strip()
+        app_id = (app_id or "").strip() or None
+        interview_id = (interview_id or "").strip() or None
+        if not interview_id:
+            interview_id = await cls._resolve_interview_id(conn, app_id)
+        key_id = interview_id or app_id
         if not key_id:
             return
         fragment: dict[str, Any] = {}
@@ -1069,6 +1087,85 @@ class InterviewLedger:
             fragment=fragment, application_id=(app_id or None), interview_id=(interview_id or None),
             job_id=(job_id or None), job_title=job_title, candidate_name=candidate_name, is_test=is_test,
         )
+
+
+# ===============================================================================
+# SECTION 6B -- Demo session billing
+#
+# Demo sessions have no OrganizationDetails row, so they never touch UsageEvent
+# (organizationId is a required FK there). Same rate tables (CostCalculator),
+# same per-model entry shape (_llm_entry / tts+stt byModel), written directly
+# onto DemoSession.usageJson/usageCostUsd -- no separate ledger table, since
+# this is written exactly once at session end (no concurrent-writer merge
+# needed, unlike the org ledger which many calls hit throughout a session).
+# ===============================================================================
+
+async def save_demo_session_usage(
+    demo_session_id: str,
+    *,
+    live_usages: list[dict[str, Any]] | None = None,      # live conversation LLM (from session.usage)
+    eval_usages: list[dict[str, Any]] | None = None,       # per-answer eval LLM calls
+    llmgen_usages: list[dict[str, Any]] | None = None,     # per-topic-transition question-gen LLM calls
+    tts_provider: Optional[str] = None,
+    tts_model: Optional[str] = None,
+    tts_characters: int = 0,
+    stt_provider: Optional[str] = None,
+    stt_model: Optional[str] = None,
+    stt_audio_seconds: float = 0.0,
+) -> None:
+    """Write DemoSession.usageJson/usageCostUsd for a completed demo interview.
+
+    Never raises -- billing must not break a demo session's completion path.
+    """
+    if not demo_session_id or not DATABASE_URL:
+        return
+    try:
+        usage: dict[str, Any] = {}
+
+        def _add_llm_bucket(key: str, entries_raw: list[dict[str, Any]] | None) -> None:
+            if not entries_raw:
+                return
+            arr: list[dict[str, Any]] = []
+            for raw in entries_raw:
+                entry = _llm_entry(raw)
+                if entry:
+                    _merge_model_array(arr, entry)
+            if arr:
+                usage[key] = {"llm": arr}
+
+        _add_llm_bucket("live", live_usages)
+        _add_llm_bucket("eval", eval_usages)
+        _add_llm_bucket("llmGeneration", llmgen_usages)
+
+        if tts_characters > 0 and tts_provider and tts_model:
+            cost = CostCalculator.tts(tts_provider, tts_model, tts_characters)
+            usage["tts"] = {
+                "characters": tts_characters, "costUsd": round(cost, 8),
+                "byModel": [{"model": tts_model, "provider": tts_provider.strip().upper(),
+                             "calls": 1, "characters": tts_characters, "costUsd": round(cost, 8)}],
+            }
+        if stt_audio_seconds > 0 and stt_provider and stt_model:
+            cost = CostCalculator.stt(stt_provider, stt_model, stt_audio_seconds)
+            usage["stt"] = {
+                "seconds": stt_audio_seconds, "costUsd": round(cost, 8),
+                "byModel": [{"model": stt_model, "provider": stt_provider.strip().upper(),
+                             "calls": 1, "seconds": stt_audio_seconds, "costUsd": round(cost, 8)}],
+            }
+
+        if not usage:
+            return
+        cost_usd = _sum_usage_cost(usage)
+
+        from interview.agent_persistence import DatabasePool  # lazy -- avoid circular at module load
+        pool = await DatabasePool.get()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                'UPDATE "DemoSession" SET "usageJson" = $1::jsonb, "usageCostUsd" = $2 WHERE id = $3',
+                json.dumps(usage), cost_usd, demo_session_id,
+            )
+        logger.info("[BILLING] Saved demo session usage: session=%s cost=$%.6f", demo_session_id, cost_usd)
+    except Exception as e:  # noqa: BLE001 -- billing must never break session completion
+        logger.error("[BILLING] save_demo_session_usage failed for session=%s: %s", demo_session_id, e, exc_info=True)
 
 
 async def _record_ledger_entry(conn, org_id: str, feature: str, usage: dict[str, Any]) -> None:
@@ -1382,6 +1479,19 @@ async def _main_cli() -> int:
         if command == "deduct-interview-quota":
             await deduct_interview_quota(payload.get("appId") or payload.get("applicationId"), payload.get("durationSeconds"))
             _json_result(True)
+            return 0
+        if command == "price-llm-usage":
+            # Stateless -- no DB write, no org. Prices one OpenAI usage dict
+            # ({model, inputTokens, outputTokens, cachedInputTokens}) and returns
+            # the same {model, provider, calls, ...tokens, costUsd} shape every
+            # other ledger uses, so callers that don't have an org (demo
+            # templates) can still price a call with the ONE rate table in this
+            # file instead of duplicating _OPENAI_RATES in TypeScript.
+            entry = _llm_entry(payload.get("usage") or {})
+            if not entry:
+                _json_result(False, error="usage.model is required")
+                return 2
+            _json_result(True, entry=entry)
             return 0
         _json_result(False, error=f"Unknown billing command: {command}")
         return 2

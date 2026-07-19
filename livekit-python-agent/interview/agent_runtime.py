@@ -53,6 +53,7 @@ from interview.slack_error_logger import (
 )
 from billing.billing import (
     save_org_usage_metrics as persist_org_usage_metrics,
+    save_demo_session_usage,
 )
 from openai import AsyncOpenAI
 from pydantic import BaseModel, field_validator
@@ -4824,6 +4825,38 @@ async def entrypoint(ctx: JobContext):
             candidate_name=candidate_name,
             job_title=job_title,
             is_test=_is_test_session,
+        )
+    else:
+        # DEMO: no OrganizationDetails row to bill against (persist_org_usage_metrics
+        # requires org_id) -- write to DemoSession.usageJson instead. Live-conversation
+        # LLM usage comes straight from the LiveKit session's own model_usage
+        # buckets (same source UsageSummarizer reads for real sessions); eval/
+        # llmgen usage was already accumulated in-memory throughout the session
+        # by the usage_sink=..._llm_usages.append callbacks above -- just never
+        # flushed to DB before now because this whole branch used to be skipped.
+        _demo_session_id = app_id[len("demo_"):]  # matches agent_persistence.py's demo_* stripping
+        _demo_session_usage = latest_session_usage or session.usage
+        _demo_live_usages: list[dict] = []
+        for _item in (getattr(_demo_session_usage, "model_usage", []) or []):
+            if getattr(_item, "type", "") != "llm_usage":
+                continue
+            _demo_live_usages.append({
+                "model": str(getattr(_item, "model", "") or "").strip(),
+                "inputTokens": int(getattr(_item, "input_tokens", 0) or 0),
+                "outputTokens": int(getattr(_item, "output_tokens", 0) or 0),
+                "cachedInputTokens": int(getattr(_item, "input_cached_tokens", 0) or 0),
+            })
+        await save_demo_session_usage(
+            _demo_session_id,
+            live_usages=_demo_live_usages,
+            eval_usages=list(_eval_llm_usages_accumulated),
+            llmgen_usages=list(_llmgen_llm_usages),
+            tts_provider=org_tts_provider,
+            tts_model=org_tts_model,
+            tts_characters=billable_tts_characters,
+            stt_provider="DEEPGRAM",
+            stt_model=str(ctx_data.sttModel),
+            stt_audio_seconds=plugin_stt_audio_seconds,
         )
     # AI Scorecard + billing snapshot + debug PDF -- handed off to the durable
     # Node/BullMQ worker (interview-report queue -> report_worker.py) instead of

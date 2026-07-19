@@ -113,3 +113,16 @@ export { prisma };
 if (process.env.NODE_ENV !== 'production') {
     globalForPrisma.prisma = prisma
 }
+
+// The global isDeleted middleware above only patches top-level `where` --
+// Prisma resolves `include`d to-one relations as separate internal calls that
+// bypass it, and Prisma doesn't allow `where:` inside `include` for to-one
+// relations. Any route that fetches a model via `include` (job, interview,
+// organization, template, etc.) must re-check isDeleted on the nested object
+// itself. Use these instead of ad hoc `?.isDeleted` checks scattered per route.
+type MaybeDeleted = { isDeleted?: boolean | null } | null | undefined;
+
+/** True if a nested included record (or any ancestor in the chain) is soft-deleted or missing. */
+export function isLive(...records: MaybeDeleted[]): boolean {
+    return records.every((r) => r != null && !r.isDeleted);
+}

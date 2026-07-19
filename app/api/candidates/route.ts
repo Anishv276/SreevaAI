@@ -108,7 +108,7 @@ export async function GET(request: Request) {
                 where,
                 include: {
                     job: { select: { title: true, jobRole: true } },
-                    interview: { select: { inviteEmailSentAt: true, interviewStatus: true, interviewCompletedAt: true, isTestSession: true } },
+                    interview: { select: { inviteEmailSentAt: true, interviewStatus: true, interviewCompletedAt: true, isTestSession: true, isDeleted: true } },
                 },
                 orderBy:
                     sortBy === "score"
@@ -164,6 +164,7 @@ export async function GET(request: Request) {
                 progress = null;
                 stage = null;
             }
+            const interview = app.interview && !app.interview.isDeleted ? app.interview : null;
             return {
                 id: app.id,
                 jobId: app.jobId,
@@ -173,13 +174,13 @@ export async function GET(request: Request) {
                 role: app.job?.jobRole || app.job?.title || "Unknown Role",
                 score: app.resumeAiScore || 0,
                 status: app.resumeScreeningStatus,
-                interviewStatus: app.interview?.interviewStatus || app.interviewPhaseStatus,
+                interviewStatus: interview?.interviewStatus || app.interviewPhaseStatus,
                 screeningProgress: progress,
                 screeningStage: stage,
-                inviteSentAt: app.interview?.inviteEmailSentAt ?? null,
-                interview: app.interview ? {
-                    completedAt: app.interview.interviewCompletedAt,
-                    isTest: app.interview.isTestSession,
+                inviteSentAt: interview?.inviteEmailSentAt ?? null,
+                interview: interview ? {
+                    completedAt: interview.interviewCompletedAt,
+                    isTest: interview.isTestSession,
                 } : null,
                 createdAt: app.appliedAt,
                 date: new Date(app.appliedAt).toLocaleDateString(),

@@ -314,6 +314,31 @@ export async function sendOtpEmail({ to, name, otp }: { to: string; name: string
     `);
     await sendEmail({ to, subject, html, type: "password-reset" });
 }
+// --- 5b. Demo Verification Code (proves the visitor owns the email they typed) --
+export async function sendDemoOtpEmail({ to, name, otp }: { to: string; name: string; otp: string }): Promise<void> {
+    const subject = `${otp} is your Sreeva AI demo verification code`;
+    const digitBoxes = otp.split("").map(d =>
+        `<td style="padding:0 4px;"><div style="width:48px;height:60px;background:#ffffff;border:2px solid ${VIOLET_BORDER};border-radius:12px;text-align:center;line-height:60px;font-size:28px;font-weight:800;color:#111827;font-variant-numeric:tabular-nums;box-shadow:0 2px 8px rgba(124,58,237,0.05);">${d}</div></td>`
+    ).join("");
+    const html = wrapper(`
+        ${header("Verify Your Email", "Sreeva AI demo interview")}
+        <tr><td style="padding:32px 48px 0;">
+          <p style="margin:0 0 20px;font-size:15px;color:#404040;line-height:1.75;">
+            Hi ${name}, enter this code to start your live demo interview. This code expires in <strong>10 minutes</strong>.
+          </p>
+          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${VIOLET_LIGHT};border:1px solid ${VIOLET_BORDER};border-radius:16px;">
+            <tr><td style="padding:32px;text-align:center;">
+              <p style="margin:0 0 16px;font-size:11px;font-weight:700;color:${VIOLET};letter-spacing:0.12em;text-transform:uppercase;">Your verification code</p>
+              <table cellpadding="0" cellspacing="0" border="0" style="margin:0 auto;"><tr>${digitBoxes}</tr></table>
+              <p style="margin:16px 0 0;font-size:13px;color:${VIOLET};">Expires in <strong>10 minutes</strong></p>
+            </td></tr>
+          </table>
+          ${noteBox(`⚠️ <strong>Never share this code.</strong> If you didn't request a Sreeva AI demo, please ignore this email.`)}
+        </td></tr>
+        ${footerRow(`Sent to ${to} · This code expires in 10 minutes.`)}
+    `);
+    await sendEmail({ to, subject, html, type: "password-reset" });
+}
 // --- 6. Schedule Invite (candidate picks a slot) -----------------------------
 export async function sendScheduleInviteEmail({
     email, fullName, jobTitle, orgName, scheduleLink,

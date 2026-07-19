@@ -66,6 +66,7 @@ export async function GET(
                             interviewCompletedAt: true,
                             inviteEmailSentAt: true,
                             aiScoreBreakdown: true,
+                            isDeleted: true,
                         },
                     },
                 },
@@ -101,7 +102,7 @@ export async function GET(
                 jobId:         a.jobId,
                 jobTitle:      a.job?.title ?? null,
                 jobRole:       a.job?.jobRole  ?? null,
-                interview: a.interview ? {
+                interview: (a.interview && !a.interview.isDeleted) ? {
                     status:         a.interview.interviewStatus,
                     completedAt:    a.interview.interviewCompletedAt,
                     inviteSentAt:   a.interview.inviteEmailSentAt,

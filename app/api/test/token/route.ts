@@ -1,6 +1,6 @@
 import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, isLive } from "@/lib/prisma";
 import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/job-limits";
 import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { isTestAccessAuthorized } from "@/lib/test-key";
@@ -21,12 +21,12 @@ export async function POST(request: Request) {
         const application = await prisma.application.findUnique({
             where: { id: applicationId },
             include: {
-                job: { include: { organization: { select: { id: true, name: true, enabledProctoringSignals: true } } } },
+                job: { include: { organization: { select: { id: true, name: true, enabledProctoringSignals: true, isDeleted: true } } } },
                 interview: true,
             },
         });
 
-        if (!application) {
+        if (!application || !isLive(application.job, application.job?.organization)) {
             return NextResponse.json({ error: "Application not found" }, { status: 404 });
         }
 

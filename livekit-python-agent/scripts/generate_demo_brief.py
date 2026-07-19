@@ -54,14 +54,18 @@ async def main() -> None:
     openai_client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
     try:
-        brief = await generate_demo_brief(
+        brief, usage = await generate_demo_brief(
             role_title=role_title,
             jd_text=jd_text,
             mode=mode,
             openai_client=openai_client,
             llm_model=os.environ.get("DEMO_BRIEF_MODEL", "gpt-4.1"),
         )
-        print(json.dumps(brief.model_dump()))
+        # worker.ts reads brief.usage to price + write DemoTemplate.usageJson.brief
+        # via lib/usage-metrics.ts's priceLlmUsage() (billing.py's ONE rate table).
+        output = brief.model_dump()
+        output["usage"] = usage
+        print(json.dumps(output))
     except Exception as e:
         print(json.dumps({"error": str(e)}))
         sys.exit(1)

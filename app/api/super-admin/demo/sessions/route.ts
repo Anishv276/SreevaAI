@@ -17,11 +17,15 @@ export async function GET() {
         const sessions = await db.demoSession.findMany({
             orderBy: { startedAt: "desc" },
             include: {
-                template: { select: { title: true, mode: true } },
+                template: { select: { title: true, mode: true, isDeleted: true } },
             },
             take: 200,
         });
-        return NextResponse.json({ sessions });
+        const visible = sessions.map((s: any) => ({
+            ...s,
+            template: s.template && !s.template.isDeleted ? s.template : null,
+        }));
+        return NextResponse.json({ sessions: visible });
     } catch (error) {
         console.error("[DEMO/SESSIONS] GET error:", error);
         return NextResponse.json({ error: "Failed to fetch sessions" }, { status: 500 });

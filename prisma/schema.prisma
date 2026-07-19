@@ -291,19 +291,28 @@ model AIVoice {
 // The BullMQ worker generates the briefJson from the JD; once status = "ready"
 // it is shown to clients on the /demo public page.
 model DemoTemplate {
-  id          String        @id @default(cuid())
-  title       String        // e.g. "Frontend Engineer"
-  roleTitle   String        // normalised role name used by the agent
-  mode        String        // "TECH" | "CONVERSATION"
-  jdText      String?       // extracted raw text from the uploaded PDF
-  briefJson   Json?         // InterviewBrief JSON, filled by the brief-gen worker
-  status      String        @default("processing") // "processing" | "ready" | "failed"
-  isActive    Boolean       @default(true)
-  isDeleted   Boolean       @default(false)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id           String        @id @default(cuid())
+  title        String        // e.g. "Frontend Engineer"
+  roleTitle    String        // normalised role name used by the agent
+  mode         String        // "TECH" | "CONVERSATION"
+  jdText       String?       // extracted raw text from the uploaded PDF
+  briefJson    Json?         // InterviewBrief JSON, filled by the brief-gen worker
+  status       String        @default("processing") // "processing" | "ready" | "failed"
+  isActive     Boolean       @default(true)
+  isDeleted    Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
-  sessions    DemoSession[]
+  // One-time cost of preparing this template: JD extraction + brief generation.
+  // Written once when the brief finishes generating (worker.ts's
+  // demo-brief-generation queue) -- every DemoSession that reuses this
+  // template shares this same cost, it is never re-billed per session.
+  // Shape: { jdExtraction: {runs, llm:[{provider,model,calls,inputTokens,
+  // outputTokens,cachedInputTokens,costUsd}]}, brief: {...} }
+  usageJson    Json          @default("{}")
+  usageCostUsd Float         @default(0) // sum of every costUsd in usageJson
+
+  sessions     DemoSession[]
 
   @@index([status, isActive])
 }
@@ -328,7 +337,30 @@ model DemoSession {
   startedAt       DateTime      @default(now())
   completedAt     DateTime?
 
+  // Per-session usage/cost: live conversation LLM, eval LLM (per-answer
+  // scoring), llmGeneration LLM (per-topic-transition question generation),
+  // TTS, and STT. Written once at session end by billing.py's
+  // save_demo_session_usage. Shape: { live: {llm:[...]}, eval: {llm:[...]},
+  // llmGeneration: {llm:[...]}, tts: {characters,costUsd,byModel:[...]},
+  // stt: {seconds,costUsd,byModel:[...]} }
+  usageJson       Json          @default("{}")
+  usageCostUsd    Float         @default(0) // sum of every costUsd in usageJson
+
   @@index([templateId])
   @@index([clientEmail])
   @@index([startedAt(sort: Desc)])
+}
+
+// One row per email attempting the /demo OTP gate. Proves the visitor
+// actually controls the inbox they typed -- MX/disposable checks alone can't
+// distinguish a real company domain from any other domain with mail service.
+model DemoEmailVerification {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  otpHash     String
+  expiresAt   DateTime
+  verified    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([email])
 }

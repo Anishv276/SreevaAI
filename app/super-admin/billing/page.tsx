@@ -7,6 +7,7 @@ import { formatLandingPackageForOrgPlan } from "@/lib/landing-packages";
 import { cn } from "@/lib/utils";
 import { OrgUsagePanel } from "@/components/super-admin/usage/org-usage-panel";
 import { CurrencyToggle, useCurrency } from "@/components/super-admin/usage/currency";
+import { DemoUsageCard } from "@/components/super-admin/usage/demo-usage-card";
 
 type OrgSummary = {
   id: string;
@@ -188,6 +189,7 @@ function SuperAdminBillingInner() {
           </div>
         </div>
       </div>
+      <DemoUsageCard fmt={fmt} />
       <div className="mt-6">
         <section className="min-w-0">
           {selectedOrgId ? (

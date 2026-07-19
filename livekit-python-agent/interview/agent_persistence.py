@@ -265,9 +265,13 @@ async def get_demo_interview_context(app_id: str, dispatch_metadata: dict) -> di
     """Build an InterviewContext-shaped dict for a demo session directly from
     dispatch metadata (isDemo=True) instead of querying Application/Job/Interview.
     There is no real candidate/org row for a demo -- the brief was pre-generated
-    by the demo-brief-generation worker and passed through dispatch metadata,
-    and AI model config falls back to the same schema defaults OrganizationDetails
-    would otherwise supply.
+    by the demo-brief-generation worker and passed through dispatch metadata.
+
+    AI model config below is hardcoded FOR DEMO SESSIONS ONLY (app_id starts
+    with "demo_", see is_demo_app_id()). Real interviews never call this
+    function -- they go through get_interview_context(), which reads every
+    model value from each org's own OrganizationDetails row (Super Admin ->
+    Models). Changing these values has zero effect on real customer interviews.
     """
     role_title = str(dispatch_metadata.get("roleLabel") or "the role").strip()
     candidate_name = str(dispatch_metadata.get("candidateName") or "Guest").strip()
@@ -292,13 +296,24 @@ async def get_demo_interview_context(app_id: str, dispatch_metadata: dict) -> di
         "interviewQuestions":   None,
         "interviewStatus":      None,
         "interviewBrief":       dispatch_metadata.get("briefJson"),
+        # DEMO-ONLY STT: flux-general (English). Real interviews use each org's
+        # own sttModel from OrganizationDetails via get_interview_context().
         "sttModel":             "flux-general-en",
+        # DEMO-ONLY TTS: voiceId is always None for a demo session, which makes
+        # agent_runtime.py's Cartesia/missing-voice fallback fire -- provider
+        # and model always resolve to Sarvam bulbul:v3, speaker "priya" (same
+        # values production sessions get on that same fallback path).
         "ttsProvider":          None,
         "ttsModel":             None,
-        "ttsSpeed":             1.0,
+        # DEMO-ONLY pace: 1.15 (brisk, professional -- Sarvam bulbul:v3 valid
+        # range is 0.5-2.0; Sarvam's own guidance recommends 1.0-1.1 for
+        # natural/brisk speech). Every other Sarvam param stays at its shared
+        # default in agent_providers.py -- only pace differs for the demo.
+        "ttsSpeed":             1.15,
+        # DEMO-ONLY LLMs -- see function docstring: these never affect real interviews.
         "llmInterviewLive":     "gpt-4.1-mini",
-        "llmInterviewEval":     "gpt-4.1-nano",
-        "llmInterviewBrief":    "gpt-4.1",
+        "llmInterviewEval":     "gpt-4.1-mini",
+        "llmInterviewBrief":    "gpt-5.4-mini",
         "llmInterviewReport":   "gpt-5.4-mini",
     }
 async def mark_demo_session_started(app_id: str) -> None:

@@ -51,13 +51,17 @@ export async function POST(request: Request) {
         });
 
         // 2. Enqueue JD extraction (re-uses the existing worker — no Modal)
-        //    We pass the template ID so the worker knows where to write the result.
+        //    No orgId: demo templates have no real OrganizationDetails row, and
+        //    UsageEvent.organizationId is a required FK -- passing a fake
+        //    namespaced string here used to silently fail that FK constraint
+        //    inside EntityLedger.upsert every time. Cost is instead captured via
+        //    DemoTemplate.usageJson (see worker.ts's jd-extraction/demo-brief-
+        //    generation handlers), which has no such FK.
         const jdJobId = await enqueueJdExtraction({
             kind: "file",
             fileName: file.name,
             buffer: { type: "Buffer", data: Array.from(buffer) },
             orgOpenAIModel: "gpt-4.1-mini", // lightweight model for extraction
-            orgId: `demo_template_${template.id}`, // namespaced so billing skips it
         });
 
         // 3. Enqueue brief generation — this will wait for the JD extraction result
@@ -67,7 +71,6 @@ export async function POST(request: Request) {
             jdExtractionJobId: jdJobId,
             mode,
             roleTitle: roleTitle || title,
-            orgId: `demo_template_${template.id}`,
         });
 
         return NextResponse.json({ template });
