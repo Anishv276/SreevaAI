@@ -137,4 +137,18 @@ export const interviewReportQueue = new Queue('interview-report', {
     removeOnFail:    { age: FIVE_MIN_REPORT },
   },
 });
+// 12. Demo template brief generation — runs in the normal BullMQ worker
+//     (NOT Modal). Triggered after jd-extraction completes for a DemoTemplate.
+//     Calls the same LLM-based brief pipeline as production, but writes result
+//     to DemoTemplate.briefJson instead of Application/Interview tables.
+export const demoBriefGenerationQueue = new Queue('demo-brief-generation', {
+  connection: redisConnection,
+  prefix,
+  defaultJobOptions: {
+    attempts: 2,
+    backoff: { type: 'exponential', delay: 5000 },
+    removeOnComplete: { age: FIVE_MIN },
+    removeOnFail:    { age: FIVE_MIN },
+  },
+});
 export default redisConnection;

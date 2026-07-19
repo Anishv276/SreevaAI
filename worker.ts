@@ -1730,7 +1730,105 @@ if (isQueueEnabled("interview-report")) {
   });
 }
 
+/**
+ * 🎯 DEMO BRIEF GENERATION WORKER
+ * Waits for JD extraction → spawns generate_demo_brief.py → saves briefJson.
+ * ALL prompt logic lives in livekit-python-agent/interview/demo/brief.py.
+ * This worker has zero LLM calls — it just orchestrates and persists.
+ */
+if (isQueueEnabled("demo-brief-generation")) {
+  const demoBriefWorker = trackWorker("demo-brief-generation", new Worker(
+    "demo-brief-generation",
+    async (job) => {
+      const { templateId, jdExtractionJobId, mode, roleTitle } = job.data || {};
+      if (!templateId) throw new Error("[DEMO-BRIEF] Missing templateId in job data");
+
+      console.log(`\n================================================`);
+      console.log(`▶ [DEMO-BRIEF] id="${job.id}" template="${templateId}" mode="${mode}"`);
+      console.log(`================================================\n`);
+
+      // ── 1. Wait for JD extraction ─────────────────────────────────────
+      let jdText: string | null = null;
+      if (jdExtractionJobId) {
+        const { Queue: BullQueue } = await import("bullmq");
+        const jdQueue = new BullQueue("jd-extraction", { connection: createRedisConnection(), prefix: BULL_PREFIX });
+        for (let i = 0; i < 30; i++) {
+          const jdJob = await jdQueue.getJob(jdExtractionJobId).catch(() => null);
+          if (!jdJob) { await new Promise(r => setTimeout(r, 3000)); continue; }
+          const state = await jdJob.getState();
+          if (state === "completed") { jdText = jdJob.returnvalue?.text || ""; break; }
+          if (state === "failed") throw new Error(`JD extraction job ${jdExtractionJobId} failed`);
+          await new Promise(r => setTimeout(r, 3000));
+        }
+        await jdQueue.close();
+      }
+      if (!jdText) throw new Error(`[DEMO-BRIEF] JD text not available for template ${templateId}`);
+
+      // ── 2. Persist JD text ───────────────────────────────────────────
+      await (prisma as any).demoTemplate.update({ where: { id: templateId }, data: { jdText } });
+
+      // ── 3. Spawn Python — all LLM/prompt logic lives in demo/brief.py ─
+      const { spawn } = await import("child_process");
+      const path = await import("path");
+      const scriptPath = path.resolve(
+        __dirname,
+        "../../livekit-python-agent/scripts/generate_demo_brief.py"
+      );
+      const jdB64 = Buffer.from(jdText, "utf8").toString("base64");
+      const briefJson: Record<string, any> = await new Promise((resolve, reject) => {
+        const py = spawn(
+          process.env.PYTHON_BIN || "python3",
+          [scriptPath, roleTitle || "", mode || "TECH", jdB64],
+          { env: { ...process.env }, timeout: 120_000 }
+        );
+        let stdout = "";
+        let stderr = "";
+        py.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
+        py.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+        py.on("close", (code: number) => {
+          if (stderr) console.error("[DEMO-BRIEF] Python stderr:", stderr.slice(0, 500));
+          try {
+            const parsed = JSON.parse(stdout.trim());
+            if (parsed.error) return reject(new Error(`Python: ${parsed.error}`));
+            resolve(parsed);
+          } catch {
+            reject(new Error(`[DEMO-BRIEF] Invalid JSON from Python (exit ${code}): ${stdout.slice(0, 300)}`));
+          }
+        });
+        py.on("error", reject);
+      });
+
+      // ── 4. Persist brief + mark ready ───────────────────────────────
+      await (prisma as any).demoTemplate.update({
+        where: { id: templateId },
+        data: { briefJson, status: "ready" },
+      });
+      console.log(`[DEMO-BRIEF] ✓ Template ${templateId} ready (${briefJson.topic_pool?.length ?? 0} topics)`);
+      return { ok: true, templateId, topicCount: briefJson.topic_pool?.length ?? 0 };
+    },
+    {
+      connection: createRedisConnection(),
+      prefix: BULL_PREFIX,
+      concurrency: 5,
+      lockDuration: 5 * 60 * 1000,
+      removeOnComplete: { age: 300 },
+      removeOnFail:    { age: 3600 },
+    }
+  ));
+
+  demoBriefWorker.on("failed", (job, err) => {
+    console.error(`[DEMO-BRIEF] Job ${job?.id} failed for template=${job?.data?.templateId}: ${err.message}`);
+    if (job?.data?.templateId) {
+      (prisma as any).demoTemplate.update({
+        where: { id: job.data.templateId },
+        data: { status: "failed" },
+      }).catch(() => { });
+    }
+  });
+}
+
 console.log("[Worker] Started. Listening for enabled queues.");
+
 
 /**
  * REDIS CONFIGURATION & CRON SETUP

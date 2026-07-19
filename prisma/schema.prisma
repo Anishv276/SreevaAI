@@ -282,3 +282,53 @@ model AIVoice {
   @@index([isAvailable])
   @@index([voiceProvider])
 }
+
+// ---------------------------------------------------------------------------
+// DEMO ARCHITECTURE (completely isolated from production Interview/Application)
+// ---------------------------------------------------------------------------
+
+// A fixed interview template created by Super Admin via JD PDF upload.
+// The BullMQ worker generates the briefJson from the JD; once status = "ready"
+// it is shown to clients on the /demo public page.
+model DemoTemplate {
+  id          String        @id @default(cuid())
+  title       String        // e.g. "Frontend Engineer"
+  roleTitle   String        // normalised role name used by the agent
+  mode        String        // "TECH" | "CONVERSATION"
+  jdText      String?       // extracted raw text from the uploaded PDF
+  briefJson   Json?         // InterviewBrief JSON, filled by the brief-gen worker
+  status      String        @default("processing") // "processing" | "ready" | "failed"
+  isActive    Boolean       @default(true)
+  isDeleted   Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  sessions    DemoSession[]
+
+  @@index([status, isActive])
+}
+
+// One row per person who tries a demo.  clientEmail is the business email they
+// submitted at the gate. transcript + evalScore are written by the agent / worker
+// when the 4.9-minute session ends.
+model DemoSession {
+  id              String        @id @default(cuid())
+  templateId      String
+  template        DemoTemplate  @relation(fields: [templateId], references: [id])
+
+  clientName      String
+  clientEmail     String        // must be a business email (validated at the API layer)
+
+  status          String        @default("LAUNCHING") // "LAUNCHING" | "IN_PROGRESS" | "COMPLETED" | "FAILED"
+  livekitRoomName String?       // the LiveKit room name for this session
+  transcript      String?       // written by the agent on disconnect
+  evalScore       Json?         // written by the post-session scoring worker
+  isDeleted       Boolean       @default(false)
+
+  startedAt       DateTime      @default(now())
+  completedAt     DateTime?
+
+  @@index([templateId])
+  @@index([clientEmail])
+  @@index([startedAt(sort: Desc)])
+}

@@ -1,8 +1,14 @@
 {
+  "include": ["app", "lib", "components", "livekit-python-agent"],
   "extraPaths": ["./livekit-python-agent"],
+  "pythonVersion": "3.11",
   "exclude": [
     "**/node_modules",
     "**/__pycache__",
-    "modal_app"
-  ]
+    "modal_app",
+    ".venv",
+    "livekit-python-agent/interview/demo/prompts.py"
+  ],
+  "reportMissingModuleSource": "none",
+  "reportMissingImports": "none"
 }

@@ -16,6 +16,7 @@ import {
     AudioLines,
     MessageSquare,
     Bot,
+    Play,
 } from "lucide-react";
 import { Toaster } from "@/components/ui/toast-custom";
 
@@ -27,8 +28,10 @@ const NAV_ITEMS = [
     { href: "/super-admin/billing", label: "Billing", icon: CreditCard },
     { href: "/super-admin/support", label: "Support Tickets", icon: LifeBuoy },
     { href: "/super-admin/feedback", label: "Candidate Feedback", icon: MessageSquare },
+    { href: "/super-admin/demo", label: "Demo", icon: Play },
     { href: "/super-admin/settings", label: "Settings", icon: Settings },
 ];
+
 
 export default function SuperAdminShell({ children }: { children: React.ReactNode }) {
     const { logout } = useAuth();

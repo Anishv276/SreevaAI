@@ -116,6 +116,40 @@ export default function HeroSection() {
 
           <div className="cta-container">
             <a href="https://cal.com/vamsivk/30min" className="btn-primary-lg">Book a Demo</a>
+            <a
+              href="/demo"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-secondary-lg"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "14px 28px",
+                borderRadius: "12px",
+                fontSize: "1rem",
+                fontWeight: 600,
+                fontFamily: "var(--sans)",
+                letterSpacing: "-0.01em",
+                textDecoration: "none",
+                border: "1.5px solid rgba(124,58,237,0.35)",
+                background: "rgba(124,58,237,0.06)",
+                color: "var(--primary)",
+                transition: "all 0.2s ease",
+                cursor: "pointer",
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLAnchorElement).style.background = "rgba(124,58,237,0.12)";
+                (e.currentTarget as HTMLAnchorElement).style.borderColor = "rgba(124,58,237,0.6)";
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLAnchorElement).style.background = "rgba(124,58,237,0.06)";
+                (e.currentTarget as HTMLAnchorElement).style.borderColor = "rgba(124,58,237,0.35)";
+              }}
+            >
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#27c93f", display: "inline-block", boxShadow: "0 0 6px #27c93f" }} />
+              Try Demo
+            </a>
           </div>
         </div>
 
