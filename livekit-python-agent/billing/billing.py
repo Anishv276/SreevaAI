@@ -792,39 +792,43 @@ class EntityLedger:
         if not org_id or not event_id or not fragment:
             return
         try:
-            existing = await conn.fetchrow(
-                'SELECT id, "usage", "jobTitle", "candidateName" FROM "UsageEvent" '
-                'WHERE "eventId" = $1 FOR UPDATE',
-                event_id,
-            )
-            if existing:
-                stored = _coerce_jsonish(existing["usage"])
-                cls._apply_fragment(stored, fragment)
-                cost = _sum_usage_cost(stored)
-                await conn.execute(
-                    'UPDATE "UsageEvent" SET "usage" = $1::jsonb, "costUsd" = $2, '
-                    '"jobTitle" = COALESCE($3, "jobTitle"), '
-                    '"candidateName" = COALESCE($4, "candidateName"), '
-                    '"jobId" = COALESCE("jobId", $5), '
-                    '"applicationId" = COALESCE("applicationId", $6), '
-                    '"interviewId" = COALESCE("interviewId", $7), '
-                    '"updatedAt" = NOW() WHERE id = $8',
-                    json.dumps(stored), cost, job_title, candidate_name,
-                    job_id, application_id, interview_id, existing["id"],
+            # Nested transaction = savepoint: a failure here rolls back only this
+            # savepoint, not the whole outer transaction/connection — otherwise every
+            # later statement on `conn` fails with InFailedSQLTransactionError.
+            async with conn.transaction():
+                existing = await conn.fetchrow(
+                    'SELECT id, "usage", "jobTitle", "candidateName" FROM "UsageEvent" '
+                    'WHERE "eventId" = $1 FOR UPDATE',
+                    event_id,
                 )
-            else:
-                stored = cls._apply_fragment({}, fragment)
-                cost = _sum_usage_cost(stored)
-                await conn.execute(
-                    'INSERT INTO "UsageEvent" '
-                    '("id","organizationId","feature","jobId","applicationId","interviewId",'
-                    '"jobTitle","candidateName","isTest","usage","costUsd","eventId","createdAt","updatedAt") '
-                    'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,COALESCE($13, NOW()),NOW()) '
-                    'ON CONFLICT ("eventId") DO NOTHING',
-                    "evt_" + uuid.uuid4().hex, org_id, feature, job_id, application_id, interview_id,
-                    job_title, candidate_name, bool(is_test), json.dumps(stored), cost, event_id,
-                    _to_ts(created_at),
-                )
+                if existing:
+                    stored = _coerce_jsonish(existing["usage"])
+                    cls._apply_fragment(stored, fragment)
+                    cost = _sum_usage_cost(stored)
+                    await conn.execute(
+                        'UPDATE "UsageEvent" SET "usage" = $1::jsonb, "costUsd" = $2, '
+                        '"jobTitle" = COALESCE($3, "jobTitle"), '
+                        '"candidateName" = COALESCE($4, "candidateName"), '
+                        '"jobId" = COALESCE("jobId", $5), '
+                        '"applicationId" = COALESCE("applicationId", $6), '
+                        '"interviewId" = COALESCE("interviewId", $7), '
+                        '"updatedAt" = NOW() WHERE id = $8',
+                        json.dumps(stored), cost, job_title, candidate_name,
+                        job_id, application_id, interview_id, existing["id"],
+                    )
+                else:
+                    stored = cls._apply_fragment({}, fragment)
+                    cost = _sum_usage_cost(stored)
+                    await conn.execute(
+                        'INSERT INTO "UsageEvent" '
+                        '("id","organizationId","feature","jobId","applicationId","interviewId",'
+                        '"jobTitle","candidateName","isTest","usage","costUsd","eventId","createdAt","updatedAt") '
+                        'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,COALESCE($13, NOW()),NOW()) '
+                        'ON CONFLICT ("eventId") DO NOTHING',
+                        "evt_" + uuid.uuid4().hex, org_id, feature, job_id, application_id, interview_id,
+                        job_title, candidate_name, bool(is_test), json.dumps(stored), cost, event_id,
+                        _to_ts(created_at),
+                    )
         except Exception as e:  # noqa: BLE001 — ledger must never break billing
             logger.error("[BILLING] EntityLedger.upsert failed (non-fatal) event=%s: %s", event_id, e, exc_info=True)
             return

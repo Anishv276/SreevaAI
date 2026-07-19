@@ -847,7 +847,7 @@ class IntegrityNarrator:
         spec = LLMCallSpec(
             system=_INTEGRITY_NARRATIVE_SYSTEM,
             user=user,
-            max_tokens=250 * max(1, len(grouped)),
+            max_tokens=max(600, 350 * len(grouped)),
             timeout=45.0,
             response_format=_INTEGRITY_NARRATIVE_JSON_SCHEMA,
             call_type="report_integrity_narrative",

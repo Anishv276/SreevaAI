@@ -40,7 +40,7 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
         try { mediaSourceRef.current?.disconnect(); } catch { } mediaSourceRef.current = null;
         try { gainNodeRef.current?.disconnect(); } catch { } gainNodeRef.current = null;
         try { bufferSourceRef.current?.stop(); bufferSourceRef.current?.disconnect(); } catch { } bufferSourceRef.current = null;
-        if (audioContextRef.current && audioContextRef.current.state !== "closed") { audioContextRef.current.close().catch(() => {}); audioContextRef.current = null; }
+        if (audioContextRef.current && audioContextRef.current.state !== "closed") { audioContextRef.current.close().catch(() => { }); audioContextRef.current = null; }
         setActiveAudio(null);
         setPlayingVoiceId(null);
     };
@@ -62,7 +62,7 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
         return () => {
             document.removeEventListener("mousedown", handleClickOutside);
             stopCurrentPreview();
-            if (audioContextRef.current && audioContextRef.current.state !== "closed") { audioContextRef.current.close().catch(() => {}); audioContextRef.current = null; }
+            if (audioContextRef.current && audioContextRef.current.state !== "closed") { audioContextRef.current.close().catch(() => { }); audioContextRef.current = null; }
         };
     }, []);
 
@@ -82,13 +82,13 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
     };
 
     const handleVoiceChange = (voiceId: string) => {
-        updateFormData((prev: any) => ({ ...prev, aiInterviewerVoiceId: voiceId, aiInterviewerName: getAiNameForVoice(voiceId) }));
+        updateFormData((prev: any) => ({ ...prev, aiInterviewerVoiceId: voiceId, aiInterviewerName: "Ishitha" }));
     };
 
-    const playSample = async (e?: ReactMouseEvent, overrideVoiceId?: string, overrideName?: string) => {
+    const playSample = async (e?: ReactMouseEvent, overrideVoiceId?: string) => {
         if (e) { e.preventDefault(); e.stopPropagation(); }
         const voiceId = overrideVoiceId || currentVoiceId;
-        const aiName = overrideName || formData.aiInterviewerName || "Ishitha";
+        const aiName = "Ishitha";
         if (activeAudio && overrideVoiceId && overrideVoiceId === playingVoiceId) { stopCurrentPreview(); return; }
         if (activeAudio && !overrideVoiceId) { stopCurrentPreview(); return; }
         const transcript = `Hi, I'm ${aiName}, are you ready for the interview?`;
@@ -119,7 +119,7 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                 gainNode.connect(ctx.destination);
                 audio.onended = () => stopCurrentPreview();
                 audioRef.current = audio;
-                await ctx.resume().catch(() => {});
+                await ctx.resume().catch(() => { });
                 await audio.play();
                 setActiveAudio(audio);
                 setPlayingVoiceId(voiceId);
@@ -196,45 +196,12 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                 <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     <AudioLines className="h-3.5 w-3.5 text-[#7C3AED]" /> Interviewer Voice
                 </label>
-                <div className="flex items-center gap-3 p-4 rounded-xl" style={{ border: "1px solid #E9E7FF", background: "#FAFAFC" }}>
-                    {/* Avatar */}
-                    <div className="relative flex-shrink-0">
-                        <div className="h-12 w-12 rounded-xl overflow-hidden flex items-center justify-center bg-violet-100"
-                            style={{ border: "2px solid rgba(139,92,246,0.3)" }}>
-                            <img
-                                src={formData.aiInterviewerName === "Ishaan" ? "/avatars/ishaan.png" : "/avatars/ishitha.png"}
-                                alt={formData.aiInterviewerName || "Ishitha"}
-                                className="w-full h-full object-cover"
-                                onError={(e) => { e.currentTarget.style.display = "none"; }}
-                            />
-                        </div>
-                        <div className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full bg-emerald-400 border-2 border-white" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-900">{formData.aiInterviewerName || "Ishitha"}</p>
-                        <p className="text-xs text-gray-400">{currentVoice?.description || "AI Interviewer"}</p>
-                    </div>
-                    {/* Play button */}
-                    <button
-                        type="button"
-                        disabled={previewLoading || !currentVoiceId}
-                        onClick={(e) => playSample(e)}
-                        className="h-9 w-9 rounded-xl flex items-center justify-center text-white transition-all disabled:opacity-50"
-                        style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: "0 2px 8px rgba(124,58,237,0.25)" }}
-                        title="Preview voice"
-                    >
-                        {previewLoading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                            : (playingVoiceId === currentVoiceId && !loadingVoiceId) ? <Pause className="h-3.5 w-3.5 fill-white" />
-                            : <Play className="h-3.5 w-3.5 fill-white ml-0.5" />}
-                    </button>
-                </div>
-
                 {/* Voice selector */}
-                <div className="relative" ref={voiceDropdownRef}>
+                <div className="relative flex items-center gap-2" ref={voiceDropdownRef}>
                     <button
                         type="button"
                         onClick={() => setShowVoiceDropdown(!showVoiceDropdown)}
-                        className="w-full h-10 px-3 rounded-xl bg-gray-50 text-sm font-medium flex items-center justify-between transition-all hover:bg-white"
+                        className="flex-1 h-10 px-3 rounded-xl bg-gray-50 text-sm font-medium flex items-center justify-between transition-all hover:bg-white"
                         style={{ border: "1px solid #E9E7FF" }}
                     >
                         <div className="flex items-center gap-2 min-w-0">
@@ -245,6 +212,19 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                             ))}
                         </div>
                         <ChevronDown className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${showVoiceDropdown ? "rotate-180" : ""}`} />
+                    </button>
+
+                    <button
+                        type="button"
+                        disabled={previewLoading || !currentVoiceId}
+                        onClick={(e) => playSample(e)}
+                        className="h-10 w-10 flex-shrink-0 rounded-xl flex items-center justify-center text-white transition-all disabled:opacity-50"
+                        style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: "0 2px 8px rgba(124,58,237,0.25)" }}
+                        title="Preview voice"
+                    >
+                        {previewLoading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                            : (playingVoiceId === currentVoiceId && !loadingVoiceId) ? <Pause className="h-3.5 w-3.5 fill-white" />
+                                : <Play className="h-3.5 w-3.5 fill-white ml-0.5" />}
                     </button>
 
                     {showVoiceDropdown && (
@@ -279,19 +259,18 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                                             style={{ borderBottom: "1px solid #F0EEF8" }}
                                         >
                                             <div
-                                                onClick={(e) => playSample(e, v.id, getAiNameForVoice(v.id))}
-                                                className={`h-8 w-8 rounded-lg flex items-center justify-center transition-all flex-shrink-0 ${
-                                                    loadingVoiceId === v.id || (playingVoiceId === v.id && !loadingVoiceId)
-                                                        ? "text-white"
-                                                        : "bg-gray-100 text-gray-500 hover:bg-violet-100 hover:text-violet-600"
-                                                }`}
+                                                onClick={(e) => playSample(e, v.id)}
+                                                className={`h-8 w-8 rounded-lg flex items-center justify-center transition-all flex-shrink-0 ${loadingVoiceId === v.id || (playingVoiceId === v.id && !loadingVoiceId)
+                                                    ? "text-white"
+                                                    : "bg-gray-100 text-gray-500 hover:bg-violet-100 hover:text-violet-600"
+                                                    }`}
                                                 style={loadingVoiceId === v.id || (playingVoiceId === v.id && !loadingVoiceId)
                                                     ? { background: "linear-gradient(135deg, #8B5CF6, #3B82F6)" }
                                                     : {}}
                                             >
                                                 {loadingVoiceId === v.id ? <RefreshCw className="h-3 w-3 animate-spin" />
                                                     : (playingVoiceId === v.id && !loadingVoiceId) ? <Pause className="h-3 w-3 fill-current" />
-                                                    : <Play className="h-3 w-3 fill-current ml-0.5" />}
+                                                        : <Play className="h-3 w-3 fill-current ml-0.5" />}
                                             </div>
                                             <div className="flex-1 min-w-0">
                                                 <p className={`text-sm font-medium truncate ${currentVoiceId === v.id ? "text-violet-600" : "text-gray-800 group-hover:text-violet-600"}`}>
