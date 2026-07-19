@@ -22,6 +22,7 @@ import {
 import { mergeRecordingState, normalizeRecordingState, parseJsonRecord } from "./lib/recording-state";
 import { logRedisError, logResumeUploadError, logJobError, logWorkerError, logLiveKitError } from "./lib/slack-error-logger";
 import { runWithOrgSlot } from "./lib/org-concurrency";
+import { getPythonExecutable } from "./lib/python-exec";
 import {
   processResumeScreeningViaModal,
   processResumeFileExtractViaModal,
@@ -1770,14 +1771,14 @@ if (isQueueEnabled("demo-brief-generation")) {
       // ── 3. Spawn Python — all LLM/prompt logic lives in demo/brief.py ─
       const { spawn } = await import("child_process");
       const path = await import("path");
-      const scriptPath = path.resolve(
-        __dirname,
-        "../../livekit-python-agent/scripts/generate_demo_brief.py"
+      const scriptPath = path.join(
+        process.cwd(),
+        "livekit-python-agent/scripts/generate_demo_brief.py"
       );
       const jdB64 = Buffer.from(jdText, "utf8").toString("base64");
       const briefJson: Record<string, any> = await new Promise((resolve, reject) => {
         const py = spawn(
-          process.env.PYTHON_BIN || "python3",
+          getPythonExecutable(),
           [scriptPath, roleTitle || "", mode || "TECH", jdB64],
           { env: { ...process.env }, timeout: 120_000 }
         );

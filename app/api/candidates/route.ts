@@ -296,11 +296,12 @@ export async function DELETE(request: Request) {
                         SELECT "id" FROM "Interview" WHERE "applicationId" IN (${idList})
                     )
                 `;
-                // 2. Soft delete interviews (rename unique keys via Raw SQL)
+                // 2. Soft delete interviews (rename candidateInviteToken only -- applicationId
+                // is a real FK to Application.id, which is not renamed on soft delete, so
+                // renaming it here would violate Interview_applicationId_fkey)
                 await tx.$executeRaw`
                     UPDATE "Interview"
                     SET "isDeleted" = true,
-                        "applicationId" = 'del_' || ${timestamp} || '_' || "applicationId",
                         "candidateInviteToken" = 'del_' || ${timestamp} || '_' || "candidateInviteToken"
                     WHERE "applicationId" IN (${idList})
                 `;

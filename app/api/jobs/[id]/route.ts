@@ -250,7 +250,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
         const jobId = id;
         const job = await prisma.job.findUnique({
             where: { id: jobId },
-            select: { organizationId: true }
+            select: { organizationId: true, jdPreviewUrl: true }
         });
         if (!job) {
             return NextResponse.json({ error: "Job not found" }, { status: 404 });
@@ -259,6 +259,8 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
         if (!isSuperAdmin && job.organizationId !== session.orgId) {
             return NextResponse.json({ error: "Access Denied: Ownership required to remove job" }, { status: 403 });
         }
+        // -- STORAGE CLEANUP: remove the JD file from R2 ------------------------
+        await deleteUrlTargets([{ url: job.jdPreviewUrl }]);
         // -- SOFT DELETE: DATABASE CLEANUP (Cascading) ---------------------------
         // We use raw SQL to handle appending timestamps to unique columns safely.
         await prisma.$transaction(async (tx) => {
@@ -268,11 +270,12 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
             // 4. Soft Delete Applications (Application holds candidate/resume data directly --
             // the separate ResumeCandidate table no longer exists)
             await tx.$executeRaw`UPDATE "Application" SET "isDeleted" = true WHERE "jobId" = ${jobId}`;
-            // 5. Soft Delete Interviews (rename applicationId and accessToken)
+            // 5. Soft Delete Interviews (rename accessToken only -- applicationId is a
+            // real FK to Application.id, which is not renamed on soft delete, so
+            // renaming it here would violate Interview_applicationId_fkey)
             await tx.$executeRaw`
-                UPDATE "Interview" 
-                SET "isDeleted" = true, 
-                    "applicationId" = 'del_' || ${timestamp} || '_' || "applicationId", 
+                UPDATE "Interview"
+                SET "isDeleted" = true,
                     "candidateInviteToken" = 'del_' || ${timestamp} || '_' || "candidateInviteToken"
                 WHERE "applicationId" IN (SELECT "id" FROM "Application" WHERE "jobId" = ${jobId})
             `;

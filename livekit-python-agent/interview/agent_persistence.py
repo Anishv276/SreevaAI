@@ -259,6 +259,91 @@ async def get_interview_context(app_id: str) -> dict:
             if attempt < 5:
                 await asyncio.sleep(0.4 * attempt)
     raise RuntimeError(f"Failed to fetch interview context from DB: {last_error}")
+def is_demo_app_id(app_id: str) -> bool:
+    return bool(app_id) and app_id.startswith("demo_")
+async def get_demo_interview_context(app_id: str, dispatch_metadata: dict) -> dict:
+    """Build an InterviewContext-shaped dict for a demo session directly from
+    dispatch metadata (isDemo=True) instead of querying Application/Job/Interview.
+    There is no real candidate/org row for a demo -- the brief was pre-generated
+    by the demo-brief-generation worker and passed through dispatch metadata,
+    and AI model config falls back to the same schema defaults OrganizationDetails
+    would otherwise supply.
+    """
+    role_title = str(dispatch_metadata.get("roleLabel") or "the role").strip()
+    candidate_name = str(dispatch_metadata.get("candidateName") or "Guest").strip()
+    mode = str(dispatch_metadata.get("mode") or "TECH").strip().upper()
+    return {
+        "fullName":           candidate_name,
+        "resumeText":         None,
+        "resumeData":         None,
+        "extractedDetails":   None,
+        "screeningCriteria":  None,
+        "jobId":              None,
+        "jobTitle":           role_title,
+        "interviewType":      "conversational" if mode == "CONVERSATION" else "tech",
+        "jd":                 "",
+        "orgId":              None,
+        "orgName":            "Demo",
+        "language":           "English",
+        "timeLimit":          FIXED_INTERVIEW_DURATION_MINUTES,
+        "voiceId":              None,
+        "aiName":               "Ishitha",
+        "proctoringSignals":    None,
+        "interviewQuestions":   None,
+        "interviewStatus":      None,
+        "interviewBrief":       dispatch_metadata.get("briefJson"),
+        "sttModel":             "flux-general-en",
+        "ttsProvider":          None,
+        "ttsModel":             None,
+        "ttsSpeed":             1.0,
+        "llmInterviewLive":     "gpt-4.1-mini",
+        "llmInterviewEval":     "gpt-4.1-nano",
+        "llmInterviewBrief":    "gpt-4.1",
+        "llmInterviewReport":   "gpt-5.4-mini",
+    }
+async def mark_demo_session_started(app_id: str) -> None:
+    if not DATABASE_URL:
+        return
+    demo_session_id = app_id[len("demo_"):]
+    try:
+        pool = await DatabasePool.get()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """UPDATE "DemoSession" SET status = 'IN_PROGRESS' WHERE id = $1 AND status = 'LAUNCHING'""",
+                demo_session_id,
+            )
+        logger.info(f"[DEMO] Session {demo_session_id} marked as IN_PROGRESS.")
+    except Exception as e:
+        logger.error(f"[DEMO] Failed to mark session {demo_session_id} as IN_PROGRESS: {e}")
+async def mark_demo_session_failed(app_id: str, reason: str = "technical_error") -> None:
+    if not DATABASE_URL:
+        return
+    demo_session_id = app_id[len("demo_"):]
+    try:
+        pool = await DatabasePool.get()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """UPDATE "DemoSession" SET status = 'FAILED', "completedAt" = NOW() WHERE id = $1""",
+                demo_session_id,
+            )
+        logger.info(f"[DEMO] Session {demo_session_id} marked as FAILED (reason={reason})")
+    except Exception as e:
+        logger.error(f"[DEMO] Failed to mark session {demo_session_id} as FAILED: {e}")
+async def persist_demo_transcript_completed(app_id: str, transcript_lines: list) -> None:
+    if not DATABASE_URL:
+        return
+    demo_session_id = app_id[len("demo_"):]
+    full_text = "\n".join(transcript_lines) if transcript_lines else ""
+    try:
+        pool = await DatabasePool.get()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """UPDATE "DemoSession" SET transcript = $1, status = 'COMPLETED', "completedAt" = NOW() WHERE id = $2""",
+                full_text, demo_session_id,
+            )
+        logger.info(f"[DEMO] Session {demo_session_id} marked as COMPLETED ({len(transcript_lines)} lines)")
+    except Exception as e:
+        logger.error(f"[DEMO] Failed to persist transcript for session {demo_session_id}: {e}")
 async def persist_transcript(
     app_id: str,
     transcript_lines: list,
@@ -270,7 +355,11 @@ async def persist_transcript(
     """Save transcript, duration, and proctoring report to Interview table.
     partial=True -> only update transcript/duration/turns (no status change).
     partial=False -> full update including status and completedAt.
+    No-ops for demo sessions -- see persist_demo_transcript_completed for the
+    single final-save equivalent used there instead of per-turn partial saves.
     """
+    if is_demo_app_id(app_id):
+        return
     if not transcript_lines and final_status != "NO_SHOW":
         logger.info("[TRANSCRIPT] No lines captured - skipping save to avoid overwriting existing data")
         return
@@ -338,6 +427,8 @@ async def mark_interview_started(app_id: str) -> None:
     Returns normally on success; RAISES on DB failure so the caller can abort startup.
     Raising here prevents a second agent from launching when the first one's write failed.
     """
+    if is_demo_app_id(app_id):
+        return await mark_demo_session_started(app_id)
     if not DATABASE_URL:
         return
     pool = await DatabasePool.get()
@@ -367,6 +458,8 @@ async def mark_interview_failed(app_id: str, reason: str = "technical_error") ->
     candidates page shows FAILED instead of hanging in IN_PROGRESS forever.
     Silently no-ops if DATABASE_URL is missing (offline/test environment).
     """
+    if is_demo_app_id(app_id):
+        return await mark_demo_session_failed(app_id, reason=reason)
     if not DATABASE_URL:
         return
     try:
@@ -397,7 +490,7 @@ async def persist_latency_signals(app_id: str, answer_scores: list[dict]) -> Non
        "avg_latency_sec": 4.2,
        "max_latency_sec": 8.4, "max_latency_question": "..."}
     """
-    if not app_id or not DATABASE_URL or not answer_scores:
+    if not app_id or not DATABASE_URL or not answer_scores or is_demo_app_id(app_id):
         return
     scored = [
         s for s in answer_scores
@@ -451,7 +544,7 @@ async def persist_session_fingerprint(app_id: str) -> None:
 
     If fewer than 2 ip_registered events exist, this is a no-op.
     """
-    if not app_id or not DATABASE_URL:
+    if not app_id or not DATABASE_URL or is_demo_app_id(app_id):
         return
     try:
         pool = await DatabasePool.get()
@@ -535,7 +628,7 @@ async def persist_session_fingerprint(app_id: str) -> None:
 
 async def persist_question_by_question_analysis(app_id: str, answer_scores: list[dict]) -> None:
     """Save full turn-by-turn interview analysis to Interview.perQuestionAnalysis JSONB."""
-    if not app_id or not DATABASE_URL or not answer_scores:
+    if not app_id or not DATABASE_URL or not answer_scores or is_demo_app_id(app_id):
         return
     normalized = [
         {
@@ -603,6 +696,8 @@ async def persist_answer_scores(app_id: str, answer_scores: list[dict]) -> None:
     await persist_question_by_question_analysis(app_id, answer_scores)
 async def update_interview_status(app_id: str, duration_seconds: Optional[float] = None) -> None:
     """Mark the application as COMPLETED and trigger quota deduction via billing.py."""
+    if is_demo_app_id(app_id):
+        return
     if not DATABASE_URL:
         return
     try:

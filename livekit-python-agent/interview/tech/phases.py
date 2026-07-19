@@ -200,7 +200,7 @@ def build_interview_directive(
             "  'What skill are you actively trying to get better at?'"
         ),
         "mid": (
-            "  'What's a project you're proud of that's NOT on your resume?'\n"
+            "  'What's a project you're proud of that we haven't talked about yet?'\n"
             "  'What kind of ownership do you want more of in your next role?'\n"
             "  'What drew you to this specific role and company?'\n"
             "  'Where do you want to be technically or career-wise in two years?'"

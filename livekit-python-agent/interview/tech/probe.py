@@ -14,7 +14,8 @@ Signal names match two types:
                                             tool_named_not_used, tech_choice_unjustified, scenario_untested
 """
 from __future__ import annotations
-import re
+
+from interview.agent_runtime_helpers import _strip_leaked_meta
 
 
 # ---------------------------------------------------------------------------
@@ -569,26 +570,6 @@ or explanation before or after the question — the candidate hears this verbati
 other than the spoken reaction+question breaks the interview. Think before you answer, but the
 final message you produce must contain nothing except what Ishitha would actually say out loud.
 """
-
-
-def _strip_leaked_meta(text: str) -> str:
-    """
-    Defense-in-depth against the model leaking internal scaffold/reasoning notes into
-    the candidate-facing question (observed live: gpt-4.1-mini appended a trailing
-    "(Scaffold: ... Confirmed no repetition ...)" note despite being told not to).
-    Strips trailing parenthetical or bracketed meta-commentary blocks and any line
-    that looks like an internal label (starts with "Scaffold:", "Note:", "Reasoning:").
-    """
-    if not text:
-        return text
-    # Drop trailing (...) or [...] blocks that look like meta-commentary, not part of speech.
-    cleaned = re.sub(r"\n*\(\s*(scaffold|note|reasoning|internal)[:\s].*?\)\s*$", "", text, flags=re.IGNORECASE | re.DOTALL)
-    cleaned = re.sub(r"\n*\[\s*(scaffold|note|reasoning|internal)[:\s].*?\]\s*$", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
-    # Drop any standalone trailing line starting with one of these labels.
-    lines = cleaned.splitlines()
-    while lines and re.match(r"^\s*\(?(scaffold|note|reasoning|internal)\s*[:\-]", lines[-1], flags=re.IGNORECASE):
-        lines.pop()
-    return "\n".join(lines).strip()
 
 
 def get_probe_context(

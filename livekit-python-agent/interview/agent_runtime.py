@@ -38,6 +38,11 @@ from interview.agent_persistence import (
     persist_session_fingerprint,
     persist_transcript,
     update_interview_status,
+    is_demo_app_id,
+    get_demo_interview_context,
+    mark_demo_session_started,
+    mark_demo_session_failed,
+    persist_demo_transcript_completed,
 )
 from interview.slack_error_logger import (
     log_livekit_error,
@@ -1499,6 +1504,7 @@ async def entrypoint(ctx: JobContext):
     dispatch_metadata = parse_dispatch_metadata(getattr(ctx.job, "metadata", ""))
     _is_test_session: bool = bool(dispatch_metadata.get("isTest", False))
     _skip_report: bool = bool(dispatch_metadata.get("skipReport", False))
+    _is_demo_session: bool = bool(dispatch_metadata.get("isDemo", False)) or is_demo_app_id(app_id)
     if _is_test_session:
         logger.info("[TEST_SESSION] Running in TEST mode | skipReport=%s", _skip_report)
         # /api/test/events requires the same DB-stored test key the /test page
@@ -1547,9 +1553,14 @@ async def entrypoint(ctx: JobContext):
                 await asyncio.sleep(2)
         return RuntimeError("Failed to connect after 3 attempts")
     # Run DB fetch and room connect in parallel to minimize startup latency.
+    _context_coro = (
+        get_demo_interview_context(app_id, dispatch_metadata)
+        if _is_demo_session
+        else get_interview_context(app_id)
+    )
     try:
         context_result, connect_result = await asyncio.gather(
-            get_interview_context(app_id),
+            _context_coro,
             connect_with_retry(),
             return_exceptions=True,
         )
@@ -1564,7 +1575,10 @@ async def entrypoint(ctx: JobContext):
     #   2. Frontend receives an error event and shows the support message to the candidate
     async def _fail_interview(reason: str) -> None:
         logger.error(f"[INTERVIEW_FAIL] app_id={app_id} reason={reason}")
-        await mark_interview_failed(app_id, reason=reason)
+        if _is_demo_session:
+            await mark_demo_session_failed(app_id, reason=reason)
+        else:
+            await mark_interview_failed(app_id, reason=reason)
         try:
             payload = json.dumps({
                 "type": "interview_failed",
@@ -1704,6 +1718,13 @@ async def entrypoint(ctx: JobContext):
     if not _custom_questions:
         logger.info("[FLOW] Custom questions  none configured")
     time_limit_mins = FIXED_INTERVIEW_DURATION_MINUTES
+    if _is_demo_session:
+        _demo_kill_switch_secs = dispatch_metadata.get("killSwitchSecs")
+        _demo_time_limit_mins = dispatch_metadata.get("timeLimitMins")
+        if _demo_kill_switch_secs:
+            time_limit_mins = round(float(_demo_kill_switch_secs) / 60)
+        elif _demo_time_limit_mins:
+            time_limit_mins = round(float(_demo_time_limit_mins))
     org_id = ctx_data.orgId
     session_log_context.update(
         {
@@ -3711,6 +3732,9 @@ async def entrypoint(ctx: JobContext):
                 agent._directive_ready.set()
     _FIXED_WARMUP_TEXT = (
         "Right, so this'll be a fairly casual conversation — I'll be asking you a few questions "
+        "about the role. Are you all set to begin?"
+        if _is_demo_session else
+        "Right, so this'll be a fairly casual conversation — I'll be asking you a few questions "
         "based on your resume and the role. Are you all set to begin?"
     )
     async def _handle_completed_user_turn(_turn_ctx, new_message) -> None:
@@ -4374,7 +4398,10 @@ async def entrypoint(ctx: JobContext):
             int((time.perf_counter() - entry_started_at) * 1000),
         )
         # Mark as started in DB while greeting starts immediately.
-        spawn_background_task(mark_interview_started(app_id), "mark_interview_started")
+        if _is_demo_session:
+            spawn_background_task(mark_demo_session_started(app_id), "mark_demo_session_started")
+        else:
+            spawn_background_task(mark_interview_started(app_id), "mark_interview_started")
         #  TIMER FIX: Start the 20-minute clock the moment greeting audio begins.
         # Greeting + warmup + interview all count against the same 20-minute budget.
         # This timestamp is used by session_loop_start (main loop) and session_start_time
@@ -4726,13 +4753,16 @@ async def entrypoint(ctx: JobContext):
         "time_expired" if time_expired else "interview_finished"
     )
     logger.info("[PERSIST] Saving final transcript (%d lines) and scores (%d turns)", len(transcript_lines), len(answer_scores))
-    await persist_transcript(
-        app_id,
-        transcript_lines,
-        session_start_time,
-        proctoring_data=proctoring_data,
-        final_status="COMPLETED",
-    )
+    if _is_demo_session:
+        await persist_demo_transcript_completed(app_id, transcript_lines)
+    else:
+        await persist_transcript(
+            app_id,
+            transcript_lines,
+            session_start_time,
+            proctoring_data=proctoring_data,
+            final_status="COMPLETED",
+        )
     await persist_latency_signals(app_id, answer_scores)
     await persist_session_fingerprint(app_id)
     if not answer_scores:
@@ -4757,8 +4787,9 @@ async def entrypoint(ctx: JobContext):
             # finished, inactivity timeout) keep their real, shorter duration.
             if time_expired:
                 _agent_dur = float(time_limit_mins * 60)
-            await update_interview_status(app_id, duration_seconds=_agent_dur)
-            logger.info("[EARLY_STATUS_UPDATE] Marked COMPLETED to prevent duplicate job dispatch")
+            if not _is_demo_session:
+                await update_interview_status(app_id, duration_seconds=_agent_dur)
+                logger.info("[EARLY_STATUS_UPDATE] Marked COMPLETED to prevent duplicate job dispatch")
         except Exception as e:
             logger.error(f"[EARLY_STATUS_UPDATE] Failed to mark COMPLETED: {e}")
     logger.info("[PERSIST] Transcript and scores saved (answer_scores has %d turns)", len(answer_scores))
@@ -4776,29 +4807,31 @@ async def entrypoint(ctx: JobContext):
             plugin_tts_characters,
             billable_tts_characters,
         )
-    await persist_org_usage_metrics(
-        org_id,
-        latest_session_usage or session.usage,
-        tts_provider=org_tts_provider,
-        tts_model=org_tts_model,
-        stt_provider="DEEPGRAM",
-        stt_model=str(ctx_data.sttModel),
-        plugin_tts_characters=billable_tts_characters,
-        plugin_tts_audio_seconds=plugin_tts_audio_seconds,
-        plugin_stt_audio_seconds=plugin_stt_audio_seconds,
-        # Per-event ledger attribution for interviewSession STT/TTS rows.
-        app_id=app_id,
-        job_id=ctx_data.jobId,
-        candidate_name=candidate_name,
-        job_title=job_title,
-        is_test=_is_test_session,
-    )
+    if not _is_demo_session:
+        await persist_org_usage_metrics(
+            org_id,
+            latest_session_usage or session.usage,
+            tts_provider=org_tts_provider,
+            tts_model=org_tts_model,
+            stt_provider="DEEPGRAM",
+            stt_model=str(ctx_data.sttModel),
+            plugin_tts_characters=billable_tts_characters,
+            plugin_tts_audio_seconds=plugin_tts_audio_seconds,
+            plugin_stt_audio_seconds=plugin_stt_audio_seconds,
+            # Per-event ledger attribution for interviewSession STT/TTS rows.
+            app_id=app_id,
+            job_id=ctx_data.jobId,
+            candidate_name=candidate_name,
+            job_title=job_title,
+            is_test=_is_test_session,
+        )
     # AI Scorecard + billing snapshot + debug PDF -- handed off to the durable
     # Node/BullMQ worker (interview-report queue -> report_worker.py) instead of
     # running inline here. LiveKit Cloud recycles this job process shortly after
     # the room closes, which risked killing the ~300s report pipeline mid-flight;
     # the Node worker is always-on and can retry/observe failures via BullMQ.
-    if session_start_time:
+    # Demo sessions are throwaway (~5min, no org/billing) -- no report is generated.
+    if session_start_time and not _is_demo_session:
         if _is_test_session and _skip_report:
             # ponytail: test session with report disabled -- skip all LLM report/summary calls
             logger.info("[REPORT] Skipped (test session with skipReport=True) for %s", app_id)

@@ -17,7 +17,8 @@ Signal names match two types:
                      decision_logic_opaque
 """
 from __future__ import annotations
-import re
+
+from interview.agent_runtime_helpers import _strip_leaked_meta
 
 
 SIGNAL_PROBES: dict[str, dict] = {
@@ -515,17 +516,6 @@ Output ONLY the reaction + question (or exactly NO_FOLLOW_UP_NEEDED). Do not sho
 reasoning, do not name the scaffold you picked, do not add any parenthetical note. The
 candidate hears this verbatim.
 """
-
-
-def _strip_leaked_meta(text: str) -> str:
-    if not text:
-        return text
-    cleaned = re.sub(r"\n*\(\s*(scaffold|note|reasoning|internal)[:\s].*?\)\s*$", "", text, flags=re.IGNORECASE | re.DOTALL)
-    cleaned = re.sub(r"\n*\[\s*(scaffold|note|reasoning|internal)[:\s].*?\]\s*$", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
-    lines = cleaned.splitlines()
-    while lines and re.match(r"^\s*\(?(scaffold|note|reasoning|internal)\s*[:\-]", lines[-1], flags=re.IGNORECASE):
-        lines.pop()
-    return "\n".join(lines).strip()
 
 
 def get_probe_context(

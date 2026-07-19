@@ -57,6 +57,12 @@ export default function DemoAdminPage() {
 
     useEffect(() => { fetchData(); }, []);
 
+    useEffect(() => {
+        if (!templates.some(t => t.status === "processing")) return;
+        const interval = setInterval(() => fetchData(true), 3000);
+        return () => clearInterval(interval);
+    }, [templates]);
+
     const toggleActive = async (template: DemoTemplate) => {
         try {
             await fetch(`/api/super-admin/demo/templates/${template.id}`, {

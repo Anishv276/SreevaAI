@@ -254,6 +254,26 @@ def make_sarvam_llm_normalization_transform(openai_client, model: str):
     return _transform
 
 
+def _strip_leaked_meta(text: str) -> str:
+    """Defense-in-depth against the model leaking internal scaffold/reasoning notes into
+    the candidate-facing question (observed live: gpt-4.1-mini appended a trailing
+    "(Scaffold: ... Confirmed no repetition ...)" note despite being told not to).
+    Strips trailing parenthetical or bracketed meta-commentary blocks and any line
+    that looks like an internal label (starts with "Scaffold:", "Note:", "Reasoning:").
+
+    Shared by interview.tech.probe and interview.conversational.probe (imported from
+    here, not redefined) since it's a pure text utility, not domain-specific logic.
+    """
+    if not text:
+        return text
+    cleaned = re.sub(r"\n*\(\s*(scaffold|note|reasoning|internal)[:\s].*?\)\s*$", "", text, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r"\n*\[\s*(scaffold|note|reasoning|internal)[:\s].*?\]\s*$", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    lines = cleaned.splitlines()
+    while lines and re.match(r"^\s*\(?(scaffold|note|reasoning|internal)\s*[:\-]", lines[-1], flags=re.IGNORECASE):
+        lines.pop()
+    return "\n".join(lines).strip()
+
+
 def make_tts_sanitize_transform(provider: str = ""):
     """Return a tts_sanitize transform bound to the given TTS provider.
 

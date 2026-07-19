@@ -261,10 +261,12 @@ export async function DELETE(request: Request) {
         // -- SECURITY: Ensure IDs belong to the Org -----------
         const belongsToOrg = await prisma.job.findMany({
             where: { id: { in: ids }, organizationId: session.orgId },
-            select: { id: true },
+            select: { id: true, jdPreviewUrl: true },
         });
         const validIds = belongsToOrg.map((d: (typeof belongsToOrg)[number]) => d.id);
         if (validIds.length === 0) return NextResponse.json({ message: "No matching jobs found" });
+        // -- STORAGE CLEANUP: remove JD files from R2 ----------------------------
+        await deleteUrlTargets(belongsToOrg.map((d) => ({ url: d.jdPreviewUrl })));
         // -- SOFT DELETE: DATABASE CLEANUP (Cascading) ---------------------------
         await prisma.$transaction(async (tx) => {
             const timestamp = Date.now().toString();
@@ -278,13 +280,14 @@ export async function DELETE(request: Request) {
                 where: { jobId: { in: validIds } },
                 data: { isDeleted: true }
             });
-            // 5. Soft Delete Interviews (rename unique keys via Raw SQL)
+            // 5. Soft Delete Interviews (rename accessToken only -- applicationId is a
+            // real FK to Application.id, which is not renamed on soft delete, so
+            // renaming it here would violate Interview_applicationId_fkey)
             if (validIds.length > 0) {
                 const idList = Prisma.join(validIds);
                 await tx.$executeRaw`
                     UPDATE "Interview"
                     SET "isDeleted" = true,
-                        "applicationId" = 'del_' || ${timestamp} || '_' || "applicationId",
                         "candidateInviteToken" = 'del_' || ${timestamp} || '_' || "candidateInviteToken"
                     WHERE "applicationId" IN (SELECT "id" FROM "Application" WHERE "jobId" IN (${idList}))
                 `;

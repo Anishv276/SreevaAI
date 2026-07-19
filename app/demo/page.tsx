@@ -4,6 +4,19 @@ import {
     Mic, ArrowRight, Loader2, CheckCircle2, AlertCircle,
     Clock, Code2, MessageSquare, Zap, Shield, Users
 } from "lucide-react";
+import {
+    LiveKitRoom as LKRoom,
+    RoomAudioRenderer,
+    useVoiceAssistant,
+    useConnectionState,
+    useRoomContext,
+    useLocalParticipant,
+    useTranscriptions,
+} from "@livekit/components-react";
+import type { TextStreamData as TranscriptionSegment } from "@livekit/components-react";
+import "@livekit/components-styles";
+import { ConnectionState } from "livekit-client";
+import { AuraVisualizer } from "@/components/agents-ui/aura-visualizer";
 
 interface DemoTemplate {
     id: string;
@@ -335,13 +348,19 @@ function DemoInterview({ sessionData, onEnd }: { sessionData: any; onEnd: () => 
                 className="bg-white rounded-2xl overflow-hidden relative"
                 style={{ border: "1px solid #E9E7FF", boxShadow: "0 4px 16px rgba(124,58,237,0.08)", minHeight: "400px" }}
             >
-                {/* Dynamically load LiveKit room */}
-                <LiveKitRoom
+                <LKRoom
                     token={sessionData.token}
                     serverUrl={sessionData.url}
-                    onConnected={() => setConnected(true)}
+                    connect={true}
+                    audio={true}
+                    video={false}
                     onDisconnected={onEnd}
-                />
+                    className="w-full h-full"
+                    style={{ minHeight: "400px" }}
+                >
+                    <RoomAudioRenderer />
+                    <DemoVoiceStage onConnected={() => setConnected(true)} />
+                </LKRoom>
                 {!connected && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white">
                         <Loader2 className="h-7 w-7 animate-spin text-violet-500" />
@@ -353,28 +372,100 @@ function DemoInterview({ sessionData, onEnd }: { sessionData: any; onEnd: () => 
     );
 }
 
-// Thin wrapper that lazy-imports the existing interview UI component
-function LiveKitRoom({ token, serverUrl, onConnected, onDisconnected }: {
-    token: string;
-    serverUrl: string;
-    onConnected: () => void;
-    onDisconnected: () => void;
-}) {
-    // Re-use the existing interview page shell (same component the real interview uses)
-    // Passed as an iframe URL so we don't need to restructure the LiveKit provider tree
-    const url = `/interview/demo?token=${encodeURIComponent(token)}&url=${encodeURIComponent(serverUrl)}`;
+// Strips internal directive/control text that can leak into transcription
+// segments (mirrors the sanitizer used on the real interview page).
+function sanitizeTranscriptText(text: string): string {
+    return text
+        .replace(/<wait for response>/gi, "")
+        .replace(/\[(?:[^\[\]]|\[[^\]]*\]){0,2000}\]/g, " ")
+        .replace(/DO NOT SAY ALOUD/gi, " ")
+        .replace(/NEXT_TURN_DIRECTIVE/gi, " ")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+}
+
+interface TranscriptLine {
+    id: string;
+    isCandidate: boolean;
+    text: string;
+    timestamp: number;
+}
+
+// Rendered inside <LKRoom> -- has access to the LiveKit room context for
+// agent state (idle/listening/thinking/speaking), connection status, and
+// live transcription segments.
+function DemoVoiceStage({ onConnected }: { onConnected: () => void }) {
+    const { state: agentState } = useVoiceAssistant();
+    const connectionState = useConnectionState();
+    const room = useRoomContext();
+    const { localParticipant } = useLocalParticipant();
+    const transcriptions = useTranscriptions({ room });
+    const transcriptEndRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        onConnected();
-    }, [onConnected]);
+        if (connectionState === ConnectionState.Connected) {
+            onConnected();
+            // Browsers block remote audio autoplay without an explicit unlock call --
+            // RoomAudioRenderer alone doesn't trigger it in all browsers.
+            void room.startAudio().catch(() => { });
+        }
+    }, [connectionState, onConnected, room]);
+
+    const lines: TranscriptLine[] = [];
+    const latestSegments = new Map<string, TranscriptLine>();
+    for (const segment of transcriptions as TranscriptionSegment[]) {
+        const cleanText = sanitizeTranscriptText(segment.text);
+        if (!cleanText) continue;
+        const isFinal = segment.streamInfo.attributes?.["lk.transcription_final"] === "true";
+        if (!isFinal) continue; // only show settled lines -- avoids flicker from partial STT
+        const identity = segment.participantInfo?.identity || "";
+        latestSegments.set(segment.streamInfo.id, {
+            id: segment.streamInfo.id,
+            isCandidate: identity === localParticipant.identity,
+            text: cleanText,
+            timestamp: segment.streamInfo.timestamp,
+        });
+    }
+    lines.push(...Array.from(latestSegments.values()).sort((a, b) => a.timestamp - b.timestamp));
+
+    useEffect(() => {
+        transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, [lines.length]);
 
     return (
-        <iframe
-            src={url}
-            className="w-full"
-            style={{ height: "420px", border: "none" }}
-            allow="microphone; camera"
-            title="Demo Interview"
-        />
+        <div className="w-full h-full flex flex-col items-center gap-4 py-6 px-4">
+            <AuraVisualizer state={agentState} color={[0.55, 0.36, 0.93]} size="md" />
+            <p className="text-sm text-gray-500 capitalize -mt-1">
+                {agentState === "speaking" ? "AI interviewer speaking…" :
+                    agentState === "listening" ? "Listening…" :
+                        agentState === "thinking" ? "Thinking…" : "Connected"}
+            </p>
+
+            {/* Live transcript */}
+            <div className="w-full max-w-xl flex-1 overflow-y-auto rounded-xl bg-gray-50 border border-gray-100 p-4 space-y-3 min-h-[180px] max-h-[260px]">
+                {lines.length === 0 ? (
+                    <p className="text-xs text-gray-400 text-center pt-8">Transcript will appear here…</p>
+                ) : (
+                    lines.map((line) => (
+                        <div key={line.id} className={`flex ${line.isCandidate ? "justify-end" : "justify-start"}`}>
+                            <div
+                                className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm leading-snug ${line.isCandidate
+                                    ? "bg-violet-600 text-white rounded-br-sm"
+                                    : "bg-white text-gray-800 border border-gray-200 rounded-bl-sm"
+                                    }`}
+                            >
+                                {!line.isCandidate && (
+                                    <div className="text-[10px] font-semibold uppercase tracking-wider text-violet-500 mb-0.5">
+                                        Ishitha
+                                    </div>
+                                )}
+                                {line.text}
+                            </div>
+                        </div>
+                    ))
+                )}
+                <div ref={transcriptEndRef} />
+            </div>
+        </div>
     );
 }
