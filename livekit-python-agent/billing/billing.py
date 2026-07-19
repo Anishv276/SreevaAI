@@ -740,23 +740,22 @@ def _merge_audio_model_array(existing: list, entry: dict, *, unit_key: str) -> l
 
 
 def _sum_usage_cost(usage: dict[str, Any]) -> float:
-    """Sum every `costUsd` found anywhere in the usage JSON tree."""
+    """Sum every model-level `costUsd` in the usage JSON tree (inside `llm`/
+    `byModel` arrays only). Sub-keys like tts/stt also carry a rolled-up
+    `costUsd` at their own level (see EntityLedger._apply_fragment) as a
+    convenience summary -- summing indiscriminately would double-count it
+    on top of its own byModel entries.
+    """
     total = 0.0
-    def walk(node: Any) -> None:
-        nonlocal total
-        if isinstance(node, dict):
-            for k, v in node.items():
-                if k == "costUsd":
-                    try:
-                        total += float(v or 0.0)
-                    except (TypeError, ValueError):
-                        pass
-                else:
-                    walk(v)
-        elif isinstance(node, list):
-            for v in node:
-                walk(v)
-    walk(usage)
+    for sub in usage.values():
+        if not isinstance(sub, dict):
+            continue
+        for entries_key in ("llm", "byModel"):
+            for entry in sub.get(entries_key) or []:
+                try:
+                    total += float(entry.get("costUsd", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    pass
     return round(total, 8)
 
 
@@ -809,47 +808,60 @@ class EntityLedger:
         job_title: Optional[str] = None, candidate_name: Optional[str] = None,
         is_test: bool = False, created_at: Any = None,
     ) -> None:
-        """Read-merge-write one entity row. Never raises — ledger must not break billing."""
+        """Read-merge-write one entity row. Never raises — ledger must not break billing.
+
+        Runs in its own savepoint (nested conn.transaction()) so that when this
+        entry fails, only its savepoint rolls back — the connection stays usable
+        for the rest of the batch. Without this, one bad entry (e.g. a transient
+        FK error) aborted the whole outer transaction and every sibling entry in
+        the same flush_pending()/save_org_usage() loop failed with
+        InFailedSQLTransactionError right behind it.
+        """
         if not org_id or not event_id or not fragment:
             return
         try:
-            existing = await conn.fetchrow(
-                'SELECT id, "usage", "jobTitle", "candidateName" FROM "UsageEvent" '
-                'WHERE "eventId" = $1 FOR UPDATE',
-                event_id,
-            )
-            if existing:
-                stored = _coerce_jsonish(existing["usage"])
-                cls._apply_fragment(stored, fragment)
-                cost = _sum_usage_cost(stored)
-                await conn.execute(
-                    'UPDATE "UsageEvent" SET "usage" = $1::jsonb, "costUsd" = $2, '
-                    '"jobTitle" = COALESCE($3, "jobTitle"), '
-                    '"candidateName" = COALESCE($4, "candidateName"), '
-                    '"jobId" = COALESCE("jobId", $5), '
-                    '"applicationId" = COALESCE("applicationId", $6), '
-                    '"interviewId" = COALESCE("interviewId", $7), '
-                    '"updatedAt" = NOW() WHERE id = $8',
-                    json.dumps(stored), cost, job_title, candidate_name,
-                    job_id, application_id, interview_id, existing["id"],
+            async with conn.transaction():
+                existing = await conn.fetchrow(
+                    'SELECT id, "usage", "jobTitle", "candidateName" FROM "UsageEvent" '
+                    'WHERE "eventId" = $1 FOR UPDATE',
+                    event_id,
                 )
-            else:
-                stored = cls._apply_fragment({}, fragment)
-                cost = _sum_usage_cost(stored)
-                await conn.execute(
-                    'INSERT INTO "UsageEvent" '
-                    '("id","organizationId","feature","jobId","applicationId","interviewId",'
-                    '"jobTitle","candidateName","isTest","usage","costUsd","eventId","createdAt","updatedAt") '
-                    'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,COALESCE($13, NOW()),NOW()) '
-                    'ON CONFLICT ("eventId") DO NOTHING',
-                    "evt_" + uuid.uuid4().hex, org_id, feature, job_id, application_id, interview_id,
-                    job_title, candidate_name, bool(is_test), json.dumps(stored), cost, event_id,
-                    _to_ts(created_at),
-                )
+                if existing:
+                    stored = _coerce_jsonish(existing["usage"])
+                    cls._apply_fragment(stored, fragment)
+                    cost = _sum_usage_cost(stored)
+                    await conn.execute(
+                        'UPDATE "UsageEvent" SET "usage" = $1::jsonb, "costUsd" = $2, '
+                        '"jobTitle" = COALESCE($3, "jobTitle"), '
+                        '"candidateName" = COALESCE($4, "candidateName"), '
+                        '"jobId" = COALESCE("jobId", $5), '
+                        '"applicationId" = COALESCE("applicationId", $6), '
+                        '"interviewId" = COALESCE("interviewId", $7), '
+                        '"updatedAt" = NOW() WHERE id = $8',
+                        json.dumps(stored), cost, job_title, candidate_name,
+                        job_id, application_id, interview_id, existing["id"],
+                    )
+                else:
+                    stored = cls._apply_fragment({}, fragment)
+                    cost = _sum_usage_cost(stored)
+                    await conn.execute(
+                        'INSERT INTO "UsageEvent" '
+                        '("id","organizationId","feature","jobId","applicationId","interviewId",'
+                        '"jobTitle","candidateName","isTest","usage","costUsd","eventId","createdAt","updatedAt") '
+                        'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,COALESCE($13, NOW()),NOW()) '
+                        'ON CONFLICT ("eventId") DO NOTHING',
+                        "evt_" + uuid.uuid4().hex, org_id, feature, job_id, application_id, interview_id,
+                        job_title, candidate_name, bool(is_test), json.dumps(stored), cost, event_id,
+                        _to_ts(created_at),
+                    )
         except Exception as e:  # noqa: BLE001 — ledger must never break billing
             logger.error("[BILLING] EntityLedger.upsert failed (non-fatal) event=%s: %s", event_id, e, exc_info=True)
             return
-        await _refresh_org_usage_summary(conn, org_id)
+        # Own savepoint too -- _refresh_org_usage_summary already catches its own
+        # errors internally, but without a savepoint a mid-query failure there
+        # would still poison conn for whatever runs after it in this batch.
+        async with conn.transaction():
+            await _refresh_org_usage_summary(conn, org_id)
 
 
 async def _refresh_org_usage_summary(conn, org_id: str) -> None:

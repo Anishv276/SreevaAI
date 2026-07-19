@@ -197,11 +197,13 @@ def build_debug_pdf(
     return buf.getvalue()
 
 
-async def post_pdf_to_slack(pdf_bytes: bytes, filename: str, title: str) -> None:
+async def post_pdf_to_slack(pdf_bytes: bytes, filename: str, title: str) -> bool:
     """
     Uploads the debug PDF to Slack using the files.getUploadURLExternal → upload → complete flow.
     Requires SLACK_BOT_TOKEN (xoxb-..., files:write scope) and SLACK_DEBUG_CHANNEL (channel ID).
     No-op with a clear warning if either env var is missing.
+    Returns True only on confirmed delivery -- False on every failure path, so the
+    caller can alert instead of the failure being visible only in worker logs.
     """
     # Re-read env at call time so tokens set after module import are picked up.
     bot_token = os.environ.get("SLACK_BOT_TOKEN", "").strip()
@@ -212,13 +214,13 @@ async def post_pdf_to_slack(pdf_bytes: bytes, filename: str, title: str) -> None
             "[DEBUG_REPORT] SLACK_BOT_TOKEN is not set — "
             "PDF will NOT be sent. See .env.example for setup instructions."
         )
-        return
+        return False
     if not channel_id:
         logger.error(
             "[DEBUG_REPORT] SLACK_DEBUG_CHANNEL is not set — "
             "PDF will NOT be sent. See .env.example for setup instructions."
         )
-        return
+        return False
 
     logger.info(
         "[DEBUG_REPORT] Uploading PDF to Slack | file=%s bytes=%d channel=%s",
@@ -246,7 +248,7 @@ async def post_pdf_to_slack(pdf_bytes: bytes, filename: str, title: str) -> None
                     "Check that your bot token has the 'files:write' OAuth scope.",
                     url_resp,
                 )
-                return
+                return False
 
             upload_url: str = url_resp["upload_url"]
             file_id: str = url_resp["file_id"]
@@ -269,7 +271,7 @@ async def post_pdf_to_slack(pdf_bytes: bytes, filename: str, title: str) -> None
                             "[DEBUG_REPORT] Step 2 FAILED — upload status %d body=%s",
                             up_resp.status, up_body[:200],
                         )
-                        return
+                        return False
             logger.debug("[DEBUG_REPORT] Step 2 OK — PDF bytes uploaded successfully")
 
             # -- Step 3: Complete the upload and share to channel -----------
@@ -295,17 +297,20 @@ async def post_pdf_to_slack(pdf_bytes: bytes, filename: str, title: str) -> None
                     "Check that the bot is invited to the channel (channel_id=%s).",
                     complete, channel_id,
                 )
-                return
+                return False
 
             logger.info(
                 "[DEBUG_REPORT] ✅ PDF uploaded to Slack successfully | file=%s channel=%s",
                 filename, channel_id,
             )
+            return True
 
     except aiohttp.ClientError as net_err:
         logger.error("[DEBUG_REPORT] Network error during Slack upload: %s", net_err, exc_info=True)
+        return False
     except Exception as exc:
         logger.error("[DEBUG_REPORT] Unexpected error during Slack upload: %s", exc, exc_info=True)
+        return False
 
 
 async def generate_and_send_debug_report(
@@ -340,10 +345,28 @@ async def generate_and_send_debug_report(
         logger.info("[DEBUG_REPORT] PDF built — size=%d bytes", len(pdf_bytes))
         filename = f"interview_debug_{app_id}.pdf"
         title = f"Interview Debug — {candidate_name} ({len(answer_scores)} turns) — {app_id}"
-        await post_pdf_to_slack(pdf_bytes, filename, title)
+        sent = await post_pdf_to_slack(pdf_bytes, filename, title)
+        if not sent:
+            await _alert_debug_report_failure(app_id, candidate_name, "post_pdf_to_slack returned False -- see logs above for the specific step that failed")
     except Exception as e:
         logger.error(
             "[DEBUG_REPORT] Failed to generate/send debug report for %s: %s",
             app_id, e, exc_info=True,
         )
+        await _alert_debug_report_failure(app_id, candidate_name, str(e))
+
+
+async def _alert_debug_report_failure(app_id: str, candidate_name: str, error: str) -> None:
+    """Debug-PDF failures used to be visible only in worker logs -- silent from
+    the outside, so missing test-session PDFs went unnoticed. Routes through the
+    same worker-error Slack alert as other background-job failures."""
+    try:
+        from interview.slack_error_logger import log_worker_error
+        await log_worker_error(
+            error=error,
+            reason="Debug PDF failed to reach Slack for a test session",
+            context={"appId": app_id, "candidateName": candidate_name},
+        )
+    except Exception:
+        pass  # alerting must never mask the original failure
 
