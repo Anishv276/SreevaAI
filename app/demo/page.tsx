@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, Suspense } from "react";
 import {
-    Mic, ArrowRight, Loader2, CheckCircle2, AlertCircle,
+    Mic, MicOff, PhoneOff, ArrowRight, Loader2, CheckCircle2, AlertCircle,
     Clock, Code2, MessageSquare, Zap, Shield, Users
 } from "lucide-react";
 import {
@@ -300,7 +300,6 @@ export default function DemoPage() {
 function DemoInterview({ sessionData, onEnd }: { sessionData: any; onEnd: () => void }) {
     const [connected, setConnected] = useState(false);
     const [timeLeft, setTimeLeft] = useState(sessionData.duration || 294);
-    const containerRef = useRef<HTMLDivElement>(null);
 
     // Countdown timer
     useEffect(() => {
@@ -313,41 +312,9 @@ function DemoInterview({ sessionData, onEnd }: { sessionData: any; onEnd: () => 
         return () => clearInterval(interval);
     }, [onEnd]);
 
-    const minutes = Math.floor(timeLeft / 60);
-    const seconds = timeLeft % 60;
-    const pct = ((sessionData.duration - timeLeft) / sessionData.duration) * 100;
-
     return (
-        <div className="animate-in fade-in duration-500 space-y-4">
-            {/* Interview header */}
-            <div className="bg-white rounded-2xl p-5" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
-                <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                        <span className="text-xs font-semibold text-gray-600">Live Interview</span>
-                        <span className="text-xs text-gray-400">·</span>
-                        <span className="text-xs text-gray-400">{sessionData.roleLabel}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-sm font-semibold tabular-nums" style={{ color: timeLeft < 60 ? "#EF4444" : timeLeft < 120 ? "#B45309" : "#111827" }}>
-                        <Clock className="h-3.5 w-3.5" />
-                        {minutes}:{String(seconds).padStart(2, "0")}
-                    </div>
-                </div>
-                {/* Progress bar */}
-                <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                    <div
-                        className="h-full rounded-full transition-all duration-1000"
-                        style={{ width: `${pct}%`, background: "linear-gradient(135deg, #8B5CF6, #3B82F6)" }}
-                    />
-                </div>
-            </div>
-
-            {/* LiveKit room embed */}
-            <div
-                ref={containerRef}
-                className="bg-white rounded-2xl overflow-hidden relative"
-                style={{ border: "1px solid #E9E7FF", boxShadow: "0 4px 16px rgba(124,58,237,0.08)", minHeight: "400px" }}
-            >
+        <div className="animate-in fade-in duration-500 flex flex-col items-center justify-center h-[600px] w-full relative">
+            <div className="absolute inset-0 bg-white rounded-3xl overflow-hidden shadow-[0_2px_20px_rgba(0,0,0,0.04)] border border-gray-100 flex flex-col items-center justify-center">
                 <LKRoom
                     token={sessionData.token}
                     serverUrl={sessionData.url}
@@ -355,14 +322,13 @@ function DemoInterview({ sessionData, onEnd }: { sessionData: any; onEnd: () => 
                     audio={true}
                     video={false}
                     onDisconnected={onEnd}
-                    className="w-full h-full"
-                    style={{ minHeight: "400px" }}
+                    className="w-full h-full flex flex-col items-center justify-center relative"
                 >
                     <RoomAudioRenderer />
-                    <DemoVoiceStage onConnected={() => setConnected(true)} />
+                    <DemoVoiceStage onConnected={() => setConnected(true)} timeLeft={timeLeft} onLeave={onEnd} />
                 </LKRoom>
                 {!connected && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white z-10">
                         <Loader2 className="h-7 w-7 animate-spin text-violet-500" />
                         <p className="text-sm text-gray-400">Connecting to AI interviewer…</p>
                     </div>
@@ -394,13 +360,12 @@ interface TranscriptLine {
 // Rendered inside <LKRoom> -- has access to the LiveKit room context for
 // agent state (idle/listening/thinking/speaking), connection status, and
 // live transcription segments.
-function DemoVoiceStage({ onConnected }: { onConnected: () => void }) {
+function DemoVoiceStage({ onConnected, timeLeft, onLeave }: { onConnected: () => void, timeLeft: number, onLeave: () => void }) {
     const { state: agentState } = useVoiceAssistant();
     const connectionState = useConnectionState();
     const room = useRoomContext();
-    const { localParticipant } = useLocalParticipant();
+    const { localParticipant, isMicrophoneEnabled } = useLocalParticipant();
     const transcriptions = useTranscriptions({ room });
-    const transcriptEndRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         if (connectionState === ConnectionState.Connected) {
@@ -417,54 +382,70 @@ function DemoVoiceStage({ onConnected }: { onConnected: () => void }) {
         const cleanText = sanitizeTranscriptText(segment.text);
         if (!cleanText) continue;
         const isFinal = segment.streamInfo.attributes?.["lk.transcription_final"] === "true";
-        if (!isFinal) continue; // only show settled lines -- avoids flicker from partial STT
         const identity = segment.participantInfo?.identity || "";
+        if (identity === localParticipant.identity) continue;
         latestSegments.set(segment.streamInfo.id, {
             id: segment.streamInfo.id,
-            isCandidate: identity === localParticipant.identity,
+            isCandidate: false,
             text: cleanText,
             timestamp: segment.streamInfo.timestamp,
         });
     }
     lines.push(...Array.from(latestSegments.values()).sort((a, b) => a.timestamp - b.timestamp));
 
-    useEffect(() => {
-        transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [lines.length]);
+    const handleMuteToggle = () => {
+        if (localParticipant) {
+            localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled);
+        }
+    };
+
+    const minutes = Math.floor(timeLeft / 60);
+    const seconds = timeLeft % 60;
+    const timeString = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+
+    const lastLine = lines.length > 0 ? lines[lines.length - 1] : null;
+    const displayText = lastLine ? lastLine.text : "Connecting to interview...";
 
     return (
-        <div className="w-full h-full flex flex-col items-center gap-4 py-6 px-4">
-            <AuraVisualizer state={agentState} color={[0.55, 0.36, 0.93]} size="md" />
-            <p className="text-sm text-gray-500 capitalize -mt-1">
-                {agentState === "speaking" ? "AI interviewer speaking…" :
-                    agentState === "listening" ? "Listening…" :
-                        agentState === "thinking" ? "Thinking…" : "Connected"}
-            </p>
-
-            {/* Live transcript */}
-            <div className="w-full max-w-xl flex-1 overflow-y-auto rounded-xl bg-gray-50 border border-gray-100 p-4 space-y-3 min-h-[180px] max-h-[260px]">
-                {lines.length === 0 ? (
-                    <p className="text-xs text-gray-400 text-center pt-8">Transcript will appear here…</p>
-                ) : (
-                    lines.map((line) => (
-                        <div key={line.id} className={`flex ${line.isCandidate ? "justify-end" : "justify-start"}`}>
-                            <div
-                                className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm leading-snug ${line.isCandidate
-                                    ? "bg-violet-600 text-white rounded-br-sm"
-                                    : "bg-white text-gray-800 border border-gray-200 rounded-bl-sm"
-                                    }`}
-                            >
-                                {!line.isCandidate && (
-                                    <div className="text-[10px] font-semibold uppercase tracking-wider text-violet-500 mb-0.5">
-                                        Ishitha
-                                    </div>
-                                )}
-                                {line.text}
-                            </div>
+        <div className="w-full h-full flex flex-col items-center justify-between py-12 px-4 relative">
+            <div className="flex-1 flex flex-col items-center justify-center -mt-10 w-full">
+                {/* Aura Visualizer with Ripple effect */}
+                <div className="relative flex flex-col items-center justify-center w-[300px] h-[300px] rounded-full border border-violet-100/60 shadow-[0_0_60px_rgba(139,92,246,0.03)] bg-gradient-to-b from-white to-gray-50/50">
+                    <div className="absolute inset-0 m-auto w-[200px] h-[200px] bg-white rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.06)] flex flex-col items-center justify-center z-10 border border-gray-50">
+                        <div className="h-16 flex flex-col items-center justify-center mb-1">
+                            <AuraVisualizer state={agentState} color={[0.55, 0.36, 0.93]} size="sm" />
                         </div>
-                    ))
-                )}
-                <div ref={transcriptEndRef} />
+                        <div className="text-center mt-2">
+                            <p className="text-[15px] font-bold text-gray-800 capitalize tracking-tight">
+                                {agentState === "speaking" ? "Speaking" : agentState === "listening" ? "Listening" : agentState === "thinking" ? "Thinking" : "Connected"}
+                            </p>
+                            <p className="text-xs text-gray-400 font-medium mt-0.5 tracking-widest">{timeString}</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Flowing single transcript text */}
+                <div className="mt-4 text-center max-w-lg h-24 flex items-center justify-center px-6">
+                    <p key={lastLine?.id || 'default'} className="text-lg text-gray-500 font-medium animate-in fade-in slide-in-from-bottom-2 duration-500 text-balance leading-relaxed">
+                        {displayText}
+                    </p>
+                </div>
+            </div>
+
+            {/* Floating Pill Controls */}
+            <div className="absolute bottom-8 bg-white border border-gray-100 shadow-[0_8px_30px_rgba(0,0,0,0.08)] rounded-[32px] px-4 py-3 flex items-center gap-3 z-20">
+                <button 
+                    onClick={handleMuteToggle}
+                    className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-200 ${!isMicrophoneEnabled ? "bg-red-50 text-red-500 hover:bg-red-100" : "bg-violet-50 text-violet-600 hover:bg-violet-100"}`}
+                >
+                    {!isMicrophoneEnabled ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                </button>
+                <button 
+                    onClick={onLeave}
+                    className="w-12 h-12 rounded-full bg-red-500 text-white flex items-center justify-center hover:bg-red-600 hover:scale-105 transition-all duration-200 shadow-[0_4px_12px_rgba(239,68,68,0.3)]"
+                >
+                    <PhoneOff className="w-5 h-5" />
+                </button>
             </div>
         </div>
     );
