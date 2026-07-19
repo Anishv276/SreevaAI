@@ -18,27 +18,34 @@ import logging
 import re
 from typing import Any, Optional, Dict
 
-from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger("interview-agent")
 
 
 # ===============================================================================
-# SECTION 1 -- AgentConfig (Singleton Configuration)
+# SECTION 0 -- OpenAI chat.completions token-limit kwarg
 # ===============================================================================
 
-class VoiceProviderMapping(BaseModel):
-    """Type-safe voice provider mapping."""
-    provider: str = Field(..., pattern="^(CARTESIA|SARVAM|ELEVENLABS)$")
-    model: str = Field(..., min_length=1)
+# Reasoning-family models (gpt-5*, o1*, o3*, o4*, ...) reject the legacy
+# `max_tokens` param and require `max_completion_tokens` instead. Older chat
+# models (gpt-4o, gpt-4-turbo, ...) still expect `max_tokens`. Which family a
+# call hits depends on `llm_model`, which is org-configurable (job/org config),
+# so callers can't hardcode either name.
+_MAX_COMPLETION_TOKENS_PREFIXES = ("gpt-5", "o1", "o3", "o4")
 
-    @field_validator("provider", "model", mode="before")
-    @classmethod
-    def strip_whitespace(cls, v: Any) -> str:
-        if isinstance(v, str):
-            return v.strip()
-        return str(v)
 
+def token_limit_kwarg(llm_model: str, max_tokens: int) -> Dict[str, int]:
+    """Returns {"max_tokens": n} or {"max_completion_tokens": n}, whichever the
+    given model accepts, for use in openai_client.chat.completions.create(**kwargs)."""
+    model = (llm_model or "").strip().lower()
+    if model.startswith(_MAX_COMPLETION_TOKENS_PREFIXES):
+        return {"max_completion_tokens": max_tokens}
+    return {"max_tokens": max_tokens}
+
+
+# ===============================================================================
+# SECTION 1 -- AgentConfig (Singleton Configuration)
+# ===============================================================================
 
 class AgentConfig:
     """Singleton configuration manager for the interview agent.
@@ -246,7 +253,7 @@ class TextSanitizer:
     )
 
     # TTS phonetic fixes (preserve speech flow for voice synthesis)
-    # Fixes for Sarvam/Cartesia: collapse em-dashes and ellipses they can't handle
+    # Fixes for Sarvam: collapse em-dashes and ellipses it can't handle
     _TTS_PHONETIC_FIXES: tuple[tuple[re.Pattern, str], ...] = (
         (re.compile(r"\s*[–—]\s*"), ", "),
         (re.compile(r"\s*-{2,}\s*"), ", "),
@@ -417,7 +424,7 @@ class TextSanitizer:
         """Apply phonetic fixes for TTS speech synthesis.
 
         ElevenLabs preserves em-dashes and ellipses as natural pause cues.
-        Sarvam/Cartesia collapse them to commas to avoid mispronunciation.
+        Sarvam collapses them to commas to avoid mispronunciation.
         """
         fixes = (
             TextSanitizer._TTS_PHONETIC_FIXES_ELEVENLABS

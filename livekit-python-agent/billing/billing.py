@@ -110,23 +110,12 @@ _OPENAI_EMBEDDING_DEFAULT: float = float(os.environ.get("OPENAI_EMBEDDING_DEFAUL
 # newly-selected (or newly-released) model must NOT cause the whole usage record
 # to be dropped -- see CostCalculator.openai. We approximate with a mid-tier
 # "mini" price and log a warning so the exact rate can be added later. Mirrors the
-# graceful-default behaviour already used for Cartesia/ElevenLabs/Deepgram.
+# graceful-default behaviour already used for ElevenLabs/Deepgram.
 _OPENAI_RATES_DEFAULT: dict[str, float] = {
     "input":        float(os.environ.get("OPENAI_LLM_DEFAULT_INPUT_USD_PER_MILLION",  "0.40")),
     "cached_input": float(os.environ.get("OPENAI_LLM_DEFAULT_CACHED_USD_PER_MILLION", "0.10")),
     "output":       float(os.environ.get("OPENAI_LLM_DEFAULT_OUTPUT_USD_PER_MILLION", "1.60")),
 }
-
-# Cartesia TTS -- USD per million characters
-_CARTESIA_TTS_RATES: dict[str, float] = {
-    "sonic-3":    15.0,
-    "sonic-2":    15.0,
-    "sonic":      15.0,
-    "sonic-3-hd": 30.0,
-    "sonic-2-hd": 30.0,
-    "sonic-hd":   30.0,
-}
-_CARTESIA_TTS_DEFAULT: float = float(os.environ.get("CARTESIA_TTS_USD_PER_MILLION_CHARS", "15.0"))
 
 # ElevenLabs TTS -- USD per million characters
 _ELEVENLABS_TTS_RATES: dict[str, float] = {
@@ -358,15 +347,6 @@ class _SarvamStrategy:
 
 
 @dataclass(frozen=True)
-class _CartesiaStrategy:
-    def tts_cost(self, model: str, chars: int) -> float:
-        return (chars / 1_000_000.0) * _CARTESIA_TTS_RATES.get(model, _CARTESIA_TTS_DEFAULT)
-
-    def stt_cost(self, model: str, seconds: float) -> float:
-        return 0.0
-
-
-@dataclass(frozen=True)
 class _ElevenLabsStrategy:
     def tts_cost(self, model: str, chars: int) -> float:
         return (chars / 1_000_000.0) * _ELEVENLABS_TTS_RATES.get(model, _ELEVENLABS_TTS_DEFAULT)
@@ -388,7 +368,6 @@ class _DeepgramStrategy:
 # O(1) provider dispatch -- adding a provider is one line here
 _PROVIDER_REGISTRY: dict[str, CostStrategy] = {
     "SARVAM":     _SarvamStrategy(),
-    "CARTESIA":   _CartesiaStrategy(),
     "ELEVENLABS": _ElevenLabsStrategy(),
     "DEEPGRAM":   _DeepgramStrategy(),
 }
@@ -405,7 +384,7 @@ class CostCalculator:
 
     # Compiled once at class-definition time, not per call
     _DATE_SUFFIX_RE: ClassVar[re.Pattern[str]] = re.compile(r"[-:]\d{4}-\d{2}-\d{2}$")
-    _TTS_PREFIX_RE:  ClassVar[re.Pattern[str]] = re.compile(r"^(cartesia|elevenlabs)/")
+    _TTS_PREFIX_RE:  ClassVar[re.Pattern[str]] = re.compile(r"^(elevenlabs)/")
 
     @classmethod
     def _norm_openai(cls, model: str) -> str:
@@ -820,6 +799,9 @@ class EntityLedger:
         if not org_id or not event_id or not fragment:
             return
         try:
+            # Nested transaction = savepoint: a failure here rolls back only this
+            # savepoint, not the whole outer transaction/connection — otherwise every
+            # later statement on `conn` fails with InFailedSQLTransactionError.
             async with conn.transaction():
                 existing = await conn.fetchrow(
                     'SELECT id, "usage", "jobTitle", "candidateName" FROM "UsageEvent" '

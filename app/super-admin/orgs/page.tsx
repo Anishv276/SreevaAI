@@ -61,7 +61,6 @@ interface Org {
     jobCount: number;
     candidateCount: number;
     // AI Config (Setup)
-    defaultVoiceId?: string;
     allowedVoiceIds?: string[];
     deepgramModel?: string;
     billingCreditsUsed?: number;

@@ -6,7 +6,6 @@ export type OrgData = {
     orgId?: string | null;
     name?: string;
     billingPlan?: string;
-    defaultVoiceId?: string | null;
     allowedVoiceIds?: string[];
     sttModel?: string | null;
     maxActiveJobs?: string | null;
@@ -74,7 +73,6 @@ export function AdminOrgProvider({
                     status: String(orgJson.status || prev.status || "ACTIVE").toUpperCase(),
                     name: orgJson.name,
                     billingPlan: orgJson.billingPlan,
-                    defaultVoiceId: orgJson.defaultVoiceId,
                     allowedVoiceIds: orgJson.allowedVoiceIds,
                     sttModel: orgJson.sttModel,
                     maxActiveJobs: orgJson.maxActiveJobs,

@@ -15,8 +15,7 @@ Improvements over original:
 """
 import re
 from interview.agent_runtime_support import logger
-from interview.agent_runtime_utils import TextSanitizer, TranscriptManager
-from interview.probe_strategy import _strip_leaked_meta
+from interview.agent_runtime_utils import TextSanitizer, TranscriptManager, token_limit_kwarg
 
 # -- ElevenLabs text normalization ---------------------------------------------
 # flash_v2_5 has weaker normalization than multilingual_v2. Pre-normalize before
@@ -139,33 +138,6 @@ def _enforce_single_question(text: str) -> str:
 # TTS TRANSFORMS (async generators for streaming)
 # ===============================================================================
 
-# Initialize TTS processor for acronym/phonetic handling
-try:
-    from interview.tts_phonetic_processor import TTSPhoneticProcessor
-    tts_phonetic_processor = TTSPhoneticProcessor().initialize_defaults()
-except Exception as e:
-    logger.warning(f"Failed to initialize TTSPhoneticProcessor: {e}")
-    tts_phonetic_processor = None
-
-
-async def _tts_acronym_transform(text_stream):
-    """Transform text stream through TTS acronym processor.
-
-    Args:
-        text_stream: async iterable of text chunks
-
-    Yields:
-        Transformed text chunks
-    """
-    if tts_phonetic_processor is None:
-        async for chunk in text_stream:
-            yield chunk
-        return
-
-    async for chunk in text_stream:
-        yield tts_phonetic_processor.transform(chunk)
-
-
 async def _sarvam_normalize_transform(text_stream):
     """Regex-based fallback: letter-space ALL-CAPS acronyms and split CamelCase.
 
@@ -234,10 +206,8 @@ def make_sarvam_llm_normalization_transform(openai_client, model: str):
                     {"role": "user", "content": sentence},
                 ],
                 temperature=0.0,
-                max_tokens=len(sentence) * 3,  # rewrite can't be much longer
-                timeout=0.6,  # hard cap — a per-sentence network round trip in the
-                              # middle of the TTS stream is audible as a speech gap,
-                              # so this must stay well under natural speaking pace.
+                **token_limit_kwarg(model, len(sentence) * 3),  # rewrite can't be much longer
+                timeout=3.0,  # hard cap — never block TTS for more than 3s
             )
             rewritten = resp.choices[0].message.content or sentence
             # Safety: if LLM returned something wildly longer, fall back
@@ -288,17 +258,7 @@ def make_tts_sanitize_transform(provider: str = ""):
     """Return a tts_sanitize transform bound to the given TTS provider.
 
     ElevenLabs preserves em-dashes and ellipses for natural pacing.
-    Sarvam/Cartesia collapse them to commas.
-
-    MUST buffer to sentence boundaries before cleaning. The LLM streams token
-    fragments (" me", " about", " your") whose LEADING SPACE is the word
-    boundary. polish_candidate_facing_text() ends in .strip(), so cleaning each
-    fragment individually deletes those spaces and the words get glued
-    ("Tellmeaboutyour...") -- Sarvam then reads the run-on as disjointed,
-    word-by-word speech. This is why greeting/warmup (delivered as one whole
-    string via session.say) sounded perfect but turn 3+ (LLM-streamed) stumbled.
-    Buffering means each clean runs on a whole sentence, preserving inter-word
-    spaces exactly as the greeting path does.
+    Sarvam collapses them to commas.
     """
     def _clean(sentence: str) -> str:
         cleaned = polish_candidate_facing_text(sentence)
@@ -344,6 +304,12 @@ def make_tts_sanitize_transform(provider: str = ""):
                 "suppressing TTS output (expected during STT fragment assembly)."
             )
     return _transform
+
+
+async def _tts_sanitize_transform(text_stream):
+    """Default sanitize transform (Sarvam). Use make_tts_sanitize_transform() for provider-aware version."""
+    async for chunk in make_tts_sanitize_transform()(text_stream):
+        yield chunk
 
 
 # ===============================================================================

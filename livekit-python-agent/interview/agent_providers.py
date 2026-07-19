@@ -3,14 +3,14 @@ agent_providers.py
 ==================
 Provider factory layer for TTS, STT, and LLM plugins.
 Supported providers:
-  TTS: Cartesia, Sarvam, ElevenLabs (routed via VOICE_REGISTRY in agent_runtime_support)
+  TTS: Sarvam, ElevenLabs (routed via ttsProvider in agent_runtime)
   STT: Deepgram Flux (native EOT turn detection)
   LLM: OpenAI only
 """
 from __future__ import annotations
 import os
 from typing import Any, Sequence
-from livekit.plugins import cartesia, deepgram, openai, sarvam
+from livekit.plugins import deepgram, openai, sarvam
 try:
     from livekit.plugins import elevenlabs
 except Exception:  # pragma: no cover
@@ -21,9 +21,6 @@ from interview.agent_runtime_support import (
     FLUX_EOT_TIMEOUT_MS,
     logger,
 )
-from interview.agent_utils import _cartesia_plugin_model
-_CARTESIA_DEFAULT_MODEL = "cartesia/sonic-3"
-_CARTESIA_DEFAULT_VOICE = "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"
 _ELEVENLABS_DEFAULT_MODEL = "eleven_turbo_v2_5"
 _ELEVENLABS_DEFAULT_VOICE = "EXAVITQu4vr4xnSDxMaL"  # ElevenLabs Rachel
 _SARVAM_DEFAULT_SPEAKER = "priya"
@@ -34,12 +31,7 @@ _SARVAM_VALID_SPEAKERS = frozenset({
     "amelia", "sophia",
 })
 _PROVIDER_DEFAULTS: dict[str, Any] = {
-    "cartesia_speed":          1.0,
-    # LiveKit's official Sarvam guide: "Start at 1.0, then tune after listening to
-    # full agent turns." An interviewer reading at 1.2x sounds rushed/impatient --
-    # no interview-specific reason to default faster than natural pace. Per-org DB
-    # override (ctx_data.ttsSpeed) still lets specific orgs tune this if wanted.
-    "sarvam_pace":             1.0,
+    "sarvam_pace":             1.2,
     # bulbul:v3 -- per Sarvam docs (https://docs.sarvam.ai/api-reference-docs/text-to-speech/stream)
     # 22050 Hz is recommended for streaming (24000 is higher quality but slower to generate)
     "sarvam_v3_sample_rate":   22050,
@@ -81,26 +73,6 @@ _LANG_MAP: dict[str, str] = {
 }
 def _map_language(language: str, fallback: str | None = None) -> str:
     return _LANG_MAP.get(language, fallback or language)
-def build_cartesia_tts(
-    language: str = "en",
-    model: str = _CARTESIA_DEFAULT_MODEL,
-    voice_id: str = _CARTESIA_DEFAULT_VOICE,
-    speed: float | None = None,
-    extra_kwargs: dict[str, Any] | None = None,
-):
-    api_key = os.getenv("CARTESIA_API_KEY")
-    if not api_key:
-        raise RuntimeError("CARTESIA_API_KEY is not set")
-    tts_kwargs: dict[str, Any] = {
-        "model":    _cartesia_plugin_model(model, _CARTESIA_DEFAULT_MODEL),
-        "voice":    voice_id,
-        "language": language,
-        "api_key":  api_key,
-        "speed":    speed if speed is not None else _PROVIDER_DEFAULTS["cartesia_speed"],
-    }
-    if extra_kwargs:
-        tts_kwargs.update(extra_kwargs)
-    return cartesia.TTS(**tts_kwargs)
 def build_sarvam_tts(
     language: str = "en-IN",
     model: str = "bulbul:v3",

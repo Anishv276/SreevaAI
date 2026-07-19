@@ -18,6 +18,7 @@ from typing import Any, Optional
 
 logger = logging.getLogger("interview-agent")
 from interview.agent_runtime_support import EVAL_TEMPERATURE
+from interview.agent_runtime_utils import token_limit_kwarg
 
 
 # ---------------------------------------------------------------------------
@@ -373,6 +374,7 @@ async def _classify_signal_from_answer(
     _user = f"QUESTION: {last_question}\n\nANSWER: {candidate_answer}"
     _usage: dict | None = None
     try:
+<<<<<<< HEAD:livekit-python-agent/interview/agent_scoring.py
         resp = await client.chat.completions.create(
             model=llm_model,
             temperature=0.0,
@@ -382,6 +384,20 @@ async def _classify_signal_from_answer(
                 {"role": "user", "content": _user},
             ],
             response_format={"type": "json_object"},
+=======
+        resp = await asyncio.wait_for(
+            client.chat.completions.create(
+                model=llm_model,
+                temperature=0.0,
+                **token_limit_kwarg(llm_model, 80),
+                messages=[
+                    {"role": "system", "content": _system},
+                    {"role": "user", "content": _user},
+                ],
+                response_format={"type": "json_object"},
+            ),
+            timeout=5.0,
+>>>>>>> major_architecture_identity:livekit-python-agent/interview/tech/scoring.py
         )
         # Capture usage immediately after the call succeeds -- it was billed
         # regardless of whether the response body parses cleanly below.
@@ -527,6 +543,7 @@ async def _call_scoring(
         )
         return ctx
 
+<<<<<<< HEAD:livekit-python-agent/interview/agent_scoring.py
     stream = await client.chat.completions.create(
         model=llm_model,
         temperature=EVAL_TEMPERATURE,
@@ -542,6 +559,34 @@ async def _call_scoring(
                     f"FOLLOW-UPS ON THIS TOPIC SO FAR: {topic_follow_up_count}\n\n"
                     f"RECENT CONVERSATION (last 3 exchanges):\n{recent_context}"
                 ),
+=======
+    stream = await asyncio.wait_for(
+        client.chat.completions.create(
+            model=llm_model,
+            temperature=EVAL_TEMPERATURE,
+            **token_limit_kwarg(llm_model, 120),
+            stream=True,
+            messages=[
+                {"role": "system", "content": _build_scoring_system_prompt()},
+                {
+                    "role": "user",
+                    "content": (
+                        f"QUESTION: {last_question}\n\n"
+                        f"ANSWER: {candidate_answer}\n\n"
+                        f"FOLLOW-UPS ON THIS TOPIC SO FAR: {topic_follow_up_count}\n\n"
+                        f"RECENT CONVERSATION (last 3 exchanges):\n{recent_context}"
+                    ),
+                },
+            ],
+            response_format={"type": "json_object"},
+            stream_options={"include_usage": True},
+            store=True,
+            metadata={
+                "call_type": "eval_scoring",
+                "band": candidate_band,
+                "topic_importance": topic_importance,
+                "org_id": org_id or "",
+>>>>>>> major_architecture_identity:livekit-python-agent/interview/tech/scoring.py
             },
         ],
         response_format={"type": "json_object"},
@@ -643,6 +688,7 @@ async def _call_signal_classification(
             + _build_signal_prompt_block()
         )
 
+<<<<<<< HEAD:livekit-python-agent/interview/agent_scoring.py
     # Streamed like _call_scoring above -- bytes arrive incrementally instead of
     # the whole 500-token generation completing before any content is visible.
     stream = await client.chat.completions.create(
@@ -659,6 +705,29 @@ async def _call_signal_classification(
                     f"ANSWER: {candidate_answer}\n\n"
                     f"RECENT CONVERSATION (last 3 exchanges):\n{recent_context}"
                 ),
+=======
+    resp = await asyncio.wait_for(
+        client.chat.completions.create(
+            model=llm_model,
+            temperature=0.0,
+            **token_limit_kwarg(llm_model, 500),
+            messages=[
+                {"role": "system", "content": _build_signal_system_prompt()},
+                {
+                    "role": "user",
+                    "content": (
+                        f"QUESTION: {last_question}\n\n"
+                        f"ANSWER: {candidate_answer}\n\n"
+                        f"RECENT CONVERSATION (last 3 exchanges):\n{recent_context}"
+                    ),
+                },
+            ],
+            store=True,
+            metadata={
+                "call_type": "eval_signal",
+                "topic_importance": topic_importance,
+                "org_id": org_id or "",
+>>>>>>> major_architecture_identity:livekit-python-agent/interview/tech/scoring.py
             },
         ],
         stream_options={"include_usage": True},

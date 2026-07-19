@@ -117,6 +117,59 @@ _BASE_PRONUNCIATIONS: dict[str, str] = {
     "lambda":        "lam dah",
 }
 
+# Conversational interviews are SALES interviews (interview/conversational/* --
+# quota, deals, objections, MEDDIC). A salesperson never says "kubernetes" or
+# "pytorch", so tech terms waste dict slots here. This is the sales vocabulary
+# Sarvam mispronounces -- CRM tools + qualification methodologies. Terms Sarvam
+# already reads fine (crm, saas, roi) are left out on purpose, same rule as
+# _SARVAM_READS_OK. The prompt already spells acronyms ("C R M") -- this backs
+# that up at the TTS layer for the ones the LLM leaves whole.
+_CONVERSATIONAL_BASE_PRONUNCIATIONS: dict[str, str] = {
+    # CRM / sales-engagement tools
+    "salesforce":  "sales force",
+    "hubspot":     "hub spot",
+    "outreach":    "out reach",
+    "salesloft":   "sales loft",
+    "gong":        "gong",
+    "chorus":      "kor us",
+    "apollo":      "ah pol oh",
+    "zoominfo":    "zoom info",
+    "clari":       "klar ee",
+    "pipedrive":   "pipe drive",
+    # Qualification methodologies
+    "meddic":      "med ick",
+    "meddpicc":    "med pick",
+    "bant":        "bant",
+    "spin":        "spin",
+    # Sales-role acronyms Sarvam garbles
+    "sdr":         "S D R",
+    "bdr":         "B D R",
+    "ae":          "A E",
+    "revops":      "rev ops",
+    "arr":         "A R R",
+    "mrr":         "M R R",
+    "mql":         "M Q L",
+    "sql":         "S Q L",  # sales-qualified lead here, not the database
+    "icp":         "I C P",
+}
+
+# Per-mode cap on the merged (base + session) dict. Sarvam's hard limit is 100.
+# Tech fills the full 100; conversational reserves fewer so it stays lean.
+_MODE_WORD_CAP: dict[str, int] = {"tech": 100, "conversational": 80}
+
+
+def _base_pronunciations_for(mode: str) -> dict[str, str]:
+    """Base pronunciation table for the interview mode. Tech gets the infra/ML
+    table; conversational (sales) gets the sales-tool/methodology table."""
+    if mode == "conversational":
+        return _CONVERSATIONAL_BASE_PRONUNCIATIONS
+    return _BASE_PRONUNCIATIONS
+
+
+def _word_cap_for(mode: str) -> int:
+    return _MODE_WORD_CAP.get(mode, 100)
+
+
 # -- Auto-pronunciation engine --------------------------------------------------
 # For any word extracted from a candidate's resume/JD that is NOT in the base
 # dict, we auto-generate a pronunciation. Rules applied in order:
@@ -361,14 +414,18 @@ async def _delete_dict(api_key: str, dict_id: str) -> None:
 
 # -- Public API -----------------------------------------------------------------
 
-async def get_or_create_base_dict_id(api_key: str) -> Optional[str]:
-    """Return the base pronunciation dict ID, creating it if needed.
+async def get_or_create_base_dict_id(api_key: str, mode: str = "tech") -> Optional[str]:
+    """Return the base pronunciation dict ID for the interview mode, creating it
+    if needed.
 
-    The base dict contains universal tech terms shared across all sessions.
-    It is created once and reused indefinitely (env var cached).
+    Tech and conversational (sales) have different base tables, so they cache
+    under different env keys -- one base dict per mode, reused indefinitely.
     If account is at dict limit, skip creation — session dicts will handle it.
     """
-    existing = os.environ.get(_BASE_ENV_KEY, "").strip()
+    base_pronunciations = _base_pronunciations_for(mode)
+    env_key = _BASE_ENV_KEY if mode == "tech" else f"{_BASE_ENV_KEY}_{mode.upper()}"
+
+    existing = os.environ.get(env_key, "").strip()
     if existing:
         return existing
 
@@ -385,9 +442,9 @@ async def get_or_create_base_dict_id(api_key: str) -> Optional[str]:
                        len(existing_ids))
             return None
 
-        dict_id = await _create_dict(api_key, _BASE_PRONUNCIATIONS)
-        os.environ[_BASE_ENV_KEY] = dict_id
-        logger.info("[SARVAM_DICT] Created base dict %s (%d words)", dict_id, len(_BASE_PRONUNCIATIONS))
+        dict_id = await _create_dict(api_key, base_pronunciations)
+        os.environ[env_key] = dict_id
+        logger.info("[SARVAM_DICT] Created %s base dict %s (%d words)", mode, dict_id, len(base_pronunciations))
         return dict_id
     except Exception as exc:
         logger.warning("[SARVAM_DICT] Failed to create base dict: %s (type=%s) — interviews continue without pronunciation dict",
@@ -400,6 +457,7 @@ async def get_session_dict_id(
     keywords: list[str],
     *,
     base_dict_id: Optional[str] = None,
+    mode: str = "tech",
 ) -> Optional[str]:
     """Build a per-session pronunciation dict from candidate resume/JD keywords.
 
@@ -425,23 +483,25 @@ async def get_session_dict_id(
         logger.info("[SARVAM_DICT] No session-specific pronunciations needed")
         return base_dict_id
 
-    # Merge: base first, session words override on conflict, cap at 100
-    merged = {**_BASE_PRONUNCIATIONS}
+    # Merge: mode's base first, session words override on conflict, cap by mode
+    base_pronunciations = _base_pronunciations_for(mode)
+    cap = _word_cap_for(mode)
+    merged = {**base_pronunciations}
     for k, v in session_words.items():
         if k not in merged:
             merged[k] = v
-        if len(merged) >= 100:
+        if len(merged) >= cap:
             break
 
     logger.info(
-        "[SARVAM_DICT] Session dict: %d base + %d session = %d merged words",
-        len(_BASE_PRONUNCIATIONS), len(session_words), len(merged),
+        "[SARVAM_DICT] Session dict (%s): %d base + %d session = %d merged words (cap %d)",
+        mode, len(base_pronunciations), len(session_words), len(merged), cap,
     )
 
     try:
         # If we have a base dict and merged set fits, just update it in-place.
         # This avoids consuming extra dict slots when session words are few.
-        if base_dict_id and len(merged) <= 100:
+        if base_dict_id and len(merged) <= cap:
             await _update_dict(api_key, base_dict_id, merged)
             logger.info("[SARVAM_DICT] Updated base dict %s with session words", base_dict_id)
             return base_dict_id

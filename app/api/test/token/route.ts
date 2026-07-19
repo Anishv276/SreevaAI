@@ -93,6 +93,7 @@ export async function POST(request: Request) {
                         timeLimitMins: FIXED_INTERVIEW_DURATION_MINUTES,
                         isTest: true,
                         skipReport,
+                        testEventKey: key,
                     }),
                 });
             } catch (e) {

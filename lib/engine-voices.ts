@@ -15,12 +15,9 @@ type AIVoiceRow = {
 };
 function toVoice(row: AIVoiceRow): Voice {
   const normalizedProvider = String(row.voiceProvider).toUpperCase();
+  // Cartesia removed: any stale/unknown provider normalizes to ElevenLabs.
   const provider: Voice["provider"] =
-    normalizedProvider === "SARVAM"
-      ? "SARVAM"
-      : normalizedProvider === "ELEVENLABS"
-        ? "ELEVENLABS"
-        : "CARTESIA";
+    normalizedProvider === "SARVAM" ? "SARVAM" : "ELEVENLABS";
   const gender = String(row.voiceGender || "").toLowerCase() === "male" ? "male" : "female";
   return {
     id: row.id,

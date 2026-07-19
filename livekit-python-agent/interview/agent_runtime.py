@@ -12,18 +12,18 @@ from interview.agent_utils import (
     parse_dispatch_metadata,
     first_name_from_full_name,
 )
-from interview.interview_phases import (
+from interview.tech.phases import (
     build_greeting_text,
     build_interview_directive,
 )
-from interview.interview_brief import (
+from interview.tech.brief import (
     InterviewBrief,
     TopicItem,
     generate_interview_brief,
 )
-from interview.band_classifier import classify_band
+from interview.tech.band import classify_band
+from interview.agent_runtime_utils import token_limit_kwarg
 from interview.agent_providers import (
-    build_cartesia_tts,
     build_elevenlabs_tts,
     build_llm,
     build_sarvam_tts,
@@ -53,16 +53,25 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel, field_validator
 import urllib.request
 import urllib.error
+import urllib.parse
 from dataclasses import dataclass, field
 from enum import Enum
 
-_APP_URL_BASE = os.environ.get("APP_URL", "http://localhost:3000").rstrip("/")
-_TEST_EVENT_LOG_URL = os.environ.get("TEST_EVENT_LOG_URL", f"{_APP_URL_BASE}/api/test/events").strip()
+# --- Test Event Logger (for /test page debugging) ------------------------------
+# Derived from APP_URL/NEXT_PUBLIC_APP_URL (same domain the rest of the app uses:
+# localhost in .env, https://www.sreevaai.com in .envprod) so there's one place
+# that sets the domain. Explicit TEST_EVENT_LOG_URL still wins if set.
+_TEST_EVENT_LOG_URL = os.environ.get("TEST_EVENT_LOG_URL", "").strip()
+if not _TEST_EVENT_LOG_URL:
+    _app_url = (os.environ.get("APP_URL") or os.environ.get("NEXT_PUBLIC_APP_URL") or "").strip().rstrip("/")
+    if _app_url:
+        _TEST_EVENT_LOG_URL = f"{_app_url}/api/test/events"
 
 async def log_test_event(app_id: str, event_type: str, message: str, data: dict | None = None) -> None:
     """Send event to /api/test/events for live debugging on /test page.
-    No-op unless TEST_EVENT_LOG_URL is set -- prod agents don't run a local
-    Next.js app, so this used to fire (and fail) on every interview event.
+    No-op unless a URL could be resolved (TEST_EVENT_LOG_URL or APP_URL) -- prod
+    agents don't run a local Next.js app, so this used to fire (and fail) on
+    every interview event before this was made configurable.
     """
     if not app_id or not _TEST_EVENT_LOG_URL:
         return
@@ -288,13 +297,11 @@ from interview.agent_runtime_helpers import (
     _build_recent_context_block,
     append_transcript_line,
     make_tts_sanitize_transform,
-    _tts_acronym_transform,
     _elevenlabs_normalize_transform,
     _sarvam_normalize_transform,
     polish_candidate_facing_text,
     remove_system_messages,
     remove_system_messages_multi,
-    tts_phonetic_processor,
 )
 from interview.agent_runtime_support import (
     INTERVIEW_TEMPERATURE,
@@ -315,7 +322,7 @@ from livekit.agents import (
 from livekit.agents.metrics import AgentSessionUsage
 from livekit.agents.voice import room_io
 from livekit.agents.voice.turn import InterruptionOptions
-from interview.prompt_layers import (
+from interview.tech.prompts import (
     build_voice_layer_prompt,
     build_evaluation_layer_prompt,
     build_system_prompt,
@@ -570,6 +577,7 @@ def _build_probe_directive(
     topic_transcript: list[str],
     signals_history: list[str] | None = None,
     probe_rotation_index: int = 0,
+    interview_type: str = "tech",
 ) -> str:
     """
     Builds the probe directive synchronously — no LLM call.
@@ -582,8 +590,14 @@ def _build_probe_directive(
     consecutive follow-ups on the same topic hit DIFFERENT sub-concepts from the
     topic's probe_focus list — never asking about the same sub-concept twice on
     one topic when other sub-concepts are still un-probed.
+
+    interview_type: routes to interview.tech.probe or interview.conversational.probe
+    for the signal-specific probe directive (different signal sets per module).
     """
-    from interview.probe_strategy import get_probe_context
+    if interview_type == "conversational":
+        from interview.conversational.probe import get_probe_context
+    else:
+        from interview.tech.probe import get_probe_context
 
     # Determine the mandatory sub-concept for THIS turn by rotating through the
     # probe_focus list. This forces "chunking" then "embeddings" then "retrieval"
@@ -974,16 +988,11 @@ async def _generate_move_on_directive(
                     {"role": "user", "content": _user},
                 ],
                 temperature=0.3,
-                max_tokens=550,
+                **token_limit_kwarg(llm_model, 550),
                 stream=True,
                 stream_options={"include_usage": True},
                 store=True,
                 metadata={"call_type": "move_on_directive", "band": band, "source": source},
-                prediction={"type": "content", "content": (
-                    "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                    "DECISION: MOVE_ON\n"
-                    f"TOPIC YOU ARE LEAVING: {old_topic_title} -- CLOSED.\n"
-                )},
             )
             async for chunk in stream:
                 if chunk.choices and chunk.choices[0].delta.content:
@@ -1016,19 +1025,34 @@ async def _generate_move_on_directive(
         _prev_q_trimmed = (prev_question or "").strip()[:200]
         _intent = _classify_candidate_intent(_prev_trimmed, _prev_q_trimmed, for_move_on=True)
         if _prev_trimmed:
+            # Describe the situation (not a phrase to say) so the model composes its own reaction
+            _prev_lc = _prev_trimmed.lower()
+            if not _prev_lc or any(p in _prev_lc for p in ("i don't know", "i forgot", "i don't remember", "not sure", "can't recall")):
+                _intent_hint = "They couldn't recall or said they don't know."
+            elif len(_prev_lc.split()) <= 8:
+                _intent_hint = "Very short answer, possibly surface-level."
+            elif any(p in _prev_lc for p in ("i think", "probably", "maybe", "i believe", "kind of", "sort of")):
+                _intent_hint = "They hedged or were vague — acknowledge without validating."
+            else:
+                _intent_hint = "Substantive answer."
             _filler_instruction = (
-                f"\n\nOPENING REACTION — must respond to what the candidate actually said:\n"
+                f"\n\nOPENING REACTION — compose fresh, do not pick from a phrase bank:\n"
                 f"THEIR LAST ANSWER: \"{_prev_trimmed}\"\n"
-                + (f"QUESTION IT WAS RESPONDING TO: \"{_prev_q_trimmed}\"\n" if _prev_q_trimmed else "")
-                + f"ANSWER INTENT: {_intent.hint}\n"
-                "The examples above are illustrative, not a fixed list — invent your own short, natural "
-                "micro-reaction (3-8 words) that fits the intent, then move into the new topic. "
-                "Do not default to picking only from the examples.\n"
-                "The reaction and the new topic's question must feel like one connected turn — "
+                f"SITUATION: {_intent_hint}\n"
+                "Feel out how this actually landed for you (surprised, unimpressed, amused, unsure, relieved) "
+                "and react to that, in your own short words (1-6 words), not a category label.\n"
+                "Default to NO filler — a filler is the exception, not the norm. Only add one (umm, hmm, uhh, "
+                "ohh, haha) when this specific answer genuinely surprised you, needs a beat to process, or the "
+                "moment calls for warmth. Roughly 1 in 3 turns should have a filler at most — never two turns in a row.\n"
+                "If a filler fits, it belongs at a real planning boundary — turn-initial (most common), at a "
+                "clause break, or right before a specific word you're retrieving — e.g. 'Hmm, okay, so —' or "
+                "'Right, so — uhh — what happened next?' NEVER mid-phrase inside an already-fused expression "
+                "like 'pretty good' or 'makes sense' — real speakers don't split a decided phrase.\n"
+                "Never reuse a filler word or reaction phrasing you've used in the last 2-3 turns of this interview.\n"
+                "The reaction and the new question must feel like one connected turn — "
                 "not a reaction to silence followed by an unrelated question.\n"
                 "NEVER say 'Great!', 'Awesome!', 'Fantastic!', 'Amazing!', or any hollow praise.\n"
                 "NEVER say 'Thanks for sharing' or any 'thanks for [verb]ing' phrase.\n"
-                "NEVER reuse the same reaction word/phrase you've used in recent turns of this interview.\n"
                 f"NEVER reference the old topic '{old_topic_title}' — it is closed.\n"
                 "DO NOT wrap up, say goodbye, or add any closing phrase.\n"
             )
@@ -1333,7 +1357,7 @@ def prewarm(proc: JobProcess):
     except Exception as e:
         logger.warning(f"Failed to prewarm default STT: {e}")
     try:
-        proc.userdata["default_tts"] = build_cartesia_tts()
+        proc.userdata["default_tts"] = build_sarvam_tts()
         logger.info("Default TTS prewarmed.")
     except Exception as e:
         logger.warning(f"Failed to prewarm default TTS: {e}")
@@ -1401,6 +1425,7 @@ class InterviewContext(BaseModel):
     fullName: str
     jobId: Optional[str] = None
     jobTitle: str
+    interviewType: Optional[str] = "tech"
     language: str
     orgId: Optional[str] = None
     orgName: Optional[str] = None
@@ -1476,6 +1501,13 @@ async def entrypoint(ctx: JobContext):
     _skip_report: bool = bool(dispatch_metadata.get("skipReport", False))
     if _is_test_session:
         logger.info("[TEST_SESSION] Running in TEST mode | skipReport=%s", _skip_report)
+        # /api/test/events requires the same DB-stored test key the /test page
+        # used to get dispatched here -- without it every log_test_event POST
+        # gets a silent 403 and the UI shows no pipeline logs.
+        global _TEST_EVENT_LOG_URL
+        _test_event_key = dispatch_metadata.get("testEventKey")
+        if _TEST_EVENT_LOG_URL and _test_event_key:
+            _TEST_EVENT_LOG_URL = f"{_TEST_EVENT_LOG_URL}?key={urllib.parse.quote(_test_event_key)}"
     session_log_context: dict[str, Any] = {
         "session_id": app_id,
         "app_id": app_id,
@@ -1580,6 +1612,27 @@ async def entrypoint(ctx: JobContext):
     candidate_name = ctx_data.fullName
     candidate_first_name = first_name_from_full_name(candidate_name)
     job_title = ctx_data.jobTitle
+    # Routes which interview module (interview.tech.* vs interview.conversational.*)
+    # supplies brief/eval/scoring/prompts for this session. Falls back to "tech" for
+    # any unrecognized or missing value.
+    interview_type = ctx_data.interviewType if ctx_data.interviewType == "conversational" else "tech"
+    logger.info(f"[INTERVIEW] interview_type={interview_type} job_title={job_title!r}")
+    if interview_type == "conversational":
+        from interview.conversational.brief import generate_interview_brief
+        from interview.conversational.phases import build_greeting_text, build_interview_directive
+        from interview.conversational.prompts import (
+            build_voice_layer_prompt,
+            build_evaluation_layer_prompt,
+            build_system_prompt,
+        )
+    else:
+        from interview.tech.brief import generate_interview_brief
+        from interview.tech.phases import build_greeting_text, build_interview_directive
+        from interview.tech.prompts import (
+            build_voice_layer_prompt,
+            build_evaluation_layer_prompt,
+            build_system_prompt,
+        )
     # Consolidated startup fetch log
     # JD extraction produces criteria[].{name, priority} where priority=critical/high  must-have, medium  nice-to-have.
     # Legacy format used mustHaveSkills/niceToHaveSkills flat arrays  fall back to those if criteria absent.
@@ -1678,7 +1731,17 @@ async def entrypoint(ctx: JobContext):
     org_tts_provider: str = str(ctx_data.ttsProvider).strip().upper()
     org_tts_model: str   = str(ctx_data.ttsModel).strip()
     org_tts_speed: float | None = ctx_data.ttsSpeed
-    voice_id: str        = str(ctx_data.voiceId).strip()
+    voice_id: str        = str(ctx_data.voiceId or "").strip()
+    # Cartesia was removed. Any orphaned CARTESIA row (or a missing voice) falls
+    # back to Sarvam priya so the interview never crashes on a stale provider.
+    if org_tts_provider == "CARTESIA" or not voice_id:
+        logger.warning(
+            "[TTS] provider=%r voice=%r -> falling back to Sarvam priya",
+            org_tts_provider, voice_id,
+        )
+        org_tts_provider = "SARVAM"
+        org_tts_model = "bulbul:v3"
+        voice_id = "priya"
     interview_llm_model: str         = str(ctx_data.llmInterviewLive).strip()
     interview_llm_temperature: float = INTERVIEW_TEMPERATURE
     analysis_model: str              = str(ctx_data.llmInterviewEval).strip()
@@ -1779,9 +1842,6 @@ async def entrypoint(ctx: JobContext):
             ",".join(_t.probe_focus[:3]) or "-",
         )
     # Compact text block for eval layer prompt
-    # Register all session keywords with the phonetic processor
-    tts_phonetic_processor.add_keywords(_tts_keywords)  # type: ignore[union-attr]
-    logger.info("[TTS_PHONETIC] Registered %d keywords for this session", len(_tts_keywords))
     interview_directive_cached = build_interview_directive(
         band=candidate_band,
         resume_brief=None,
@@ -1918,7 +1978,6 @@ async def entrypoint(ctx: JobContext):
     _TTS_BUILDERS = {
         "SARVAM":     build_sarvam_tts,
         "ELEVENLABS": build_elevenlabs_tts,
-        "CARTESIA":   build_cartesia_tts,
     }
     if org_tts_provider not in _TTS_BUILDERS:
         raise ValueError(f"Unknown org ttsProvider {org_tts_provider!r} (expected one of {sorted(_TTS_BUILDERS)})")
@@ -1952,11 +2011,12 @@ async def entrypoint(ctx: JobContext):
         )
         _sarvam_api_key = os.environ.get("SARVAM_API_KEY", "")
         if _sarvam_api_key:
-            _base_dict_id = await _get_base_dict_id(_sarvam_api_key)
+            _base_dict_id = await _get_base_dict_id(_sarvam_api_key, mode=interview_type)
             _sarvam_dict_id = await _get_session_dict_id(
                 _sarvam_api_key,
                 _tts_keywords,
                 base_dict_id=_base_dict_id,
+                mode=interview_type,
             )
         # No LLM normalization transform for Sarvam: it duplicated
         # _sarvam_normalize_transform's regex pass over the same _KNOWN_ACRONYMS
@@ -2097,13 +2157,11 @@ async def entrypoint(ctx: JobContext):
             ),
         ),
         "use_tts_aligned_transcript": False,
-        # Client-side acronym transform:
-        # - Cartesia: needs it (no server-side normalization)
+        # Provider-aware text normalization:
         # - ElevenLabs: apply_text_normalization='auto' handles it server-side -- skip
         # - Sarvam: dict_id + enable_preprocessing always-on -- skip (caused letter-reading bug)
         "tts_text_transforms": [
             "filter_emoji",
-            *([_tts_acronym_transform] if org_tts_provider == "CARTESIA" else []),
             *([_elevenlabs_normalize_transform] if org_tts_provider == "ELEVENLABS" else []),
             # Sarvam path: regex normalizer only -- dict_id handles resume/JD-specific
             # terms server-side; no LLM call in the audio path (see comment above).
@@ -3076,7 +3134,10 @@ async def entrypoint(ctx: JobContext):
                 # Agent then decides: PROBE (stay, build probe directive) or
                 # MOVE_ON (pick next topic, build move-on directive).
                 # Eval never picks topics or builds directives.
-                from interview.eval_pipeline import run_eval_and_build_directive
+                if interview_type == "conversational":
+                    from interview.conversational.eval import run_eval_and_build_directive
+                else:
+                    from interview.tech.eval import run_eval_and_build_directive
                 # Time guard -- no new questions in final 20s
                 if _closing_triggered:
                     logger.info("[CLOSING] eval skipped at turn=%d -- closing in progress", turn_snapshot)
@@ -3611,6 +3672,7 @@ async def entrypoint(ctx: JobContext):
                         topic_transcript=_topic_thread_lines,
                         signals_history=_signals_history_this_topic,
                         probe_rotation_index=_rotation_idx,
+                        interview_type=interview_type,
                     )
                     remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
                     chat_ctx.add_message(role="system", content=_directive)
@@ -4746,6 +4808,7 @@ async def entrypoint(ctx: JobContext):
                 "appId": app_id,
                 "orgId": org_id,
                 "jobTitle": job_title,
+                "interviewType": interview_type,
                 "candidateName": candidate_name,
                 "llmInterviewReport": str(ctx_data.llmInterviewReport).strip(),
                 "isTest": _is_test_session,

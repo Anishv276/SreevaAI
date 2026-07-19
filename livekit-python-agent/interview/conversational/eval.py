@@ -1,21 +1,22 @@
 """
-eval_pipeline.py
-Scores the candidate's answer on the current topic.
+interview/conversational/eval.py
+Scores the candidate's answer on the current topic (sales module).
 Returns: scores, one signal + reason, saturation state, action (PROBE/MOVE_ON).
 
-Architecture:
-  evaluate_answer()   — two parallel LLM calls: scores answer, detects ONE signal with reason
-  TopicState          — per-topic saturation tracking
-  run_eval_and_build_directive() — orchestrates everything, returns result dict to agent
+Identical orchestration to interview.tech.eval -- TopicState, saturation math,
+and run_eval_and_build_directive are domain-independent (they operate on the
+generic clarity/depth/specificity/grounding scores, not on what produced
+them). The only difference is which evaluate_answer() is called.
 """
 from __future__ import annotations
+import asyncio
 import re
 import logging
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
 
-from interview.agent_scoring import evaluate_answer
+from interview.conversational.scoring import evaluate_answer
 from interview.slack_error_logger import log_llm_error
 
 logger = logging.getLogger("interview-agent")
@@ -23,7 +24,10 @@ logger = logging.getLogger("interview-agent")
 _NO_NEW_QUESTION_CUTOFF_SECONDS: int = 45
 
 # ---------------------------------------------------------------------------
-# Band-aware saturation thresholds
+# Band-aware saturation thresholds -- identical to tech mode. Saturation is a
+# function of answer quality accumulation, not domain, so the same thresholds
+# apply: a CRITICAL sales topic (e.g. the anchor deal) needs the same relative
+# depth as a CRITICAL tech topic before the agent is allowed to move on.
 # ---------------------------------------------------------------------------
 _BAND_SATURATION: dict[str, dict[str, dict]] = {
     "fresher": {
@@ -53,9 +57,6 @@ _BAND_SATURATION: dict[str, dict[str, dict]] = {
 }
 
 
-# ---------------------------------------------------------------------------
-# TopicState -- per-topic saturation tracking
-# ---------------------------------------------------------------------------
 class TopicState:
     def __init__(self, topic_name: str, importance: str, updated_turn: int = 0, band: str = "mid"):
         self.topic_name = topic_name
@@ -74,22 +75,12 @@ class TopicState:
         self.opened_at_turn = 0
         self.signals_fired: list[str] = []
 
-        # Dry-topic: if two consecutive answers score 0, candidate is stuck on this topic.
         self.last_score = None
         self.consecutive_zero_scores = 0
 
-        # Response signal tracking: if clarification_request fires twice, escalate to MOVE_ON
         self.clarification_request_count = 0
-
-        # Sub-concept rotation: advances by 1 each PROBE turn so consecutive follow-ups
-        # on this topic hit DIFFERENT items from the topic's probe_focus list. Persisted
-        # so the agent can pick probe_focus[index % len(probe_focus)] each turn.
         self.probe_rotation_index = 0
 
-    # Weak-exit checkpoints per importance: (turn3_floor, turn5_floor).
-    # Uniform 50% floor at turn 3: after 3 probes, if the candidate hasn't reached
-    # half the threshold, they're not going to. Cap at 5 probes per topic (turn5_floor
-    # = 1.0 forces MOVE_ON at turn 5 regardless of progress).
     _WEAK_EXIT_BY_IMPORTANCE: dict[str, tuple[float, float]] = {
         "CRITICAL": (0.50, 1.00),
         "HIGH":     (0.50, 1.00),
@@ -110,17 +101,8 @@ class TopicState:
         )
 
     def is_dry_topic(self) -> bool:
-        # Two CONSECUTIVE answers with score 0 -> candidate is stuck, move on.
-        # consecutive_zero_scores tracks a real streak (reset to 0 the moment any
-        # answer scores above 0) -- checking last_score alone only knows the single
-        # most recent score, so a single zero at turn >= 2 (after prior non-zero
-        # answers) incorrectly looked like two-in-a-row and forced a premature MOVE_ON.
         return self.consecutive_zero_scores >= 2
 
-    # Signals where Ishitha is re-asking / rephrasing / redirecting the SAME question
-    # instead of asking a new follow-up. The candidate has not yet had a real attempt,
-    # so this turn must not count toward follow_up_turns, saturation, dry_topic, or
-    # the fired-signals variety ban. Score contribution is zero regardless.
     _NON_FOLLOWUP_SIGNALS = frozenset({
         "clarification_request",
         "rephrase_request",
@@ -128,21 +110,12 @@ class TopicState:
     })
 
     def add_contribution(self, weighted: float, signal: str | None, turn: int | None = None) -> None:
-        # Re-ask turns (candidate asked to rephrase, restarted their own answer, or
-        # answered a different question) don't count as a real follow-up. Skip all
-        # scoring/counter updates so the candidate isn't penalised for asking us to
-        # repeat the question. The turn still fires an [SIGNAL] event upstream -- we
-        # just don't debit their 3-question budget for it.
         if signal in self._NON_FOLLOWUP_SIGNALS:
-            # Track the last turn for logging continuity, but nothing else changes.
             if turn is not None:
                 self.updated_turn = turn
             return
 
         contribution = max(0.0, _score_to_contribution(weighted))
-        # Base credit ramps smoothly with answer quality so mid-quality answers still advance
-        # saturation. weighted < 1.0 = no credit (essentially a non-answer). weighted 1.0-3.0
-        # scales linearly from 0 to full base. weighted >= 3.0 = full base credit.
         if weighted >= 3.0:
             effective_base = self.base_turn_credit
         elif weighted >= 1.0:
@@ -158,7 +131,6 @@ class TopicState:
             self.consecutive_zero_scores = 0
         if signal:
             self.signals_fired.append(signal)
-        # Track last score for dry_topic detection (two consecutive 0s)
         self.last_score = weighted
         if turn is not None:
             self.updated_turn = turn
@@ -218,8 +190,7 @@ class TopicImportanceClassifier:
 
 
 def _weighted_score(quality: dict) -> float:
-    # Weights must match the "overall" formula in agent_scoring.py -- kept in sync
-    # so the logged/scored value and the saturation-driving value never diverge.
+    # Weights must match the "overall" formula in conversational/scoring.py.
     return (
         quality.get("clarity", 0.0) * 0.20
         + quality.get("depth", 0.0) * 0.35
@@ -236,9 +207,6 @@ def _normalize_topic_key(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).strip()
 
 
-# ---------------------------------------------------------------------------
-# Pydantic input schema
-# ---------------------------------------------------------------------------
 class EvaluationPayload(BaseModel):
     app_id: str
     turn: int
@@ -248,7 +216,7 @@ class EvaluationPayload(BaseModel):
     score_history: List[Any] = Field(default_factory=list)
     turns_since_decay: int = 999
     response_latency_sec: Optional[float] = None
-    question_asked_at_wall_ms: int = 0  # epoch ms; correlates proctoring events to the active question
+    question_asked_at_wall_ms: int = 0
     signal_toggles: Dict[str, Any] = Field(default_factory=dict)
     org_id: str = ""
     llm_model: str
@@ -269,23 +237,19 @@ class EvaluationPayload(BaseModel):
     model_config = {"extra": "allow"}
 
 
-# ---------------------------------------------------------------------------
-# Main eval function
-# ---------------------------------------------------------------------------
 async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> dict:
     """
-    Scores the candidate's answer and detects one signal with reason.
-    Returns action (PROBE/MOVE_ON), signal+reason, saturation state.
+    Scores the candidate's answer and detects one signal with reason (sales
+    module). Returns action (PROBE/MOVE_ON), signal+reason, saturation state.
     Agent owns topic selection, directive building, and next-topic picking.
     """
     p = EvaluationPayload(**payload)
 
-    # -- Restore or create TopicState -----------------------------------------
     current_topic_state: Optional[TopicState] = None
     if p.active_topic and p.active_topic_state:
         current_topic_state = TopicState.from_dict(p.active_topic_state)
         logger.info(
-            "[TOPIC_STATE] RESTORED | topic=%s importance=%s | score=%.1f/%.1f follow_ups=%d",
+            "[TOPIC_STATE:sales] RESTORED | topic=%s importance=%s | score=%.1f/%.1f follow_ups=%d",
             current_topic_state.topic_name, current_topic_state.importance,
             current_topic_state.saturation_score, current_topic_state.saturation_threshold,
             current_topic_state.follow_up_turns,
@@ -298,7 +262,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         )
         current_topic_state = TopicState(p.active_topic, importance, updated_turn=p.turn, band=p.band)
         logger.info(
-            "[TOPIC_STATE] CREATED | topic=%s tag=%s importance=%s band=%s | threshold=%.1f",
+            "[TOPIC_STATE:sales] CREATED | topic=%s tag=%s importance=%s band=%s | threshold=%.1f",
             p.active_topic, p.topic_tag, importance, p.band,
             current_topic_state.saturation_threshold,
         )
@@ -307,23 +271,20 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     if current_topic_state:
         _sat_pct = 100 * min(1.0, current_topic_state.saturation_score / current_topic_state.saturation_threshold)
     logger.info(
-        "[TURN] turn=%d | topic=%s | sat=%.0f%% (%.1f/%.1f) | remaining=%.0fs",
+        "[TURN:sales] turn=%d | topic=%s | sat=%.0f%% (%.1f/%.1f) | remaining=%.0fs",
         p.turn, p.active_topic or "?", _sat_pct,
         current_topic_state.saturation_score if current_topic_state else 0,
         current_topic_state.saturation_threshold if current_topic_state else 0,
         p.remaining_seconds,
     )
-    logger.info("[QA] turn=%d  Q: %s\n              A: %s",
+    logger.info("[QA:sales] turn=%d  Q: %s\n              A: %s",
                 p.turn, (p.question or "")[:200], (p.answer or "")[:200])
 
-    # -- Run scoring (two parallel LLM calls: score + signal) -----------------
     _captured_usage: list[dict] = []
 
     async def _score_and_capture(**kwargs):
         result = await evaluate_answer(**kwargs)
         usage = result.pop("_llm_usage", None)
-        # evaluate_answer returns a list of up to 2 usage dicts (score call + signal
-        # call) on the success path, or a single dict/None on the short-circuit paths.
         usages = usage if isinstance(usage, list) else ([usage] if usage else [])
         for u in usages:
             if u.get("inputTokens") or u.get("outputTokens"):
@@ -334,24 +295,28 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     _topic_importance = current_topic_state.importance if current_topic_state else "HIGH"
 
     try:
-        raw = await _score_and_capture(
-            candidate_answer=p.answer,
-            last_question=p.question,
-            topic_follow_up_count=_follow_up_count,
-            transcript_lines=p.transcript_lines,
-            client=client,
-            org_id=p.org_id,
-            llm_model=p.llm_model,
-            candidate_band=p.band,
-            active_topic=p.active_topic or "",
-            topic_importance=_topic_importance,
-            topic_tag=p.topic_tag,
-            topic_probe_focus=p.topic_probe_focus,
-            job_title=p.job_title,
-            signals_already_fired=current_topic_state.signals_fired if current_topic_state else [],
+        raw = await asyncio.wait_for(
+            _score_and_capture(
+                candidate_answer=p.answer,
+                last_question=p.question,
+                topic_follow_up_count=_follow_up_count,
+                transcript_lines=p.transcript_lines,
+                client=client,
+                org_id=p.org_id,
+                llm_model=p.llm_model,
+                candidate_band=p.band,
+                active_topic=p.active_topic or "",
+                topic_importance=_topic_importance,
+                topic_tag=p.topic_tag,
+                topic_probe_focus=p.topic_probe_focus,
+                job_title=p.job_title,
+                signals_already_fired=current_topic_state.signals_fired if current_topic_state else [],
+            ),
+            timeout=10.0,
         )
-    except Exception as ex:
-        logger.error("[EVAL] turn=%d | scoring failed: %s — recovery decision", p.turn, ex)
+    except (asyncio.TimeoutError, Exception) as ex:
+        logger.error("[EVAL:sales] turn=%d | scoring %s — recovery decision",
+                     p.turn, "timed out" if isinstance(ex, asyncio.TimeoutError) else f"failed: {ex}")
         try:
             await log_llm_error(
                 app_id=p.app_id,
@@ -366,20 +331,17 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             pass
         raw = {
             "clarity": 2.0, "depth": 1.0, "specificity": 1.0, "grounding": 1.0, "overall": 1.3,
-            "action": "PROBE", "signal": "depth_insufficient",
+            "action": "PROBE", "signal": "deal_metrics_missing",
             "signal_reason": "eval recovery — answer was too thin to score",
             "reason": "eval recovery",
         }
 
-    # -- Extract results -------------------------------------------------------
     quality = {k: raw.get(k, 0.0) for k in ("clarity", "depth", "specificity", "grounding")}
     _weighted = _weighted_score(quality)
     action: str = str(raw.get("action", "PROBE")).upper()
     valid_actions = ("PROBE", "MOVE_ON", "REPHRASE", "REDIRECT", "ACCEPT_REPHRASE", "CAP_SCORES")
     if action not in valid_actions:
         action = "PROBE"
-    # forced_action = deterministic short-circuit (response signals: pure_denial/clarification_request/etc)
-    # Response signals override saturation logic (don't need to check dry_topic/weak_exit if pure_denial fires).
     forced_action = bool(raw.get("forced_action"))
     _forced_response_signal = forced_action and action in ("MOVE_ON", "REPHRASE", "REDIRECT", "ACCEPT_REPHRASE")
 
@@ -389,26 +351,20 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     depth_signal = "DEEP" if _weighted >= 7.0 else "SPECIFIC" if _weighted >= 5.0 else "SURFACE"
 
     logger.info(
-        "[QUALITY] turn=%d | clarity=%.1f depth=%.1f specificity=%.1f grounding=%.1f | weighted=%.2f %s",
+        "[QUALITY:sales] turn=%d | clarity=%.1f depth=%.1f specificity=%.1f grounding=%.1f | weighted=%.2f %s",
         p.turn, quality["clarity"], quality["depth"],
         quality["specificity"], quality["grounding"], _weighted, depth_signal,
     )
-    logger.info("[EVAL] turn=%d action=%s signal=%s weighted=%.2f",
+    logger.info("[EVAL:sales] turn=%d action=%s signal=%s weighted=%.2f",
                 p.turn, action, signal, _weighted)
     if signal:
-        logger.info("[SIGNAL] %s | reason=%r", signal, signal_reason)
+        logger.info("[SIGNAL:sales] %s | reason=%r", signal, signal_reason)
 
-    # -- Track response signal patterns -----------------------------------------------
-    # If clarification_request fires 3 times in a row, escalate to MOVE_ON (question is
-    # unclear or candidate confused). Below 3, always rephrase -- 2 genuine "didn't catch
-    # that" moments on the same topic is normal and must not skip the topic.
     if current_topic_state and signal == "clarification_request":
         current_topic_state.clarification_request_count += 1
     elif current_topic_state and signal != "clarification_request":
-        # Reset counter on any other signal
         current_topic_state.clarification_request_count = 0
 
-    # -- Update saturation state ----------------------------------------------
     if current_topic_state:
         current_topic_state.add_contribution(_weighted, signal, turn=p.turn)
 
@@ -422,44 +378,39 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     pct_done = 100 * min(1.0, sat_score / sat_threshold) if sat_threshold > 0 else 0
 
     if is_saturated:
-        logger.info("[SAT] SATURATED | score=%.1f >= threshold=%.1f (%.0f%%)", sat_score, sat_threshold, pct_done)
+        logger.info("[SAT:sales] SATURATED | score=%.1f >= threshold=%.1f (%.0f%%)", sat_score, sat_threshold, pct_done)
     else:
-        logger.info("[SAT] %.0f%% done | score=%.1f need %.1f more | importance=%s",
+        logger.info("[SAT:sales] %.0f%% done | score=%.1f need %.1f more | importance=%s",
                     pct_done, sat_score, remaining,
                     current_topic_state.importance if current_topic_state else "?")
 
-    # -- Decision (priority order; response signals override saturation) ----
-    # Response signals (pure_denial, clarification_request, etc) fire immediately with forced_action=True.
-    # They override saturation logic entirely -- no need to check dry_topic/weak_exit/saturated.
-    # ESCALATION: if clarification_request fires 3+ times in a row, upgrade to MOVE_ON
     _escalate_to_move_on = False
     if _forced_response_signal and current_topic_state:
-        if action == "REPHRASE" and current_topic_state.clarification_request_count >= 3:
+        if action == "REPHRASE" and current_topic_state.clarification_request_count >= 2:
             action = "MOVE_ON"
             _escalate_to_move_on = True
-            logger.info("[DECISION] MOVE_ON reason=clarification_escalation (asked 3x) turn=%d", p.turn)
+            logger.info("[DECISION:sales] MOVE_ON reason=clarification_escalation (asked 2x) turn=%d", p.turn)
         else:
-            logger.info("[DECISION] %s (forced response signal) reason=%s turn=%d", action, raw.get("reason", "forced"), p.turn)
+            logger.info("[DECISION:sales] %s (forced response signal) reason=%s turn=%d", action, raw.get("reason", "forced"), p.turn)
     elif _forced_response_signal:
-        logger.info("[DECISION] %s (forced response signal) reason=%s turn=%d", action, raw.get("reason", "forced"), p.turn)
+        logger.info("[DECISION:sales] %s (forced response signal) reason=%s turn=%d", action, raw.get("reason", "forced"), p.turn)
     elif not _escalate_to_move_on and _dry_topic:
         action = "MOVE_ON"
-        logger.info("[DECISION] MOVE_ON reason=dry_topic (two consecutive zero scores) turn=%d", p.turn)
+        logger.info("[DECISION:sales] MOVE_ON reason=dry_topic (two consecutive zero scores) turn=%d", p.turn)
     elif _weak_exit:
         action = "MOVE_ON"
-        logger.info("[DECISION] MOVE_ON reason=weak_exit turn=%d", p.turn)
+        logger.info("[DECISION:sales] MOVE_ON reason=weak_exit turn=%d", p.turn)
     elif is_saturated:
         action = "MOVE_ON"
-        logger.info("[DECISION] MOVE_ON reason=saturated turn=%d", p.turn)
+        logger.info("[DECISION:sales] MOVE_ON reason=saturated turn=%d", p.turn)
     else:
         action = "PROBE"
 
     if action == "PROBE":
         pct_sat = 100 * min(1.0, sat_score / sat_threshold) if sat_threshold > 0 else 0
-        logger.info("[DECISION] PROBE signal=%s sat=%.0f%% turn=%d",
+        logger.info("[DECISION:sales] PROBE signal=%s sat=%.0f%% turn=%d",
                     signal or "none", pct_sat, p.turn)
 
-    # -- Quality record for DB ------------------------------------------------
     quality_record = {
         "turn":                    p.turn,
         "question":                p.question,
@@ -484,7 +435,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         "topic_follow_ups":        _follow_up_count,
     }
 
-    logger.info("[RESULT] turn=%d action=%s quality=%.2f/%s signal=%s sat=%.1f/%.1f",
+    logger.info("[RESULT:sales] turn=%d action=%s quality=%.2f/%s signal=%s sat=%.1f/%.1f",
                 p.turn, action, _weighted, depth_signal,
                 signal, sat_score, sat_threshold)
 

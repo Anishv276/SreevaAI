@@ -51,6 +51,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 aiInterviewerName: true,
                 aiInterviewerVoiceId: true,
                 interviewMode: true,
+                interviewType: true,
                 organization: {
                     select: {
                         orgStatus: true,
@@ -217,6 +218,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         );
         if (data.aiInterviewerName !== undefined) updateData.aiInterviewerName = data.aiInterviewerName;
         if (data.interviewMode !== undefined) updateData.interviewMode = data.interviewMode;
+        if (data.interviewType !== undefined) updateData.interviewType = data.interviewType;
         if (Object.keys(updateData).length === 0) {
             return NextResponse.json(
                 { error: "No valid fields provided for update" },

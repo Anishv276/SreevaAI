@@ -21,7 +21,7 @@ const LLM_PIPELINE_FIELDS = [
 
 type OrgSummary = {
   id: string; name: string; urlSlug: string;
-  sttModel: string; ttsProvider: string; ttsModel: string; ttsSpeed: number; defaultVoiceId: string;
+  sttModel: string; ttsProvider: string; ttsModel: string; ttsSpeed: number;
   allowedVoiceIds: string[];
   llmResumeExtraction: string; llmJdExtraction: string; llmResumeReport: string;
   llmInterviewLive: string; llmInterviewEval: string; llmInterviewBrief: string; llmInterviewReport: string;
@@ -309,9 +309,9 @@ export default function ModelsPage() {
                 <div className="mb-4">
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Provider</p>
                   <div className="flex gap-3">
-                    {(["ELEVENLABS", "CARTESIA", "SARVAM"] as TtsProvider[]).map(provider => {
+                    {(["ELEVENLABS", "SARVAM"] as TtsProvider[]).map(provider => {
                       const isSelected = currentTtsProvider === provider;
-                      const label = provider === "ELEVENLABS" ? "ElevenLabs" : provider === "CARTESIA" ? "Cartesia" : "Sarvam";
+                      const label = provider === "ELEVENLABS" ? "ElevenLabs" : "Sarvam";
                       return (
                         <button
                           key={provider}

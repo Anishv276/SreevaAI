@@ -21,6 +21,7 @@ export const createJobSchema = z.object({
   resumeScreeningThreshold: z.coerce.number().int().optional(),
   resumeScreeningCriteria: z.union([z.string(), z.record(z.string(), z.any())]).optional(),
   interviewMode: z.enum(["ats", "interview-only"]).optional(),
+  interviewType: z.enum(["tech", "conversational"]).optional().default("tech"),
 });
 export const updateJobSchema = createJobSchema.partial();
 export const bulkDeleteSchema = z.object({

@@ -56,7 +56,7 @@ Sreeva AI is an **AI-powered asynchronous interview & resume screening platform*
 ├──────────────────────────────────────────────────────────────────┤
 │  PostgreSQL (Supabase)  │  Redis (BullMQ)  │  Cloudflare R2      │
 │  │  LiveKit Cloud       │  Resend (Email)  │  Deepgram (STT)     │
-│  │  OpenAI (LLM)        │  Cartesia (TTS)  │  Sarvam (TTS alt)   │
+│  │  OpenAI (LLM)        │  Sarvam (TTS)    │  ElevenLabs (TTS)    │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -423,7 +423,7 @@ After the main loop exits (candidate ends or timeout):
 
 
 9 sections, all in one file:
-1. **Rate Tables** — dict literals for OpenAI, Cartesia TTS, Deepgram STT rates (USD)
+1. **Rate Tables** — dict literals for OpenAI, ElevenLabs/Sarvam TTS, Deepgram STT rates (USD)
 2. **Pydantic Models** — `ModelBilling`, `FeatureBilling`, `OrgBilling`
 3. **CostStrategy** — Protocol + 4 frozen dataclass strategies via registry
 4. **CostCalculator** — Wraps strategies, normalizes model names (regex cache)
@@ -485,7 +485,7 @@ Rates converted to INR (`BILLING_INR_PER_USD`, default 83.0).
 | Service | Providers | Models |
 |---|---|---|
 | STT | Deepgram | `flux-general-en` (default) |
-| TTS | Cartesia (default), ElevenLabs, Sarvam | `sonic-3`, `eleven_turbo_v2_5`, etc. |
+| TTS | ElevenLabs, Sarvam | `eleven_turbo_v2_5`, `bulbul:v3`, etc. |
 | LLM | OpenAI | Various GPT models |
 
 
@@ -758,7 +758,7 @@ Default: all disabled. Toggleable via `Organization.proctoringSignals`:
 | **LiveKit Cloud** | Real-time media | Voice/video interview rooms, egress recording |
 | **OpenAI** | LLM API | All AI pipelines (extraction, scoring, eval, report) |
 | **Deepgram** | STT | Real-time speech-to-text |
-| **Cartesia** | TTS | Voice synthesis for AI interviewer |
+| **ElevenLabs / Sarvam** | TTS | Voice synthesis for AI interviewer |
 | **Resend** | Email | Transactional emails |
 | **Redis Cloud** | Redis | BullMQ job queues + LiveKit pub/sub |
 | **Slack** | Webhooks | Error alerting, debug PDFs |
@@ -812,9 +812,9 @@ Default: all disabled. Toggleable via `Organization.proctoringSignals`:
 | `openai` | LLM calls |
 | `langgraph` | Report/eval pipelines |
 | `pydantic` | Data models (billing) |
-| `cartesia` | TTS |
+| `elevenlabs` | TTS |
 | `deepgram` | STT |
-| `sarvam` | TTS alternative |
+| `sarvam` | TTS |
 | `silero` / `onnxruntime` | VAD (voice activity) |
 | `mediapipe` | Face detection (proctoring) |
 | `pypdf` / `pdfminer` / `pdfplumber` | PDF extraction |

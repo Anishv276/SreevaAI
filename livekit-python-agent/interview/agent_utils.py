@@ -73,16 +73,6 @@ def truncate_to_tokens(text: str, max_tokens: int, chars_per_token: int = 4) -> 
 
 
 # ---------------------------------------------------------------------------
-# Cartesia model name helper
-# ---------------------------------------------------------------------------
-
-def _cartesia_plugin_model(model: str, default_model: str) -> str:
-    compacted = model.strip() if model else ""
-    model_name = compacted if compacted else default_model
-    return model_name.removeprefix("cartesia/")
-
-
-# ---------------------------------------------------------------------------
 # Name parsing
 # ---------------------------------------------------------------------------
 

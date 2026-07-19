@@ -1,8 +1,8 @@
 "use client";
 import { useState, useRef, useEffect, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { Plus, Trash2, BrainCircuit, ChevronDown, Globe, Play, Pause, RefreshCw, AudioLines, Search } from "lucide-react";
+import { Plus, Trash2, BrainCircuit, ChevronDown, Globe, Play, Pause, RefreshCw, AudioLines, Search, FlaskConical, MessageCircle } from "lucide-react";
 import { toast } from "@/components/ui/toast-custom";
-import { ALL_VOICES, DEFAULT_VOICE_ID, type Voice } from "@/lib/constants/voices";
+import { ALL_VOICES, type Voice } from "@/lib/constants/voices";
 
 interface InterviewProps {
     formData: any;
@@ -40,7 +40,7 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
         try { mediaSourceRef.current?.disconnect(); } catch { } mediaSourceRef.current = null;
         try { gainNodeRef.current?.disconnect(); } catch { } gainNodeRef.current = null;
         try { bufferSourceRef.current?.stop(); bufferSourceRef.current?.disconnect(); } catch { } bufferSourceRef.current = null;
-        if (audioContextRef.current && audioContextRef.current.state !== "closed") { audioContextRef.current.close().catch(() => {}); audioContextRef.current = null; }
+        if (audioContextRef.current && audioContextRef.current.state !== "closed") { audioContextRef.current.close().catch(() => { }); audioContextRef.current = null; }
         setActiveAudio(null);
         setPlayingVoiceId(null);
     };
@@ -62,11 +62,19 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
         return () => {
             document.removeEventListener("mousedown", handleClickOutside);
             stopCurrentPreview();
-            if (audioContextRef.current && audioContextRef.current.state !== "closed") { audioContextRef.current.close().catch(() => {}); audioContextRef.current = null; }
+            if (audioContextRef.current && audioContextRef.current.state !== "closed") { audioContextRef.current.close().catch(() => { }); audioContextRef.current = null; }
         };
     }, []);
 
-    const currentVoiceId = formData.aiInterviewerVoiceId || DEFAULT_VOICE_ID;
+    const getAiNameForVoice = (voiceId: string) => {
+        const selected = voices.find(v => v.id === voiceId);
+        if (!selected) return "Ishitha";
+        return selected.gender === "male" ? "Ishaan" : "Ishitha";
+    };
+
+    // No baked-in default: the voice must be chosen from the org's allowed list
+    // (Super Admin → AI Models). Empty renders "Select a voice" and disables preview.
+    const currentVoiceId = formData.aiInterviewerVoiceId || "";
 
     const getAvailableVoices = () => {
         const whitelist: string[] = Array.isArray(formData.allowedVoiceIds) ? formData.allowedVoiceIds : [];
@@ -111,7 +119,7 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                 gainNode.connect(ctx.destination);
                 audio.onended = () => stopCurrentPreview();
                 audioRef.current = audio;
-                await ctx.resume().catch(() => {});
+                await ctx.resume().catch(() => { });
                 await audio.play();
                 setActiveAudio(audio);
                 setPlayingVoiceId(voiceId);
@@ -164,6 +172,25 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
         <div className="space-y-6">
             <div className="h-px" style={{ background: "#F0EEF8" }} />
 
+            {/* Interview Mode (read-only, set from JD analysis) */}
+            <div className="flex items-center gap-2">
+                <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    Interview Type
+                </label>
+                <span
+                    className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full text-xs font-medium"
+                    style={(formData.interviewType || "tech") === "tech"
+                        ? { background: "#EEF2FF", color: "#4338CA", border: "1px solid #C7D2FE" }
+                        : { background: "#FDF4FF", color: "#A21CAF", border: "1px solid #F0ABFC" }}
+                >
+                    {(formData.interviewType || "tech") === "tech"
+                        ? <><FlaskConical className="h-3 w-3" /> Tech Interview</>
+                        : <><MessageCircle className="h-3 w-3" /> Conversational Interview</>}
+                </span>
+            </div>
+
+            <div className="h-px" style={{ background: "#F0EEF8" }} />
+
             {/* Interviewer Persona */}
             <div className="space-y-3">
                 <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
@@ -197,7 +224,7 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                     >
                         {previewLoading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
                             : (playingVoiceId === currentVoiceId && !loadingVoiceId) ? <Pause className="h-3.5 w-3.5 fill-white" />
-                            : <Play className="h-3.5 w-3.5 fill-white ml-0.5" />}
+                                : <Play className="h-3.5 w-3.5 fill-white ml-0.5" />}
                     </button>
 
                     {showVoiceDropdown && (
@@ -233,18 +260,17 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                                         >
                                             <div
                                                 onClick={(e) => playSample(e, v.id)}
-                                                className={`h-8 w-8 rounded-lg flex items-center justify-center transition-all flex-shrink-0 ${
-                                                    loadingVoiceId === v.id || (playingVoiceId === v.id && !loadingVoiceId)
-                                                        ? "text-white"
-                                                        : "bg-gray-100 text-gray-500 hover:bg-violet-100 hover:text-violet-600"
-                                                }`}
+                                                className={`h-8 w-8 rounded-lg flex items-center justify-center transition-all flex-shrink-0 ${loadingVoiceId === v.id || (playingVoiceId === v.id && !loadingVoiceId)
+                                                    ? "text-white"
+                                                    : "bg-gray-100 text-gray-500 hover:bg-violet-100 hover:text-violet-600"
+                                                    }`}
                                                 style={loadingVoiceId === v.id || (playingVoiceId === v.id && !loadingVoiceId)
                                                     ? { background: "linear-gradient(135deg, #8B5CF6, #3B82F6)" }
                                                     : {}}
                                             >
                                                 {loadingVoiceId === v.id ? <RefreshCw className="h-3 w-3 animate-spin" />
                                                     : (playingVoiceId === v.id && !loadingVoiceId) ? <Pause className="h-3 w-3 fill-current" />
-                                                    : <Play className="h-3 w-3 fill-current ml-0.5" />}
+                                                        : <Play className="h-3 w-3 fill-current ml-0.5" />}
                                             </div>
                                             <div className="flex-1 min-w-0">
                                                 <p className={`text-sm font-medium truncate ${currentVoiceId === v.id ? "text-violet-600" : "text-gray-800 group-hover:text-violet-600"}`}>

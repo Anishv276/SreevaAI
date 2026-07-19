@@ -79,7 +79,10 @@ def _check_api_key(x_api_key: str | None) -> None:
         raise HTTPException(status_code=401, detail="invalid or missing API key")
 
 
-@app.function(image=image, secrets=secrets, timeout=600, max_containers=100)
+# ponytail: workspace ceiling is 100 concurrent containers TOTAL across all 5
+# functions (Modal workspace limit, not per-function). Caps sum to 100 so no one
+# function starves the others: resume+score 55, resume 20, jd 5, brief 15, report 5.
+@app.function(image=image, secrets=secrets, timeout=180, max_containers=20)
 def extract_resume(file_bytes: bytes, file_name: str, model: str) -> dict:
     """Mirrors service.py's /extract/resume — extraction only, no scoring."""
     import sys
@@ -97,7 +100,7 @@ def extract_resume(file_bytes: bytes, file_name: str, model: str) -> dict:
     return result
 
 
-@app.function(image=image, secrets=secrets, timeout=600, max_containers=100)
+@app.function(image=image, secrets=secrets, timeout=120, max_containers=5)
 def extract_jd(file_bytes: bytes, file_name: str, model: str) -> dict:
     """Mirrors service.py's /extract/jd."""
     import sys
@@ -115,7 +118,7 @@ def extract_jd(file_bytes: bytes, file_name: str, model: str) -> dict:
     return result
 
 
-@app.function(image=image, secrets=secrets, timeout=600, max_containers=100)
+@app.function(image=image, secrets=secrets, timeout=180, max_containers=55)
 def extract_resume_and_score(
     file_bytes: bytes,
     file_name: str,

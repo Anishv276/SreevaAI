@@ -255,7 +255,7 @@ export default function JobsPage() {
                                         </div>
                                         <div className="min-w-0 flex-1">
                                             <p className="text-xs font-semibold text-gray-800 truncate">{voice?.name ?? "Default Voice"}</p>
-                                            <p className="text-[10px] text-gray-400 font-medium">{voice?.provider ?? "Cartesia"}</p>
+                                            <p className="text-[10px] text-gray-400 font-medium">{voice?.provider ?? "—"}</p>
                                         </div>
                                         {deadlineText && !isExpired && (
                                             <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 shrink-0">

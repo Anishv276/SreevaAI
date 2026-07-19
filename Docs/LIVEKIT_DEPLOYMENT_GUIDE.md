@@ -34,7 +34,7 @@ lk agent deploy
 ---
 
 ## Scenario B: Adding New API Keys
-The Python agent needs API keys (OpenAI, Cartesia, etc.) to function. Because it lives in the cloud, you cannot just use a local `.env` file. You must securely upload your keys to LiveKit.
+The Python agent needs API keys (OpenAI, Sarvam, ElevenLabs, etc.) to function. Because it lives in the cloud, you cannot just use a local `.env` file. You must securely upload your keys to LiveKit.
 
 ### Step 1: Update your local file
 Open the `.envprod` file in the root of the project and paste your new API key.
