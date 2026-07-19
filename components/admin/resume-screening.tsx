@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast-custom";
+import { reportClientError } from "@/lib/client-error-reporter";
 import { INTERVIEW_SUPPORT_EMAIL, getInterviewActionBlockedMessage, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { useAdminOrg } from "@/context/admin-org-context";
 // -- Types --------------------------------------------------------------------
@@ -235,6 +236,7 @@ function UploadModal({
             onComplete();
         } catch (err) {
             toast.error((err as Error).message);
+            reportClientError(err, { action: "send_followup_emails" });
         } finally {
             setSendingFollowUp(false);
         }
@@ -277,6 +279,7 @@ function UploadModal({
             setPhase("failed");
             setError((err as Error).message);
             toast.error((err as Error).message);
+            reportClientError(err, { action: "start_resume_screening" });
         }
     };
     const pct = progress.total > 0 ? Math.round((progress.processed / progress.total) * 100) : 0;

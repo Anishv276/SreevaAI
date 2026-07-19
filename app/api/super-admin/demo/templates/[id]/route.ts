@@ -6,6 +6,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/prisma-demo";
 import { getSession } from "@/lib/auth";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 export async function PATCH(
     request: Request,
@@ -24,8 +25,14 @@ export async function PATCH(
         });
         return NextResponse.json({ template: updated });
     } catch (error) {
-        console.error("[DEMO/TEMPLATES/PATCH] error:", error);
-        return NextResponse.json({ error: "Failed to update template" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/super-admin/demo/templates/[id]",
+            method: "PATCH",
+            error,
+            body: { error: "Failed to update template" },
+            status: 500,
+            logLabel: "[DEMO/TEMPLATES/PATCH] error:",
+        });
     }
 }
 
@@ -47,7 +54,13 @@ export async function DELETE(
         
         return NextResponse.json({ success: true });
     } catch (error) {
-        console.error("[DEMO/TEMPLATES/DELETE] error:", error);
-        return NextResponse.json({ error: "Failed to delete template" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/super-admin/demo/templates/[id]",
+            method: "DELETE",
+            error,
+            body: { error: "Failed to delete template" },
+            status: 500,
+            logLabel: "[DEMO/TEMPLATES/DELETE] error:",
+        });
     }
 }

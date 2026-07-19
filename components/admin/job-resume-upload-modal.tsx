@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast-custom";
+import { reportClientError } from "@/lib/client-error-reporter";
 import { AlertTriangle, CheckCircle2, FileText, Loader2, Lock, Minus, Plus, UploadCloud } from "lucide-react";
 import { getInterviewActionBlockedMessage, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { useAdminOrg } from "@/context/admin-org-context";
@@ -82,6 +83,7 @@ export function JobResumeUploadModal({ open, onOpenChange, jobId, jobName, mode 
         } catch (e) {
             const msg = e instanceof Error ? e.message : "Upload failed";
             setError(msg); toast.error(msg); setUploading(false);
+            reportClientError(e, { action: "upload_resumes" });
         }
     };
     useEffect(() => { if (!open) reset(); }, [open]);

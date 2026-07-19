@@ -8,6 +8,7 @@ import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
 import { useCandidates } from "@/context/candidates-context";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast-custom";
+import { reportClientError } from "@/lib/client-error-reporter";
 import { getInterviewActionBlockedMessage, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { useAdminOrg } from "@/context/admin-org-context";
 import {
@@ -117,7 +118,10 @@ export function InterviewOnlyCandidatesTable({ jobId, refreshKey }: { jobId: str
             const data = await res.json().catch(() => null);
             if (res.ok) { toast.success(data?.message || `Interview link sent to ${candidate.name}`); refetch({ background: true, force: true }); return; }
             toast.error(data?.error || "Failed to send interview link");
-        } catch { toast.error("Failed to send interview link"); }
+        } catch (error) {
+            toast.error("Failed to send interview link");
+            reportClientError(error, { action: "send_interview_link" });
+        }
         finally { setSendingId(null); }
     };
 
@@ -131,7 +135,10 @@ export function InterviewOnlyCandidatesTable({ jobId, refreshKey }: { jobId: str
             if (failed > 0) toast.error(`Failed to send to ${failed} candidate(s)`);
             setSelectedIds(new Set());
             refetch({ background: true, force: true });
-        } catch { toast.error("Failed to send interview links"); }
+        } catch (error) {
+            toast.error("Failed to send interview links");
+            reportClientError(error, { action: "bulk_send_interview_link" });
+        }
         finally { setIsBulkLoading(false); }
     };
 
@@ -151,7 +158,10 @@ export function InterviewOnlyCandidatesTable({ jobId, refreshKey }: { jobId: str
                 if (res.ok) { toast.success("Selected candidates deleted"); setSelectedIds(new Set()); refetch({ background: true, force: true }); }
                 else toast.error("Failed to delete candidates");
             }
-        } catch { toast.error("Failed to delete"); }
+        } catch (error) {
+            toast.error("Failed to delete");
+            reportClientError(error, { action: "delete_candidate" });
+        }
         finally { setIsBulkLoading(false); setDeleteConfirm(null); }
     };
 

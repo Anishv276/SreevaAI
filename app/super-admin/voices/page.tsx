@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, ChevronDown, Loader2, Plus, Search, Trash2, X, Zap, AudioWaveform, Mic2, Play, Pause } from "lucide-react";
 import { toast } from "@/components/ui/toast-custom";
 import { cn } from "@/lib/utils";
+import { reportClientError } from "@/lib/client-error-reporter";
 type BuiltInVoice = {
   id: string;
   name: string;
@@ -162,6 +163,7 @@ export default function SuperAdminVoicesPage() {
       await loadRegistry();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Action failed");
+      reportClientError(e, { action: `voice_${action}` });
     } finally {
       setSaving(false);
     }
@@ -191,6 +193,7 @@ export default function SuperAdminVoicesPage() {
       await loadRegistry();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to add voices");
+      reportClientError(e, { action: "bulk_add_voices" });
     } finally {
       setSaving(false);
     }

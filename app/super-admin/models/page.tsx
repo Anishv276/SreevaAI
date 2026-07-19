@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Bot, Mic, AudioLines, Users, ChevronRight, Check, Loader2, Brain, Search, ChevronDown } from "lucide-react";
 import { toast } from "@/components/ui/toast-custom";
+import { reportClientError } from "@/lib/client-error-reporter";
 import { LLM_MODELS, TTS_MODELS, ALL_VOICES, getTtsModelsForProvider, type TtsProvider } from "@/lib/ai-models-config";
 
 const STT_OPTIONS = [
@@ -153,6 +154,7 @@ export default function ModelsPage() {
       toast.success("Saved");
     } catch (e: any) {
       toast.error(e.message ?? "Save failed");
+      reportClientError(e, { action: "save_model_config" });
     } finally {
       setSaving(false);
     }

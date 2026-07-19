@@ -6,14 +6,14 @@ export const metadata: Metadata = {
     canonical: "/privacy",
   },
   openGraph: {
-    title: "Privacy Policy — Sreeva AI",
+    title: "Privacy Policy: Sreeva AI",
     description: "Learn how Sreeva AI collects, uses, stores, and protects your data. Covers interview recordings, biometric data, and your rights under GDPR, CCPA, and India's DPDP Act.",
     url: "https://www.sreevaai.com/privacy",
     type: "website",
   },
   twitter: {
     card: "summary",
-    title: "Privacy Policy — Sreeva AI",
+    title: "Privacy Policy: Sreeva AI",
     description: "How Sreeva AI handles your data: interview recordings, biometric data, and your rights.",
   },
   robots: {

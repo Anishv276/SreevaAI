@@ -24,8 +24,8 @@ export default function ComparisonSection() {
             <div className="cmp-s"><span className="tick"></span>Live conversational probing that keeps going until the answer holds up</div>
           </div>
           <div className="cmp-row">
-            <div className="cmp-a">Engineering time</div>
-            <div className="cmp-t"><span className="cross"></span>60-90 min of a senior engineer per candidate</div>
+            <div className="cmp-a">Your team's time</div>
+            <div className="cmp-t"><span className="cross"></span>60-90 min of a senior team member per candidate</div>
             <div className="cmp-s"><span className="tick"></span>Zero. Ishitha runs every screen end to end</div>
           </div>
           <div className="cmp-row">

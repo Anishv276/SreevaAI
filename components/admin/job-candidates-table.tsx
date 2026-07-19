@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Checkbox } from "@/components/ui/checkbox";
+import { reportClientError } from "@/lib/client-error-reporter";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 import { useCandidates } from "@/context/candidates-context";
@@ -244,8 +245,9 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
             } else {
                 toast.error("Failed to update status");
             }
-        } catch {
+        } catch (error) {
             toast.error("Failed to update status");
+            reportClientError(error, { action: "update_candidate_status" });
         }
     };
     const handleSendInterviewLink = async (candidate: { id: string; name: string; interviewStatus?: string }) => {
@@ -265,8 +267,9 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
                 return;
             }
             toast.error(data?.error || "Failed to send interview link");
-        } catch {
+        } catch (error) {
             toast.error("Failed to send interview link");
+            reportClientError(error, { action: "send_interview_link" });
         } finally {
             setSendingInterviewLinkId(null);
         }
@@ -330,8 +333,9 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
                 return;
             }
             toast.error(data?.error || "Failed to update selected candidates");
-        } catch {
+        } catch (error) {
             toast.error("Failed to update selected candidates");
+            reportClientError(error, { action: "bulk_update_candidates" });
         } finally {
             setIsBulkLoading(false);
         }
@@ -352,8 +356,9 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
             } else if (deleteConfirm.mode === "bulk") {
                 await handleBulkStatus("delete");
             }
-        } catch {
+        } catch (error) {
             toast.error("Failed to delete candidate");
+            reportClientError(error, { action: "delete_candidate" });
         } finally {
             setIsBulkLoading(false);
             setDeleteConfirm(null);
@@ -386,8 +391,9 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
             if (failed > 0) toast.error(`Failed to send to ${failed} candidate(s)`);
             clearSelection();
             fetchCandidates(pagination.page, pageSize, jobId, resumeFilter, interviewFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
-        } catch {
+        } catch (error) {
             toast.error("Failed to send interview links");
+            reportClientError(error, { action: "bulk_send_interview_link" });
         } finally {
             setIsBulkLoading(false);
         }
@@ -419,8 +425,9 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
             if (failed > 0) toast.error(`Failed to resend to ${failed} candidate(s)`);
             clearSelection();
             fetchCandidates(pagination.page, pageSize, jobId, resumeFilter, interviewFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
-        } catch {
+        } catch (error) {
             toast.error("Failed to resend interview links");
+            reportClientError(error, { action: "bulk_resend_interview_link" });
         } finally {
             setIsBulkLoading(false);
         }
@@ -439,7 +446,10 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
             } else {
                 toast.error(data?.error || "Failed to resend interview link");
             }
-        } catch { toast.error("Failed to resend interview link"); }
+        } catch (error) {
+            toast.error("Failed to resend interview link");
+            reportClientError(error, { action: "resend_interview_link" });
+        }
         finally { setSendingInterviewLinkId(null); setResendConfirm(null); }
     };
     if (!isJobViewReady) {

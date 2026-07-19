@@ -542,7 +542,7 @@ function DemoInterview({
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        transition={{ duration: 0.8 }}
+                        transition={{ duration: 0.25 }}
                         className="absolute inset-0 z-[120] flex items-center justify-center bg-[#FAFAFC]"
                     >
                         <div className="flex flex-col items-center gap-8 text-center px-6">

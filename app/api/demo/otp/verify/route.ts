@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { normalizeEmail } from "@/lib/email";
 import { isRateLimited } from "@/lib/rate-limit";
 import { verifyOtp } from "@/lib/otp";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 export async function POST(request: Request) {
     try {
@@ -46,7 +47,13 @@ export async function POST(request: Request) {
 
         return NextResponse.json({ success: true });
     } catch (error) {
-        console.error("[DEMO/OTP/VERIFY] error:", error);
-        return NextResponse.json({ error: "Failed to verify code" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/demo/otp/verify",
+            method: "POST",
+            error,
+            body: { error: "Failed to verify code" },
+            status: 500,
+            logLabel: "[DEMO/OTP/VERIFY] error:",
+        });
     }
 }

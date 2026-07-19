@@ -10,6 +10,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { validatePasswordStrength } from "@/lib/validation";
 import { toast } from "@/components/ui/toast-custom";
+import { reportClientError } from "@/lib/client-error-reporter";
 import { useAuth } from "@/context/auth-context";
 function Field({ label, required, children, hint }: { label: string; required?: boolean; children: React.ReactNode; hint?: string }) {
     return (
@@ -101,6 +102,7 @@ export default function OnboardingPage() {
             setShowWelcomeCard(true);
         } catch (err: any) {
             toast.error(err.message);
+            reportClientError(err, { action: "activate_org_setup" });
         } finally { setIsSaving(false); }
     };
     const canActivate = !!(company.name);

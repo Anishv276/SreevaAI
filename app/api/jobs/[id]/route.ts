@@ -231,15 +231,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         });
         return NextResponse.json(updated);
     } catch (error: any) {
-        console.error("Error updating job:", {
-            id: jobId,
-            error: error.message,
-            stack: error.stack,
-            code: error.code
+        return apiErrorResponse({
+            route: `/api/jobs/${jobId}`,
+            method: "PATCH",
+            error,
+            body: { error: "Failed to update job" },
+            status: 500,
+            logLabel: "Error updating job:",
         });
-        return NextResponse.json({
-            error: "Failed to update job",
-        }, { status: 500 });
     }
 }
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {

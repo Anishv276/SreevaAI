@@ -18,6 +18,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/prisma-demo";
 import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
 import { normalizeEmail } from "@/lib/email";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 const DEMO_DURATION_MINS = 5;
 const DEMO_KILL_SWITCH_SECS = 294; // 4.9 minutes
@@ -135,7 +136,13 @@ export async function POST(request: Request) {
             candidateName: clientName.trim(),
         });
     } catch (error) {
-        console.error("[DEMO/START] error:", error);
-        return NextResponse.json({ error: "Failed to start demo session" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/demo/start",
+            method: "POST",
+            error,
+            body: { error: "Failed to start demo session" },
+            status: 500,
+            logLabel: "[DEMO/START] error:",
+        });
     }
 }

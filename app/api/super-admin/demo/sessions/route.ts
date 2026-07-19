@@ -6,6 +6,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/prisma-demo";
 import { getSession } from "@/lib/auth";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 export async function GET() {
     try {
@@ -27,7 +28,13 @@ export async function GET() {
         }));
         return NextResponse.json({ sessions: visible });
     } catch (error) {
-        console.error("[DEMO/SESSIONS] GET error:", error);
-        return NextResponse.json({ error: "Failed to fetch sessions" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/super-admin/demo/sessions",
+            method: "GET",
+            error,
+            body: { error: "Failed to fetch sessions" },
+            status: 500,
+            logLabel: "[DEMO/SESSIONS] GET error:",
+        });
     }
 }

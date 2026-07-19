@@ -49,6 +49,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast-custom";
+import { reportClientError } from "@/lib/client-error-reporter";
 import { formatOrgPlan } from "@/lib/org-plans";
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 interface Org {
@@ -186,6 +187,7 @@ export default function OrgsPage() {
         } catch (error) {
             setOrgs(prev => prev.map(o => o.id === orgId ? { ...o, status: previousStatus } : o));
             toast.error("Cloud sync failed. Reverting status.");
+            reportClientError(error, { action: "update_org_status" });
         } finally {
             setIsUpdatingStatus(false);
             setSyncingOrgs(prev => {
@@ -207,6 +209,7 @@ export default function OrgsPage() {
             }
         } catch (error) {
             console.error("Error deleting org:", error);
+            reportClientError(error, { action: "delete_org" });
         } finally {
             setIsDeleting(false);
         }

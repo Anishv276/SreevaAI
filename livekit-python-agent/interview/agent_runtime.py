@@ -1376,14 +1376,46 @@ def prewarm(proc: JobProcess):
     # local, CPU-only (Apache-2.0, onnxruntime) -- no per-call cost either way.
     try:
         from livekit.plugins import silero
-        proc.userdata["vad"] = silero.VAD.load()
+        # Tuned vs. library defaults (min_speech_duration=0.05, min_silence_duration=0.55,
+        # activation_threshold=0.5) for noisy candidate environments (fans, keyboards,
+        # other voices in the room): a higher activation_threshold makes VAD require a
+        # stronger, more human-like signal before flagging speech, and a longer
+        # min_speech_duration filters out short noise blips (clicks, coughs) from ever
+        # starting a speech chunk. min_silence_duration is left near-default since Flux's
+        # turn_detection="stt" (not VAD) owns end-of-turn timing.
+        proc.userdata["vad"] = silero.VAD.load(
+            min_speech_duration=0.1,
+            min_silence_duration=0.5,
+            activation_threshold=0.65,
+        )
         logger.info("Silero VAD prewarmed.")
     except Exception as e:
+        # Prewarm runs in a spawned subprocess and can fail there for reasons that
+        # don't repro in the job's own process (e.g. Windows dev: onnxruntime/Silero
+        # plugin registration erroring with "must be registered on the main thread"
+        # under spawn-based multiprocessing). Leave it unset here; _load_vad_lazy()
+        # retries once per job, in the entrypoint's own process/thread context.
         logger.warning(f"Failed to prewarm Silero VAD: {e}")
         proc.userdata["vad"] = None
     # DB pool initializes lazily on first job -- asyncpg requires an async context
     # which is not available in the sync prewarm() function.
     logger.info("DB pool will initialize lazily on first job.")
+def _load_vad_lazy():
+    """Retry Silero VAD load in the job's own process/thread when prewarm's
+    subprocess-time load failed (see prewarm() above). Returns None if this
+    also fails -- AgentSession then falls back to its own implicit default VAD."""
+    try:
+        from livekit.plugins import silero
+        vad = silero.VAD.load(
+            min_speech_duration=0.1,
+            min_silence_duration=0.5,
+            activation_threshold=0.65,
+        )
+        logger.info("Silero VAD loaded lazily (prewarm had failed).")
+        return vad
+    except Exception as e:
+        logger.warning(f"Lazy Silero VAD load also failed, using AgentSession default: {e}")
+        return None
 class _EvalSignalToggles(BaseModel):
     """Toggle flags for plan-gated proctoring/integrity signals.
     Defaults to False when absent from the DB row.
@@ -1506,15 +1538,21 @@ async def entrypoint(ctx: JobContext):
     _is_test_session: bool = bool(dispatch_metadata.get("isTest", False))
     _skip_report: bool = bool(dispatch_metadata.get("skipReport", False))
     _is_demo_session: bool = bool(dispatch_metadata.get("isDemo", False)) or is_demo_app_id(app_id)
+    global _TEST_EVENT_LOG_URL
     if _is_test_session:
         logger.info("[TEST_SESSION] Running in TEST mode | skipReport=%s", _skip_report)
         # /api/test/events requires the same DB-stored test key the /test page
         # used to get dispatched here -- without it every log_test_event POST
         # gets a silent 403 and the UI shows no pipeline logs.
-        global _TEST_EVENT_LOG_URL
         _test_event_key = dispatch_metadata.get("testEventKey")
         if _TEST_EVENT_LOG_URL and _test_event_key:
             _TEST_EVENT_LOG_URL = f"{_TEST_EVENT_LOG_URL}?key={urllib.parse.quote(_test_event_key)}"
+    else:
+        # Demo and regular interview sessions have no /test page consuming these
+        # events and no key to authenticate with -- clear the URL so
+        # log_test_event() no-ops instead of POSTing and getting a 403 on every
+        # eval/probe/turn event for the session's whole duration.
+        _TEST_EVENT_LOG_URL = ""
     session_log_context: dict[str, Any] = {
         "session_id": app_id,
         "app_id": app_id,
@@ -2158,7 +2196,7 @@ async def entrypoint(ctx: JobContext):
     # previously left out -- this just switches to the explicit, tunable plugin
     # instance (matching LiveKit's documented config knobs) instead of the SDK's
     # implicit, un-configurable default, and makes the load cost visible in prewarm().
-    vad_plugin = ctx.proc.userdata.get("vad")
+    vad_plugin = ctx.proc.userdata.get("vad") or _load_vad_lazy()
     session_kwargs = {
         "stt": stt_plugin,
         "llm": llm_plugin,

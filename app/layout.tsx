@@ -8,14 +8,15 @@ import { AuthProvider } from "@/context/auth-context";
 import { CandidatesProvider } from "@/context/candidates-context";
 import { Toaster } from "@/components/ui/toast-custom";
 import ClarityAnalytics from "@/components/clarity-analytics";
+import ClientErrorBoundary from "@/components/client-error-boundary";
 
 export const metadata: Metadata = {
   title: {
-    default: "Sreeva AI - AI-Powered Recruitment Platform",
+    default: "Sreeva AI: AI Interviewer for First-Round Hiring",
     template: "%s | Sreeva AI",
   },
-  description: "Automate your hiring process with AI-jobn screening and interviews using adaptive intelligence.",
-  keywords: ["AI Recruitment", "AI Interviewer", "Candidate Screening", "SreevaAI", "Adaptive AI", "Sreeva AI", "technical interview automation", "automated hiring"],
+  description: "Sreeva AI runs live, first-round interviews for tech and customer-facing roles, probes every resume claim, and delivers a decision-ready hiring report in 20 minutes.",
+  keywords: ["AI interviewer", "AI recruitment", "first-round interview automation", "candidate screening software", "resume verification AI", "technical interview automation", "automated hiring", "SreevaAI"],
   authors: [{ name: "Sreeva AI Team" }],
   metadataBase: new URL("https://www.sreevaai.com"),
   icons: {
@@ -25,8 +26,8 @@ export const metadata: Metadata = {
   },
   // No root canonical -- each page declares its own via page-level metadata
   openGraph: {
-    title: "Sreeva AI - AI-Powered Recruitment Platform",
-    description: "Automate your hiring process with AI-jobn screening and interviews using adaptive intelligence.",
+    title: "Sreeva AI: AI Interviewer for First-Round Hiring",
+    description: "Sreeva AI runs live, first-round interviews for tech and customer-facing roles, probes every resume claim, and delivers a decision-ready hiring report in 20 minutes.",
     url: "https://www.sreevaai.com",
     siteName: "Sreeva AI",
     images: [
@@ -34,7 +35,7 @@ export const metadata: Metadata = {
         url: "/og-image.png",
         width: 1200,
         height: 630,
-        alt: "Sreeva AI — adaptive AI interviewer for first-round hiring",
+        alt: "Sreeva AI: adaptive AI interviewer for first-round hiring",
       },
     ],
     locale: "en_US",
@@ -42,9 +43,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Sreeva AI - AI-Powered Recruitment Platform",
-    description: "Automate your hiring process with AI-jobn screening and interviews using adaptive intelligence.",
-    images: [{ url: "/og-image.png", alt: "Sreeva AI — adaptive AI interviewer for first-round hiring" }],
+    title: "Sreeva AI: AI Interviewer for First-Round Hiring",
+    description: "Sreeva AI runs live, first-round interviews for tech and customer-facing roles, probes every resume claim, and delivers a decision-ready hiring report in 20 minutes.",
+    images: [{ url: "/og-image.png", alt: "Sreeva AI: adaptive AI interviewer for first-round hiring" }],
   },
   robots: {
     index: true,
@@ -82,6 +83,7 @@ export default function RootLayout({
           `}
         </Script>
         <ClarityAnalytics />
+        <ClientErrorBoundary>
         <AuthProvider>
           <Suspense fallback={
             <div className="min-h-screen flex flex-col items-center justify-center bg-white" aria-label="Loading Sreeva AI">
@@ -98,6 +100,7 @@ export default function RootLayout({
             </JobsProvider>
           </Suspense>
         </AuthProvider>
+        </ClientErrorBoundary>
       </body>
     </html>
   );

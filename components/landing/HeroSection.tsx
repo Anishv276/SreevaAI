@@ -107,12 +107,12 @@ export default function HeroSection() {
               <span className="role-rotator-track" id="roleRotatorTrack">
                 <span className="ital" style={{ color: "var(--primary)" }}>Adaptive AI Interviewer</span>
                 <span className="ital" style={{ color: "var(--primary)" }}>First-Round Interviewer</span>
-                <span className="ital" style={{ color: "var(--primary)" }}>AI Interviewer for Engineering Teams</span>
+                <span className="ital" style={{ color: "var(--primary)" }}>AI Interviewer That Won&apos;t Let Candidates Bluff</span>
               </span>
             </span>
           </h1>
-          <p className="body-text">Ishitha runs first-round technical interviews for engineering roles, adapts to
-            what candidates actually say, and hands you a decision-ready report in 20 minutes.</p>
+          <p className="body-text">Ishitha runs first-round interviews for tech and customer-facing roles, pushes
+            past rehearsed answers for real examples and numbers, and hands you a decision-ready report in 20 minutes.</p>
 
           <div className="cta-container">
             <a href="https://cal.com/vamsivk/30min" className="btn-primary-lg">Book a Demo</a>

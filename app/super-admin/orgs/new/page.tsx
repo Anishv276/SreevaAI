@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast-custom";
+import { reportClientError } from "@/lib/client-error-reporter";
 import { ProctoringSignalsSection } from "@/components/super-admin/proctoring-signals-section";
 import { DEFAULT_ORG_PLAN, ORG_PLAN_OPTIONS, type OrgPlanId } from "@/lib/org-plans";
 import { getProctoringSignalsForPlan, type ProctoringSignalToggles } from "@/lib/proctoring-signals";
@@ -300,6 +301,7 @@ export default function NewOrgPage() {
       });
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : "Failed to create organization");
+      reportClientError(error, { action: "create_org" });
     } finally {
       setLoading(false);
     }

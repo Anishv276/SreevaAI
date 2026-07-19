@@ -15,6 +15,7 @@ import { db } from "@/lib/prisma-demo";
 import { getSession } from "@/lib/auth";
 import { enqueueJdExtraction } from "@/lib/jd-extraction";
 import { demoBriefGenerationQueue } from "@/lib/queue";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 export async function POST(request: Request) {
     try {
@@ -75,7 +76,13 @@ export async function POST(request: Request) {
 
         return NextResponse.json({ template });
     } catch (error) {
-        console.error("[DEMO/CREATE] error:", error);
-        return NextResponse.json({ error: "Failed to create demo template" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/super-admin/demo/create",
+            method: "POST",
+            error,
+            body: { error: "Failed to create demo template" },
+            status: 500,
+            logLabel: "[DEMO/CREATE] error:",
+        });
     }
 }

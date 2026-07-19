@@ -110,7 +110,7 @@
   document.querySelectorAll('[data-words]').forEach((el) => {
     splitWords(el, { n: 0 });
     // Once visible, reset child <span> styles to "in" state
-    el.addEventListener('transitionstart', () => {}, { once: true });
+    el.addEventListener('transitionstart', () => { }, { once: true });
   });
 
   /* -----------------------------------------------------

@@ -15,6 +15,7 @@ import { normalizeEmail } from "@/lib/email";
 import { hashOtp } from "@/lib/otp";
 import { sendDemoOtpEmail } from "@/lib/mail";
 import { isBusinessEmail } from "@/lib/demo-email-gate";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 export async function POST(request: Request) {
     try {
@@ -58,7 +59,13 @@ export async function POST(request: Request) {
 
         return NextResponse.json({ success: true, message: `Verification code sent to ${normalizedEmail}` });
     } catch (error) {
-        console.error("[DEMO/OTP/SEND] error:", error);
-        return NextResponse.json({ error: "Failed to send verification code" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/demo/otp/send",
+            method: "POST",
+            error,
+            body: { error: "Failed to send verification code" },
+            status: 500,
+            logLabel: "[DEMO/OTP/SEND] error:",
+        });
     }
 }

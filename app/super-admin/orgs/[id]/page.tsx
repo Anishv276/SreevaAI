@@ -3,6 +3,7 @@ import { useEffect, useState, use, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Building2, Mail, ShieldCheck, Globe, RefreshCw, ChevronRight, Coins, ChevronDown, Loader2, Shield, Layers, Lock, Clock, Eye, EyeOff } from "lucide-react";
 import { toast } from "@/components/ui/toast-custom";
+import { reportClientError } from "@/lib/client-error-reporter";
 import { ProctoringSignalsSection } from "@/components/super-admin/proctoring-signals-section";
 import { DEFAULT_ORG_PLAN, ORG_PLAN_OPTIONS, normalizeOrgPlan } from "@/lib/org-plans";
 import { getProctoringSignalsForPlan, normalizeProctoringSignals } from "@/lib/proctoring-signals";
@@ -157,7 +158,10 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
             });
             if (!res.ok) throw new Error("Failed to update records");
             toast.success("Organization updated!");
-        } catch (err: any) { toast.error(err.message); }
+        } catch (err: any) {
+            toast.error(err.message);
+            reportClientError(err, { action: "update_org_billing" });
+        }
         finally { setSaving(false); }
     };
     if (loading) { return <div className="p-20 text-center min-h-screen flex items-center justify-center"><RefreshCw className="h-8 w-8 text-[#7C3AED] animate-spin opacity-20" /></div>; }

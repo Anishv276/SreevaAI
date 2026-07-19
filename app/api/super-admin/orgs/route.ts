@@ -12,7 +12,7 @@ import { normalizeOrgLimitInput } from "@/lib/org-limits";
 import { normalizeOrgStatusControl, ORG_STATUS_CONTROL_MANUAL } from "@/lib/credits";
 import { normalizeEmail } from "@/lib/email";
 import { normalizeRecordingRetentionDays } from "@/lib/recording-retention";
-import { apiErrorResponse } from "@/lib/slack-error-logger";
+import { apiErrorResponse, alertError } from "@/lib/slack-error-logger";
 // GET /api/super-admin/orgs - list organizations with stats, pagination, and search
 export async function GET(request: Request) {
     try {
@@ -421,6 +421,10 @@ export async function POST(request: Request) {
         });
     } catch (error: unknown) {
         console.error("Error creating org:", error);
+        const isConflict = typeof error === "object" && error && "code" in error && (error as { code?: string }).code === "P2002";
+        if (!isConflict) {
+            await alertError({ type: 'api', error: error instanceof Error ? error : String(error), reason: "API error on POST /api/super-admin/orgs" });
+        }
         if (typeof error === "object" && error && "code" in error && (error as { code?: string }).code === "P2002") {
             const meta = error as { meta?: { target?: unknown } };
             const target = Array.isArray(meta.meta?.target) ? meta.meta?.target.map(String) : [];

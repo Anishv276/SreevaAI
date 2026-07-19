@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { useAdminOrg } from "@/context/admin-org-context";
 import { useSearchParams } from "next/navigation";
 import { toast } from "@/components/ui/toast-custom";
+import { reportClientError } from "@/lib/client-error-reporter";
 import { PasswordInput } from "@/components/ui/password-input";
 import { SettingsCard, Field } from "@/components/admin/settings/settings-shared";
 const sections = [
@@ -79,6 +80,7 @@ export default function SettingsPage() {
         } catch (err) {
             console.error(err);
             toast.error("Failed to save settings.");
+            reportClientError(err, { action: "save_settings" });
         } finally {
             setIsSaving(false);
         }

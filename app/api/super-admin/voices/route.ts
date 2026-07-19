@@ -218,7 +218,13 @@ export async function POST(request: Request) {
     if (isValidationError) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
-    console.error("Voice admin update error:", error);
-    return NextResponse.json({ error: "Failed to update voice registry" }, { status: 500 });
+    return apiErrorResponse({
+      route: "/api/super-admin/voices",
+      method: "POST",
+      error,
+      body: { error: "Failed to update voice registry" },
+      status: 500,
+      logLabel: "Voice admin update error:",
+    });
   }
 }

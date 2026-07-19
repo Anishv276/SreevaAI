@@ -1,7 +1,7 @@
 export default function ProblemSection() {
   return (
     <section className="problem" id="problem" data-section-anchor="problem"
-      aria-label="The hiring problem Sreeva AI solves">
+      aria-label="The first-round hiring problem Sreeva AI solves">
       <div className="shell">
         <div className="sec-head" style={{ textAlign: "center", marginInline: "auto" }}>
           <h2 className="display-h2" data-words data-reveal>
@@ -23,9 +23,9 @@ export default function ProblemSection() {
               </svg>
             </div>
             <h3 className="prob-h">It takes 2 weeks.</h3>
-            <p className="prob-p">Scheduling a first-round technical screen means 6 emails, 3 calendars, and a Zoom link. By
+            <p className="prob-p">Scheduling a first-round screen means 6 emails, 3 calendars, and a Zoom link. By
               then, your best candidate has two other offers.</p>
-            <div className="prob-stat"><b>13 days</b> Avg time from resume shortlist to first technical screen.</div>
+            <div className="prob-stat"><b>13 days</b> Avg time from resume shortlist to first-round screen.</div>
           </article>
 
           <article className="prob-card" data-reveal data-delay="1">

@@ -7,6 +7,7 @@
  */
 import { NextResponse } from "next/server";
 import { db } from "@/lib/prisma-demo";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 export async function GET() {
     try {
@@ -22,7 +23,13 @@ export async function GET() {
         });
         return NextResponse.json({ templates });
     } catch (error) {
-        console.error("[DEMO/PUBLIC/TEMPLATES] error:", error);
-        return NextResponse.json({ error: "Failed to fetch templates" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/demo/templates",
+            method: "GET",
+            error,
+            body: { error: "Failed to fetch templates" },
+            status: 500,
+            logLabel: "[DEMO/PUBLIC/TEMPLATES] error:",
+        });
     }
 }

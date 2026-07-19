@@ -19,6 +19,7 @@ import {
     DialogDescription,
 } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toast-custom";
+import { reportClientError } from "@/lib/client-error-reporter";
 type SupportTicket = {
     id: string;
     reporterName: string;
@@ -75,6 +76,7 @@ export default function SuperAdminSupportPage() {
         } catch (error) {
             console.error("Status update error:", error);
             toast.error("An error occurred while updating status");
+            reportClientError(error, { action: "update_support_ticket_status" });
         } finally {
             setUpdatingStatus(null);
         }

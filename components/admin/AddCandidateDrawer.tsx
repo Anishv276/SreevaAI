@@ -9,6 +9,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast-custom";
+import { reportClientError } from "@/lib/client-error-reporter";
 
 interface Props {
     open: boolean;
@@ -117,6 +118,7 @@ export function AddCandidateDrawer({ open, onClose, jobId, jobName, mode, onDone
             setTimeout(() => onClose(), 1000);
         } catch (err: any) {
             setError(err.message || "Something went wrong");
+            reportClientError(err, { action: "create_candidate" });
         } finally {
             setLoading(false);
         }

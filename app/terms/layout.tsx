@@ -6,14 +6,14 @@ export const metadata: Metadata = {
     canonical: "/terms",
   },
   openGraph: {
-    title: "Terms of Use — Sreeva AI",
+    title: "Terms of Use: Sreeva AI",
     description: "Terms of Use for Sreeva AI: platform access, AI interview conduct, billing, candidate rights, and legal compliance.",
     url: "https://www.sreevaai.com/terms",
     type: "website",
   },
   twitter: {
     card: "summary",
-    title: "Terms of Use — Sreeva AI",
+    title: "Terms of Use: Sreeva AI",
     description: "Terms of Use for the Sreeva AI adaptive interview platform.",
   },
   robots: {

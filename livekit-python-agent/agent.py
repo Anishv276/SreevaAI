@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from interview.agent_runtime import _entrypoint_guarded, prewarm
 from interview.agent_runtime_support import AGENT_NAME
 from interview.slack_error_logger import log_worker_error
-from livekit.agents import WorkerOptions, cli
+from livekit.agents import JobExecutorType, WorkerOptions, cli
 
 # Global safety net: catches anything outside a session's own
 # _entrypoint_guarded (which already handles per-interview crashes) --
@@ -32,5 +32,15 @@ if __name__ == "__main__":
             prewarm_fnc=prewarm,
             agent_name=AGENT_NAME,
             num_idle_processes=max(1, int(os.getenv("LIVEKIT_IDLE_PROCESSES", "1"))),
+            # LiveKit defaults to JobExecutorType.THREAD on Windows (dodges a
+            # BrokenPipeError some Python/Windows combos hit spawning processes),
+            # but prewarm() runs on that thread, not the process's real main thread --
+            # onnxruntime/Silero's plugin registration requires the actual main thread,
+            # so VAD prewarm silently fails there ("must be registered on the main
+            # thread"). PROCESS mode gives prewarm its own process (whose main thread
+            # is fine), matching the Linux default and how prod actually runs. If this
+            # reintroduces the BrokenPipeError on a given Windows/Python combo, the
+            # existing lazy VAD retry in agent_runtime.py's entrypoint still covers it.
+            job_executor_type=JobExecutorType.PROCESS,
         )
     )

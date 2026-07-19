@@ -33,7 +33,7 @@ const FAQS = [
   },
   {
     q: "Does this replace our final-round interviews?",
-    a: "No. Sreeva handles the first-round technical screen, the call that usually costs a senior engineer 60-90 minutes per candidate. It filters out candidates who can't back up their resume, so your team's final-round time goes to candidates who are actually worth a deeper conversation.",
+    a: "No. Sreeva handles the first-round screen, the call that usually costs a senior team member 60-90 minutes per candidate. It filters out candidates who can't back up their resume, so your team's final-round time goes to candidates who are actually worth a deeper conversation.",
   },
   {
     q: "How long does it take to set up a role, and how do candidates join?",

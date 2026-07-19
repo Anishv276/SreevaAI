@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/prisma-demo";
 import { getSession } from "@/lib/auth";
+import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 export async function DELETE(
     request: Request,
@@ -20,7 +21,13 @@ export async function DELETE(
         
         return NextResponse.json({ success: true });
     } catch (error) {
-        console.error("[DEMO/SESSIONS/DELETE] error:", error);
-        return NextResponse.json({ error: "Failed to delete session" }, { status: 500 });
+        return apiErrorResponse({
+            route: "/api/super-admin/demo/sessions/[id]",
+            method: "DELETE",
+            error,
+            body: { error: "Failed to delete session" },
+            status: 500,
+            logLabel: "[DEMO/SESSIONS/DELETE] error:",
+        });
     }
 }

@@ -16,6 +16,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "@/components/ui/toast-custom";
+import { reportClientError } from "@/lib/client-error-reporter";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -221,7 +222,10 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
             } else {
                 toast.error(data?.error || "Failed to send interview link");
             }
-        } catch { toast.error("Failed to send interview link"); }
+        } catch (error) {
+            toast.error("Failed to send interview link");
+            reportClientError(error, { action: "resend_interview_link" });
+        }
         finally { setSendingId(null); }
     };
 
