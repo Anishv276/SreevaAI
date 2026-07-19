@@ -67,6 +67,7 @@ export async function POST(request: Request) {
             jdExtractionJobId: jdJobId,
             mode,
             roleTitle: roleTitle || title,
+            orgId: `demo_template_${template.id}`,
         });
 
         return NextResponse.json({ template });

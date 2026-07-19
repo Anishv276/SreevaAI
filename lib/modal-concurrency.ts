@@ -69,6 +69,7 @@ export const MODAL_ORG_CONCURRENCY = {
   jdExtraction: Number(process.env.ORG_CONCURRENCY_MODAL_JD || 2),
   briefGeneration: Number(process.env.ORG_CONCURRENCY_MODAL_BRIEF || 5),
   interviewReport: Number(process.env.ORG_CONCURRENCY_MODAL_REPORT || 5),
+  demoBriefGeneration: Number(process.env.ORG_CONCURRENCY_MODAL_DEMO_BRIEF || 5),
 };
 
 /**

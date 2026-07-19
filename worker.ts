@@ -27,6 +27,7 @@ import {
   processResumeFileExtractViaModal,
   processJdExtractionViaModal,
   processBriefGenerationViaModal,
+  processDemoBriefGenerationViaModal,
   processInterviewReportViaModal,
 } from "./lib/modal-dispatch";
 
@@ -1732,15 +1733,16 @@ if (isQueueEnabled("interview-report")) {
 
 /**
  * 🎯 DEMO BRIEF GENERATION WORKER
- * Waits for JD extraction → spawns generate_demo_brief.py → saves briefJson.
- * ALL prompt logic lives in livekit-python-agent/interview/demo/brief.py.
- * This worker has zero LLM calls — it just orchestrates and persists.
+ * Waits for JD extraction → calls Modal (generate_demo_brief) → saves briefJson.
+ * ALL prompt logic lives in livekit-python-agent/interview/demo/brief.py,
+ * deployed as modal_app/generate_demo_brief.py. This worker has zero LLM
+ * calls itself — it just orchestrates and persists.
  */
 if (isQueueEnabled("demo-brief-generation")) {
   const demoBriefWorker = trackWorker("demo-brief-generation", new Worker(
     "demo-brief-generation",
-    async (job) => {
-      const { templateId, jdExtractionJobId, mode, roleTitle } = job.data || {};
+    async (job, token) => {
+      const { templateId, jdExtractionJobId, mode, roleTitle, orgId } = job.data || {};
       if (!templateId) throw new Error("[DEMO-BRIEF] Missing templateId in job data");
 
       console.log(`\n================================================`);
@@ -1767,36 +1769,12 @@ if (isQueueEnabled("demo-brief-generation")) {
       // ── 2. Persist JD text ───────────────────────────────────────────
       await (prisma as any).demoTemplate.update({ where: { id: templateId }, data: { jdText } });
 
-      // ── 3. Spawn Python — all LLM/prompt logic lives in demo/brief.py ─
-      const { spawn } = await import("child_process");
-      const path = await import("path");
-      const scriptPath = path.resolve(
-        __dirname,
-        "../../livekit-python-agent/scripts/generate_demo_brief.py"
+      // ── 3. Generate brief via Modal — all LLM/prompt logic lives in demo/brief.py ─
+      const briefJson: Record<string, any> = await processDemoBriefGenerationViaModal(
+        { roleTitle: roleTitle || "", jdText, mode: mode || "TECH", orgId },
+        job,
+        token,
       );
-      const jdB64 = Buffer.from(jdText, "utf8").toString("base64");
-      const briefJson: Record<string, any> = await new Promise((resolve, reject) => {
-        const py = spawn(
-          process.env.PYTHON_BIN || "python3",
-          [scriptPath, roleTitle || "", mode || "TECH", jdB64],
-          { env: { ...process.env }, timeout: 120_000 }
-        );
-        let stdout = "";
-        let stderr = "";
-        py.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
-        py.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
-        py.on("close", (code: number) => {
-          if (stderr) console.error("[DEMO-BRIEF] Python stderr:", stderr.slice(0, 500));
-          try {
-            const parsed = JSON.parse(stdout.trim());
-            if (parsed.error) return reject(new Error(`Python: ${parsed.error}`));
-            resolve(parsed);
-          } catch {
-            reject(new Error(`[DEMO-BRIEF] Invalid JSON from Python (exit ${code}): ${stdout.slice(0, 300)}`));
-          }
-        });
-        py.on("error", reject);
-      });
 
       // ── 4. Persist brief + mark ready ───────────────────────────────
       await (prisma as any).demoTemplate.update({
