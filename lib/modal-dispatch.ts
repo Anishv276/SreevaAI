@@ -59,6 +59,7 @@ const MODAL_ENDPOINTS = {
   resumeAndScore: process.env.MODAL_EXTRACT_RESUME_AND_SCORE_URL || "",
   briefGeneration: process.env.MODAL_GENERATE_BRIEF_URL || "",
   interviewReport: process.env.MODAL_GENERATE_REPORT_URL || "",
+  demoBriefGeneration: process.env.MODAL_GENERATE_DEMO_BRIEF_URL || "",
 };
 
 const MODAL_API_KEY = process.env.EXTRACT_SERVICE_API_KEY || "";
@@ -525,6 +526,39 @@ export async function processBriefGenerationViaModal(job: Job, token: string | u
 
   if (outcome.queued === true) {
     console.log(`[MODAL-DISPATCH] Org=${orgId} at capacity (${MODAL_ORG_CONCURRENCY.briefGeneration}), re-queueing ${applicationId} in ${RETRY_DELAY_MS}ms`);
+    await job.moveToDelayed(Date.now() + RETRY_DELAY_MS, token);
+    throw new DelayedError();
+  }
+  return (outcome as { queued: false; result: any }).result;
+}
+
+/**
+ * demo-brief-generation job body. job.data: { roleTitle, jdText, mode, orgId }.
+ * Unlike briefGeneration, the Modal function is stateless (JD text in, JSON
+ * out) -- no DB access on the Modal side. The caller (worker.ts) persists the
+ * returned JSON to DemoTemplate.briefJson.
+ */
+export async function processDemoBriefGenerationViaModal(
+  { roleTitle, jdText, mode, orgId }: { roleTitle: string; jdText: string; mode: string; orgId?: string },
+  job: Job,
+  token: string | undefined,
+): Promise<any> {
+  console.log(`[MODAL-DISPATCH] Job ${job.id} picked up (demo-brief-generation) roleTitle=${roleTitle}`);
+
+  const outcome = await withModalOrgSlot(
+    "demoBriefGeneration",
+    orgId,
+    MODAL_ORG_CONCURRENCY.demoBriefGeneration,
+    async () => {
+      console.log(`[MODAL-DISPATCH] Slot acquired, generating demo brief for roleTitle=${roleTitle}`);
+      const result = await callModalJsonEndpoint(MODAL_ENDPOINTS.demoBriefGeneration, { roleTitle, jdText, mode }, 60_000);
+      console.log(`[MODAL-DISPATCH] Demo brief generation done for roleTitle=${roleTitle}`);
+      return result;
+    },
+  );
+
+  if (outcome.queued === true) {
+    console.log(`[MODAL-DISPATCH] At capacity, re-queueing demo brief job ${job.id} in ${RETRY_DELAY_MS}ms`);
     await job.moveToDelayed(Date.now() + RETRY_DELAY_MS, token);
     throw new DelayedError();
   }

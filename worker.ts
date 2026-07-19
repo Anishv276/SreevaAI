@@ -28,6 +28,7 @@ import {
   processResumeFileExtractViaModal,
   processJdExtractionViaModal,
   processBriefGenerationViaModal,
+  processDemoBriefGenerationViaModal,
   processInterviewReportViaModal,
 } from "./lib/modal-dispatch";
 
@@ -344,7 +345,7 @@ async function processSnapshotRetentionSweepJob(job: any) {
     await prisma.interview.update({
       where: { applicationId: row.applicationId },
       data: { proctoringSnapshotUrls: [] },
-    }).catch(() => {});
+    }).catch(() => { });
     deleted += 1;
   }
   if (deleted > 0 || failed > 0) {
@@ -534,7 +535,7 @@ if (isQueueEnabled("resume-processing")) {
     maxStalledCount: 2,
     drainDelay: 300,
     removeOnComplete: { age: 60 },
-    removeOnFail:    { age: 60 },
+    removeOnFail: { age: 60 },
   }));
 
   resumeWorker.on("error", (err) => {
@@ -649,7 +650,7 @@ async function reconcileResumeQueue() {
           resumeAiReport: JSON.stringify({ processing: { progress: 0, stage: "failed", error: "No active screening job (reconciled)" } }),
           applicationUpdatedAt: new Date(),
         },
-      }).catch(() => {});
+      }).catch(() => { });
     }
     console.warn(`[RECONCILE] Marked ${orphaned.length} orphaned resume row(s) as failed (no backing job): ${orphaned.map((o) => o.id).join(", ")}`);
   } catch (err: any) {
@@ -1669,7 +1670,7 @@ if (isQueueEnabled("brief-generation")) {
       concurrency: 70, // global cap -- Modal handles ~100 concurrent jobs; per-org cap enforced inside processBriefGenerationViaModal (lib/modal-concurrency.ts)
       lockDuration: 4 * 60 * 1000, // 4 min lock — longer than the 3-min timeout
       removeOnComplete: { age: 60 },
-      removeOnFail:    { age: 3600 },
+      removeOnFail: { age: 3600 },
     }
   ));
 
@@ -1717,7 +1718,7 @@ if (isQueueEnabled("interview-report")) {
       stalledInterval: 5 * 60 * 1000,
       maxStalledCount: 1,
       removeOnComplete: { age: 3600 },
-      removeOnFail:    { age: 86400 },
+      removeOnFail: { age: 86400 },
     }
   ));
 
@@ -1733,15 +1734,16 @@ if (isQueueEnabled("interview-report")) {
 
 /**
  * 🎯 DEMO BRIEF GENERATION WORKER
- * Waits for JD extraction → spawns generate_demo_brief.py → saves briefJson.
- * ALL prompt logic lives in livekit-python-agent/interview/demo/brief.py.
- * This worker has zero LLM calls — it just orchestrates and persists.
+ * Waits for JD extraction → calls Modal (generate_demo_brief) → saves briefJson.
+ * ALL prompt logic lives in livekit-python-agent/interview/demo/brief.py,
+ * deployed as modal_app/generate_demo_brief.py. This worker has zero LLM
+ * calls itself — it just orchestrates and persists.
  */
 if (isQueueEnabled("demo-brief-generation")) {
   const demoBriefWorker = trackWorker("demo-brief-generation", new Worker(
     "demo-brief-generation",
-    async (job) => {
-      const { templateId, jdExtractionJobId, mode, roleTitle } = job.data || {};
+    async (job, token) => {
+      const { templateId, jdExtractionJobId, mode, roleTitle, orgId } = job.data || {};
       if (!templateId) throw new Error("[DEMO-BRIEF] Missing templateId in job data");
 
       console.log(`\n================================================`);
@@ -1771,14 +1773,14 @@ if (isQueueEnabled("demo-brief-generation")) {
       // ── 3. Spawn Python — all LLM/prompt logic lives in demo/brief.py ─
       const { spawn } = await import("child_process");
       const path = await import("path");
-      const scriptPath = path.join(
-        process.cwd(),
-        "livekit-python-agent/scripts/generate_demo_brief.py"
+      const scriptPath = path.resolve(
+        __dirname,
+        "../../livekit-python-agent/scripts/generate_demo_brief.py"
       );
       const jdB64 = Buffer.from(jdText, "utf8").toString("base64");
       const briefJson: Record<string, any> = await new Promise((resolve, reject) => {
         const py = spawn(
-          getPythonExecutable(),
+          process.env.PYTHON_BIN || "python3",
           [scriptPath, roleTitle || "", mode || "TECH", jdB64],
           { env: { ...process.env }, timeout: 120_000 }
         );
@@ -1813,7 +1815,7 @@ if (isQueueEnabled("demo-brief-generation")) {
       concurrency: 5,
       lockDuration: 5 * 60 * 1000,
       removeOnComplete: { age: 300 },
-      removeOnFail:    { age: 3600 },
+      removeOnFail: { age: 3600 },
     }
   ));
 
