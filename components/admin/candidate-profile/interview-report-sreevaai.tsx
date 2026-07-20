@@ -235,7 +235,9 @@ function buildIntegritySignals(
       details.push(`Highest: ${r.maxLatencySec}s${qLabel}`);
       details.push(`Average: ${r.avgLatencySec}s`);
     } else if (r.key === "answer_integrity") {
-      // High-impact content-layer signal: no score, just what fired + the verdict.
+      // High-impact content-layer signal: no score, just what fired (if anything)
+      // + the verdict sentences. When nothing fired, the verdict still explains
+      // WHY it reads as human -- always shown, never silent.
       const flags: string[] = [];
       if (r.aiPhrasingFlagged) flags.push("AI-generated/read phrasing");
       if (r.contradictionFlagged) flags.push("Cross-turn contradiction");
@@ -243,11 +245,14 @@ function buildIntegritySignals(
       for (const v of r.verdict || []) details.push(v);
     }
     // All other signals: name + count only, no explanation.
+    const isCleanAnswerIntegrity = r.key === "answer_integrity" && !r.aiPhrasingFlagged && !r.contradictionFlagged;
     return {
       id: r.key,
       label: title,
       badge: r.value,
-      tone: r.bad ? ("rose" as IntelBadgeTone) : ("amber" as IntelBadgeTone),
+      tone: isCleanAnswerIntegrity
+        ? ("emerald" as IntelBadgeTone)
+        : r.bad ? ("rose" as IntelBadgeTone) : ("amber" as IntelBadgeTone),
       details,
     };
   });
@@ -368,8 +373,12 @@ export function buildSreevaAIInterviewViewModel(i: {
     (i.groupedProctoringSignals || []).slice(0, 8).map((g) => ({
       key: g.key,
       label: g.label.replace(/\b\w/g, (ch) => ch.toUpperCase()),
-      value: `${g.count} time${g.count === 1 ? "" : "s"}`,
-      bad: g.severity === "high" || g.severity === "medium",
+      value: g.key === "answer_integrity"
+        ? (g.aiPhrasingFlagged || g.contradictionFlagged ? "Flagged" : "Checked — clean")
+        : `${g.count} time${g.count === 1 ? "" : "s"}`,
+      bad: g.key === "answer_integrity"
+        ? Boolean(g.aiPhrasingFlagged || g.contradictionFlagged)
+        : g.severity === "high" || g.severity === "medium",
       verdict: g.verdict,
       aiPhrasingFlagged: g.aiPhrasingFlagged,
       contradictionFlagged: g.contradictionFlagged,
@@ -541,7 +550,7 @@ export function buildSreevaAIInterviewViewModel(i: {
     if (topS) return `${fitPct}% fit - ${topS.toLowerCase()}.`;
     return `${fitPct}% overall fit for the role. ${rec === "hire" ? "Recommend proceeding." : rec === "reject" ? "Not recommended." : "Review carefully before deciding."}`;
   };
-  // Preserve the full justification (it's now 3 sharp bullets -- don't truncate)
+  // Preserve the full justification (it's a sharp 2-line note: why score / why decision -- don't truncate)
   const verdictSummaryText = rawVerdictSummary
     ? rawVerdictSummary.replace(/\*{1,2}/g, "").replace(/\n{3,}/g, "\n\n").trim()
     : buildDecisionNote();

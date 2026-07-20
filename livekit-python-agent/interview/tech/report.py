@@ -401,6 +401,46 @@ _llm = ReportLLMClient()
 # Moved here from behavioral_analysis.py — no external dependency needed.
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+# Strict JSON schema for behavioral output -- replaces free-text "text" mode +
+# best-effort json.loads parsing. Under free-text mode the model sometimes
+# emitted 5 separate one-element arrays instead of one 5-element array, which
+# silently corrupted the stored points (double-encoded strings). A schema with
+# minItems/maxItems makes the shape structurally guaranteed instead of hoped for.
+_BEHAVIORAL_JSON_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "behavioral_response",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "topics": {
+                    "type": "array",
+                    "minItems": 4,
+                    "maxItems": 5,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "topic": {"type": "string", "description": "Short label, e.g. 'Intellectual Honesty'"},
+                            "bullets": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "minItems": 2,
+                                "maxItems": 3,
+                            },
+                        },
+                        "required": ["topic", "bullets"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["topics"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+
 class BehavioralAnalyzer:
     """Generates 4 plain-English behavioral analysis points for the HR team.
 
@@ -408,35 +448,61 @@ class BehavioralAnalyzer:
     and the Q&A log, and returns grounded recruiter-readable observations.
     """
 
+    # TECH-ONLY behavioral prompt. The sales interview has its own independent
+    # analyzer (SalesBehavioralAnalyzer in interview/conversational/report.py) —
+    # these are deliberately NOT shared: an engineering manager and a sales manager
+    # read behavior for different things.
     _SYSTEM = (
-        "You are writing a behavioral communication analysis of a candidate's interview performance for a recruiter.\n"
-        "This is NOT a technical assessment and NOT a general summary — those are covered elsewhere in the report.\n"
-        "Your ONLY job is to describe HOW the candidate communicated and behaved during the conversation, not WHAT they knew or whether their answers were technically correct.\n\n"
-        "You have been given the full Q&A transcript, per-turn behavioral signals, and answer quality scores.\n\n"
-        "SIGNALS YOU KNOW ABOUT (from probe_strategy.py):\n"
-        "- ownership_ambiguous: Candidate said 'we/they' instead of 'I'. Unclear personal contribution.\n"
-        "- answer_hollow: Candidate said WHAT they did, not HOW or WHY. No operational detail.\n"
-        "- example_evaded: Asked for a real story. Got theory or 'usually I do X' instead.\n"
-        "- functional_claim_unverified: Named a tool/method vaguely. Couldn't prove hands-on usage.\n"
-        "- claim_not_demonstrated: Made a strong self-claim with no evidence to back it up.\n\n"
-        "YOUR JOB: Write 4-5 analysis points. Each point is a FULL PARAGRAPH (5-8 sentences).\n\n"
-        "REQUIRED COVERAGE - You MUST address all of these:\n"
-        "1. Composure Under Pressure: When challenged, corrected, or asked a hard follow-up, did they stay calm and adapt, or become flustered, defensive, or repetitive? Quote the moment.\n"
-        "2. Communication Style: Were their answers direct and structured, or did they ramble, hedge ('I think maybe', 'kind of', 'sort of'), or circle back without landing a point?\n"
-        "3. Engagement & Responsiveness: Did their energy and attentiveness stay consistent, or did it visibly shift (e.g. sharp and engaged early, flat or checked-out later)? Reference where the shift happened.\n"
-        "4. Handling Not Knowing Something: When they didn't know an answer, did they admit it plainly, reason out loud, bluff, deflect, or go silent? Quote the exact moment.\n"
-        "5. Delivery Consistency: Did their communication style stay stable across topics, or did it change noticeably between rehearsed-sounding topics and unexpected ones?\n\n"
+        "You are writing the behavioral analysis of a candidate's performance in a TECHNICAL (engineering) "
+        "interview, for the hiring team. Frame every observation in terms of how this person would actually "
+        "show up on an engineering team — under code review, in a design debate, when a system breaks, and "
+        "when they hit something they don't know.\n\n"
+        "This is NOT a technical/skills assessment and NOT a general summary — those are covered elsewhere in "
+        "the report. Your ONLY job is to describe HOW the candidate behaved and communicated, not WHAT they "
+        "knew or whether their answers were technically correct.\n\n"
+        "You have the full Q&A transcript, per-turn behavioral signals, and answer-quality scores.\n\n"
+        "PER-TURN SIGNALS you may see (each is an observed moment, already detected during the interview):\n"
+        "- ownership_ambiguous: said 'we/they' instead of 'I'. Unclear personal contribution.\n"
+        "- answer_hollow: said WHAT they did, not HOW or WHY. No operational detail.\n"
+        "- example_evaded: asked for a real story, gave theory or 'usually I do X' instead.\n"
+        "- functional_claim_unverified: named a tool/method vaguely, couldn't prove hands-on use.\n"
+        "- claim_not_demonstrated: made a strong self-claim with no evidence behind it.\n\n"
+        "METHOD — describe OBSERVABLE BEHAVIOR, never personality traits.\n"
+        "Report only what was observed in THIS interview (a specific reaction, a shift, an exact phrasing). "
+        "Behavioral evaluation rests on observable behavioral indicators, not character labels: write 'went "
+        "quiet and repeated the earlier answer after the third follow-up', NOT 'is introverted' or 'lacks "
+        "confidence'. Trait labels are the fundamental attribution error and are banned.\n\n"
+        "YOUR JOB: Produce 4-5 TOPICS. This renders as a collapsible list in a recruiter UI — the topic is a "
+        "short label, and each bullet under it must be SHORT and scannable (one sentence, ideally under 25 "
+        "words), never a paragraph. Each bullet must:\n"
+        "  (a) name the specific moment — a question, topic, or near-exact quote from the transcript; and\n"
+        "  (b) be concrete enough that a recruiter gets the point in one read.\n"
+        "Across a topic's 2-3 bullets, together cover: what was observed, and why it matters for how they'd "
+        "perform on an engineering team — but each individual bullet stays to one sharp sentence.\n\n"
+        "REQUIRED COVERAGE — one topic each (the signals that matter most on an engineering team):\n"
+        "1. \"Intellectual Honesty\": when corrected or shown a flaw, did they say 'I was wrong'/'I don't "
+        "know' plainly and adjust, or get defensive, bluff, or double down? Quote the exact moment.\n"
+        "2. \"Ownership vs Deflection\": when describing their own work or a failure, did they use ownership "
+        "language ('I shipped the bug, I fixed it') or deflect to team/tools/circumstance? Note the language.\n"
+        "3. \"Composure Under Pressure\": hit with a hard follow-up or a new constraint mid-answer, did they "
+        "adapt gracefully or become flustered, repetitive, or rigid? Quote it.\n"
+        "4. \"Communication Style\": direct and structured, or rambling, hedging ('I think maybe', 'kind of'), "
+        "or circling without landing a point?\n"
+        "5. \"Engagement & Consistency\": did they answer the question actually asked and build on it, or talk "
+        "past it? Did their manner stay stable, or shift between rehearsed-sounding topics and unexpected "
+        "ones? Reference where.\n\n"
         "HARD RULES:\n"
-        "- Every paragraph MUST reference a specific question, topic, or near-exact quote from the transcript.\n"
-        "- Do NOT write a sentence that could apply to any other candidate.\n"
-        "- Do NOT use filler praise like 'showed enthusiasm' or 'had a positive attitude'.\n"
-        "- Do NOT mention score numbers or dimension names.\n"
-        "- Do NOT judge technical correctness, domain knowledge, or whether an answer was 'right' — that belongs to a different section of the report.\n"
-        "- Do NOT make personality or character judgments (e.g. 'introverted', 'a confident person', 'a team player'). Describe specific observed behavior in THIS interview only, never a trait label.\n\n"
-        'Output ONLY a JSON array of 4-5 strings. Each string is a full paragraph. No markdown.\n'
-        '["Paragraph one...", "Paragraph two..."]'
+        "- Every bullet MUST reference a specific question, topic, or near-exact quote. No sentence that "
+        "could apply to any other candidate. No filler praise ('showed enthusiasm', 'positive attitude').\n"
+        "- No score numbers or dimension names.\n"
+        "- Do NOT judge technical/domain correctness or whether an answer was 'right' — that is a different "
+        "section.\n"
+        "- Speech-to-text note: filler words and casual grammar are normal transcription artifacts, not "
+        "behavioral flaws — do not treat them as such.\n\n"
+        'OUTPUT ONLY valid JSON matching the schema exactly: {"topics": [{"topic": "Intellectual Honesty", '
+        '"bullets": ["short sentence one", "short sentence two"]}, ...]} — 4-5 topics, each with 2-3 short '
+        "bullets. No markdown."
     )
-
 
     @staticmethod
     def _build_user(
@@ -447,11 +513,13 @@ class BehavioralAnalyzer:
     ) -> str:
         parts: list[str] = []
 
-        # Session metadata
+        # Session metadata. Speaker prefix carries an optional bracketed turn index
+        # ("Candidate[58]: ..."), e.g. from fullTranscript -- match with regex, not
+        # startswith, or every real transcript counts as 0 candidate/interviewer turns.
         mins            = duration_sec // 60
-        candidate_turns = sum(1 for l in transcript_lines if l.startswith("Candidate:"))
+        candidate_turns = sum(1 for l in transcript_lines if re.match(r"^Candidate(\[\d+\])?:", l))
         ai_turns        = sum(1 for l in transcript_lines
-                              if l.startswith("Interviewer:") or l.startswith("AI:"))
+                              if re.match(r"^(Interviewer|AI)(\[\d+\])?:", l))
         scored          = len([s for s in answer_scores if not s.get("is_warmup")])
         parts.append(
             f"SESSION\nDuration: {mins} min | Candidate turns: {candidate_turns} | "
@@ -517,18 +585,23 @@ class BehavioralAnalyzer:
         org_id:    str = "",
         app_id:    str = "",
     ) -> tuple[dict, list[dict]]:
-        """Returns ({"points": [...]}, [usage_dict, ...])."""
+        """Returns ({"topics": [{"topic": str, "bullets": [str, ...]}, ...]}, [usage_dict, ...]).
+
+        "topics" is the shape the recruiter UI's collapsible signal-analysis panel
+        renders directly (topic label -> short bullets). A flattened "points" list
+        (one string per bullet, topic-prefixed) is also included for prompts that
+        want plain text, e.g. the verdict/summary behavioral_block."""
         if not os.environ.get("OPENAI_API_KEY"):
             logger.warning("[BEHAVIORAL] Skipping: missing OPENAI_API_KEY")
-            return {"points": []}, []
+            return {"topics": [], "points": []}, []
 
         user = self._build_user(transcript_lines, answer_scores, duration_sec, behavioral_signals)
         spec = LLMCallSpec(
             system=self._SYSTEM,
             user=user,
-            max_tokens=1000,
-            timeout=45.0,
-            response_format={"type": "text"},
+            max_tokens=1200,
+            timeout=50.0,
+            response_format=_BEHAVIORAL_JSON_SCHEMA,
             call_type="behavioral_analysis",
             temperature=0.2,
             org_id=org_id,
@@ -537,24 +610,20 @@ class BehavioralAnalyzer:
         )
         try:
             raw, usage = await _llm.call(spec)
-            try:
-                parsed = json.loads(raw)
-                if isinstance(parsed, list):
-                    points = [str(p).strip() for p in parsed if p]
-                elif isinstance(parsed, dict):
-                    points = [str(v).strip() for v in parsed.values() if v]
-                else:
-                    points = []
-            except Exception:
-                points = [
-                    l.strip().lstrip("-'").strip()
-                    for l in raw.splitlines()
-                    if len(l.strip()) > 20
-                ]
-            result = {"points": points[:5]}
+            data = json.loads(raw)
+            topics: list[dict] = []
+            flat_points: list[str] = []
+            for item in data.get("topics", [])[:5]:
+                topic = str(item.get("topic", "")).strip()
+                bullets = [str(b).strip() for b in item.get("bullets", []) if str(b).strip()]
+                if not topic or not bullets:
+                    continue
+                topics.append({"topic": topic, "bullets": bullets})
+                flat_points.append(f"{topic}: " + " ".join(bullets))
+            result = {"topics": topics, "points": flat_points}
             logger.info(
-                "[BEHAVIORAL] %d points | signals=%d tokens=%d+%d",
-                len(result["points"]),
+                "[BEHAVIORAL] %d topics | signals=%d tokens=%d+%d",
+                len(topics),
                 len(behavioral_signals),
                 _llm.usage_dict(usage, _LLM_DEFAULT)["inputTokens"],
                 _llm.usage_dict(usage, _LLM_DEFAULT)["outputTokens"],
@@ -562,7 +631,7 @@ class BehavioralAnalyzer:
             return result, [_llm.usage_dict(usage, _LLM_DEFAULT)]
         except Exception as e:
             logger.error("[BEHAVIORAL] LLM call failed: %s", e, exc_info=True)
-            return {"points": []}, []
+            return {"topics": [], "points": []}, []
 
 
 _behavioral_analyzer = BehavioralAnalyzer()
@@ -600,50 +669,71 @@ class AnswerIntegrityAnalyzer:
     shape as the other browser signals.
     """
 
+    # TECH-ONLY answer-integrity prompt. The sales interview has its own independent
+    # analyzer (SalesAnswerIntegrityAnalyzer in interview/conversational/report.py):
+    # the failure modes differ (AI-generated technical explanations & contradictory
+    # technical claims here; fabricated deal/quota numbers there). The hardened
+    # aggregation logic in analyze() is shared and inherited — only the prompt differs.
     _SYSTEM = (
-        "You are checking a candidate's SPOKEN interview transcript for two independent "
-        "problems. Judge each one separately, then report an overall verdict.\n\n"
-        "You are given the full interview transcript (speech-to-text, so natural spoken "
-        "grammar is expected and normal).\n\n"
-        "DIMENSION 1 -- PHRASING (does any single answer sound read/AI-generated, not spoken?)\n"
-        "Signs of AI-generated / read phrasing:\n"
-        "- Stock LLM phrasing: 'it's worth noting that', 'in today's fast-paced environment', "
-        "'leverage synergies', 'at the end of the day', 'plays a crucial role', 'delve into'.\n"
-        "- Essay cadence in a spoken answer: 'firstly... secondly... in conclusion' — people "
-        "don't talk like this live, that's written-essay structure.\n"
-        "- Suspiciously uniform sentence construction across different answers — real spontaneous "
-        "speech is messy and varies; generated text has an unnaturally consistent smoothness.\n"
-        "- Total absence of natural speech markers (no filler words, no self-correction, no "
-        "false starts, no trailing off) especially when the answer is long and detailed — "
-        "combined with unusually polished, well-organized content for something said out loud.\n"
-        "- Vocabulary/register mismatch: precise, formal, textbook language in the 'big' answers "
-        "that doesn't match how the same candidate talks in casual moments (greeting, small talk, "
-        "clarifying questions) elsewhere in the transcript.\n"
-        "NOT a phrasing signal: a well-spoken/articulate candidate, appropriate technical jargon "
-        "used correctly, rehearsed personal stories, non-native English quirks, or answers too "
-        "short to judge either way.\n\n"
-        "DIMENSION 2 -- CONSISTENCY (do claims across different turns contradict each other?)\n"
-        "Look across ALL turns for factual contradictions about the same project/role/claim: "
-        "different numbers for the same thing (team size, timeline, budget, scale), a role or "
-        "ownership claim that changes ('I led it' vs 'I was just one of the team' about the same "
-        "project), or a technical detail that flatly contradicts an earlier turn's version of the "
-        "same story. This is the strongest signal against a candidate reading from prepared notes: "
-        "each individual answer can sound perfectly natural while still not agreeing with what they "
-        "said earlier.\n"
-        "NOT a consistency signal: reasonable elaboration or added detail on a later turn, rounding "
-        "differences ('about 10' then '12'), or discussing genuinely different projects/roles.\n\n"
-        "SCORING (0-100 for each dimension, independently):\n"
-        "0-25: No issue on this dimension.\n"
-        "26-50: A few weak indicators, plausibly innocent.\n"
-        "51-75: Multiple/clear indicators on this dimension.\n"
-        "76-100: Strong, repeated, unambiguous pattern on this dimension.\n\n"
+        "You are reviewing a candidate's SPOKEN answers in a TECHNICAL (engineering) interview for signs of "
+        "answer integrity problems — AI-generated/read technical explanations, or claims about their own work "
+        "that contradict each other across the conversation. "
+        "This is a SERIOUS accusation with real consequences for a real person, so you operate under a strict "
+        "standard of evidence.\n\n"
+        "════════ GOVERNING PRINCIPLE — PRESUMPTION OF INNOCENCE ════════\n"
+        "The default assumption is that the candidate answered honestly and on their own. A false accusation "
+        "is far worse than missing a weak signal — you prioritize PRECISION over recall. You only raise a "
+        "score into flag range when MULTIPLE independent, specific pieces of evidence converge and you can "
+        "quote them. A single stylistic impression is NEVER enough. When in doubt, score it LOW.\n\n"
+        "════════ CRITICAL BIAS WARNING (this overrides everything below) ════════\n"
+        "Automated 'AI writing' detection is known to be unreliable and to falsely flag non-native English "
+        "speakers at very high rates — the same formal, careful, well-structured phrasing that fluent "
+        "non-native speakers naturally use is what naive detectors mistake for AI. You must NOT repeat that "
+        "mistake. Formal grammar, careful word choice, an accent, translated idioms, textbook vocabulary, "
+        "articulate delivery, or a rehearsed personal story are NOT evidence of AI or dishonesty — on their "
+        "own they mean nothing. Being well-spoken is not a crime.\n\n"
+        "You are given the full transcript (speech-to-text, so disfluencies and rough grammar are normal).\n\n"
+        "──── DIMENSION 1 — PHRASING (does an answer read as AI-generated, not spoken?) ────\n"
+        "This is the WEAKER, more error-prone dimension — treat it with heavy skepticism. Do NOT score it high "
+        "on impression alone. Genuine phrasing concern requires SEVERAL of these together, quoted from the "
+        "transcript, in the SAME answer or pattern:\n"
+        "- Multiple distinct stock-LLM tells ('it's worth noting that', 'in today's fast-paced environment', "
+        "'plays a crucial role', 'delve into', 'leverage synergies') — one alone is nothing.\n"
+        "- Written-essay cadence spoken aloud ('firstly... secondly... in conclusion') that no one uses live.\n"
+        "- A hard register mismatch WITHIN this same candidate: long answers that are suddenly, unnaturally "
+        "polished and structured compared to how THEY themselves speak in casual moments (greeting, small "
+        "talk, clarifying questions) elsewhere in the transcript — the internal contrast is the signal, not "
+        "the formality itself.\n"
+        "- Total absence of ANY natural speech marker across a long, detailed answer AND suspiciously perfect "
+        "organization, together.\n"
+        "NOT a phrasing signal (score these near 0): articulate/well-spoken candidate, correct technical "
+        "jargon, rehearsed stories, non-native English quirks, formal-but-human style, or any answer too "
+        "short to judge. If your only evidence is 'sounds too polished', the score is LOW.\n\n"
+        "──── DIMENSION 2 — CONSISTENCY (do claims across turns factually contradict?) ────\n"
+        "This is the STRONGER, more defensible dimension — factual self-contradiction is hard to explain "
+        "innocently and is not language-biased. Look across ALL turns for genuine contradictions about the "
+        "SAME project/role/claim: different hard numbers for the same thing (team size, timeline, budget, "
+        "scale), an ownership claim that flips ('I led it' vs 'I was one of the team' about the same "
+        "project), or a technical detail that flatly contradicts an earlier turn's version of the same story. "
+        "Name the exact claims and which turns they came from.\n"
+        "NOT a consistency signal: reasonable elaboration or added detail later, rounding ('about 10' then "
+        "'12'), rephrasing, or genuinely different projects/roles. Ambiguity is NOT contradiction.\n\n"
+        "════════ SCORING (0-100 each, independently) ════════\n"
+        "0-25:  No credible issue. (This is the correct, expected score for the large majority of honest "
+        "candidates — use it freely.)\n"
+        "26-50: One weak, plausibly-innocent indicator. Not enough to accuse.\n"
+        "51-75: Multiple specific, independent, quotable indicators converge on this dimension.\n"
+        "76-100: Strong, repeated, unambiguous pattern you can prove with several direct quotes.\n"
+        "Do not award 51+ unless you can cite the concrete converging evidence in your reason and quotes.\n\n"
         "Output ONLY valid JSON matching the schema exactly. No markdown.\n"
-        "- phrasing_score: integer 0-100 as defined above for Dimension 1.\n"
-        "- phrasing_reason: one paragraph explaining the phrasing score, quoting specific phrases if any.\n"
-        "- consistency_score: integer 0-100 as defined above for Dimension 2.\n"
-        "- consistency_reason: one paragraph explaining the consistency score. If contradictions exist, "
-        "name the specific claims and which turns they came from.\n"
-        "- quotes: 0-4 short exact quotes from the transcript that most support either score (empty if none)."
+        "- phrasing_score: integer 0-100 per Dimension 1 (biased/weak — keep low unless strongly proven).\n"
+        "- phrasing_reason: one paragraph. If low, say plainly why it's NOT a concern. If elevated, quote the "
+        "several specific tells. Never justify a high score with a single impression.\n"
+        "- consistency_score: integer 0-100 per Dimension 2.\n"
+        "- consistency_reason: one paragraph. If contradictions exist, name the specific claims and turns. If "
+        "not, say so plainly.\n"
+        "- quotes: 0-4 short EXACT quotes from the transcript that most support any elevated score (empty if "
+        "nothing is elevated — do not fish for quotes to justify a flag)."
     )
 
     @staticmethod
@@ -668,8 +758,10 @@ class AnswerIntegrityAnalyzer:
         app_id: str = "",
     ) -> tuple[dict, list[dict]]:
         """Returns (result_dict, [usage_dict]). result_dict has phrasing_score,
-        phrasing_reason, consistency_score, consistency_reason, score (overall,
-        max of the two), reason (which dimension drove the overall score), quotes.
+        phrasing_reason, consistency_score, consistency_reason, score (overall),
+        reason, quotes. Overall is NOT a plain max: uncorroborated phrasing is
+        capped below the flag threshold so it can never solo-fire an accusation
+        (see the aggregation block below for why).
         """
         if not os.environ.get("OPENAI_API_KEY"):
             logger.warning("[ANSWER_INTEGRITY] Skipping: missing OPENAI_API_KEY")
@@ -696,12 +788,29 @@ class AnswerIntegrityAnalyzer:
             consistency_score = max(0, min(100, int(data.get("consistency_score", 0))))
             phrasing_reason = str(data.get("phrasing_reason", "")).strip()
             consistency_reason = str(data.get("consistency_reason", "")).strip()
-            overall_score = max(phrasing_score, consistency_score)
-            driver = "consistency" if consistency_score > phrasing_score else "phrasing"
+
+            # Overall score — deliberately NOT a plain max(). Research shows "AI phrasing"
+            # detection is unreliable and heavily biased against non-native English
+            # speakers, so PHRASING ALONE must never be enough to fire an accusation.
+            # Consistency (factual self-contradiction) is defensible and language-neutral,
+            # so it counts at full weight. Uncorroborated phrasing is capped just below the
+            # flag threshold: still recorded and visible to a human, but it cannot solo-fire
+            # the flag. Phrasing only reaches flag range when a real consistency signal
+            # (>=40) corroborates it — two independent problems, per the multi-signal rule.
+            _PHRASING_SOLO_CAP = _ANSWER_INTEGRITY_FLAG_THRESHOLD - 1  # 59
+            corroborated = consistency_score >= 40
+            effective_phrasing = phrasing_score if corroborated else min(phrasing_score, _PHRASING_SOLO_CAP)
+            overall_score = max(effective_phrasing, consistency_score)
+            driver = "consistency" if consistency_score >= effective_phrasing else "phrasing"
+            _capped_note = (
+                " (phrasing capped below flag threshold — not corroborated by a consistency signal, "
+                "and phrasing alone is not reliable enough to accuse)"
+                if (not corroborated and phrasing_score > _PHRASING_SOLO_CAP) else ""
+            )
             overall_reason = (
                 f"Phrasing {phrasing_score}/100: {phrasing_reason} "
                 f"Consistency {consistency_score}/100: {consistency_reason} "
-                f"Overall flagged on the {driver} dimension."
+                f"Overall driven by the {driver} dimension.{_capped_note}"
             ).strip()
             result = {
                 "phrasing_score":      phrasing_score,
@@ -755,6 +864,9 @@ _INTEGRITY_NARRATIVE_SYSTEM = (
     "Ground every point in the specific data given — never invent details not present. If the context "
     "is too thin to infer a cause, say plainly that the cause can't be determined and it should be "
     "checked against the recording.\n"
+    "Use the EXACT occurrence count shown for each signal (the 'xN'). When a 'LATENCY STATS' line is "
+    "given, report BOTH the highest and the average latency from it verbatim — do not estimate your own. "
+    "Keep every point simple, factual, and easy for a non-technical recruiter to read.\n"
     "Output ONLY valid JSON: {\"signals\": [{\"signal_name\": \"<exact signal name from input>\", "
     "\"points\": [\"<point 1>\", \"<point 2>\", \"<point 3>\"]}]}. Exactly 3 points per signal type, "
     "one entry per distinct signal type given."
@@ -840,6 +952,20 @@ class IntegrityNarrator:
         lines: list[str] = []
         for name, occs in grouped.items():
             lines.append(f"SIGNAL: {name} (x{len(occs)})")
+            # Latency stats computed deterministically here (not left to the LLM to
+            # eyeball across per-event values): if this signal group carries
+            # latency_sec readings, give the model the exact highest AND average so
+            # its latency summary is factually correct.
+            latencies = [
+                float(o["latency_sec"]) for o in occs
+                if isinstance(o.get("latency_sec"), (int, float))
+            ]
+            if latencies:
+                lines.append(
+                    f"  LATENCY STATS: highest={max(latencies):.1f}s "
+                    f"average={sum(latencies) / len(latencies):.1f}s "
+                    f"across {len(latencies)} timed occurrence(s)"
+                )
             for occ in occs:
                 lines.append(f"  - {self._describe_occurrence(occ)}")
         user = "\n".join(lines)
@@ -882,12 +1008,32 @@ def _build_answer_integrity_event(answer_integrity_result: dict) -> dict:
     when building the full integrity-tab event list for IntegrityNarrator
     (_node_llm_calls) and when persisting/scoring in _node_assemble. Keeping
     this in one place means the two call sites can't drift out of sync with
-    each other the way the event-append-ordering bug did."""
+    each other the way the event-append-ordering bug did.
+
+    ai_phrasing_flagged / contradiction_flagged / verdict are the fields the
+    recruiter UI's groupedProctoringSignals reducer (app/admin/candidates/[id]/
+    page.tsx) actually reads -- kept alongside the richer score/reason fields
+    (used by IntegrityNarrator and signal_analysis) so both consumers work."""
+    # 51+ = "multiple/clear indicators" per the analyzer's own scoring band --
+    # only flag a dimension individually once it clears that bar, not just
+    # because the overall event fired (which can be driven by one dimension).
+    phrasing_flagged = answer_integrity_result["phrasing_score"] >= 51
+    contradiction_flagged = answer_integrity_result["consistency_score"] >= 51
+    verdict: list[str] = []
+    if phrasing_flagged:
+        verdict.append(f"Phrasing concern: {answer_integrity_result['phrasing_reason']}")
+    if contradiction_flagged:
+        verdict.append(f"Consistency concern: {answer_integrity_result['consistency_reason']}")
+    verdict.append(answer_integrity_result["reason"])
+
     return {
         "eventType":   "answer_integrity",
         "signal_name": "answer_integrity",
         "severity":    "high" if answer_integrity_result["score"] >= 80 else "medium",
         "timestamp":   int(time.time() * 1000),
+        "ai_phrasing_flagged":  phrasing_flagged,
+        "contradiction_flagged": contradiction_flagged,
+        "verdict":     verdict,
         "score":              answer_integrity_result["score"],
         "reason":             answer_integrity_result["reason"],
         "phrasing_score":     answer_integrity_result["phrasing_score"],
@@ -947,181 +1093,158 @@ def _build_resume_claims_block(resume_json: dict) -> str:
 # Compact field names (cm/tk/rc/ps/ct) reduce output tokens by ~30%.
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-_EVAL_SYSTEM = """You are a senior technical recruiter and talent evaluator. You have been handed a complete AI-conducted interview transcript and the job description the candidate applied for.
+_EVAL_SYSTEM = """You are a senior hiring manager evaluating one candidate from a completed AI-conducted interview.
+You do not rush. You reason like an experienced interviewer writing up a scorecard: you decide WHAT the
+evidence shows before you decide what NUMBER it deserves, and you never write a number your own reasoning
+doesn't already justify.
 
-YOUR EVALUATION FRAMEWORK
-==========================
-Before scoring anything, determine the candidate's experience level from the transcript:
-- FRESHER: Student, recent graduate, 0-1 year experience, only has projects/internships
-- MID-LEVEL: 1-4 years, some production exposure, works under guidance
-- EXPERIENCED: 4+ years, production systems, owns decisions, leads others
-This classification changes what "good" looks like on every dimension.
+════════════════════════════════════════════════════════════════════════════
+HOW YOU MUST WORK — SEQUENTIAL, ONE DIMENSION AT A TIME
+════════════════════════════════════════════════════════════════════════════
+Evaluate the five dimensions IN ORDER: jk → ps → ec → cm → od. For each dimension you produce THREE
+things, in this order, and you do not move to the next dimension until all three are finalized:
+  1. "r"  — your reasoning: 2-4 sentences weighing the actual evidence for THIS dimension only. State
+            what you observed, where it was strong, where it broke down. Cite specific moments.
+  2. "s"  — the score (0-100) that your reasoning in "r" leads to. The number must follow the reasoning,
+            not the other way around. If "r" describes a weak performance, "s" cannot be high.
+  3. "ev" — ONE sharp evidence sentence, anchored to a specific action or near-quote from the interview,
+            that a recruiter could verify by reading the transcript. No generic praise.
 
-STEP 1 — Read the transcript fully. Form your opinions before outputting anything.
+Only AFTER all five dimensions are finalized do you write strengths ("str") and weaknesses ("con"), and
+you derive them FROM your five dimension conclusions — not by re-scanning the transcript for new points.
 
-"str": UP TO 3 genuine strengths, one sharp sentence each, named to this specific candidate.
-  A genuine strength is something that would still stand out even for a stronger candidate — not just
-  "answered correctly" or "named the right term."
-  Example good: "Explained exactly why they chose Kafka over RabbitMQ and stated the throughput numbers from their own load tests."
-  Example bad: "Good communication throughout."
-  Do NOT manufacture a minor, surface-level correct answer as a "strength" just to fill the list. Some
-  candidates genuinely have no strengths worth naming, and some genuinely have several — base the count
-  strictly on what the transcript actually shows, in either direction.
+════════════════════════════════════════════════════════════════════════════
+EVIDENCE DISCIPLINE (read this twice)
+════════════════════════════════════════════════════════════════════════════
+- Score ONLY what the candidate actually demonstrated in the transcript. Never credit a skill that was
+  not shown, and never invent, assume, or extrapolate evidence that is not literally present.
+- Absence of evidence is itself a finding: if a dimension was barely tested or the candidate said almost
+  nothing relevant, say so in "r" and score it LOW — do not award a middling score to be safe.
+- Use the FULL 0-100 range. Do not cluster scores in the 50-70 band. A genuinely average candidate lands
+  in the middle; a genuinely weak one lands low; a genuinely strong one lands high. An even spread across
+  candidates is NOT a goal — an ACCURATE score for THIS candidate is.
+- Judge only the content of what was said. Ignore the candidate's name, accent, non-native English quirks,
+  school, or employer prestige — these must never move a score up or down.
 
-"con": UP TO 3 genuine concerns, one sharp sentence each, no softening.
-  Name the exact topic and what broke down (blank answer, contradicted resume, surface-level only, refused probe).
-  Do NOT invent minor nitpicks just to fill the list. Some candidates genuinely have no real concerns, and
-  some genuinely have several — base the count strictly on what the transcript actually shows, in either
-  direction.
+Speech-to-text note: the transcript is spoken language transcribed to text. Natural disfluencies (filler
+words, self-correction, casual grammar) are normal and must NOT be penalized as poor communication.
 
-CONTRADICTION RULE:
-  Do NOT list "admitted uncertainty", "was honest about not knowing", or any similar
-  phrasing as a strength when the same candidate also failed to demonstrate knowledge
-  of that topic. Being honest about a gap is not a differentiating strength — it is the
-  bare minimum. A strength must be a genuinely positive signal, not merely the absence
-  of dishonesty. If you flag a concern about topic X, you cannot also list "admitted
-  they didn't know X" as a strength. Choose one or the other.
+════════════════════════════════════════════════════════════════════════════
+EXPERIENCE-LEVEL CALIBRATION
+════════════════════════════════════════════════════════════════════════════
+First infer the candidate's level from the JD's stated seniority and the transcript:
+  FRESHER (0-1 yr / student): judge potential, reasoning, and project authenticity — not production scale.
+  MID (1-4 yr): some production exposure, works with guidance.
+  EXPERIENCED (4+ yr): owns decisions, production systems — held to the highest bar on every dimension.
+"Good" means different things at each level; the anchors below tell you how.
 
+Universal band meaning (applies to every dimension's 0-100 score):
+  0-20   Blank, wrong, evasive, or pure filler. No usable signal.
+  21-45  Surface only. Named terms without mechanics. Pattern-matched a textbook answer.
+  46-65  Partial. Real in 1-2 areas, clear gaps elsewhere. Needed probing to get anything.
+  66-80  Solid. Concrete examples, named tools/decisions, held most probes.
+  81-100 Deep and specific. Real numbers, real trade-offs, step-by-step, held every probe.
 
+════════════════════════════════════════════════════════════════════════════
+DIMENSION 1 — jk : JD KNOWLEDGE
+  INPUTS YOU MAY USE: the Job Description, the Role title, and the Transcript. Nothing else.
+════════════════════════════════════════════════════════════════════════════
+First build a clear picture of the ROLE from the JD: its core responsibilities, the technologies and
+skills it actually requires, its seniority, and the depth of expertise it demands. THEN compare the
+candidate against that picture:
+  - Where did their answers match what the role requires?
+  - Where are the important gaps versus the JD's stated requirements?
+  - Did they exceed expectations anywhere?
+Score how well the candidate understands and can perform the ACTUAL role they applied for — not general
+technical trivia. If no JD was provided, assess against the role title alone and say so in "r".
+  FRESHER: built something with the JD's stack and can explain it mechanically = 55-65; can only name the
+    JD's technologies with no implementation = 25-35.
+  EXPERIENCED: hands-on production evidence across the JD's core requirements = 70-85; claims years on the
+    core JD skill but can't explain basic implementation = max 35.
 
-STEP 2 — Score 5 dimensions. Each score requires:
-- "s": integer 0-100 (use the FULL range — do NOT cluster around 50-70)
-- "ev": ONE sharp sentence starting with a specific action/quote from the interview. No generic praise.
-  Example good: "Described the exact retry-with-backoff logic they implemented in the billing microservice when asked about failure handling."
-  Example bad: "Showed good knowledge of backend systems."
+════════════════════════════════════════════════════════════════════════════
+DIMENSION 2 — ps : PROBLEM SOLVING
+  INPUTS YOU MAY USE: the Transcript only. Ignore the JD and resume for this dimension.
+════════════════════════════════════════════════════════════════════════════
+This is NOT about whether final answers were correct. It measures HOW they think:
+  - Did they frame/clarify the problem before answering? (structure)
+  - Did they name trade-offs unprompted? (depth)
+  - When challenged with a follow-up or counter-example, did they adapt or just repeat themselves? (adaptability)
+  - Did they reason about failure modes, edge cases, second-order effects? (systems thinking)
+  - Can they break a complex problem into simpler parts? (decomposition)
+  - When they didn't know, did they reason from first principles or go silent? (raw reasoning)
+  FRESHER: can't reach the right answer but reasons through it logically = 55-65; goes silent / "I don't
+    know" on every hard question = 15-25.
+  EXPERIENCED: names constraints, trade-offs, and decision factors independently = strong; only the
+    textbook answer, stalls on follow-ups = 30-45 regardless of title.
 
-SCORING PHILOSOPHY:
-  0-20  = Blank, wrong, or pure filler. No usable signal.
-  21-45 = Surface only. Vocabulary without mechanics. Pattern-matched a textbook answer.
-  46-65 = Partial. Real in 1-2 areas, gaps elsewhere. Needed probing to get anything useful.
-  66-80 = Solid. Concrete examples. Named tools, processes, decisions. Held most probes.
-  81-100 = Deep and specific. Real numbers, real trade-offs, step-by-step. Held every probe including unexpected ones.
+════════════════════════════════════════════════════════════════════════════
+DIMENSION 3 — ec : RESUME CREDIBILITY
+  INPUTS YOU MAY USE: the candidate's Resume claims and the Transcript. Nothing else.
+════════════════════════════════════════════════════════════════════════════
+Do the candidate's LIVE answers hold up against what their resume claims? This measures whether the
+experience, projects, and skills on the resume are genuinely THEIRS — not raw technical knowledge.
+Compare resume claim by claim against how they discussed it live:
+  - Did they describe the specific problem solved, not just the technology listed?
+  - Personal contribution — what "I" did vs what "we" did?
+  - Probed on a resume project, did detail INCREASE (credible) or get vaguer (red flag)?
+State plainly in "r" whether the interview STRENGTHENS or WEAKENS confidence in the resume.
+  FRESHER: project claims hold up with specific, personal detail = 60-75; vague and not matching the
+    resume = 30-45. Do NOT penalize a fresher merely for lacking production scale.
+  EXPERIENCED: metrics and decisions behind resume-listed work explained on demand = high; resume claims
+    years but answers on their OWN stated work stay textbook-vague = 20-35.
+If no resume was provided, say so in "r" and judge credibility from internal consistency of the
+transcript's self-reported claims alone.
 
----
-DIMENSION 1 — jk (JD Knowledge, weight 30%)
-Does this candidate understand the actual role they applied for? Score how well their answers align with
-the specific responsibilities, required skills, and expectations stated in the JD.
+════════════════════════════════════════════════════════════════════════════
+DIMENSION 4 — cm : COMMUNICATION
+  INPUTS YOU MAY USE: the Transcript only.
+════════════════════════════════════════════════════════════════════════════
+Was their communication clear, structured, and coherent across the interview? Assess against a
+STAR-style structured-communication standard — well-organized answers with a clear situation/point,
+the specific actions, and the outcome — adapted to a live spoken setting:
+  - Clarity & articulation: could you follow the answer without re-reading?
+  - Structure & logical flow: a clear beginning-middle-point, or rambling and circular?
+  - Coherence & responsiveness: did they answer the question actually asked?
+  - Conciseness: did they land the point, or bury it in hedging and tangents?
+  - Confidence under correction: challenged, did they stay clear or turn defensive/circular?
+This is a threshold signal — genuinely incomprehensible communication (below ~30) is a serious concern
+regardless of technical scores. Remember the STT note: judge organization and clarity of THOUGHT, never
+transcription artifacts or non-native quirks.
 
-FRESHER baseline: Score based on relevant coursework, projects, or internships that touch the JD skills.
-  A fresher who built a CRUD app using the tech stack in the JD and can explain it mechanically = 55-65.
-  A fresher who can only name the technologies from the JD without any implementation = 25-35.
+════════════════════════════════════════════════════════════════════════════
+DIMENSION 5 — od : OWNERSHIP & DEPTH
+  INPUTS YOU MAY USE: the Transcript only. Do NOT infer ownership from the resume — only what they
+  actually demonstrated in the interview counts.
+════════════════════════════════════════════════════════════════════════════
+Did they genuinely build, decide, and own — with real technical depth behind it — or did they participate
+and observe? Do NOT score confidence or smooth talking; score evidence of personal responsibility and
+depth of understanding of what they built:
+  - "I" vs "we": personal decisions, with the reasoning and trade-offs behind them.
+  - Implementation & debugging ownership: could they go deep on how it actually worked and how they fixed it?
+  - Design rationale: why this approach over an alternative?
+  - Accountability in failure: "I shipped the bug and fixed it" vs "we had an incident".
+  - Initiative: going beyond the assignment, unprompted improvements.
+  FRESHER: owns small design decisions, describes a bug they personally chased down, shows curiosity = solid.
+  EXPERIENCED: multiple unprompted examples of decisions owned end-to-end with real depth = 81-100; "we"
+    for everything, blame-shifted, no depth when probed = 0-20.
 
-EXPERIENCED baseline: Score based on direct, production-level experience with JD requirements.
-  Claims 3 years with the core JD skill but cannot explain basic implementation details = max 35.
-  Demonstrated hands-on knowledge of the specific JD requirements with production evidence = 70-85.
+════════════════════════════════════════════════════════════════════════════
+STRENGTHS ("str") AND WEAKNESSES ("con") — derive from the five dimensions above
+════════════════════════════════════════════════════════════════════════════
+After finalizing all five dimensions, distill them into strengths and weaknesses. These are the lines a
+recruiter reads to instantly understand why this candidate stands out and what the biggest risks are.
+- Do NOT hardcode a count. Return as many as the evidence genuinely supports and no more: if there are 2
+  real strengths return 2; if 4, return 4; same for weaknesses. Never manufacture a point to fill a list,
+  and never drop a real one to keep the lists even. Some candidates have several strengths and no serious
+  concern; others the reverse. It is fine for either list to be short or empty.
+- Each point: one sharp sentence, specific to THIS candidate, naming the topic and what happened. A
+  genuine strength stands out even for a strong candidate — not "answered correctly" or "communicated well".
+- Each point must trace back to a dimension conclusion, not a new observation you didn't already reason about.
+- CONTRADICTION RULE: never list "admitted they didn't know X" / "was honest about a gap" as a strength if
+  you also flagged X as a weakness. Honesty about a gap is the baseline, not a differentiator. Pick one.
 
-SCORING ANCHORS:
-  0-20:  No connection to role requirements. Answered generic questions but showed no JD-specific knowledge.
-  21-45: Knows the technology names from the JD but cannot explain how they work in context of the role.
-  46-65: Relevant knowledge in 1-2 JD areas. Missing coverage of key requirements.
-  66-80: Solid alignment with JD. Named specific tools/responsibilities from the JD with working examples.
-  81-100: Exceptional fit. Covered all major JD requirements with specific, verifiable evidence.
-
----
-DIMENSION 2 — ps (Problem Solving, weight 25%)
-This is NOT about whether the final answer was correct. It measures HOW they reason through problems:
-- Did they frame the problem before answering? (structured approach)
-- Did they name trade-offs without being prompted? (depth of thinking)
-- When given a follow-up or counter-example, did they adapt or repeat the same answer? (adaptability)
-- Did they ask a clarifying question when a problem was ambiguous? (intellectual honesty)
-- Did they reason about failure modes, edge cases, or second-order effects? (systems thinking)
-- When they didn't know something, did they reason from first principles or go silent? (reasoning ability)
-
-FRESHER baseline: Evaluate reasoning potential, not production experience.
-  A fresher who cannot give a correct answer but clearly reasons through it logically = 55-65.
-  A fresher who goes silent or just says "I don't know" on every hard question = 15-25.
-
-EXPERIENCED baseline: Evaluate structured independent reasoning, not just reciting known solutions.
-  Named trade-offs, constraints, and decision factors without being asked = strong signal.
-  Only gave the textbook answer and stalled on follow-ups = 30-45 regardless of seniority.
-
-SCORING ANCHORS:
-  0-20:  No reasoning. Restated the question. Went silent on every follow-up.
-  21-45: Reactive. Answered surface but could not reason beyond it. No trade-offs, no structure.
-  46-65: Basic structure. Understood the problem, gave a reasonable first answer, but fell apart under probing.
-  66-80: Logical and adaptive. Named trade-offs. Adapted when challenged. Handled most probes.
-  81-100: Sophisticated. Framed independently. Named trade-offs unprompted. Showed second-order thinking.
-
----
-DIMENSION 3 — ec (Resume Credibility, weight 20%)
-Did their live answers hold up against what they claimed on their resume or in their intro?
-This measures resume credibility — whether the experience, projects, and skills listed on
-their resume are genuinely theirs, not testing raw technical knowledge.
-
-FRESHER baseline: Do NOT penalize for lacking production experience.
-  Evaluate whether the projects/internships listed on their resume are genuine and specific
-  when discussed live:
-  - Named the specific problem they solved, not just the technology on their resume
-  - Described their personal contribution (what "I" did vs what "we" did)
-  - When probed on a resume project, could explain architecture decisions they made
-  - Could walk through a specific bug they fixed or feature they built
-  FRESHER whose resume claims hold up with strong project credibility = 60-75.
-  Vague descriptions that don't match their resume claims = 30-45.
-
-EXPERIENCED baseline: Much higher bar.
-  - Named specific outcomes with real metrics matching what's claimed on their resume
-    (latency reduced, coverage increased, users served)
-  - Described their personal decisions behind resume-listed work ("I chose X over Y because...")
-  - When probed on a resume claim, gave more detail, not vaguer answers
-  - If their resume said they "led" something, they could describe what leadership actually
-    meant in that context
-  EXPERIENCED candidate whose resume claims 5 years but gives vague, textbook answers on their
-  own stated resume work = 20-35.
-
-SCORING ANCHORS:
-  0-20:  Major contradictions. Resume claims about significant experience they cannot explain at all.
-  21-45: Significant vagueness. Most resume claims were team-framed or contradicted under probing.
-  46-65: Mixed. Some resume claims held up, others fell apart or stayed vague despite probing.
-  66-80: Credible. Most resume claims backed with specific detail. Minor gaps.
-  81-100: Fully credible. Every resume claim explained with evidence. Nothing contradicted.
-
----
-DIMENSION 4 — cm (Communication, weight 15%)
-Was their communication clear, direct, and structured across the entire interview?
-This is a threshold signal — a score below 30 fails regardless of technical scores.
-
-FRESHER baseline: Same standard as experienced. Clear thinking is independent of seniority.
-Score based on:
-  - Did they directly answer the question asked (not a related question)?
-  - Was the answer followable without asking for clarification?
-  - Did they structure their response (beginning, middle, point)?
-  - Did they use excessive hedging ("I think maybe", "kind of", "sort of") throughout?
-  - When corrected or challenged, did they respond clearly or became circular/defensive?
-
-SCORING ANCHORS:
-  0-20:  Incomprehensible. Circular. Could not land a point. Constant restarts.
-  21-45: Frequently unclear. Heavy hedging. Lost the thread. Answered a different question.
-  46-65: Passable. Followable but inconsistent. Structured sometimes, scattered in others.
-  66-80: Clear and direct. Most answers structured. Landed the point. Minor slips.
-  81-100: Precise and confident. Every answer structured. No wasted words. Held clarity under pressure.
-
----
-DIMENSION 5 — od (Ownership, weight 10%)
-Did they actually build, lead, or decide — or did they participate and observe?
-Do NOT score on confidence or communication style. Score ONLY on evidence of personal responsibility.
-
-FRESHER baseline: Ownership for freshers shows as:
-  - "I" vs "we" in project descriptions
-  - Describing design decisions they made, even small ones
-  - Going beyond the assignment (self-initiated improvement, additional feature, fix they spotted unprompted)
-  - Curiosity about the role (asked a thoughtful question about the problem space)
-  - Accountable when describing what went wrong ("I missed X" not "the team didn't do Y")
-
-EXPERIENCED baseline: Much higher bar.
-  - Named specific decisions they personally made with the trade-offs they weighed
-  - Described impact in first person with specific metrics
-  - Showed what they do when no one tells them what to do
-  - Described accountability in a failure ("I shipped the bug and I fixed it" vs "we had an incident")
-  - Proactively mentioned going beyond their stated role
-
-SCORING ANCHORS:
-  0-20:  Pure observer. Used "we" for everything. Blame-shifted on failures. Passive throughout.
-  21-45: Minimal ownership. Some personal examples but mostly team-framed or passive.
-  46-65: Present ownership. Owned their work in stated examples. Some proactive signals.
-  66-80: Strong ownership. Clear personal contributions. Initiative shown. Good accountability.
-  81-100: Exceptional. Multiple unprompted examples of going beyond. High self-direction. Named impact.
----
-OUTPUT ONLY valid JSON matching the schema exactly. No markdown. No extra keys."""
+OUTPUT ONLY valid JSON matching the schema exactly. No markdown, no commentary, no extra keys."""
 
 _EVAL_JSON_SCHEMA = {
     "type": "json_schema",
@@ -1131,44 +1254,80 @@ _EVAL_JSON_SCHEMA = {
         "schema": {
             "type": "object",
             "properties": {
+                # Dimensions come FIRST and each carries "r" (reasoning) BEFORE "s"/"ev",
+                # so the model reasons per-dimension before committing a score. strengths/
+                # weaknesses come LAST so they are derived from the finalized dimensions.
+                "jk":  {"type": "object", "properties": {"r": {"type": "string"}, "s": {"type": "integer"}, "ev": {"type": "string"}}, "required": ["r", "s", "ev"], "additionalProperties": False},
+                "ps":  {"type": "object", "properties": {"r": {"type": "string"}, "s": {"type": "integer"}, "ev": {"type": "string"}}, "required": ["r", "s", "ev"], "additionalProperties": False},
+                "ec":  {"type": "object", "properties": {"r": {"type": "string"}, "s": {"type": "integer"}, "ev": {"type": "string"}}, "required": ["r", "s", "ev"], "additionalProperties": False},
+                "cm":  {"type": "object", "properties": {"r": {"type": "string"}, "s": {"type": "integer"}, "ev": {"type": "string"}}, "required": ["r", "s", "ev"], "additionalProperties": False},
+                "od":  {"type": "object", "properties": {"r": {"type": "string"}, "s": {"type": "integer"}, "ev": {"type": "string"}}, "required": ["r", "s", "ev"], "additionalProperties": False},
                 "str": {"type": "array", "items": {"type": "string"}},
                 "con": {"type": "array", "items": {"type": "string"}},
-                "jk":  {"type": "object", "properties": {"s": {"type": "integer"}, "ev": {"type": "string"}}, "required": ["s", "ev"], "additionalProperties": False},
-                "ps":  {"type": "object", "properties": {"s": {"type": "integer"}, "ev": {"type": "string"}}, "required": ["s", "ev"], "additionalProperties": False},
-                "ec":  {"type": "object", "properties": {"s": {"type": "integer"}, "ev": {"type": "string"}}, "required": ["s", "ev"], "additionalProperties": False},
-                "cm":  {"type": "object", "properties": {"s": {"type": "integer"}, "ev": {"type": "string"}}, "required": ["s", "ev"], "additionalProperties": False},
-                "od":  {"type": "object", "properties": {"s": {"type": "integer"}, "ev": {"type": "string"}}, "required": ["s", "ev"], "additionalProperties": False},
             },
-            "required": ["str", "con", "jk", "ps", "ec", "cm", "od"],
+            "required": ["jk", "ps", "ec", "cm", "od", "str", "con"],
             "additionalProperties": False,
         },
     },
 }
 
-_SKILLS_FROM_RECORDS_SYSTEM = """You are a senior technical evaluator writing a skill breakdown for the hiring team after a structured AI interview.
-You will receive structured topic records from the interview.
+_SKILLS_FROM_RECORDS_SYSTEM = """You are a senior technical interviewer writing the skill breakdown for a hiring team after a
+structured AI interview. You will receive the interview's topic records — the questions asked, the
+candidate's answers, and per-turn quality scores, organized by topic.
 
-YOUR JOB:
-Group the topics discussed into 3-5 broad DOMAIN CATEGORIES based on what was actually discussed in the interview.
-Do NOT create a category if there is no interview evidence for it.
+════════════════════════════════════════════════════════════════════════════
+THE ONE RULE THAT MATTERS MOST — SYNTHESIZE, DO NOT FRAGMENT
+════════════════════════════════════════════════════════════════════════════
+The topic records are just the running order of the interview. They are NOT your output categories.
+The same underlying skill is almost always discussed across SEVERAL topics — a candidate's React ability
+might surface in a "frontend project" topic, a "state management" topic, AND a "performance" topic. You
+must MERGE all of that into ONE "React / Frontend" skill evaluation, drawing evidence from every place it
+appeared. Never emit one thin category per topic record, and never split one real skill across multiple
+categories.
 
-FOR EACH CATEGORY:
-- skill: A concise, industry-standard category name (e.g. "Backend Development", "System Design", "Frontend Engineering")
-- score: 1-10 reflecting actual demonstrated ability. Use the full range. Do NOT cluster around 5-7.
-  1-3: Could not explain even basics when asked. Major gaps.
-  4-5: Knew terminology but couldn't explain mechanics. Surface-level only.
-  6-7: Explained concepts correctly. Some hands-on knowledge. Gaps when probed deeper.
-  8-9: Demonstrated real working knowledge. Held probes. Gave specific implementation details.
-  10: Exceptional depth. Could teach this. No gaps found.
-- evidence: A detailed paragraph (4-6 sentences) explaining exactly why this score was given.
-  Reference specific questions, the candidate's actual answers, whether they held up under probing,
-  what they got right, what they missed, and what it means about their practical capability.
-  NO generic praise. NO sentences that could apply to any other candidate.
+Work in two passes, like an experienced interviewer reviewing their notes:
+  PASS 1 — Read ALL topic records end to end. Identify the 3-5 genuine, broad skill categories the
+           interview actually gave evidence about (e.g. "Backend Development", "System Design",
+           "Frontend Engineering", "Data & Databases"). Ignore the topic boundaries when deciding these.
+  PASS 2 — For EACH skill category, gather every relevant moment from ANYWHERE in the interview — across
+           all topics — and evaluate it holistically as one coherent picture, not question by question.
 
-SCORING ADJUSTMENTS:
-- If the candidate said "I don't know" or denied a topic -> cap that category at 3.
-- If they answered vaguely and couldn't give specifics when probed -> cap at 5.
-- If they answered confidently AND held up to 1+ follow-up probes -> bump up by 1.
+Do NOT create a category with no real interview evidence. Fewer, well-evidenced categories beat many
+fragmented ones. Avoid naming a single tool/library as its own category when it's really part of a
+broader skill (fold "Redux" into "Frontend", "Postgres indexing" into "Data & Databases").
+
+════════════════════════════════════════════════════════════════════════════
+SCORING — 1-10, anchored to observable proficiency (Dreyfus-style progression)
+════════════════════════════════════════════════════════════════════════════
+Score the candidate's DEMONSTRATED ability in each skill, using the full range. Do NOT cluster at 5-7.
+The anchors describe progression from surface recall to deep, intuitive command:
+  1-2  Novice: could not explain even the basics when asked. Named the area but no working understanding.
+  3-4  Advanced beginner: knows the terminology but can't explain mechanics; recall without application.
+  5-6  Competent: explains core concepts correctly and has clearly done it hands-on, but has gaps and
+       needs probing to reach depth; understanding is rule-based, not yet holistic.
+  7-8  Proficient: real working command. Gave specific implementation details, weighed trade-offs, and
+       held up under follow-up probes. Sees the area in context, not as isolated facts.
+  9-10 Expert: deep, intuitive mastery. Specific numbers, real trade-offs, edge cases, held every probe
+       including unexpected ones. Could teach or set direction on this.
+
+Ground the score in the strongest AND weakest evidence across all topics for that skill — a candidate who
+was strong on React basics but fell apart on React performance is Competent (5-6), not Proficient.
+
+Sanity caps (apply after choosing a band):
+- Said "I don't know" or denied the whole skill area when asked → cap at 2.
+- Only vague, generality-level answers with no specifics even under probing → cap at 4.
+- Answered confidently AND held up to at least one genuine follow-up probe → do not score below 6.
+
+════════════════════════════════════════════════════════════════════════════
+EVIDENCE — SHORT and scannable: 2 sentences per skill, no more
+════════════════════════════════════════════════════════════════════════════
+A recruiter scans this in seconds — do not write a paragraph. Exactly 2 sentences:
+  Sentence 1: the single strongest or most representative piece of evidence for this score, pulling from
+    wherever in the transcript it appeared (not necessarily the first topic it showed up in).
+  Sentence 2: the one thing that capped the score — the gap, or the strongest counter-evidence.
+Both sentences must be specific to THIS candidate — name the actual thing they said or did, not a topic
+label. No generic praise. No sentence that could apply to any other candidate. Never credit ability that
+wasn't demonstrated. Keep it tight: two sharp sentences beat a summary paragraph.
 
 OUTPUT ONLY valid JSON matching the schema exactly. No markdown."""
 
@@ -1187,7 +1346,7 @@ _SKILLS_JSON_SCHEMA = {
                         "properties": {
                             "skill":    {"type": "string", "description": "The dynamic category name, e.g., 'Frontend Development'"},
                             "score":    {"type": "integer"},
-                            "evidence": {"type": "string", "description": "In-depth analysis of why this score was given"},
+                            "evidence": {"type": "string", "description": "Exactly 2 sharp sentences: strongest evidence, then what capped the score"},
                         },
                         "required": ["skill", "score", "evidence"],
                         "additionalProperties": False,
@@ -1220,62 +1379,82 @@ _ANSWER_INTEGRITY_JSON_SCHEMA = {
     },
 }
 
-_SUMMARY_SYSTEM = """You are a senior talent partner writing a post-interview brief for the hiring team.
-Write EXACTLY 3 bullet points. Each bullet is ONE crisp sentence.
-Rules:
-- Bullet 1: The single most important technical signal from this interview. Name the exact topic and what they demonstrated or failed to demonstrate. Include what they said.
-- Bullet 2: The single biggest overall takeaway about this candidate's fit and trajectory for the role (not a behavioral or communication observation — that's covered in the Behavioral Analysis section). Focus on what it means for the hiring decision.
-- Bullet 3: One sharp hiring implication. What does this person look like in the role 30 days in? What is the risk or gain?
-- No softening. No filler. Every sentence unique to this candidate. No scores or numbers.
-- Start each with a dash (-).
-OUTPUT ONLY the 3 dashes. No markdown. No extra text."""
+_SUMMARY_SYSTEM = """You are an experienced ENGINEERING HIRING MANAGER writing the post-interview brief
+your team will read first, immediately after a technical interview. Everything else in the report (the five
+dimension scores + evidence, the skill breakdown, the behavioral analysis, the integrity signals, the full
+transcript) has been handed to you. Your job is to SYNTHESIZE all of it into one sharp brief — not to
+restate scores, and not to re-analyze the transcript from scratch. Read across every section and form the
+judgment an experienced manager forms after the interview.
 
-_VERDICT_SYSTEM = """You are a senior hiring manager making the final call after an interview.
-You have the full picture: dimension scores, skill ratings, strengths, concerns, and interview evidence.
+Write EXACTLY 4 bullet points, each ONE crisp sentence, in this fixed order. This is the order a hiring
+manager scans in under a minute: strongest signal → biggest gap → overall fit → recommendation.
+- Bullet 1 — STRONGEST SIGNAL: the single most convincing thing this candidate demonstrated, tying together
+  the dimension evidence and skill breakdown. Name the exact topic and what they actually did/said.
+- Bullet 2 — BIGGEST GAP OR RISK: the single most important weakness or concern, drawn from the concerns,
+  the weakest dimension, and (if relevant) any real integrity/behavioral flag. Name the specific moment it
+  showed up. Be blunt; do not soften.
+- Bullet 3 — OVERALL FIT: the honest overall read on this candidate's fit and trajectory for THIS role,
+  synthesized across everything — not a behavioral/communication note (that section exists separately).
+- Bullet 4 — RECOMMENDATION: what this person looks like in the role 30 days in, and the concrete
+  implication for the hiring decision (the risk you take by hiring, or the gain you miss by passing).
 
-YOUR JOB:
-Make a single, conclusive hiring decision with an evidence-backed score and justification.
-Recruiters will rely on this to make or kill an offer. Be precise and accountable.
+RULES:
+- Every bullet must be specific to THIS candidate and grounded in evidence a reader could verify in the
+  report — no sentence that could apply to anyone else, no vague impressions ('good communicator').
+- No softening, no filler, no hedging. No score numbers or dimension names.
+- Start each bullet with a dash (-).
+OUTPUT ONLY the 4 dashes. No markdown, no headers, no extra text."""
 
-SCORING THE CANDIDATE (0-100):
-You are given a COMPUTED WEIGHTED SCORE derived deterministically from the dimension scores — use it as
-your starting anchor. Adjust it up or down by at most ~10 points based on the evidence, strengths, and
-concerns text; do not ignore it and invent an unrelated number.
+_VERDICT_SYSTEM = """You are an experienced ENGINEERING HIRING MANAGER making the FINAL hiring call after a
+technical interview. You have the full picture: the five dimension scores + evidence, the skill breakdown,
+strengths, concerns, behavioral analysis, integrity signals, and the full transcript. Recruiters rely on
+this to make or kill an offer, so be precise, accountable, and grounded in the actual evidence.
 
-Map your judgment to the DIMENSION SCORES you were given:
-1. JD Fit (30%) — maps to JD Knowledge
-2. Problem Solving (25%) — maps to Problem Solving
-3. Resume/Experience Credibility (20%) — maps to Experience/Resume Credibility
-4. Communication (15%) — maps to Communication
-5. Ownership (10%) — maps to Ownership
+════════════════════════════════════════════════════════════════════════════
+HOW TO SCORE — HOLISTIC JUDGMENT, NOT A FORMULA
+════════════════════════════════════════════════════════════════════════════
+YOU determine the final 0-100 score through holistic reasoning across ALL the signals — the way an
+experienced hiring manager weighs strong and weak evidence rather than averaging a spreadsheet. Real
+hiring judgment combines the structured evidence with reasoning; it is not a fixed weighted sum.
 
-Score based ONLY on the actual evidence in front of you — do not default to a middling number out of
-caution, and do not push toward the extremes to "spread things out" either. A candidate who is genuinely
-average — solid in some areas, weak in others, unremarkable overall — should score in the middle of the
-range; that is a correct score, not a failure to differentiate. Reserve high scores for evidence of
-genuinely strong, well-rounded performance, and low scores for evidence of genuinely weak or evasive
-performance. The goal is an accurate score for THIS candidate, not an even distribution across candidates.
+A computed weighted score MAY be provided as ONE reference data point. Treat it as a sanity check, NOT as
+an anchor you must stay within — you are free to score above or below it when the evidence justifies it
+(e.g. one disqualifying gap in a role-critical skill should pull the score down even if the average looks
+fine; exceptional depth in what matters most can pull it up). Explain any large divergence in your reasoning.
 
+Weigh the evidence with judgment:
+- What matters MOST for THIS role weighs more — a critical gap in a core requirement outweighs strength in
+  a peripheral one.
+- A real integrity flag (contradictions, confirmed answer-integrity concern) or a communication breakdown
+  is a serious drag on the score, not a minor deduction.
+- Consistency across dimensions and skills raises confidence; a spiky, contradictory profile lowers it.
 
-SCORE CALIBRATION:
-0-30: Major gaps in basics. Cannot perform the role.
-31-50: Surface-level knowledge only. High ramp-up cost. Significant risk.
-51-65: Some competence but key gaps. Hire only for junior/support roles with mentorship.
-66-79: Solid candidate. Some depth missing but capable. Hold if senior role, hire if junior.
-80-89: Strong performer. Can contribute immediately. Minor gaps acceptable.
-90-100: Exceptional. Exceeds bar for the role.
+Score ONLY on the actual evidence. Do not default to a safe middling number, and do not push to extremes to
+differentiate. A genuinely average candidate belongs in the middle; reserve high scores for genuinely strong,
+well-rounded evidence and low scores for genuinely weak or evasive performance. Use the FULL range. The goal
+is an accurate score for THIS candidate.
 
+SCORE CALIBRATION (bands, for reference — your reasoning sets the exact number):
+  0-30:   Major gaps in basics. Cannot perform the role.
+  31-50:  Surface-level only. High ramp-up cost. Significant risk.
+  51-65:  Some competence but key gaps. Junior/support only, with mentorship.
+  66-79:  Solid. Some depth missing but capable.
+  80-89:  Strong performer. Can contribute immediately. Minor gaps acceptable.
+  90-100: Exceptional. Clearly exceeds the bar.
 
-DECISION RULES:
-- "Hire": score >= 70 AND no critical gaps in role-required skills.
-- "Hold": score 50-69 OR strong in some areas but missing a key requirement.
-- "Reject": score < 50 OR demonstrated inability in core role requirements.
+DECISION — choose one, consistent with your score and the evidence:
+- "Hire":  strong, well-rounded evidence and no critical gap in a role-required skill. (For a genuinely
+  standout candidate, say so explicitly in the justification — e.g. "a strong hire" — but still output "Hire".)
+- "Hold":  real competence but a key requirement is unproven or a material concern needs a second look.
+- "Reject": a disqualifying gap or demonstrated inability in core role requirements.
 
-JUSTIFICATION — Write 3 sharp bullet points starting with "-":
-- Bullet 1: The single strongest positive signal from the entire interview. Name the exact topic, what they said or did, and why it matters for this role.
-- Bullet 2: The single biggest gap, risk, or concern. Name the specific moment where they failed or fell short. Be blunt.
-- Bullet 3: The final verdict sentence. State the decision clearly, name the key reason, and what should happen next (move forward, hold for X reason, reject because Y).
-No score numbers. No hedging. No generic language. Every sentence must be specific to this candidate's actual interview performance.
+JUSTIFICATION — write a SHARP 2-LINE NOTE (exactly two sentences, no bullets, no dashes):
+- Line 1 — WHY THIS SCORE: the decisive evidence that set the number — the one or two things that most moved
+  it up or down. This line alone must make the score self-explanatory without reading the rest of the report.
+- Line 2 — WHY THIS DECISION: why this candidate is a strong hire / hire / hold / reject specifically — the
+  single reason that lands the decision tier, blunt and concrete.
+Both lines specific to THIS candidate's actual performance. No hedging, no generic language, no bullet
+characters, no score numbers in the text. Two sentences, nothing more.
 
 OUTPUT ONLY valid JSON matching the provided schema EXACTLY. No markdown fences."""
 
@@ -1289,7 +1468,7 @@ _VERDICT_JSON_SCHEMA = {
             "properties": {
                 "decision":      {"type": "string", "enum": ["Hire", "Hold", "Reject"]},
                 "score":         {"type": "integer", "description": "Holistic 0-100 score based on the entire interview."},
-                "justification": {"type": "string", "description": "Concise, evidence-backed justification paragraph."}
+                "justification": {"type": "string", "description": "Sharp 2-sentence note: line 1 why this score, line 2 why this decision tier."}
             },
             "required": ["decision", "score", "justification"],
             "additionalProperties": False,
@@ -1511,7 +1690,6 @@ async def _node_llm_calls(state: ReportState) -> dict:
     job_title        = state.get("job_title", "")
     org_id           = state.get("org_id") or ""
     app_id           = state.get("app_id", "")
-    integrity_result = state["integrity_result"]
     topic_records    = state.get("topic_records") or []
     behavioral_signals = state.get("behavioral_signals", [])
     transcript_lines = state.get("transcript_lines", [])
@@ -1522,13 +1700,16 @@ async def _node_llm_calls(state: ReportState) -> dict:
     lines_to_use  = transcript_lines[4:] if len(transcript_lines) > 4 else transcript_lines
     transcript_text = truncate_to_tokens("\n".join(lines_to_use), 5000)
     resume_context = _build_resume_claims_block(state.get("resume_json") or {})
+    # Inputs are labeled by which dimension they are authoritative for, so the model
+    # honors the per-dimension input scoping in _EVAL_SYSTEM (ps/cm/od use transcript
+    # only; jk adds the JD; ec adds the resume). Integrity/behavioral flags are NOT
+    # fed here on purpose — they are their own report sections and must not leak into
+    # the five competency scores.
     eval_user = (
-        f"Role: {job_title}\n"
-        f"JD Context: {state['jd_context']}\n"
-        f"CANDIDATE RESUME (ground truth for Resume Credibility dimension):\n{resume_context}\n\n"
-        f"Integrity Score: {integrity_result['score']}/100 ({integrity_result['band']})\n"
-        f"Behavioral flags: {state['signal_context']}\n\n"
-        f"Full Interview Transcript:\n{transcript_text}"
+        f"ROLE TITLE: {job_title}\n\n"
+        f"[USE FOR jk — JD Knowledge ONLY]\n{state['jd_context']}\n\n"
+        f"[USE FOR ec — Resume Credibility ONLY] CANDIDATE RESUME CLAIMS:\n{resume_context}\n\n"
+        f"[USE FOR ALL DIMENSIONS] FULL INTERVIEW TRANSCRIPT:\n{transcript_text}"
     )
 
     # Build skills user prompt from topic_records, enriched with each topic's
@@ -1552,8 +1733,16 @@ async def _node_llm_calls(state: ReportState) -> dict:
             f"[TOPIC {i}] {rec.get('topic', '')}\n{turns_block}\n"
         )
     skills_system = _SKILLS_FROM_RECORDS_SYSTEM
+    # The [TOPIC N] blocks below are the interview's RUNNING ORDER, not your output
+    # categories — the prompt requires merging evidence for the same skill across topics.
+    _skills_header = (
+        f"Role: {job_title}\n\n"
+        "The interview turns below are grouped by TOPIC in the order they were asked. Topics are NOT your "
+        "skill categories — identify the real skills first, then pull evidence for each from wherever it "
+        "appears across these topics.\n\n"
+    )
     skills_user = (
-        f"Role: {job_title}\n\n" + "\n".join(records_lines)
+        _skills_header + "\n".join(records_lines)
         if records_lines else f"Role: {job_title}\n\nNo interview topics found."
     )
     logger.info("[REPORT] Skills: topic_records path (%d topics)", len(topic_records))
@@ -1595,8 +1784,10 @@ async def _node_llm_calls(state: ReportState) -> dict:
             _llm.call(LLMCallSpec(
                 system=_EVAL_SYSTEM,
                 user=eval_user,
-                max_tokens=1100,
-                timeout=55.0,
+                # Higher budget: each of the 5 dimensions now emits reasoning ("r")
+                # before its score, plus evidence and strengths/weaknesses.
+                max_tokens=2200,
+                timeout=75.0,
                 response_format=_EVAL_JSON_SCHEMA,
                 call_type="report_eval",
                 org_id=org_id,
@@ -1606,8 +1797,11 @@ async def _node_llm_calls(state: ReportState) -> dict:
             _llm.call(LLMCallSpec(
                 system=skills_system,
                 user=skills_user,
-                max_tokens=700,
-                timeout=45.0,
+                # Evidence is now capped at 2 sentences per skill (was 4-6), so 900
+                # comfortably covers 5 categories with headroom vs the 700 that
+                # truncated mid-JSON when evidence was longer.
+                max_tokens=900,
+                timeout=55.0,
                 response_format=_SKILLS_JSON_SCHEMA,
                 call_type="report_skills",
                 org_id=org_id,
@@ -1694,7 +1888,7 @@ async def _node_llm_calls(state: ReportState) -> dict:
         eval_result.jd_knowledge.score, eval_result.problem_solving.score,
         eval_result.experience_credibility.score, eval_result.communication.score,
         eval_result.ownership.score, len(skills_result.skills),
-        len(behavioral_result.get("points", [])),
+        len(behavioral_result.get("topics", [])),
     )
     return {
         "eval_result":        eval_result,
@@ -1718,7 +1912,7 @@ async def _node_assemble(state: ReportState) -> dict:
     eval_result      = state["eval_result"]
     skills_result    = state.get("skills_result") or LLMSkillsResponse()
     integrity_result = state["integrity_result"]
-    behavioral_analysis = state.get("behavioral_analysis") or {"points": []}
+    behavioral_analysis = state.get("behavioral_analysis") or {"topics": [], "points": []}
     behavioral_signals  = state.get("behavioral_signals", [])
     answer_integrity_result = state.get("answer_integrity_result") or AnswerIntegrityAnalyzer._empty_result()
     integrity_signals_analysis = state.get("integrity_narratives") or {}
@@ -1794,7 +1988,9 @@ async def _node_assemble(state: ReportState) -> dict:
     # so keeping a second copy here was pure duplication risk with no reader.
     signal_analysis = {
         "behavioral_signals": behavioral_signals,
-        "behavioral_signals_analysis": behavioral_analysis.get("points", []),
+        # {topic, bullets}[] -- matches SignalAnalysisPanelCompact's expected shape
+        # in interview-report-sreevaai.tsx (topic label -> short collapsible bullets).
+        "behavioral_signals_analysis": behavioral_analysis.get("topics", []),
         "integrity_analysis": {
             "narratives": integrity_signals_analysis,
             "answer_integrity": {
@@ -1844,7 +2040,8 @@ async def _node_assemble(state: ReportState) -> dict:
                    SET "aiScoreBreakdown"  = $1,
                        "aiSkillRatings"    = $2,
                        "proctoringAnalysis" = $3,
-                       "aiInterviewSummary" = $4
+                       "aiInterviewSummary" = $4,
+                       "interviewUpdatedAt" = NOW()
                    WHERE "applicationId"  = $5""",
                 json.dumps(score_breakdown_report),
                 json.dumps(skill_ratings_list),
@@ -2069,8 +2266,10 @@ async def generate_interview_summary(
         f"Role: {job_title}\n"
         f"Integrity: {integrity_band} ({integrity_score}/100)\n"
         f"Behavioral signals: {signal_summary}\n"
-        f"COMPUTED WEIGHTED SCORE: {computed_overall if computed_overall is not None else 'Not available'}/100 "
-        f"(deterministic weighted average of the dimension scores below — use this as your anchor point)\n\n"
+        f"REFERENCE WEIGHTED SCORE: {computed_overall if computed_overall is not None else 'Not available'}/100 "
+        f"(a deterministic weighted average of the dimension scores, provided as ONE reference data point "
+        f"only — NOT an anchor. The verdict determines the final score through holistic judgment and may "
+        f"diverge from this when the evidence justifies it.)\n\n"
         f"DIMENSION SCORES + EVIDENCE:\n{dimension_block}\n\n"
         f"SKILL BREAKDOWN:\n{skill_block}\n\n"
         f"STRENGTHS OBSERVED:\n{strengths_block}\n\n"
@@ -2146,17 +2345,49 @@ async def generate_interview_summary(
             # Fallback if the LLM didn't return valid JSON
             verdict_parsed = {"decision": "Hold", "score": 50, "justification": verdict_text.strip()}
 
+        # The verdict LLM's score is now AUTHORITATIVE for the displayed overall fit.
+        # generate_interview_report wrote aiScoreBreakdown.overall from the deterministic
+        # weighted formula earlier; here we overwrite it with the verdict's holistic score
+        # so the number recruiters see is the hiring-manager judgment, not the formula.
+        # The formula still runs and is passed to the verdict as a reference input only.
+        _raw_verdict_score = verdict_parsed.get("score")
+        _verdict_overall: int | None = None
+        if _raw_verdict_score is not None:
+            try:
+                _verdict_overall = max(0, min(100, round(float(_raw_verdict_score))))
+            except (TypeError, ValueError):
+                _verdict_overall = None
+
         from interview.agent_persistence import DatabasePool
         pool = await DatabasePool.get()
         async with pool.acquire() as conn:
             await conn.execute(
                 """UPDATE "Interview"
-                   SET "aiInterviewSummary" = COALESCE("aiInterviewSummary", '{}') || $1::jsonb
+                   SET "aiInterviewSummary" = COALESCE("aiInterviewSummary", '{}') || $1::jsonb,
+                       "interviewUpdatedAt" = NOW()
                    WHERE "applicationId"  = $2""",
                 json.dumps({"summary": summary_text, "decision_note": verdict_parsed}),
                 app_id,
             )
-        logger.info("[SUMMARY] Written summary + verdict for %s", app_id)
+            # Overwrite the stored overall with the authoritative verdict score.
+            # jsonb_set only touches the "overall" key; the dimension scores, integrity,
+            # and skills already written stay intact. Skipped if the verdict gave no
+            # usable score (keeps the formula value as a safe fallback).
+            if _verdict_overall is not None:
+                await conn.execute(
+                    """UPDATE "Interview"
+                       SET "aiScoreBreakdown" = jsonb_set(
+                             COALESCE("aiScoreBreakdown", '{}')::jsonb,
+                             '{overall}', $1::jsonb, true),
+                           "interviewUpdatedAt" = NOW()
+                       WHERE "applicationId" = $2""",
+                    json.dumps(_verdict_overall),
+                    app_id,
+                )
+        logger.info(
+            "[SUMMARY] Written summary + verdict for %s (authoritative overall=%s)",
+            app_id, _verdict_overall,
+        )
 
     except asyncio.TimeoutError:
         logger.warning("[SUMMARY] Timed out for %s", app_id)

@@ -264,6 +264,33 @@ const groupedProctoringSignals = rawProctoringEvents.reduce((acc: any[], ev: any
         });
         return acc;
     }, []);
+    // Always surface the answer-integrity read as its own row, even when it did NOT
+    // cross the flag threshold -- a "we checked, this reads as human" result is a
+    // real signal worth showing, not just silence. Backend only appends a
+    // proctoringEvents entry when flagged, so build the clean-case row here from
+    // the always-present verdict in proctoringAnalysis.integrity_analysis. No score
+    // shown -- plain sentences only, and skipped entirely if a flagged event
+    // already produced a row above (avoid duplicating it).
+    const answerIntegrityVerdict = interviewReportData?.signal_analysis?.integrity_analysis?.answer_integrity;
+    if (
+        answerIntegrityVerdict?.enabled &&
+        !answerIntegrityVerdict?.flagged &&
+        !groupedProctoringSignals.some((row: any) => row.key === "answer_integrity")
+    ) {
+        const sentences = [
+            String(answerIntegrityVerdict.phrasing_reason || "").trim(),
+            String(answerIntegrityVerdict.consistency_reason || "").trim(),
+        ].filter(Boolean);
+        groupedProctoringSignals.push({
+            key: "answer_integrity",
+            label: "answer integrity",
+            count: 1,
+            severity: "low",
+            aiPhrasingFlagged: false,
+            contradictionFlagged: false,
+            verdict: sentences.length ? sentences : ["Nothing in the transcript suggested read/AI-generated answers or contradicted claims — the responses read as the candidate's own, live answers."],
+        });
+    }
     // Parse org-enabled proctoring signal keys (from super-admin config)
     const enabledProctoringSignals: Set<string> = (() => {
         const raw = adminOrg?.proctoringSignals;
