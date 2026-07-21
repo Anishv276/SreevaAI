@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
     Mic, MicOff, Video, VideoOff, Camera, ArrowRight, Loader2, CheckCircle2, AlertCircle,
-    Clock, Code2, MessageSquare, Zap, Shield, Volume2, PhoneOff
+    Clock, Code2, MessageSquare, Zap, Shield, Volume2, PhoneOff, Monitor, Languages, User
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -244,22 +244,22 @@ export default function DemoPage() {
                 {/* Header Text */}
                 <div className="text-center mb-12 animate-in fade-in duration-700">
                     <h1 className="text-4xl sm:text-5xl font-extrabold text-zinc-900 tracking-tight mb-4">
-                        Experience the Interview AI
+                        What does an AI interview actually feel like?
                     </h1>
                     <p className="text-lg text-zinc-500 max-w-xl mx-auto font-medium">
-                        A live 5-minute AI interview. No setup, no resume needed. Just pick a role and start.
+                        Find out in 5 minutes — no resume, no signup, no setup. Just pick a role and go.
                     </p>
                 </div>
 
                 {/* Filter Tabs */}
-                <div className="flex justify-center mb-10 animate-in fade-in duration-700 delay-100">
-                    <div className="inline-flex items-center p-1 bg-white border border-zinc-200 rounded-full shadow-sm">
+                <div className="flex justify-center mb-10 animate-in fade-in duration-700 delay-100 px-2 w-full">
+                    <div className="inline-flex items-center p-1 bg-white border border-zinc-200 rounded-[2rem] sm:rounded-full shadow-sm flex-wrap justify-center max-w-full">
                         {(["ALL", "TECH", "CONVERSATION"] as const).map((tab) => (
                             <button
                                 key={tab}
                                 onClick={() => setFilterTab(tab)}
                                 className={cn(
-                                    "px-6 py-2 rounded-full text-sm font-semibold transition-all duration-300",
+                                    "px-4 sm:px-6 py-2 rounded-full text-xs sm:text-sm font-semibold transition-all duration-300 whitespace-nowrap m-0.5",
                                     filterTab === tab 
                                         ? "bg-violet-600 text-white shadow-md shadow-violet-500/20" 
                                         : "text-zinc-500 hover:text-zinc-900"
@@ -294,7 +294,7 @@ export default function DemoPage() {
                                             key={t.id}
                                             onClick={() => { setSelectedTemplate(t); setPhase("details"); }}
                                             className={cn(
-                                                "group relative flex flex-col text-left w-full bg-white rounded-[24px] p-7 transition-all duration-300 border border-zinc-200 overflow-hidden",
+                                                "group relative flex flex-col text-left w-full bg-white rounded-[24px] p-5 sm:p-7 transition-all duration-300 border border-zinc-200 overflow-hidden",
                                                 t.mode === "TECH" 
                                                     ? "hover:border-violet-500/40 hover:shadow-[0_20px_40px_-15px_rgba(124,58,237,0.12)]" 
                                                     : "hover:border-cyan-500/40 hover:shadow-[0_20px_40px_-15px_rgba(6,182,212,0.12)]"
@@ -307,69 +307,64 @@ export default function DemoPage() {
                                                 t.mode === "TECH" ? "bg-violet-500/20" : "bg-cyan-500/20"
                                             )} />
 
-                                            <div className="relative z-10 w-full flex flex-col h-full">
-                                                {/* Top Tag & Indicator */}
-                                                <div className="flex justify-between items-center w-full mb-8">
-                                                    <span className={cn(
-                                                        "text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full border bg-white/50 backdrop-blur-sm",
-                                                        t.mode === "TECH" ? "text-violet-700 border-violet-200" : "text-cyan-700 border-cyan-200"
+                                            <div className="relative z-10 w-full flex flex-col h-full items-center text-center pt-10">
+                                                {/* Top-center Label */}
+                                                <div className="absolute -top-3 left-0 w-full flex justify-center">
+                                                    <div className={cn(
+                                                        "px-4 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border bg-transparent backdrop-blur-sm",
+                                                        t.mode === "TECH" ? "text-violet-600 border-violet-200" : "text-cyan-600 border-cyan-200"
                                                     )}>
                                                         {t.mode === "TECH" ? "Technical" : "Conversational"}
+                                                    </div>
+                                                </div>
+
+                                                {/* Domain & Role */}
+                                                <h3 className="text-xl font-bold text-zinc-900 mt-2 mb-1">
+                                                    {t.title}
+                                                </h3>
+                                                <p className="text-sm font-medium text-zinc-600 mb-4 line-clamp-1">
+                                                    {t.roleTitle}
+                                                </p>
+
+                                                {/* Skills */}
+                                                <div className="flex items-center justify-center gap-2 mb-4">
+                                                    <span className="px-3 py-1 rounded-full border border-zinc-200 text-[11px] text-zinc-600 bg-white shadow-sm">
+                                                        {t.mode === "TECH" ? "Python" : "Communication"}
                                                     </span>
-                                                    
-                                                    {/* Elegant pulsing dot indicator */}
-                                                    <div className={cn(
-                                                        "h-8 w-8 rounded-full flex items-center justify-center border",
-                                                        t.mode === "TECH" ? "bg-violet-50/50 border-violet-100 text-violet-500" : "bg-cyan-50/50 border-cyan-100 text-cyan-500"
-                                                    )}>
-                                                        <div className="w-1.5 h-1.5 rounded-full bg-current animate-pulse shadow-sm" />
+                                                    <span className="px-3 py-1 rounded-full border border-zinc-200 text-[11px] text-zinc-600 bg-white shadow-sm">
+                                                        AI
+                                                    </span>
+                                                </div>
+
+                                                {/* Character Profile */}
+                                                <div className="flex items-center justify-center gap-2 mb-2">
+                                                    <div className="w-6 h-6 rounded-full border border-zinc-200 overflow-hidden bg-zinc-100 flex items-center justify-center">
+                                                        <User className="w-3.5 h-3.5 text-zinc-500" />
+                                                    </div>
+                                                    <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">
+                                                        Ishitha
+                                                    </span>
+                                                </div>
+
+                                                {/* Spacer to push bottom section down */}
+                                                <div className="flex-grow flex flex-col justify-center items-center py-2"></div>
+
+                                                {/* Bottom Info Row */}
+                                                <div className="w-full flex justify-center items-center gap-6 text-[11px] text-zinc-500 font-medium mb-5 px-1">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <Clock className="w-3.5 h-3.5" />
+                                                        <span>5 min</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <Languages className="w-3.5 h-3.5" />
+                                                        <span>Indian English</span>
                                                     </div>
                                                 </div>
 
-                                                {/* Content */}
-                                                <div className="mb-6 flex-grow">
-                                                    <h3 className={cn(
-                                                        "text-2xl font-bold text-zinc-900 tracking-tight mb-2 transition-colors duration-300",
-                                                        t.mode === "TECH" ? "group-hover:text-violet-700" : "group-hover:text-cyan-700"
-                                                    )}>
-                                                        {t.title}
-                                                    </h3>
-                                                    <p className="text-[13px] leading-relaxed font-medium text-zinc-500 line-clamp-2 pr-4">
-                                                        {t.roleTitle}
-                                                    </p>
-                                                </div>
-
-                                                <div className={cn(
-                                                    "w-full h-px bg-zinc-100 mb-6 transition-colors duration-300",
-                                                    t.mode === "TECH" ? "group-hover:bg-violet-50" : "group-hover:bg-cyan-50"
-                                                )} />
-
-                                                {/* Bottom Row */}
-                                                <div className="w-full flex items-center justify-between">
-                                                    <div className="flex items-center gap-4">
-                                                        <div className="flex items-center gap-1.5">
-                                                            <span className={cn(
-                                                                "w-1.5 h-1.5 rounded-full bg-zinc-300 transition-colors duration-300",
-                                                                t.mode === "TECH" ? "group-hover:bg-violet-400" : "group-hover:bg-cyan-400"
-                                                            )} />
-                                                            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">5 Min</span>
-                                                        </div>
-                                                        <div className="flex items-center gap-1.5">
-                                                            <span className={cn(
-                                                                "w-1.5 h-1.5 rounded-full bg-zinc-300 transition-colors duration-300",
-                                                                t.mode === "TECH" ? "group-hover:bg-violet-400" : "group-hover:bg-cyan-400"
-                                                            )} />
-                                                            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">Voice</span>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className={cn(
-                                                        "h-9 px-4 rounded-full text-xs font-bold text-white bg-zinc-900 flex items-center justify-center gap-1.5 transition-all duration-300 shadow-sm group-hover:shadow-md",
-                                                        t.mode === "TECH" 
-                                                            ? "group-hover:bg-violet-600 group-hover:shadow-violet-500/25" 
-                                                            : "group-hover:bg-cyan-600 group-hover:shadow-cyan-500/25"
-                                                    )}>
-                                                        Start <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                                                {/* Start Button */}
+                                                <div className="w-full">
+                                                    <div className="w-full py-3 rounded-[14px] text-sm font-bold text-white bg-[#222222] flex items-center justify-center gap-2 transition-all duration-300 shadow-sm group-hover:bg-[#111111] group-hover:shadow-md">
+                                                        Try Interview <ArrowRight className="h-4 w-4" />
                                                     </div>
                                                 </div>
                                             </div>

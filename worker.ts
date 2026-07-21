@@ -1780,12 +1780,12 @@ if (isQueueEnabled("demo-brief-generation")) {
       const path = await import("path");
       const scriptPath = path.resolve(
         __dirname,
-        "../../livekit-python-agent/scripts/generate_demo_brief.py"
+        "livekit-python-agent/scripts/generate_demo_brief.py"
       );
       const jdB64 = Buffer.from(jdText, "utf8").toString("base64");
       const rawResult: Record<string, any> = await new Promise((resolve, reject) => {
         const py = spawn(
-          process.env.PYTHON_BIN || "python3",
+          getPythonExecutable(),
           [scriptPath, roleTitle || "", mode || "TECH", jdB64],
           { env: { ...process.env }, timeout: 120_000 }
         );
