@@ -284,7 +284,7 @@ export default function DemoPage() {
                         </div>
                     ) : (
                         <div className="max-w-5xl mx-auto">
-                            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                            <div className="flex flex-wrap justify-center gap-6">
                                 {filteredTemplates.map((t, i) => {
                                     return (
                                         <motion.button
@@ -294,7 +294,7 @@ export default function DemoPage() {
                                             key={t.id}
                                             onClick={() => { setSelectedTemplate(t); setPhase("details"); }}
                                             className={cn(
-                                                "group relative flex flex-col text-left w-full bg-white rounded-[24px] p-5 sm:p-7 transition-all duration-300 border border-zinc-200 overflow-hidden",
+                                                "group relative flex flex-col text-left w-full min-w-0 max-w-[360px] bg-white rounded-[24px] p-5 sm:p-7 transition-all duration-300 border border-zinc-200 overflow-hidden",
                                                 t.mode === "TECH" 
                                                     ? "hover:border-violet-500/40 hover:shadow-[0_20px_40px_-15px_rgba(124,58,237,0.12)]" 
                                                     : "hover:border-cyan-500/40 hover:shadow-[0_20px_40px_-15px_rgba(6,182,212,0.12)]"
