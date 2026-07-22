@@ -11,6 +11,8 @@ from interview.tech.scoring import (
 )
 from interview.tech.probe import (
     SIGNAL_PROBES,
+    QUESTION_GENERATION_SYSTEM,
+    CORE_SKILL_QUESTION_SYSTEM,
     get_probe_context,
     get_reaction_hint,
 )
@@ -46,6 +48,8 @@ __all__ = [
     "RESPONSE_SIGNALS",
     "SIGNAL_DEFINITIONS",
     "SIGNAL_PROBES",
+    "QUESTION_GENERATION_SYSTEM",
+    "CORE_SKILL_QUESTION_SYSTEM",
     "get_probe_context",
     "get_reaction_hint",
     "TopicState",

@@ -572,6 +572,85 @@ final message you produce must contain nothing except what Ishitha would actuall
 """
 
 
+# ---------------------------------------------------------------------------
+# Core skill question generator -- TECH INTERVIEWS ONLY.
+# Generates a structured 6-item question set for a given skill × band.
+#
+# NOT used for real-time follow-up (that is QUESTION_GENERATION_SYSTEM above).
+# This is an OFFLINE / pre-interview call: for each priority skill extracted
+# by the brief pipeline, call the LLM once with this system prompt to produce
+# the full question set for that skill before the interview begins.
+#
+# The six sections deliberately avoid any "tell me about a project" framing —
+# every question stands alone as a cold-reasoning prompt the candidate cannot
+# prep for by rehearsing their resume.
+# ---------------------------------------------------------------------------
+CORE_SKILL_QUESTION_SYSTEM = """\
+You are generating the CORE QUESTION SET for a technical interview skill, testing actual
+capability — not project history, not resume claims, not "tell me about a time you used X."
+The candidate should not be able to prep for these by rehearsing their resume; they must
+reason in the moment.
+
+INPUT: SKILL = "{skill}"  |  BAND = "{band}"  (fresher / mid / experienced / senior)
+
+Generate exactly SIX items, each testing a different layer of real understanding of {skill}.
+Do not ask about the candidate's past projects, teams, or resume in ANY of the six — every
+question must be answerable purely from knowing {skill} itself, cold.
+
+1. FUNDAMENTALS
+   Tests whether a basic distinction or definition is actually understood, not memorized.
+   Pick two concepts commonly confused or misused within {skill}. Ask for the difference AND
+   a concrete case where getting it wrong causes a real bug/failure — not just "define X."
+
+2. CORE_MECHANICS
+   Tests "how does this actually work under the hood," not "what is this called."
+   Pick one internal mechanism of {skill} that's easy to name but hard to actually explain
+   (e.g. the thing candidates can say the keyword for but can't trace the behavior of).
+   Ask them to walk through what happens, step by step, or to justify a real design choice
+   tied to that mechanism.
+
+3. PERFORMANCE
+   Present ONE concrete, numbers-bearing scenario (a specific data size, latency, or load
+   figure) where something in {skill} is slow, expensive, or degraded. Ask what they'd check
+   FIRST — not a general "how would you optimize this," which invites a checklist recital
+   instead of real triage instinct.
+
+4. ROBUSTNESS
+   Present a failure-handling or edge-case scenario specific to {skill} (concurrent access,
+   partial failure, malformed input, resource exhaustion — whichever is most native to this
+   skill). Ask how they'd detect or prevent it, not just "what could go wrong."
+
+5. APPLIED (band-scaled)
+   - fresher: a small, self-contained task solvable with fundamentals alone. No systems
+     context assumed.
+   - mid: a task embedded in a realistic single-service/single-project context with one
+     real constraint (time, data size, an existing system to integrate with).
+   - experienced/senior: a task requiring a tradeoff decision at a systems or architectural
+     level — multiple valid approaches, no single correct answer, the point is HOW they
+     reason about the tradeoff.
+   Do not restate the definition of {skill} for context — assume they already have it.
+
+6. PROBE_VARIANT
+   A single follow-up question to use ONLY if the APPLIED answer is shallow, textbook, or
+   evasive. It must escalate one level deeper than APPLIED — either invert a stated
+   assumption, or ask what breaks the approach they just gave.
+
+HARD CONSTRAINTS:
+- Never reference "your project," "your resume," "a time when," or "have you used" — these
+  produce prep-able answers. Every question stands alone as a cold-reasoning prompt.
+- Each of the 6 items must be answerable in under 30 seconds of spoken reasoning — no
+  multi-part compound questions.
+- Do not repeat the same underlying concept across two of the six items, even if phrased
+  differently — each must test a genuinely different layer (definition vs. mechanism vs.
+  diagnosis vs. failure-handling vs. tradeoff).
+- Ground every scenario (performance, robustness, applied) in a plausible real number,
+  constraint, or concrete noun specific to {skill} — never a vague "a large dataset" or
+  "under load" with no anchor.
+- Output ONLY the six questions, labeled by section. No preamble, no explanation of why you
+  chose them.
+"""
+
+
 def get_probe_context(
     *,
     signal: str | None,
