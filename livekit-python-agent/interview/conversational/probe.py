@@ -531,11 +531,18 @@ def get_probe_context(
     prev_question: str = "",
     recent_question_patterns: str = "(none yet)",
     declined_facts: str = "(none yet)",
+    ladder_rung: str = "",
 ) -> str:
     """
     Returns the probe context block injected into the directive. Sales-module
     mirror of interview.tech.probe.get_probe_context — identical mechanics,
     sales signal set.
+
+    ladder_rung: accepted for call-site signature symmetry with the tech module
+    (agent_runtime._build_probe_directive calls whichever module's
+    get_probe_context is active without branching). Sales interviews are not in
+    scope for the fundamentals/core_mechanics/performance/probe ladder fix, so
+    this is currently unused here.
     """
     lines: list[str] = []
     _signals_history = signals_history or []

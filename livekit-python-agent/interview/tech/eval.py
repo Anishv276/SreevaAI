@@ -57,6 +57,19 @@ _BAND_SATURATION: dict[str, dict[str, dict]] = {
 # TopicState -- per-topic saturation tracking
 # ---------------------------------------------------------------------------
 class TopicState:
+    # Fixed difficulty ladder enforced per skill/topic. A topic may not be left
+    # (MOVE_ON to a different skill) until either every rung has been asked once
+    # or the topic is closed early via two consecutive denials (see
+    # register_denial()/should_exit_on_denials() below). Rung order is fixed:
+    # fundamentals -> core_mechanics -> performance -> probe.
+    LADDER: tuple[str, ...] = ("fundamentals", "core_mechanics", "performance", "probe")
+
+    # Signals that count as a "denial" for step-down/exit purposes -- both a flat
+    # pure_denial and a hedge-with-continuation are treated as the candidate not
+    # having the answer at the current rung, so the NEXT question must step down
+    # one rung rather than staying level or escalating.
+    _DENIAL_SIGNALS = frozenset({"pure_denial", "denial_with_continuation"})
+
     def __init__(self, topic_name: str, importance: str, updated_turn: int = 0, band: str = "mid"):
         self.topic_name = topic_name
         self.importance = importance
@@ -85,6 +98,22 @@ class TopicState:
         # on this topic hit DIFFERENT items from the topic's probe_focus list. Persisted
         # so the agent can pick probe_focus[index % len(probe_focus)] each turn.
         self.probe_rotation_index = 0
+
+        # -- Ladder state -----------------------------------------------------
+        # ladder_rung: index into LADDER of the rung the NEXT question should be
+        # asked at. Starts at 0 (fundamentals). Advances by 1 after a non-denial
+        # answer at the current rung; steps back by 1 (never below 0) after a
+        # denial, so the next question on this skill is easier, not harder.
+        self.ladder_rung: int = 0
+        # rungs_covered: which rung INDEXES have had at least one question asked,
+        # regardless of later step-downs -- ladder is "complete" once every rung
+        # in LADDER has been covered at least once.
+        self.rungs_covered: set[int] = set()
+        # consecutive_denials: resets to 0 on any non-denial answer. Two in a row
+        # closes the topic out entirely (see should_exit_on_denials()) instead of
+        # continuing to probe a skill the candidate has twice failed to answer.
+        self.consecutive_denials: int = 0
+        self.closed_on_denials: bool = False
 
     # Weak-exit checkpoints per importance: (turn3_floor, turn5_floor).
     # Uniform 50% floor at turn 3: after 3 probes, if the candidate hasn't reached
@@ -116,6 +145,43 @@ class TopicState:
         # most recent score, so a single zero at turn >= 2 (after prior non-zero
         # answers) incorrectly looked like two-in-a-row and forced a premature MOVE_ON.
         return self.consecutive_zero_scores >= 2
+
+    # -- Ladder progression ------------------------------------------------
+    def current_rung_name(self) -> str:
+        """The ladder rung the NEXT question on this topic must target."""
+        idx = max(0, min(self.ladder_rung, len(self.LADDER) - 1))
+        return self.LADDER[idx]
+
+    def is_ladder_complete(self) -> bool:
+        """True once every rung has been covered at least once, or the topic
+        was closed early by two consecutive denials. This is a hard floor on
+        MOVE_ON: a topic cannot be left to switch to a different skill while
+        this is False, regardless of saturation score."""
+        return self.closed_on_denials or len(self.rungs_covered) >= len(self.LADDER)
+
+    def register_denial(self) -> None:
+        """Call when the just-scored answer's signal is a denial (pure_denial
+        or denial_with_continuation). Steps the ladder DOWN one rung (never
+        below fundamentals) so the next question is easier, not harder, and
+        tracks the consecutive-denial streak used by should_exit_on_denials()."""
+        self.rungs_covered.add(self.ladder_rung)
+        self.consecutive_denials += 1
+        self.ladder_rung = max(0, self.ladder_rung - 1)
+        if self.consecutive_denials >= 2:
+            self.closed_on_denials = True
+
+    def register_progress(self) -> None:
+        """Call when the just-scored answer's signal is NOT a denial. Resets
+        the denial streak and advances the ladder rung by one (capped at the
+        last rung) so the next question moves one step up the ladder."""
+        self.rungs_covered.add(self.ladder_rung)
+        self.consecutive_denials = 0
+        self.ladder_rung = min(len(self.LADDER) - 1, self.ladder_rung + 1)
+
+    def should_exit_on_denials(self) -> bool:
+        """Hard cap: two consecutive denials on this skill closes it out
+        entirely rather than continuing to probe it further."""
+        return self.consecutive_denials >= 2
 
     # Signals where Ishitha is re-asking / rephrasing / redirecting the SAME question
     # instead of asking a new follow-up. The candidate has not yet had a real attempt,
@@ -163,6 +229,15 @@ class TopicState:
         if turn is not None:
             self.updated_turn = turn
 
+        # Ladder step: a denial signal steps the rung DOWN (easier next question)
+        # and counts toward the 2-strike topic close; anything else steps UP.
+        # Skipped for non-followup signals (clarification/rephrase/off_topic) --
+        # those returned above before reaching this point.
+        if signal in self._DENIAL_SIGNALS:
+            self.register_denial()
+        else:
+            self.register_progress()
+
     def to_dict(self) -> dict:
         return {
             "topic_name":          self.topic_name,
@@ -179,6 +254,10 @@ class TopicState:
             "clarification_request_count": self.clarification_request_count,
             "consecutive_zero_scores": self.consecutive_zero_scores,
             "probe_rotation_index": self.probe_rotation_index,
+            "ladder_rung":         self.ladder_rung,
+            "rungs_covered":       sorted(self.rungs_covered),
+            "consecutive_denials": self.consecutive_denials,
+            "closed_on_denials":   self.closed_on_denials,
         }
 
     @classmethod
@@ -198,6 +277,10 @@ class TopicState:
         obj.clarification_request_count = int(d.get("clarification_request_count", 0) or 0)
         obj.consecutive_zero_scores = int(d.get("consecutive_zero_scores", 0) or 0)
         obj.probe_rotation_index = int(d.get("probe_rotation_index", 0) or 0)
+        obj.ladder_rung = int(d.get("ladder_rung", 0) or 0)
+        obj.rungs_covered = set(int(x) for x in (d.get("rungs_covered") or []))
+        obj.consecutive_denials = int(d.get("consecutive_denials", 0) or 0)
+        obj.closed_on_denials = bool(d.get("closed_on_denials", False))
         if "saturation_threshold" in d:
             obj.saturation_threshold = float(d["saturation_threshold"])
         if "base_turn_credit" in d:
@@ -415,6 +498,8 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     is_saturated = current_topic_state.is_saturated if current_topic_state else False
     _weak_exit = current_topic_state is not None and current_topic_state.is_weak_candidate_exit()
     _dry_topic = current_topic_state is not None and current_topic_state.is_dry_topic()
+    _denial_exit = current_topic_state is not None and current_topic_state.should_exit_on_denials()
+    _ladder_complete = current_topic_state is None or current_topic_state.is_ladder_complete()
 
     sat_score = current_topic_state.saturation_score if current_topic_state else 0.0
     sat_threshold = current_topic_state.saturation_threshold if current_topic_state else 0.0
@@ -432,8 +517,14 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     # Response signals (pure_denial, clarification_request, etc) fire immediately with forced_action=True.
     # They override saturation logic entirely -- no need to check dry_topic/weak_exit/saturated.
     # ESCALATION: if clarification_request fires 3+ times in a row, upgrade to MOVE_ON
+    # DENIAL EXIT: two consecutive denials (pure_denial or denial_with_continuation) on
+    # this skill close it out immediately, same priority as the clarification escalation --
+    # both are hard 2-strike rules that override saturation/ladder state entirely.
     _escalate_to_move_on = False
-    if _forced_response_signal and current_topic_state:
+    if _denial_exit:
+        action = "MOVE_ON"
+        logger.info("[DECISION] MOVE_ON reason=denial_exit (2 consecutive denials) turn=%d", p.turn)
+    elif _forced_response_signal and current_topic_state:
         if action == "REPHRASE" and current_topic_state.clarification_request_count >= 3:
             action = "MOVE_ON"
             _escalate_to_move_on = True
@@ -442,6 +533,19 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             logger.info("[DECISION] %s (forced response signal) reason=%s turn=%d", action, raw.get("reason", "forced"), p.turn)
     elif _forced_response_signal:
         logger.info("[DECISION] %s (forced response signal) reason=%s turn=%d", action, raw.get("reason", "forced"), p.turn)
+    elif not _ladder_complete:
+        # Ladder floor (Problem 1 fix): a topic/skill cannot be left for a different
+        # skill until every rung (fundamentals/core_mechanics/performance/probe) has
+        # been asked at least once, or it was closed early via _denial_exit above.
+        # Saturation/weak_exit/dry_topic are secondary signals within a skill and
+        # must not override this floor.
+        action = "PROBE"
+        logger.info(
+            "[DECISION] PROBE (ladder incomplete: rung=%s covered=%d/%d) turn=%d",
+            current_topic_state.current_rung_name() if current_topic_state else "?",
+            len(current_topic_state.rungs_covered) if current_topic_state else 0,
+            len(TopicState.LADDER), p.turn,
+        )
     elif not _escalate_to_move_on and _dry_topic:
         action = "MOVE_ON"
         logger.info("[DECISION] MOVE_ON reason=dry_topic (two consecutive zero scores) turn=%d", p.turn)
@@ -456,8 +560,11 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
 
     if action == "PROBE":
         pct_sat = 100 * min(1.0, sat_score / sat_threshold) if sat_threshold > 0 else 0
-        logger.info("[DECISION] PROBE signal=%s sat=%.0f%% turn=%d",
-                    signal or "none", pct_sat, p.turn)
+        logger.info("[DECISION] PROBE signal=%s sat=%.0f%% rung=%s turn=%d",
+                    signal or "none",
+                    pct_sat,
+                    current_topic_state.current_rung_name() if current_topic_state else "?",
+                    p.turn)
 
     # -- Quality record for DB ------------------------------------------------
     quality_record = {

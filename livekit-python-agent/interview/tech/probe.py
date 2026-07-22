@@ -651,6 +651,30 @@ HARD CONSTRAINTS:
 """
 
 
+_LADDER_RUNG_GUIDANCE: dict[str, str] = {
+    "fundamentals": (
+        "Ask a FUNDAMENTALS question: a basic distinction or definition, testing real "
+        "understanding not memorization. Do not ask about tradeoffs, scale, mechanism "
+        "internals, or architecture at this rung."
+    ),
+    "core_mechanics": (
+        "Ask a CORE_MECHANICS question: how it actually works under the hood, not just "
+        "what it's called. Do not ask a pure definition question -- assume fundamentals "
+        "are already covered."
+    ),
+    "performance": (
+        "Ask a PERFORMANCE question: one concrete, numbers-bearing scenario where "
+        "something is slow, expensive, or degraded. Ask what they'd check FIRST, not a "
+        "general 'how would you optimize this.'"
+    ),
+    "probe": (
+        "Ask a PROBE question: a failure-case, edge-case, or applied scenario one level "
+        "deeper than mechanics/performance -- invert a stated assumption or ask what "
+        "breaks the approach."
+    ),
+}
+
+
 def get_probe_context(
     *,
     signal: str | None,
@@ -664,6 +688,7 @@ def get_probe_context(
     prev_question: str = "",
     recent_question_patterns: str = "(none yet)",
     declined_facts: str = "(none yet)",
+    ladder_rung: str = "",
 ) -> str:
     """
     Returns the probe context block injected into the directive.
@@ -683,6 +708,13 @@ def get_probe_context(
       may maintain across turns (opener+scaffold history, facts the candidate has
       explicitly been unable to produce). Both default to "(none yet)" so existing
       call sites that don't pass them keep working unchanged.
+
+    ladder_rung: the fixed difficulty rung (fundamentals/core_mechanics/performance/
+      probe) the caller's TopicState says the NEXT question on this topic must
+      target (see TopicState.current_rung_name() in eval.py). This is a hard
+      constraint -- it always steps DOWN after a denial and steps UP otherwise,
+      so the question never escalates right after the candidate couldn't answer.
+      Empty string when the caller has no ladder state (e.g. non-topic turns).
     """
     lines: list[str] = []
     _signals_history = signals_history or []
@@ -692,6 +724,16 @@ def get_probe_context(
         and _signals_history[-1] == signal
         and _signals_history[-2] == signal
     )
+
+    _rung_line = ""
+    if ladder_rung:
+        _rung_guidance = _LADDER_RUNG_GUIDANCE.get(ladder_rung, "")
+        _rung_line = (
+            f"\nDIFFICULTY RUNG (HARD CONSTRAINT): {ladder_rung.upper()}\n"
+            f"  {_rung_guidance}\n"
+            f"  This rung is fixed by the interview's ladder tracker, not a suggestion --\n"
+            f"  do not ask a harder or easier question than this rung specifies."
+        )
 
     # Denial override -- always highest priority
     _prev_lower = prev_answer.lower()
@@ -703,13 +745,16 @@ def get_probe_context(
         lines += [
             "SIGNAL: candidate_denial",
             "WHAT: Candidate said they don't know, forgot, or can't explain this.",
-            "GOAL: Accept it cleanly and pivot — don't push on what they can't answer.",
-            "QUESTION TYPE: ACKNOWLEDGEMENT + PIVOT",
+            "GOAL: Accept it cleanly and ask an EASIER question on the SAME skill --",
+            "      never pivot to a different, harder, or more advanced sub-domain.",
+            "QUESTION TYPE: ACKNOWLEDGEMENT + STEP-DOWN",
             "PRINCIPLES:",
-            "  - One short acknowledgement, then redirect to something adjacent they might know.",
-            "  - Give them an easy out — find the related thing they CAN speak to.",
+            "  - One short acknowledgement, then ask a simpler question on the same skill.",
+            "  - Do NOT escalate to a more advanced or more abstract question after a denial.",
+            "  - Give them an easy out — find the related, SIMPLER thing they might know.",
             "VOICE: Warm and low-pressure. 'No worries — what part of this did you actually touch?'",
             "SKIP: Never re-ask the same thing. Never make them feel punished for not knowing.",
+            _rung_line,
         ]
         return "\n".join(lines)
 
@@ -742,6 +787,9 @@ def get_probe_context(
     _band_note = _BAND_OVERLAYS.get(signal or "", {}).get(band)
     if _band_note:
         lines.append(f"BAND ({band}): {_band_note}")
+
+    if _rung_line:
+        lines.append(_rung_line)
 
     if topic_follow_ups <= 1:
         lines += [

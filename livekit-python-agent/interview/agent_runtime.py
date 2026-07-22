@@ -567,6 +567,171 @@ def _classify_candidate_intent(
     )
 
 
+# ---------------------------------------------------------------------------
+# PROBLEM 3 fix: real cross-interview RECENT_QUESTION_PATTERNS state.
+#
+# QUESTION_GENERATION_SYSTEM (interview/tech/probe.py) has always claimed a
+# global scaffold-collision check, but no caller ever built or passed real
+# recent_question_patterns/declined_facts state -- get_probe_context() silently
+# used its "(none yet)" default on every single turn. The functions below build
+# that real state: a rolling opener+construction log, a permanent "no-jargon
+# teach-back" one-shot flag, and rendering helpers for the two prompt blocks.
+# ---------------------------------------------------------------------------
+_NO_JARGON_TEACHBACK_RE = re.compile(
+    r"\b(no jargon|without (?:using )?jargon|explain(?:ing)? .{0,40}to someone (?:who|that)|"
+    r"in plain english|like i'?m five|like i'?m new|to a complete beginner|"
+    r"never touched (?:it|this|that))\b",
+    re.I,
+)
+
+
+def _classify_question_construction(question_text: str, signal: str | None) -> str:
+    """Cheap, deterministic scaffold fingerprint for a spoken question -- used
+    to detect repeated CONSTRUCTIONS (not just repeated literal openers). This
+    is the missing half of the "global RECENT_QUESTION_PATTERNS collision
+    check" QUESTION_GENERATION_SYSTEM's docstring claims exists: previously
+    nothing computed a scaffold at all, so the LLM-facing collision check had
+    no real data to compare against.
+
+    Returns a short label, e.g. "no_jargon_teachback", "first_thing_check",
+    "what_would_you_check", "generic". Not exhaustive -- good enough to catch
+    the exact repeat-offender constructions seen in production transcripts.
+    """
+    q = (question_text or "").strip().lower()
+    if not q:
+        return "empty"
+    if _NO_JARGON_TEACHBACK_RE.search(q):
+        return "no_jargon_teachback"
+    if re.search(r"\bfirst thing you\W+d (check|do|look at)\b", q):
+        return "first_thing_check"
+    if re.search(r"\bwhat would you check\b", q):
+        return "what_would_you_check"
+    if re.search(r"\bwhat('?s| is) the first\b", q):
+        return "whats_the_first"
+    if re.search(r"\bwalk me through\b", q):
+        return "walk_me_through"
+    if re.search(r"\bwhat (broke|breaks|goes wrong)\b", q):
+        return "failure_case"
+    if re.search(r"\bwhy (this|that|.+) over\b", q):
+        return "why_this_over"
+    return "generic"
+
+
+def _extract_question_opener(question_text: str, n_words: int = 4) -> str:
+    words = (question_text or "").strip().split()
+    return " ".join(words[:n_words]).lower()
+
+
+def is_no_jargon_teachback(question_text: str) -> bool:
+    """True if this question is the 'explain it with no jargon / to someone who's
+    never touched it' teach-back construction -- Problem 3's overused fallback."""
+    return bool(_NO_JARGON_TEACHBACK_RE.search((question_text or "").lower()))
+
+
+def record_question_pattern(
+    patterns_log: "collections.deque",
+    question_text: str,
+    signal: str | None,
+) -> None:
+    """Append this turn's opener+construction fingerprint to the running
+    RECENT_QUESTION_PATTERNS log. Call once per spoken question, at the same
+    point _asked_questions_log is appended to."""
+    if not (question_text or "").strip():
+        return
+    patterns_log.append({
+        "opener": _extract_question_opener(question_text),
+        "construction": _classify_question_construction(question_text, signal),
+        "signal": signal or "",
+    })
+
+
+def render_recent_question_patterns(patterns_log: "collections.deque") -> str:
+    """Render the running pattern log into the string get_probe_context()
+    injects into QUESTION_GENERATION_SYSTEM's RECENT_QUESTION_PATTERNS block."""
+    if not patterns_log:
+        return "(none yet)"
+    lines = [
+        f'  - opener: "{p["opener"]}..."  scaffold: {p["construction"]}  (fired by: {p["signal"] or "none"})'
+        for p in patterns_log
+    ]
+    return "\n".join(lines)
+
+
+def render_declined_facts(declined_facts_log: list[str]) -> str:
+    if not declined_facts_log:
+        return "(none yet)"
+    return "\n".join(f"  - {f}" for f in declined_facts_log)
+
+
+# ---------------------------------------------------------------------------
+# PROBLEM 4 fix: hard post-generation validator for spoken question turns.
+#
+# QUESTION_GENERATION_SYSTEM has always specified a 25-word / one-'?' / two-
+# sentence cap in prompt text only -- there was no code-level check, so the
+# transcript's violations (2+ sentences of setup, stacked "X? ... Y?" turns)
+# went out unchecked. This validator runs against the actual generated text,
+# not the directive that steered it, and is applied in llm_node() below on
+# ordinary PROBE turns (the free-form spoken-question path) before anything
+# reaches TTS.
+# ---------------------------------------------------------------------------
+def validate_spoken_question(text: str, *, max_words: int = 25) -> list[str]:
+    """Returns a list of violation reasons (empty list = passes). Pure/sync so
+    it's trivially unit-testable without any LLM or audio dependency."""
+    violations: list[str] = []
+    stripped = (text or "").strip()
+    if not stripped or stripped == "NO_FOLLOW_UP_NEEDED":
+        return violations  # sentinel / empty outputs are a valid non-question turn
+
+    word_count = len(stripped.split())
+    if word_count > max_words:
+        violations.append(f"word_count={word_count} exceeds max_words={max_words}")
+
+    q_count = stripped.count("?")
+    if q_count != 1:
+        violations.append(f"question_mark_count={q_count} (must be exactly 1)")
+
+    # Compound "and"/"or" joining two distinct asks. Two shapes to catch:
+    #  (a) content stacked AFTER the (first) '?' -- "X? And what about Y?"
+    #  (b) a second interrogative clause joined by and/or BEFORE the only '?' --
+    #      "What would you consider the biggest risk, and what's the first
+    #      thing you'd check?" -- only one '?' total, so (a) alone misses it.
+    # A plain "and" inside a single non-interrogative clause ("errors climbed
+    # and latency spiked") is NOT a compound ask -- only flag when the segment
+    # after and/or itself starts a new question-shaped clause (a wh-word or
+    # auxiliary-inversion opener).
+    _WH_OPENER_RE = re.compile(
+        r"^(what|who|when|where|why|how|which|do|does|did|is|are|was|were|"
+        r"can|could|would|will|should|have|has)\b",
+        re.I,
+    )
+    first_q_idx = stripped.find("?")
+    if first_q_idx != -1 and first_q_idx < len(stripped) - 1:
+        tail = stripped[first_q_idx + 1:]
+        if re.search(r"\b(and|or)\b", tail, re.I):
+            violations.append("compound question: content stacked after the first '?'")
+    if not any("compound question" in v for v in violations):
+        for m in re.finditer(r"\b(?:and|or)\b\s+(.+)", stripped, re.I):
+            candidate_clause = m.group(1).strip()
+            if _WH_OPENER_RE.match(candidate_clause):
+                violations.append(
+                    "compound question: second interrogative clause joined by and/or "
+                    f"before the question mark ({candidate_clause[:40]!r}...)"
+                )
+                break
+
+    return violations
+
+
+_STRICT_REGEN_SUFFIX = (
+    "\n\n[REGENERATION -- YOUR LAST OUTPUT VIOLATED THE HARD LENGTH/FORMAT CAP]\n"
+    "Your previous attempt broke one of these HARD rules: (1) reaction+question together "
+    "must be <= 25 words total, (2) EXACTLY ONE '?' in the entire output, (3) never stack a "
+    "second question after the first with 'and'/'or'. Rewrite as ONE short reaction beat plus "
+    "ONE single question, well under 25 words, with exactly one '?'. Cut all setup/context -- "
+    "ask the sharpest single thing directly."
+)
+
+
 def _build_probe_directive(
     *,
     signal: Optional[str],
@@ -584,6 +749,9 @@ def _build_probe_directive(
     signals_history: list[str] | None = None,
     probe_rotation_index: int = 0,
     interview_type: str = "tech",
+    ladder_rung: str = "",
+    recent_question_patterns: str = "(none yet)",
+    declined_facts: str = "(none yet)",
 ) -> str:
     """
     Builds the probe directive synchronously — no LLM call.
@@ -596,6 +764,11 @@ def _build_probe_directive(
     consecutive follow-ups on the same topic hit DIFFERENT sub-concepts from the
     topic's probe_focus list — never asking about the same sub-concept twice on
     one topic when other sub-concepts are still un-probed.
+
+    ladder_rung: fixed difficulty rung ("fundamentals"/"core_mechanics"/
+    "performance"/"probe") from TopicState.current_rung_name() -- forwarded
+    verbatim into get_probe_context() so the next question never escalates past
+    what the ladder allows, and steps down after a denial instead of up.
 
     interview_type: routes to interview.tech.probe or interview.conversational.probe
     for the signal-specific probe directive (different signal sets per module).
@@ -662,6 +835,9 @@ def _build_probe_directive(
         signals_history=signals_history or [],
         active_topic=active_topic,
         prev_question=prev_question,
+        recent_question_patterns=recent_question_patterns,
+        declined_facts=declined_facts,
+        ladder_rung=ladder_rung,
     )
 
     # Filler guidance -- classify prev answer intent so Ishitha's reaction is connected.
@@ -1250,6 +1426,11 @@ class InterviewAgent(Agent):
         # the LLM back to the old topic. The MOVE_ON + TOPIC_LOCK system messages are
         # the only context the LLM needs to open a new topic question.
         _ctx_items = getattr(effective_ctx, "items", None)
+        _has_next_turn_directive = any(
+            "[NEXT_TURN_DIRECTIVE" in str(getattr(m, "content", ""))
+            for m in (_ctx_items or [])
+            if getattr(m, "role", "") == "system"
+        )
         _has_moveon = any(
             "[NEXT_TURN_DIRECTIVE" in str(getattr(m, "content", ""))
             and "DECISION: MOVE_ON" in str(getattr(m, "content", ""))
@@ -1280,15 +1461,72 @@ class InterviewAgent(Agent):
         # when OpenAI takes >10s for a long response, causing _llm_inference_task errors.
         if (conn_options.timeout or 0) < 30.0:
             conn_options = replace(conn_options, timeout=30.0)
-        async with activity.llm.chat(
-            chat_ctx=effective_ctx,
-            tools=tools,
-            tool_choice=tool_choice,
-            conn_options=conn_options,
-            extra_kwargs={"temperature": turn_temp},
-        ) as stream:
-            async for chunk in stream:
-                yield chunk
+
+        # PROBLEM 4 fix: ordinary PROBE turns (a plain [NEXT_TURN_DIRECTIVE without
+        # DECISION: MOVE_ON) are free-form spoken questions generated live by this
+        # LLM -- QUESTION_GENERATION_SYSTEM's 25-word/one-'?'/no-compound cap was
+        # prompt-text only, never checked in code, which is exactly what the
+        # transcript's violations show. For this turn shape ONLY, buffer the full
+        # text (losing token-level streaming for this one turn) so it can be
+        # validated and regenerated once before anything reaches TTS. Greeting/
+        # warmup/MOVE_ON turns are unaffected -- MOVE_ON already goes through
+        # _generate_move_on_directive's own LLM call and this node just speaks a
+        # directive built from it, not a fresh free-form question.
+        _is_probe_turn = _has_next_turn_directive and not _has_moveon
+        if not _is_probe_turn:
+            async with activity.llm.chat(
+                chat_ctx=effective_ctx,
+                tools=tools,
+                tool_choice=tool_choice,
+                conn_options=conn_options,
+                extra_kwargs={"temperature": turn_temp},
+            ) as stream:
+                async for chunk in stream:
+                    yield chunk
+            return
+
+        async def _generate_full_text(extra_system: str = "") -> tuple[str, list]:
+            _ctx = effective_ctx
+            if extra_system:
+                _ctx = effective_ctx.copy()
+                _ctx.add_message(role="system", content=extra_system)
+            _pieces: list[str] = []
+            _raw_chunks: list = []
+            async with activity.llm.chat(
+                chat_ctx=_ctx,
+                tools=tools,
+                tool_choice=tool_choice,
+                conn_options=conn_options,
+                extra_kwargs={"temperature": turn_temp},
+            ) as stream:
+                async for chunk in stream:
+                    _raw_chunks.append(chunk)
+                    delta = getattr(chunk, "delta", None)
+                    if delta is not None and delta.content:
+                        _pieces.append(delta.content)
+            return "".join(_pieces).strip(), _raw_chunks
+
+        full_text, raw_chunks = await _generate_full_text()
+        if full_text and full_text != "NO_FOLLOW_UP_NEEDED":
+            violations = validate_spoken_question(full_text)
+            if violations:
+                logger.warning(
+                    "[VALIDATOR] PROBE question failed post-generation check: %s | text=%r",
+                    "; ".join(violations), full_text[:200],
+                )
+                full_text, raw_chunks = await _generate_full_text(_STRICT_REGEN_SUFFIX)
+                if full_text and full_text != "NO_FOLLOW_UP_NEEDED":
+                    _revalidation = validate_spoken_question(full_text)
+                    if _revalidation:
+                        logger.warning(
+                            "[VALIDATOR] regeneration STILL failed check: %s | text=%r -- speaking it anyway "
+                            "(hard-cutting further would risk silence; logged for audit)",
+                            "; ".join(_revalidation), full_text[:200],
+                        )
+                    else:
+                        logger.info("[VALIDATOR] regeneration passed on retry")
+        for chunk in raw_chunks:
+            yield chunk
     async def tts_node(self, text, model_settings):
         activity = self._get_activity_or_raise()
         tts_engine = activity.tts
@@ -2567,6 +2805,16 @@ async def entrypoint(ctx: JobContext):
     _topic_states: dict[str, dict] = {}        # TopicState serialized per topic for saturation tracking
     _topic_score_histories: dict[str, list] = {}   # per-topic overall score history (for latency detection)
     _topic_depth_histories: dict[str, list] = {}   # H2 fix: per-topic depth scores for follow_up_collapse
+    # Cross-interview question-construction tracker (RECENT_QUESTION_PATTERNS /
+    # DECLINED_FACTS). QUESTION_GENERATION_SYSTEM has always claimed this collision
+    # check exists, but no caller ever built or threaded real state into
+    # get_probe_context()'s recent_question_patterns/declined_facts params -- they
+    # silently defaulted to the literal string "(none yet)" every single turn.
+    # This is the actual running state, appended to at the same point questions are
+    # recorded into _asked_questions_log (see turn-completion block below).
+    _recent_question_patterns: collections.deque = collections.deque(maxlen=8)  # each: {"opener":str,"construction":str,"signal":str}
+    _declined_facts_log: list[str] = []  # facts the candidate explicitly could not produce (persists all interview)
+    _teach_back_used: bool = False  # explanation_shallow's no-jargon teach-back construction -- at most ONCE per interview, not once per topic (see PROBLEM 3 fix)
     _last_depth_decay_turn: int = -999           # turn when depth_decay last fired; -999 = never
     _last_applied_eval_turn: int = 0             # monotonic guard against stale eval results
     _question_asked_at: float = 0.0
@@ -3813,6 +4061,11 @@ async def entrypoint(ctx: JobContext):
                     _signals_history_this_topic = list(
                         (_new_topic_state_dict or {}).get("signals_fired", []) or []
                     )
+                    # Ladder rung names must match TopicState.LADDER in interview/tech/eval.py
+                    # exactly -- ladder_rung there is an index into that same tuple.
+                    _LADDER_NAMES = ("fundamentals", "core_mechanics", "performance", "probe")
+                    _ladder_rung_idx = max(0, min(int((_new_topic_state_dict or {}).get("ladder_rung", 0) or 0), len(_LADDER_NAMES) - 1))
+                    _ladder_rung_this_turn = _LADDER_NAMES[_ladder_rung_idx]
                     _directive = _build_probe_directive(
                         signal=_eval_signal,
                         signal_reason=_eval_signal_reason,
@@ -3829,7 +4082,25 @@ async def entrypoint(ctx: JobContext):
                         signals_history=_signals_history_this_topic,
                         probe_rotation_index=_rotation_idx,
                         interview_type=interview_type,
+                        ladder_rung=_ladder_rung_this_turn,
+                        recent_question_patterns=render_recent_question_patterns(_recent_question_patterns),
+                        declined_facts=render_declined_facts(_declined_facts_log),
                     )
+                    if _teach_back_used:
+                        # PROBLEM 3 hard cap: the no-jargon teach-back construction may
+                        # fire AT MOST ONCE across the entire interview, not once per
+                        # topic. explanation_shallow's own per-topic pivot (probe.py) only
+                        # knows about repeats on THE SAME topic -- this catches the
+                        # cross-topic reuse the transcript showed (used for list
+                        # mutability, then again for embeddings, attention, retrievers).
+                        _directive += (
+                            "\n\nNO-JARGON TEACH-BACK -- ALREADY USED (HARD BAN):\n"
+                            "The 'explain it with no jargon / to someone who's never touched it' "
+                            "construction has already been used once this interview. Do NOT use it "
+                            "again in any form, regardless of topic. If the probe directive above "
+                            "suggests it, pivot instead to a failure-case, mechanism-collapse, or "
+                            "applied-scenario question that tests the same gap.\n"
+                        )
                     remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
                     chat_ctx.add_message(role="system", content=_directive)
                     _qr["directive_text"] = _directive  # ponytail: debug report needs the literal injected text
@@ -4121,7 +4392,7 @@ async def entrypoint(ctx: JobContext):
         nonlocal turn_count, _last_interviewer_question, _question_pending_timestamp, \
             _candidate_turn_since_last_assistant, warmup_complete, \
             _answer_received_at, _first_interview_question_asked, \
-            _last_question_topic
+            _last_question_topic, _teach_back_used
         try:
             item = event.item
             role = getattr(item, "role", None)
@@ -4292,6 +4563,16 @@ async def entrypoint(ctx: JobContext):
                         # duplicate-question prevention). Skip secondary/soft "general" phases.
                         if _last_question_topic not in ("general", "general conversation", None, ""):
                             _current_topic_questions.append(_last_interviewer_question[:120])
+                        # PROBLEM 3 fix: record the real opener+construction fingerprint so
+                        # RECENT_QUESTION_PATTERNS is no longer permanently "(none yet)", and
+                        # latch the one-shot no-jargon-teachback flag the moment it's actually
+                        # spoken (not just requested by a directive that might get rephrased).
+                        # No signal is threaded in here -- this callback (on_conversation_item_added)
+                        # runs independently of _process_user_conversation_item's local _eval_signal,
+                        # and the construction classifier doesn't need it to do its job.
+                        record_question_pattern(_recent_question_patterns, _last_interviewer_question, None)
+                        if is_no_jargon_teachback(_last_interviewer_question):
+                            _teach_back_used = True
                     # First interview question just fired -- seal the opening move so the LLM
                     # cannot re-ask it. The base system prompt says "Open by asking about X"
                     # which conflicts with PROBE directives on subsequent turns. This message

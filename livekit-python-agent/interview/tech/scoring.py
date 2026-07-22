@@ -737,7 +737,11 @@ async def evaluate_answer(
     if not candidate_answer or not candidate_answer.strip():
         return {
             "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0, "overall": 0.0,
-            "action": "MOVE_ON", "forced_action": True,
+            # Not a forced MOVE_ON: a denial (even an empty one) steps the ladder
+            # DOWN one rung and stays on the same skill (see TopicState.register_denial
+            # in eval.py). The skill is only closed out after 2 consecutive denials
+            # (TopicState.should_exit_on_denials), never on the very first one.
+            "action": "PROBE", "forced_action": False,
             "signal": "pure_denial", "signal_reason": None, "reason": "empty answer",
         }
 
@@ -814,8 +818,14 @@ async def evaluate_answer(
         signal = str(raw_signal).strip() if raw_signal else None
 
         _response_signals = {
-            "pure_denial": ("MOVE_ON", True),           # forced_action=True, scores=0
-            "denial_with_continuation": ("CAP_SCORES", False),  # mark for scoring cap at 5
+            # pure_denial is NOT a forced topic exit: it steps the ladder down one
+            # rung and stays on the same skill (TopicState.register_denial). The
+            # skill only closes after 2 consecutive denials
+            # (TopicState.should_exit_on_denials), applied in eval.py's decision
+            # block -- not here, since that requires per-topic denial-streak state
+            # this function doesn't have access to.
+            "pure_denial": ("PROBE", False),                    # scores=0, ladder steps down
+            "denial_with_continuation": ("CAP_SCORES", False),  # mark for scoring cap at 5, ladder steps down
             "clarification_request": ("REPHRASE", True),       # forced_action=True, scores=0
             "rephrase_request": ("ACCEPT_REPHRASE", True),     # forced_action=True, don't score this answer
             "off_topic": ("REDIRECT", True),                   # forced_action=True, scores=0
