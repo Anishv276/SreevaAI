@@ -193,11 +193,16 @@ the SPECIFIC GAP in this answer. This is NOT a first-match-wins check — it is 
 best-match check. Read the answer, then look at every gate, then pick the gate whose
 trigger pattern is MOST STRONGLY present in the answer.
 
+This is a SKILL-ONLY technical interview: the candidate is never asked about their own
+projects or work history, so gates that only make sense for personal-narrative answers
+(team-vs-personal-ownership language, "give me a real instance of using this") do not
+apply here and are excluded below.
+
 STEP 0 — RESPONSE-LEVEL GATES (G0). Only these are first-match-wins.
 G0 gates describe the SHAPE of the reply itself (denial, clarification ask, off-topic).
 If any G0 gate fires, return that signal immediately. CANDIDATE for this signal.
 
-STEP 1 — CONTENT-LEVEL GATES (G1-G7). NOT first-match-wins.
+STEP 1 — CONTENT-LEVEL GATES (G1-G4). NOT first-match-wins.
 Every content gate is checked. For each one, ask: "How strongly does THIS answer match
 this pattern?" Then pick the gate with the STRONGEST match.
 
@@ -207,24 +212,18 @@ the answer at all. Pick the STRONGEST gate that has NOT already fired on this to
 This is a hard requirement — even if depth_ceiling_hit looks like the "best" fit, if it
 already fired, choose the second-best gate. Every content signal has a real interpretation
 of nearly every answer — find it.
-  - Depth-ceiling-hit already fired? → look for tool_named_not_used, scenario_untested,
-    ownership_ambiguous, explanation_shallow, tech_choice_unjustified, example_evaded.
-  - Scenario_untested already fired? → look for tool_named_not_used, tech_choice_unjustified,
-    ownership_ambiguous, explanation_shallow, depth_ceiling_hit, example_evaded.
-  - Explanation_shallow already fired? → look for tool_named_not_used, tech_choice_unjustified,
-    ownership_ambiguous, scenario_untested, depth_ceiling_hit, example_evaded.
+  - Depth-ceiling-hit already fired? → look for explanation_shallow, tech_choice_unjustified, scenario_untested.
+  - Scenario_untested already fired? → look for explanation_shallow, tech_choice_unjustified, depth_ceiling_hit.
+  - Explanation_shallow already fired? → look for tech_choice_unjustified, scenario_untested, depth_ceiling_hit.
   The point of variety is that a fresh signal produces a fresh probe angle.
   Firing the same signal again produces the same question and wastes a turn.
 
 STEP 3 — REINTERPRET RULE. Because gates overlap, the SAME answer can honestly fit
 multiple content gates. Use the variety rule to break ties:
-  - "I built the whole RAG pipeline" could be explanation_shallow OR scenario_untested
-    OR tool_named_not_used (if 'RAG' is treated as a named tool). Pick the one that
-    HASN'T fired yet.
-  - "We used ChromaDB and it worked well" could be ownership_ambiguous OR
-    tech_choice_unjustified OR tool_named_not_used. Pick the one that hasn't fired yet.
+  - "It's basically a RAG pipeline" could be explanation_shallow OR scenario_untested.
+    Pick the one that HASN'T fired yet.
   - "Chunks become vectors, vectors go into the store" could be scenario_untested OR
-    explanation_shallow OR tool_named_not_used. Pick the one that hasn't fired yet.
+    explanation_shallow. Pick the one that hasn't fired yet.
 Reinterpretation is not cheating — it is picking a different lens on the same gap.
 
 ---- RESPONSE-LEVEL GATES (G0) — check these FIRST ----
@@ -234,26 +233,25 @@ G0a — PURE_DENIAL: STRICT. Fires ONLY for a flat "I don't know / I'm not sure"
       ONLY these phrasings qualify: "I don't know" | "I'm not sure" | "I don't remember" |
       "I have no idea" | "Not sure" | "No idea" — and equivalents that say the SAME thing
       (candidate genuinely doesn't know the answer to the question asked).
-      NOT this — denying experience with a specific tool/tech/thing is NOT pure_denial, even
+      NOT this — denying exposure to a specific tool/tech/concept is NOT pure_denial, even
       standing alone. "No experience with Kubernetes" | "Never used Docker" | "I haven't done
-      DevOps" | "We don't use n8n for that" are about a TOOL/TOPIC, not a genuine "I don't know"
-      — these fall through to G1-G7 content scoring (e.g. tool_named_not_used, off_topic), NOT G0a.
+      DevOps" are about a TOOL/TOPIC, not a genuine "I don't know" — these fall through to
+      G1-G4 content scoring (e.g. depth_ceiling_hit) or off_topic, NOT G0a.
       NOT this if they're saying they didn't understand the QUESTION rather than denying they
       have the answer — "I didn't get you" / "I don't get it" / "I don't understand" are about
       not following the question, not about lacking knowledge. That is G0c, not G0a.
       NOT this if they're checking the connection or whether you can hear them — "Can you hear
       me?" / "Are you there?" is not an attempt to deny knowledge, it's not addressing the
       question at all. That is also G0c, not G0a.
-      EXAMPLE (pure_denial): Q: "How did you decide the lead-scoring criteria?"
-        A: "I don't know, not sure how that was decided." → SIGNAL = pure_denial.
-      EXAMPLE (NOT pure_denial): Q: "How did you decide the lead-scoring criteria?"
-        A: "I haven't used n8n before" or "The client gave the idea, we didn't set anything" →
-        this denies OWNERSHIP/TOOL-FAMILIARITY, not KNOWLEDGE of the answer — falls through
-        to G1-G7 (e.g. ownership_ambiguous, tool_named_not_used), NOT pure_denial.
+      EXAMPLE (pure_denial): Q: "What's the difference between an index and a full scan?"
+        A: "I don't know, not sure how that works." → SIGNAL = pure_denial.
+      EXAMPLE (NOT pure_denial): Q: "How would you decide between these two approaches?"
+        A: "I haven't worked with this before" → this denies EXPOSURE, not KNOWLEDGE of
+        the answer — falls through to G1-G4, NOT pure_denial.
       → YES: SIGNAL = pure_denial. STOP (G0 gates ARE first-match).
 
 G0b — DENIAL_WITH_CONTINUATION: Starts with denial BUT adds substantive content?
-      "...but I built X" | "...however I deployed Y" | "...I tried Z"
+      "...but I think it's related to X" | "...though I'd guess Y" | "...I'd try Z"
       → YES: SIGNAL = denial_with_continuation. STOP.
 
 G0c — CLARIFICATION_REQUEST: Is candidate asking YOU to clarify/rephrase the question,
@@ -270,68 +268,51 @@ G0d — REPHRASE_REQUEST: Is candidate asking to RESTART or correct THEIR OWN an
 
 G0e — OFF_TOPIC: Did candidate answer a COMPLETELY DIFFERENT question — one that has
       NOTHING to do with the topic or question asked?
-      Q: "Kubernetes scaling?" A: "I love React" | Q: "Failed project?" A: "I don't fail"
+      Q: "Kubernetes scaling?" A: "I love React" | Q: "Indexing tradeoffs?" A: "I like Python"
       → YES: SIGNAL = off_topic. STOP.
       NOT this if they attempted to address the topic but gave a vague, shallow, or
-      generic answer — "I built the pipeline, loaders, chunking, retrieval" is ON-TOPIC
-      even if it lacks detail. Vague answers that attempt the question → fall through to
-      G1-G6 (explanation_shallow, tool_named_not_used, scenario_untested, etc).
+      generic answer — a partial technical attempt is ON-TOPIC even if it lacks detail.
+      Vague answers that attempt the question → fall through to G1-G4 (explanation_shallow,
+      scenario_untested, etc).
       NOT this if the signal_reason would be "vague", "lacks detail", "not specific",
       "generic", or similar — those are content-level signal reasons, not off_topic.
       off_topic ONLY fires when the subject matter itself is unrelated to what was asked.
 
-If G0a-G0e = NO: evaluate ALL of G1-G7 and pick the STRONGEST match.
+If G0a-G0e = NO: evaluate ALL of G1-G4 and pick the STRONGEST match.
 
----- CONTENT-LEVEL GATES (G1-G7) — only if no G0 fired ----
+---- CONTENT-LEVEL GATES (G1-G4) — only if no G0 fired ----
 For each gate: rate how strongly the answer matches (strong / weak / not-present).
 DO NOT stop at the first strong match — check every gate, then pick the strongest
 overall that has NOT already fired on this topic (variety rule).
 
-G1 — DEPTH_CEILING_HIT: Did they name a SPECIFIC technical/procedural detail (a tool,
-     a step, a mechanism) AND EXPLICITLY admit they don't know more about it?
+G1 — DEPTH_CEILING_HIT: Did they name a SPECIFIC technical detail (a mechanism, a term,
+     a distinction) AND EXPLICITLY admit they don't know more about it?
      REQUIRES BOTH: (1) real named substance BEFORE the gap AND (2) an explicit
      "I don't know / not sure / no idea / can't recall" acknowledgement about it.
-     "I used FAISS but I don't really have a lot of idea how indexing works" ✓ (both present)
-     "I've used embeddings but I'm not too sure how they're generated internally" ✓
+     "Indexes speed up reads but I don't really know how the internal structure works" ✓
+     "I know embeddings are vectors but I'm not too sure how they're generated" ✓
      NOT this if the answer is just vague, shallow, or generic without an explicit
      "I don't know" admission — vague explanations of a mechanism fall through to
-     G3/G4/G5/G7 (they explained hollowly, they named tools without using them, they
-     gave a textbook flow, etc). "The chunks become vectors and vectors go into store"
-     is NOT depth_ceiling_hit — it's scenario_untested (G7). "I built the pipeline
-     with loaders, chunking, and retrieval" is NOT depth_ceiling_hit — it's
-     explanation_shallow (G3) or scenario_untested (G7) depending on shape.
-     NOT this if the answer is only a bare ownership/effort claim with ZERO specific
-     technical detail — "I did everything on my own" / "I built it all myself" is G3.
+     G2/G3/G4 (hollow explanation, no justification, textbook flow with no friction).
+     "Chunks become vectors and vectors go into a store" is NOT depth_ceiling_hit — it's
+     scenario_untested (G4). A bare claim with zero specific technical detail is G2, not G1.
      G1 requires: real named substance + explicit "I don't know / not sure" about it.
      → YES: SIGNAL = depth_ceiling_hit. CANDIDATE for this signal.
 
-G2 — OWNERSHIP_AMBIGUOUS: Is EVERY action "we/team/they" with NO "I did/decided/built"?
-     "We built the pipeline, the team set up the store, they handled deployment"
-     → YES: SIGNAL = ownership_ambiguous. CANDIDATE for this signal.
-
-G3 — EXPLANATION_SHALLOW: Loud personal claim + hollow explanation, including a bare
-     repeated ownership assertion with no technical detail at all?
-     "I built it all, it's a RAG system" [claims everything, explains nothing]
-     "I did everything on my own" / "I handled everything myself" [claims ownership,
-     names zero tools/steps/mechanisms — this is G3, not depth_ceiling_hit]
+G2 — EXPLANATION_SHALLOW: Confident claim about the skill + hollow explanation with no
+     real mechanism, decision, or internals behind it?
+     "It's basically just a RAG system" [names it, explains nothing about how/why]
+     "Indexes just make things faster" [true but zero mechanism, no internals]
      → YES: SIGNAL = explanation_shallow. CANDIDATE for this signal.
 
-G4 — TOOL_NAMED_NOT_USED: Named a specific tool but ZERO evidence of using it?
-     "ChromaDB, FAISS, Pinecone" [three names, zero usage shown]
-     Usage shown = operational verb: "I trained/stored/queried/deployed X with it"
-     → YES: SIGNAL = tool_named_not_used. CANDIDATE for this signal.
-
-G5 — TECH_CHOICE_UNJUSTIFIED: Used tool (usage shown) BUT never said WHY that one?
-     "I stored embeddings in ChromaDB. It worked fine." [used it, no why]
+G3 — TECH_CHOICE_UNJUSTIFIED: Named a real tradeoff or choice BUT never said WHY one
+     option over the alternative?
+     "You'd use an index here." [states the choice, no reasoning for why it's the right one]
      → YES: SIGNAL = tech_choice_unjustified. CANDIDATE for this signal.
 
-G6 — EXAMPLE_EVADED: Question asked for ONE real past instance, answer gives habit?
-     Q: "Tell me about a time..." A: "Usually I check the data and retrain"
-     → YES: SIGNAL = example_evaded. CANDIDATE for this signal.
-
-G7 — SCENARIO_UNTESTED: Correct textbook flow but ZERO lived friction/edge case?
+G4 — SCENARIO_UNTESTED: Correct textbook flow but ZERO lived friction/edge case/failure mode?
      "Chunks become vectors, vectors go into store, search retrieves results"
-     [Correct but memorized, not practiced]
+     [Correct but memorized, no sense of what breaks or when it goes wrong]
      → YES: SIGNAL = scenario_untested. CANDIDATE for this signal.
 
 Output exactly ONE signal. Never null, never multiple.\
@@ -354,10 +335,16 @@ async def _classify_signal_from_answer(
     Respects the variety rule: banned signals (already fired on this topic) are
     excluded from the candidate set.
     """
+    # Skill-only tech interviews exclude personal-narrative-only signals -- see
+    # the matching exclusion note in _call_signal_classification's _CONTENT_SIGNALS.
+    _ACTIVE_SIGNALS = {
+        name for name in SIGNAL_DEFINITIONS
+        if name not in ("ownership_ambiguous", "example_evaded", "tool_named_not_used")
+    }
     _fired = set(signals_already_fired or [])
-    _remaining = [name for name in SIGNAL_DEFINITIONS if name not in _fired]
+    _remaining = [name for name in _ACTIVE_SIGNALS if name not in _fired]
     if not _remaining:
-        _remaining = list(SIGNAL_DEFINITIONS.keys())
+        _remaining = list(_ACTIVE_SIGNALS)
     _signal_descriptions = "\n".join(
         f'"{name}": {SIGNAL_DEFINITIONS[name]["trigger"]}'
         for name in _remaining
@@ -399,14 +386,13 @@ async def _classify_signal_from_answer(
             reason = SIGNAL_DEFINITIONS[chosen]["trigger"]
         if chosen in _remaining:
             return chosen, reason, _usage
-        if chosen in SIGNAL_DEFINITIONS:
+        if chosen in _ACTIVE_SIGNALS:
             return chosen, reason, _usage
     except Exception as exc:
         logger.warning("[EVAL] _classify_signal_from_answer failed (%s) — rotating fallback", exc)
     # Deterministic rotation across banned/unfired signals -- never always the same one.
     _rotation_order = [
-        "tool_named_not_used", "tech_choice_unjustified", "ownership_ambiguous",
-        "example_evaded", "scenario_untested", "explanation_shallow", "depth_ceiling_hit",
+        "tech_choice_unjustified", "scenario_untested", "explanation_shallow", "depth_ceiling_hit",
     ]
     for name in _rotation_order:
         if name in _remaining:
@@ -597,9 +583,16 @@ async def _call_signal_classification(
 
     Returns (signal, signal_reason, llm_usage_dict).
     """
+    # Skill-only tech interviews never involve the candidate narrating their own
+    # projects/work, so signals that exist purely to catch personal-narrative
+    # patterns (team vs. personal ownership language, "give me a real instance
+    # of using this tool") have no meaning here and are excluded:
+    #   ownership_ambiguous  -- tests "we" vs "I" in team-work narration
+    #   example_evaded       -- tests dodging "tell me about a real instance"
+    #   tool_named_not_used  -- tests whether a named tool was actually USED by them
     _CONTENT_SIGNALS = {
-        "depth_ceiling_hit", "ownership_ambiguous", "explanation_shallow",
-        "tool_named_not_used", "tech_choice_unjustified", "example_evaded",
+        "depth_ceiling_hit", "explanation_shallow",
+        "tech_choice_unjustified",
         "scenario_untested",
     }
     _fired = set(signals_already_fired or [])
@@ -633,7 +626,7 @@ async def _call_signal_classification(
                 "\nSPECIAL NOTE: off_topic already fired on a previous turn (likely a non-answer like 'I am ready'). "
                 "The candidate is now actually attempting to answer. If this answer is AT ALL related to the "
                 "topic — even vaguely, even shallowly — do NOT re-fire off_topic. Score it on content gates "
-                "(G1-G7) instead: explanation_shallow, tool_named_not_used, scenario_untested, etc.\n"
+                "(G1-G4) instead: explanation_shallow, scenario_untested, etc.\n"
             )
 
         return (
@@ -642,7 +635,7 @@ async def _call_signal_classification(
             "You may reason briefly (2-4 sentences) before giving your final answer, but your final output\n"
             "MUST end with valid JSON on its own line:\n"
             '{"signal": "<signal_name>", "signal_reason": "<3-12 word exact quote from their answer>"}\n\n'
-            "signal MUST be exactly one of the 12 valid signal names listed below. NEVER null.\n"
+            "signal MUST be exactly one of the 9 valid signal names listed below. NEVER null.\n"
             f"Topic: {active_topic or 'general'} | Tag: {topic_tag} | Importance: {topic_importance}\n"
             + ban_block
             + special_note

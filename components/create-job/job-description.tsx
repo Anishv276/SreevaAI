@@ -1,6 +1,12 @@
 "use client";
 import { useState, useRef } from "react";
-import { Upload, Loader2, FileText, X, CheckCircle2, Eye, FlaskConical, MessageCircle, ChevronDown } from "lucide-react";
+import { Upload, Loader2, FileText, X, CheckCircle2, Eye, FlaskConical, MessageCircle, ChevronDown, GraduationCap } from "lucide-react";
+
+const QUESTION_BANDS = [
+    { value: "fresher", label: "Fresher" },
+    { value: "mid", label: "Mid" },
+    { value: "senior", label: "Senior" },
+] as const;
 
 export function JobDescription({
     formData,
@@ -19,8 +25,10 @@ export function JobDescription({
 }) {
     const [dragOver, setDragOver] = useState(false);
     const [showTypePicker, setShowTypePicker] = useState(false);
+    const [showBandPicker, setShowBandPicker] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const interviewType = formData.interviewType || "tech";
+    const questionBand = formData.questionBand || "";
 
     const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -120,6 +128,42 @@ export function JobDescription({
                         </div>
                     )}
                 </div>
+                {interviewType === "tech" && (
+                    <div className="flex items-center gap-2 px-1 relative">
+                        <span className="text-xs text-gray-500">Questioning Level<span className="text-red-500">*</span></span>
+                        <button
+                            type="button"
+                            onClick={() => setShowBandPicker((v) => !v)}
+                            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-xs font-medium transition-all"
+                            style={questionBand
+                                ? { background: "#EFF6FF", color: "#1D4ED8", border: "1px solid #BFDBFE" }
+                                : { background: "#FEF2F2", color: "#DC2626", border: "1px solid #FECACA" }}
+                        >
+                            <GraduationCap className="h-3 w-3" />
+                            {questionBand ? QUESTION_BANDS.find((b) => b.value === questionBand)?.label : "Select level"}
+                            <ChevronDown className="h-3 w-3" />
+                        </button>
+                        {showBandPicker && (
+                            <div className="absolute top-8 left-0 z-10 flex flex-col rounded-lg bg-white shadow-lg overflow-hidden"
+                                style={{ border: "1px solid #E9E7FF" }}>
+                                {QUESTION_BANDS.map((opt) => (
+                                    <button
+                                        key={opt.value}
+                                        type="button"
+                                        onClick={() => {
+                                            updateFormData((prev: any) => ({ ...prev, questionBand: opt.value }));
+                                            setShowBandPicker(false);
+                                        }}
+                                        className="flex items-center gap-2 px-3 py-2 text-xs text-left text-gray-700 hover:bg-violet-50 transition-all whitespace-nowrap"
+                                    >
+                                        <GraduationCap className="h-3 w-3 text-blue-500" />
+                                        {opt.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
         );
     }

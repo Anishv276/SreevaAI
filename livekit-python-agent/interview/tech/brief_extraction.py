@@ -1,7 +1,14 @@
 """
-interview/brief_extraction.py
-==============================
+interview/tech/brief_extraction.py
+====================================
 Deterministic extraction pipeline. Pure Python, zero LLM.
+
+Tech interviews are skill-only: candidates are never asked about their own
+projects or work history, so this pipeline extracts SKILLS ONLY. Project and
+work-history entries are still parsed (they're the DB's richest source of
+"skills actually used," not just "skills listed"), but only their tech-stack
+tags are kept — titles, narratives, and impact statements never reach the
+brief LLM as candidate-facing material.
 
 Architecture:
   - Pydantic models  : typed contracts for raw resume + JD JSON from DB
@@ -9,7 +16,7 @@ Architecture:
   - LangGraph        : parallel fan-out (extract_resume + extract_jd simultaneously)
                        → build_llm_input (formats everything as a clean text block)
 
-No merge node. No dedup. No sorting. We pass everything we extracted — raw and
+No merge node. No dedup. No sorting. We pass every extracted skill — raw and
 labelled — to the LLM and let it reason about duplicates, coverage, and ordering.
 
 Flow:
@@ -348,24 +355,9 @@ class RawJDJSON(BaseModel):
 # Clean extracted models -- outputs of extractors
 # ---------------------------------------------------------------------------
 
-class ExtractedProject(BaseModel):
-    title: str
-    description: str
-    tech: list[str] = Field(default_factory=list)
-    duration: str = ""
-    impact: str = ""
-
-
-class ExtractedWork(BaseModel):
-    title: str
-    description: str
-    duration: str = ""
-    tech: list[str] = Field(default_factory=list)
-
-
 class ExtractedSkill(BaseModel):
     name: str
-    source_strength: str = "listed"
+    source_strength: str = "listed"  # work_history_outcome|work_history|project|listed|inferred
     context: str = ""
 
 
@@ -380,39 +372,21 @@ class ExtractedJDItem(BaseModel):
 # ---------------------------------------------------------------------------
 
 class ResumeExtractor:
-    """Extracts projects, work history, and skills from RawResumeJSON."""
+    """Extracts a skill-only view from RawResumeJSON.
 
-    def extract(self, raw: RawResumeJSON) -> tuple[
-        list[ExtractedProject], list[ExtractedWork], list[ExtractedSkill]
-    ]:
-        return (
-            self._projects(raw.get_projects()),
-            self._work(raw.get_work_history()),
-            self._skills(raw.get_technical_skills()),
-        )
+    Tech interviews never reference the candidate's projects or work history
+    by name/narrative -- only WHICH skills/tools/libraries they demonstrate.
+    Project and work entries are read purely for their tech-stack tags
+    (source_strength="project"/"work_history"), which carries more signal
+    than a bare resume skill list ("listed") but never surfaces the
+    project/work title or description to the brief LLM.
+    """
 
-    def _projects(self, entries: list[RawProjectEntry]) -> list[ExtractedProject]:
-        return [
-            ExtractedProject(
-                title=e.resolved_title,
-                description=e.full_description,
-                tech=e.resolved_tech,
-                duration=e.duration,
-                impact=e.impact,
-            )
-            for e in entries if e.resolved_title
-        ]
-
-    def _work(self, entries: list[RawWorkEntry]) -> list[ExtractedWork]:
-        return [
-            ExtractedWork(
-                title=e.title,
-                description=e.full_description,
-                duration=e.duration,
-                tech=e.technologies_used,
-            )
-            for e in entries if e.title
-        ]
+    def extract(self, raw: RawResumeJSON) -> list[ExtractedSkill]:
+        skills = self._skills(raw.get_technical_skills())
+        skills.extend(self._tech_from_projects(raw.get_projects()))
+        skills.extend(self._tech_from_work(raw.get_work_history()))
+        return self._dedup(skills)
 
     def _skills(self, entries: list[RawSkillEntry]) -> list[ExtractedSkill]:
         return [
@@ -423,6 +397,32 @@ class ResumeExtractor:
             )
             for e in entries if e.name
         ]
+
+    def _tech_from_projects(self, entries: list[RawProjectEntry]) -> list[ExtractedSkill]:
+        return [
+            ExtractedSkill(name=tech.strip(), source_strength="project")
+            for e in entries for tech in e.resolved_tech if tech.strip()
+        ]
+
+    def _tech_from_work(self, entries: list[RawWorkEntry]) -> list[ExtractedSkill]:
+        return [
+            ExtractedSkill(name=tech.strip(), source_strength="work_history")
+            for e in entries for tech in e.technologies_used if tech.strip()
+        ]
+
+    def _dedup(self, skills: list[ExtractedSkill]) -> list[ExtractedSkill]:
+        """Keep the strongest-evidence entry per skill name (case-insensitive).
+        Priority: work_history > project > listed > inferred."""
+        _STRENGTH_RANK = {"work_history_outcome": 4, "work_history": 3, "project": 2, "listed": 1, "inferred": 0}
+        best: dict[str, ExtractedSkill] = {}
+        for s in skills:
+            key = s.name.strip().lower()
+            if not key:
+                continue
+            existing = best.get(key)
+            if existing is None or _STRENGTH_RANK.get(s.source_strength, 0) > _STRENGTH_RANK.get(existing.source_strength, 0):
+                best[key] = s
+        return list(best.values())
 
 
 class JDExtractor:
@@ -455,8 +455,6 @@ class BriefExtractionState(TypedDict):
     band: str
     custom_questions: list[str]
     # per-extractor outputs
-    projects: list[ExtractedProject]
-    work_history: list[ExtractedWork]
     resume_skills: list[ExtractedSkill]
     jd_must: list[ExtractedJDItem]
     jd_nice: list[ExtractedJDItem]
@@ -478,17 +476,14 @@ def _node_extract_resume(state: BriefExtractionState) -> dict:
         "[EXTRACT] resume parsed → work_history_raw=%d projects_raw=%d",
         len(raw.work_history), len(raw.projects),
     )
-    projects, work, skills = ResumeExtractor().extract(raw)
-    logger.info(
-        "[EXTRACT] resume → projects=%d work=%d skills=%d",
-        len(projects), len(work), len(skills),
-    )
-    if not projects and not work and not skills:
+    skills = ResumeExtractor().extract(raw)
+    logger.info("[EXTRACT] resume → skills=%d (incl. project/work tech-stacks)", len(skills))
+    if not skills:
         logger.warning(
             "[EXTRACT] resume extracted NOTHING — skills type=%s, work_history=%r, projects=%r",
             type(raw.skills).__name__, raw.work_history[:1], raw.projects[:1],
         )
-    return {"projects": projects, "work_history": work, "resume_skills": skills}
+    return {"resume_skills": skills}
 
 
 def _node_extract_jd(state: BriefExtractionState) -> dict:
@@ -503,12 +498,16 @@ def _node_extract_jd(state: BriefExtractionState) -> dict:
 
 def _node_build_llm_input(state: BriefExtractionState) -> dict:
     """
-    Formats all extracted data into a clean labelled text block.
-    Everything is passed as-is — no dedup, no filtering, no sorting.
-    The LLM receives the raw truth and decides what to do with it.
+    Formats all extracted skills into a clean labelled text block.
+    Everything is passed as-is — no dedup across resume/JD, no filtering, no
+    sorting. The LLM receives the raw truth and decides what to do with it.
+
+    Skill-only by design: tech interviews never reference a candidate's
+    projects or work history, so only skill/tool/library names (tagged with
+    where they came from) are sent here — never project or work narratives.
     """
     lines: list[str] = []
-    has_resume = bool(state["projects"] or state["work_history"] or state["resume_skills"])
+    has_resume = bool(state["resume_skills"])
     lines.append(
         f"CANDIDATE: {state['candidate_name']}  |  "
         f"ROLE: {state['job_title']}  |  "
@@ -517,45 +516,17 @@ def _node_build_llm_input(state: BriefExtractionState) -> dict:
     )
     if not has_resume:
         lines.append(
-            "⚠ RESUME DATA MISSING: Do NOT invent or assume any projects, work history, or skills "
-            "for this candidate. topic_pool must contain ONLY JD_TOPICs (from JD must-haves) and "
-            "ROLE_TOPICs (from your expert domain knowledge). No RESUME_TOPICs allowed. "
+            "⚠ RESUME DATA MISSING: Do NOT invent or assume any skills for this candidate. "
+            "topic_pool must contain ONLY JD_TOPICs (from JD must-haves) and ROLE_TOPICs "
+            "(from your expert domain knowledge). No RESUME_TOPICs allowed. "
             "anchor_topic must be a JD_TOPIC or ROLE_TOPIC."
         )
     lines.append("")
 
-    # --- Resume projects ---
-    projects = state["projects"]
-    if projects:
-        lines.append("=== RESUME PROJECTS ===")
-        for p in projects:
-            lines.append(f"• {p.title}")
-            if p.description and p.description != p.title:
-                lines.append(f"  Description: {p.description}")
-            if p.tech:
-                lines.append(f"  Tech: {', '.join(p.tech)}")
-            if p.duration:
-                lines.append(f"  Duration: {p.duration}")
-            if p.impact:
-                lines.append(f"  Impact: {p.impact}")
-        lines.append("")
-
-    # --- Work history ---
-    work = state["work_history"]
-    if work:
-        lines.append("=== WORK HISTORY ===")
-        for w in work:
-            lines.append(f"• {w.title}" + (f"  ({w.duration})" if w.duration else ""))
-            if w.description and w.description != w.title:
-                lines.append(f"  Description: {w.description}")
-            if w.tech:
-                lines.append(f"  Tech used: {', '.join(w.tech)}")
-        lines.append("")
-
-    # --- Resume skills (raw, as extracted -- LLM handles overlap with JD) ---
+    # --- Skills from resume (skill list + project/work tech-stacks) ---
     skills = state["resume_skills"]
     if skills:
-        lines.append("=== RESUME SKILLS ===")
+        lines.append("=== SKILLS FROM RESUME (incl. project/work tech-stacks) ===")
         for s in skills:
             entry = f"• {s.name}  [{s.source_strength}]"
             if s.context:
@@ -649,8 +620,6 @@ async def run_extraction(
         "job_title": job_title,
         "band": band,
         "custom_questions": custom_questions or [],
-        "projects": [],
-        "work_history": [],
         "resume_skills": [],
         "jd_must": [],
         "jd_nice": [],

@@ -102,24 +102,27 @@ def build_evaluation_layer_prompt(
         tag = (t.tag or "").upper()
         if tag == "RESUME_TOPIC":
             return (
-                "SOURCE=RESUME  ▸ Candidate HAS done this. We know it.\n"
-                "    HOW TO ASK: ground in ONE concrete detail from their actual description — a specific "
-                "mechanism, decision, number, or failure — not a generic 'what was yours' shape that would "
-                "fit any resume item. Never ask 'do you have experience' or 'why did you work there'. "
-                "They worked there. Vary the framing every time — never repeat the same question shape twice.\n"
-                "    WRONG: 'Why did you work on this?' / 'What drew you to X?' / 'What was specifically yours in this?'"
+                "SOURCE=COMMON_SKILL  ▸ On resume AND required by the JD.\n"
+                "    HOW TO ASK: a cold-reasoning question testing real understanding of this skill itself — "
+                "fundamentals, mechanics, performance, or robustness. NEVER ask about their project/resume/work "
+                "history, and never 'tell me about a time you used X'. The question must be answerable by "
+                "anyone who genuinely knows this skill, cold. Vary the construction every time.\n"
+                "    WRONG: 'Tell me about a project where you used this.' / 'What did you build with X?'\n"
+                "    RIGHT: 'What's the difference between X and Y, and when does getting it wrong bite you?'"
             )
         elif tag == "JD_TOPIC":
             return (
                 "SOURCE=JD_REQUIRED  ▸ Role needs this. Candidate has NOT claimed it on resume.\n"
-                "    HOW TO ASK: neutral curiosity about exposure. Never assume they know it.\n"
-                "    WRONG: 'Walk me through your experience with this.' (assumes experience)\n"
-                "    RIGHT: 'This role uses X heavily — what's your exposure there?'"
+                "    HOW TO ASK: same cold-reasoning question as any skill — never assume prior exposure, but "
+                "never frame it as 'have you used this in a project' either. If they show no understanding, "
+                "accept it and move on.\n"
+                "    WRONG: 'Walk me through your experience with this.' (assumes project experience)\n"
+                "    RIGHT: 'How would you approach deciding between X and Y here?'"
             )
         else:  # ROLE_TOPIC
             return (
                 "SOURCE=ROLE_DEPTH  ▸ Expert domain check. NOT on resume, NOT in JD.\n"
-                "    HOW TO ASK: ask about understanding or approach. They may have zero experience.\n"
+                "    HOW TO ASK: ask about understanding or approach in the abstract. They may have zero exposure.\n"
                 "    WRONG: 'How have you used X in your work?' (assumes usage)\n"
                 "    RIGHT: 'How do you think about X in practice?' / 'How would you approach X?'"
             )
@@ -128,24 +131,21 @@ def build_evaluation_layer_prompt(
         tag = (t.tag or "").upper()
         if tag == "RESUME_TOPIC":
             return {
-                "fresher":    "Ask WHAT they built and what their specific role was.",
-                "mid":        "Ask what was specifically their call — push past 'we'.",
-                "experienced":"Go straight to a tradeoff or design decision. Skip setup.",
-                "senior":     "Ask about strategic consequence or org-level impact.",
-            }.get(band, "Ask what they personally owned.")
+                "fresher": "Ask a fundamentals-level distinction question — basic definitions, common confusions.",
+                "mid":     "Ask a mechanics or performance-triage question — how it works, what to check first.",
+                "senior":  "Go straight to a tradeoff or systemic-failure scenario. Skip setup and basics.",
+            }.get(band, "Ask a cold-reasoning question testing real understanding.")
         elif tag == "JD_TOPIC":
             return {
-                "fresher":    "Ask gently — 'have you had a chance to work with X or explore it?'",
-                "mid":        "Ask where they've actually used it in a real project.",
-                "experienced":"Ask about production depth and real constraints.",
-                "senior":     "Ask about strategic judgment around it, not just usage.",
-            }.get(band, "Ask about their exposure neutrally.")
+                "fresher": "Ask a gentle fundamentals question — accept 'I haven't worked with this' gracefully.",
+                "mid":     "Ask a practical reasoning question — how would they approach a realistic constraint.",
+                "senior":  "Ask about strategic judgment or tradeoffs around it, not just familiarity.",
+            }.get(band, "Ask a neutral cold-reasoning question about this skill.")
         else:
             return {
-                "fresher":    "Check if they understand the concept — not whether they've done it at scale.",
-                "mid":        "Ask about their approach or any real exposure they've had.",
-                "experienced":"Ask about a concrete decision or tradeoff in this area.",
-                "senior":     "Ask about systemic or team-level thinking.",
+                "fresher": "Check if they understand the concept — not whether they've done it at scale.",
+                "mid":     "Ask about their approach to a realistic scenario in this area.",
+                "senior":  "Ask about systemic or architectural-level tradeoffs in this area.",
             }.get(band, "Ask how they think about or approach this.")
 
     _topics_summary = "\n".join(
@@ -207,33 +207,29 @@ JD MUST-HAVES:
 
 RED FLAGS (watch for these — do not ignore):
 {chr(10).join('  ⚠ ' + f for f in _flags) if _flags else '  (none)'}"""
-    # Band-specific evaluation posture -- what "good" looks like at each level
+    # Band-specific evaluation posture -- what "good" looks like at each level.
+    # This is a fixed, admin-selected band for the job -- not derived from the
+    # candidate's resume/experience, and evaluation is purely skill/knowledge-based.
     band_eval = {
         "fresher": (
-            "This is a FRESHER. Evaluate HOW they think, not just what they know.\n"
-            "Good signal: they understood WHY they made a choice, even if the choice was simple.\n"
+            "This is a FRESHER-band interview. Evaluate whether fundamentals are genuinely understood.\n"
+            "Good signal: they can explain WHY, not just recite a definition.\n"
             "Expected gap: they may not know tradeoffs, architecture, or scale -- that's fine.\n"
-            "Red flag: can't explain any decision in their own projects at all."
+            "Red flag: can't explain a basic distinction in the skill at all, even with a hint."
         ),
         "mid": (
-            "This is a MID-LEVEL candidate. Ownership and real decisions are the bar.\n"
-            "Good signal: clear 'I' in the story -- what they specifically built, decided, fixed.\n"
-            "Expected gap: may not have full system-design depth -- probe the decisions they DID make.\n"
-            "Red flag: everything is 'we', no personal ownership anywhere."
-        ),
-        "experienced": (
-            "This is an EXPERIENCED candidate. Depth and specifics are expected, not optional.\n"
-            "Good signal: end-to-end ownership, real tradeoffs with consequences, measurable outcomes.\n"
-            "Expected gap: may not have led org-wide initiatives -- probe depth on what they owned.\n"
-            "Red flag: vague answers, no numbers, no tradeoffs -- probe harder, don't move on."
+            "This is a MID-band interview. Real working knowledge under realistic constraints is the bar.\n"
+            "Good signal: they reason through a mechanism or performance question, not recite a checklist.\n"
+            "Expected gap: may not have deep architectural judgment -- probe reasoning they DO show.\n"
+            "Red flag: purely textbook answers with zero applied reasoning, even when pushed."
         ),
         "senior": (
-            "This is a SENIOR candidate. Strategic judgment and org impact are the bar.\n"
-            "Good signal: influenced others, made high-stakes calls alone, built things that outlasted them.\n"
-            "Expected gap: may not have deep IC technical work recently -- probe judgment and decisions.\n"
-            "Red flag: polished but shallow -- if it sounds rehearsed, press on what actually went wrong."
+            "This is a SENIOR-band interview. Architectural judgment and tradeoff reasoning are the bar.\n"
+            "Good signal: they can argue multiple valid approaches and explain HOW they'd decide.\n"
+            "Expected gap: may not know every implementation detail -- that's fine, judgment is what matters.\n"
+            "Red flag: polished but shallow -- if it sounds rehearsed, invert the assumption and press."
         ),
-    }.get(candidate_band, "Probe for real ownership and specific decisions.")
+    }.get(candidate_band, "Probe for genuine skill understanding, not memorized recitation.")
     return f"""━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ANALYST BRIEF -- READ THIS FIRST
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -262,13 +258,17 @@ DIRECTIVE SYSTEM
              The question must come from you reading the topic description and the candidate's story.
 - WRAP_UP -> All topics covered. Ask ONE light follow-up to keep conversation going. Do NOT say goodbye or any closing phrase — the system handles closing.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PROJECT vs WORK ATTRIBUTION -- CRITICAL
+NO PROJECT/RESUME REFERENCE -- CRITICAL
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Projects and work history are SEPARATE things. NEVER assume a project was built at a company
-unless the candidate explicitly says so in this conversation or the ANALYST BRIEF explicitly links them.
-WRONG: "What was the biggest challenge at Social Rises with the Multi Channel Lead Qualification System?"
-RIGHT: "What was the biggest challenge you faced building the Multi Channel Lead Qualification System?"
-If you are unsure whether something was a personal project or a company project -- ASK, don't assume.
+This is a pure technical-knowledge interview. NEVER reference the candidate's projects, work
+history, employer names, or resume in any question -- not even to "ground" it. Every question
+must be a cold-reasoning prompt about the skill itself, answerable by anyone who genuinely
+knows it, never something the candidate could have prepped by rehearsing their resume.
+WRONG: "What was the biggest challenge you faced building your lead-qualification system?"
+WRONG: "Tell me about a time you used caching in a real project."
+RIGHT: "Where would you check first if a query joining three tables suddenly got slow?"
+If a candidate volunteers project/work details unprompted, do not follow up on them -- redirect
+to the next skill-based question instead.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 MEMORY AND TOPIC DISCIPLINE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

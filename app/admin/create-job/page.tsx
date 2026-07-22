@@ -122,6 +122,7 @@ function CreateJobForm() {
             aiInterviewerName: (job as any).aiInterviewerName || "Ishitha",
             interviewMode: (job as any).interviewMode || "ats",
             interviewType: (job as any).interviewType || "tech",
+            questionBand: (job as any).questionBand || "",
           }));
         } catch (err) {
           console.error("Failed to load job:", err);
@@ -141,7 +142,7 @@ function CreateJobForm() {
           aiGeneratedInterviewQuestions: [],
           resumeScreeningThreshold: 60, resumeScreeningCriteria: {},
           aiInterviewerVoiceId: fallbackVoiceId, allowedVoiceIds: fallbackAllowedVoices,
-          aiInterviewerName: "Ishitha", jdExtractedDetails: null, interviewMode: "ats", interviewType: "tech",
+          aiInterviewerName: "Ishitha", jdExtractedDetails: null, interviewMode: "ats", interviewType: "tech", questionBand: "",
         });
         setIsAnalyzing(false);
         setAnalysisError(null);
@@ -224,6 +225,11 @@ function CreateJobForm() {
       toast.error("Please fill the application deadline.");
       return;
     }
+    const resolvedInterviewType = currentFormData.interviewType || classifyInterviewType(currentFormData.jobRole) || "tech";
+    if (resolvedInterviewType !== "conversational" && !currentFormData.questionBand) {
+      toast.error("Please select a Questioning Level (Fresher / Mid / Senior).");
+      return;
+    }
     const pendingJdUpload = Boolean(currentFormData.jdFile) || (typeof currentFormData.jdPreviewUrl === "string" && currentFormData.jdPreviewUrl.startsWith("blob:"));
     if (isAnalyzing || (pendingJdUpload && !getPersistedJdUrl(currentFormData))) {
       toast.error("Please wait for the JD upload to finish before publishing.");
@@ -249,7 +255,8 @@ function CreateJobForm() {
       aiInterviewerVoiceId: currentFormData.aiInterviewerVoiceId || "",
       aiInterviewerName: currentFormData.aiInterviewerName || "Ishitha",
       interviewMode: currentFormData.interviewMode || "ats",
-      interviewType: currentFormData.interviewType || classifyInterviewType(currentFormData.jobRole) || "tech",
+      interviewType: resolvedInterviewType,
+      questionBand: resolvedInterviewType === "conversational" ? undefined : currentFormData.questionBand,
     };
     try {
       let savedId: string | null = null;

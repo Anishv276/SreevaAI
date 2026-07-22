@@ -194,6 +194,7 @@ async def get_interview_context(app_id: str) -> dict:
     _QUERY = """
     SELECT a."candidateFullName" AS "fullName", a."resumeRawText" AS "resumeText", a."resumeParsedData" AS "resumeData", d.id AS "jobId", d.title, d."jobRole" AS "role",
            d."interviewType" AS "interviewType",
+           d."questionBand" AS "questionBand",
            d."jdExtractedDetails" AS "extractedDetails", d."resumeScreeningCriteria" AS "screeningCriteria", d."organizationId" AS "orgId",
            d."aiGeneratedInterviewQuestions" AS "interviewQuestions",
            d."aiInterviewerVoiceId" AS "voiceId",
@@ -227,6 +228,7 @@ async def get_interview_context(app_id: str) -> dict:
                 "jobId":              row["jobId"],
                 "jobTitle":           row["title"],
                 "interviewType":      row["interviewType"] or "tech",
+                "questionBand":       row["questionBand"],
                 "jd":                 _build_jd_from_extracted(row["extractedDetails"]),
                 "orgId":              row["orgId"],
                 "orgName":            row["orgName"],
@@ -285,6 +287,7 @@ async def get_demo_interview_context(app_id: str, dispatch_metadata: dict) -> di
         "jobId":              None,
         "jobTitle":           role_title,
         "interviewType":      "conversational" if mode == "CONVERSATION" else "tech",
+        "questionBand":       str(dispatch_metadata.get("questionBand") or "").strip().lower() or None,
         "jd":                 "",
         "orgId":              None,
         "orgName":            "Demo",

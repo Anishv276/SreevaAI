@@ -2,7 +2,7 @@ import { z } from "zod";
 export const jobIdSchema = z.object({
   id: z.string().min(1, "Job ID is required"),
 });
-export const createJobSchema = z.object({
+const jobFieldsSchema = z.object({
   title: z.preprocess((val) => (typeof val === 'string' && val.trim() !== '') ? val : "Untitled Job", z.string().min(1).max(200)),
   jobRole: z.string().optional(),
   applicationDeadline: z.preprocess((val) => {
@@ -22,8 +22,18 @@ export const createJobSchema = z.object({
   resumeScreeningCriteria: z.union([z.string(), z.record(z.string(), z.any())]).optional(),
   interviewMode: z.enum(["ats", "interview-only"]).optional(),
   interviewType: z.enum(["tech", "conversational"]).optional().default("tech"),
+  questionBand: z.enum(["fresher", "mid", "senior"]).optional(),
 });
-export const updateJobSchema = createJobSchema.partial();
+export const createJobSchema = jobFieldsSchema.superRefine((data, ctx) => {
+  if (data.interviewType !== "conversational" && !data.questionBand) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["questionBand"],
+      message: "Questioning Level (Fresher / Mid / Senior) is required for tech interviews.",
+    });
+  }
+});
+export const updateJobSchema = jobFieldsSchema.partial();
 export const bulkDeleteSchema = z.object({
   ids: z.array(z.string()).min(1, "At least one ID required"),
 });

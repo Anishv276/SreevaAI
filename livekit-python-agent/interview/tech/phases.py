@@ -1,9 +1,11 @@
 """
 Interview phase helpers -- single unified 20-minute interview.
 Flow: greeting -> warmup -> unified interview stage (full 20min)
-The single stage covers resume projects/work and JD skills. Hard moments
-(pressure/situational/behavioral) emerge naturally via the probe system's
-"pressure" family -- not scheduled as a separate quota.
+
+Skill-only interview: the single stage covers the skill pool (7+ common
+resume/JD skills, 3+ JD-required skills, 2 expert role topics) -- never the
+candidate's own projects or work history. Every question is a cold-reasoning
+prompt about the skill itself, not "tell me about a time you used X."
 """
 from __future__ import annotations
 from typing import Any
@@ -26,7 +28,9 @@ def _build_custom_questions_block(custom_questions: list[str] | None) -> str:
     )
 # ---------------------------------------------------------------------------
 # Unified Interview Stage -- full 20 minutes
-# Covers: resume projects/work/internships, JD skills, situational, behavioral
+# Covers: skill pool only (common resume/JD skills, JD-required skills, expert
+# role topics). Never the candidate's own projects, work history, situational,
+# or behavioral material -- this is a pure technical-knowledge interview.
 # ---------------------------------------------------------------------------
 def build_interview_directive(
     *,
@@ -37,68 +41,61 @@ def build_interview_directive(
     interview_brief=None,  # InterviewBrief — when provided, overrides mechanical anchor/skills logic
 ) -> str:
     """
-    Build the single system prompt for the full 20-minute interview.
+    Build the single system prompt for the full 20-minute skill-only interview.
     Priority order:
-      1. Resume anchor project -- open here, probe personal ownership
-      2. Other resume projects, work history
-      3. Resume skills + JD skills -- probe real usage depth
-      4. Situational question (at least 1, woven naturally)
-      5. Behavioral question (at least 1, woven naturally)
-      6. Custom recruiter questions (mandatory, woven in anytime)
+      1. Anchor skill -- open here with a cold-reasoning question (fundamentals/mechanics)
+      2. Remaining common skills (resume + JD overlap) -- depth per band
+      3. JD-required skills (not on resume) -- neutral exposure/reasoning probe
+      4. Expert role-knowledge topics
+      5. Custom recruiter questions (mandatory, woven in anytime)
+    No question may reference "your project," "your resume," "a time when," or any
+    company/project name -- every question stands alone as a cold-reasoning prompt.
     """
     # -- Opening move ---------------------------------------------------------
-    # When an InterviewBrief is provided, use its LLM-curated anchor and strategy.
-    # Otherwise fall back to the mechanical anchor from resume_brief.
+    # anchor_topic is always a skill (never a project/work item) in a skill-only brief.
     if interview_brief is not None:
         anchor_name = interview_brief.anchor_topic.title
         _brief_strategy_note = (
             f"ROLE STRATEGY: {interview_brief.interview_strategy}\n"
-            f"ANCHOR CONTEXT: {interview_brief.anchor_topic.full_description}\n"
+            f"ANCHOR SKILL CONTEXT: {interview_brief.anchor_topic.full_description}\n"
             + (f"ANCHOR TECH: {', '.join(interview_brief.anchor_topic.tech_stack)}\n" if interview_brief.anchor_topic.tech_stack else "")
         )
         if interview_brief.red_flags:
             _brief_strategy_note += f"RED FLAGS TO PROBE: {', '.join(interview_brief.red_flags)}\n"
     else:
-        if hasattr(resume_brief, "anchor_item"):
-            anchor_name = (resume_brief.anchor_item or "their most recent work").split(" - ")[0].strip()
-        else:
-            anchor_name = resume_brief.get("anchor_item", "their most recent work").split(" - ")[0].strip()
+        anchor_name = "the strongest common skill for this role"
         _brief_strategy_note = ""
     _first_q_rule = {
         "fresher": (
-            f"FIRST QUESTION RULE: stay surface-level -- establish the basics first, not reflection/tradeoffs/theory.\n"
-            f"Follow the concrete-detail rule below; do not fall back to generic 'what did you build' framing."
+            f"FIRST QUESTION RULE: start with a FUNDAMENTALS-level question on {anchor_name} -- a basic "
+            f"distinction or definition, testing real understanding not memorization.\n"
+            f"Do not ask about tradeoffs, scale, or architecture yet."
         ),
         "mid": (
-            f"FIRST QUESTION RULE: ask what they personally owned and what decisions were theirs.\n"
-            f"Do NOT open with generic 'walk me through' -- anchor to a specific thing in their story."
-        ),
-        "experienced": (
-            f"FIRST QUESTION RULE: go straight to a key decision or tradeoff in this work.\n"
-            f"Do NOT ask 'what did you build' -- you know what they built. Ask WHY they made a specific call."
+            f"FIRST QUESTION RULE: start with a CORE_MECHANICS question on {anchor_name} -- how it actually "
+            f"works under the hood, not just what it's called.\n"
+            f"Do NOT ask a pure definition question -- assume fundamentals are already solid."
         ),
         "senior": (
-            f"FIRST QUESTION RULE: open peer-level. Ask about a strategic judgment call or a high-stakes outcome.\n"
-            f"Do NOT start with basics -- probe the WHY behind their biggest initiative immediately."
+            f"FIRST QUESTION RULE: start with a PERFORMANCE or ROBUSTNESS question on {anchor_name} -- a "
+            f"concrete, numbers-bearing scenario requiring real triage or tradeoff judgment.\n"
+            f"Do NOT start with basics or mechanics -- go straight to a scenario with no single correct answer."
         ),
-    }.get(band, "FIRST QUESTION RULE: ask what they personally owned and what decisions were theirs.")
+    }.get(band, "FIRST QUESTION RULE: start with a fundamentals or core-mechanics question testing real understanding.")
     opening = (
         f"{_brief_strategy_note}"
         f"Your ANALYST BRIEF (above) contains the exact OPENING ANGLE for this session.\n"
-        f"Follow it. Open on: {anchor_name}.\n"
+        f"Follow it. Open on the skill: {anchor_name}.\n"
         f"{_first_q_rule}\n"
         f"HOW TO WRITE THE OPENING QUESTION:\n"
-        f"  1. Read the ANCHOR CONTEXT description above and find ONE concrete detail in it — a "
-        f"specific problem it solved, a specific mechanism, a specific number/scale, a specific "
-        f"user or workflow it touched. Generic project-shaped questions ('where did you start', "
-        f"'what did you own', 'walk me through it') are BANNED — they fit any project and produce "
-        f"a small, low-content answer, which is exactly the failure mode you must avoid.\n"
-        f"  2. Build the question around that ONE concrete detail. {anchor_name} is a reference for "
-        f"you to identify the topic — mention it naturally in the question so they know what you're asking about.\n"
-        f"  3. Ask exactly ONE thing. Do not stack two questions into one turn "
-        f"(e.g. 'where did X and what did you Y' is two questions — pick one).\n"
-        f"  4. The question should be answerable ONLY by someone who actually did this specific "
-        f"work — if the same question could open literally any interview on any project, rewrite it.\n"
+        f"  1. This is a COLD-REASONING question about {anchor_name} itself -- it must be answerable by "
+        f"anyone who genuinely knows this skill, with zero reference to what the candidate has personally "
+        f"built or worked on. Never say 'your project,' 'your resume,' 'a time when,' or 'have you used' --\n"
+        f"  2. Ground the question in a concrete distinction, mechanism, or scenario specific to "
+        f"{anchor_name} -- never a generic 'what is X' or 'are you familiar with X' question.\n"
+        f"  3. Ask exactly ONE thing. Do not stack two questions into one turn.\n"
+        f"  4. The question should be answerable ONLY by someone who genuinely understands this skill "
+        f"cold -- if it could be answered by reciting a definition memorized without understanding, rewrite it.\n"
         f"ONE question only. Stay on {anchor_name} until a [NEXT_TURN_DIRECTIVE] tells you to move."
     )
     cq_block = _build_custom_questions_block(custom_questions)
@@ -107,33 +104,29 @@ def build_interview_directive(
     # resume_brief.skills + jd_skills when brief is not provided.
     _skill_probe_style = {
         "fresher": (
-            "  -> Ask about real usage: 'Where have you actually used X?' not 'Do you know X?'\n"
-            "  -> Accept partial answers -- they're learning. Get one real example, then move on.\n"
+            "  -> Ask fundamentals and simple applied questions. 'What's the difference between X and Y?'\n"
+            "  -> Accept partial answers -- they're learning. Get one clear reasoning example, then move on.\n"
         ),
         "mid": (
-            "  -> Ask about production usage: 'Where did you use X in a real project and what did you build?'\n"
-            "  -> If they give a textbook answer with no real example, push: 'Give me a specific case.'\n"
-        ),
-        "experienced": (
-            "  -> Probe at architecture level: 'Where did X break at scale?' / 'What would you do differently with X now?'\n"
-            "  -> Surface-level familiarity is not enough -- you want depth and consequence.\n"
+            "  -> Ask mechanics + one-constraint applied questions. 'What would you check first if X was slow?'\n"
+            "  -> If they give a textbook answer with no reasoning, push: 'What's the tradeoff there?'\n"
         ),
         "senior": (
-            "  -> Only probe skills where they intersect with strategic decisions or org-level outcomes.\n"
-            "  -> Ask: 'Where did your use of X change how the team or product operated?' Not 'have you used X?'\n"
+            "  -> Probe tradeoffs and systemic judgment. 'What breaks about that approach at scale?'\n"
+            "  -> Surface-level or textbook answers are a red flag -- invert their assumption and press harder.\n"
         ),
-    }.get(band, "  -> Ask about real usage grounded in a specific role or project, NOT generic 'do you know X?'\n")
+    }.get(band, "  -> Ask a cold-reasoning question grounded in the skill itself, never 'do you know X?'\n")
     if interview_brief is not None:
         _brief_skills = [t for t in interview_brief.topic_pool if t.topic_type in ("skill", "role_topic")]
         if _brief_skills:
             _skill_lines = []
             for _st in _brief_skills:
                 if _st.tag == "RESUME_TOPIC":
-                    _src_label = "[RESUME — they did this, probe depth]"
+                    _src_label = "[COMMON SKILL — on resume + JD, probe depth]"
                 elif _st.tag == "JD_TOPIC":
-                    _src_label = "[JD REQUIRED — not claimed on resume, ask about exposure]"
+                    _src_label = "[JD REQUIRED — not on resume, ask cold-reasoning, accept no exposure]"
                 else:  # ROLE_TOPIC
-                    _src_label = "[ROLE DEPTH — not on resume or JD, ask concept/approach]"
+                    _src_label = "[ROLE DEPTH — expert knowledge check, ask concept/approach]"
                 _focus = ", ".join(_st.probe_focus[:2]) if _st.probe_focus else ""
                 _line = f"  - {_st.title}  {_src_label}"
                 if _st.full_description:
@@ -148,84 +141,66 @@ def build_interview_directive(
             skills_block = (
                 f"\nSKILLS TO COVER (ordered by role relevance):\n"
                 f"  FRAMING RULES BY TAG — follow these exactly:\n"
-                f"  [RESUME]    → They have done this. NEVER ask 'do you have experience'. Ask WHAT they built/decided/broke.\n"
-                f"  [JD REQUIRED] → Role needs it, candidate hasn't claimed it. Ask neutrally: 'This role uses X a lot — what's your exposure?'\n"
-                f"  [ROLE DEPTH]  → Not on resume, not in JD. Ask about understanding/approach: 'How do you think about X in practice?'\n"
+                f"  [COMMON SKILL] → On resume AND required by JD. Ask cold-reasoning questions about the skill "
+                f"itself (fundamentals/mechanics/performance/robustness) — NEVER 'tell me about a project using X.'\n"
+                f"  [JD REQUIRED]  → Role needs it, not on resume. Ask a cold-reasoning question anyway — if they "
+                f"have no exposure, accept it and move on. Never ask 'have you used X in a project.'\n"
+                f"  [ROLE DEPTH]   → Expert-knowledge check. Ask about understanding/approach in the abstract.\n"
                 + "\n".join(_skill_lines) + "\n"
                 + f"{_skill_probe_style}"
-                + "  -> If a skill already came up naturally in a project story, it's covered — don't ask again.\n"
-                + "  -> If the candidate denies a RESUME skill, ask once for clarification then move on.\n"
-                + "  -> If the candidate has no exposure to a JD or ROLE DEPTH skill, accept it and move on.\n"
+                + "  -> Every question about a skill must stand alone -- answerable cold, with no project/resume reference.\n"
+                + "  -> If the candidate can't answer a skill question, acknowledge once and move to the next skill.\n"
             )
         else:
             skills_block = ""
     else:
         _resume_skills = [str(s).strip() for s in (getattr(resume_brief, "skills", None) or []) if str(s).strip()]
         _jd_skill_list = [str(s).strip() for s in (jd_skills or []) if str(s).strip()]
-        _work_history = [str(w).strip() for w in (getattr(resume_brief, "work_history", None) or []) if str(w).strip()]
         if _resume_skills or _jd_skill_list:
-            _work_ctx = ""
-            if _work_history:
-                _work_ctx = (
-                    f"\n  Work context: {' | '.join(_work_history[:3])}\n"
-                    f"  -> When asking about a skill, GROUND it in the role/project where it was used.\n"
-                    f"  -> Only name a company when the skill is tied to that employer.\n"
-                )
             skills_block = (
                 f"\nSKILLS TO COVER:\n"
                 f"  Resume skills: {', '.join(_resume_skills) or 'none listed'}\n"
                 f"  JD must-have skills: {', '.join(_jd_skill_list) or 'none listed'}\n"
-                f"{_work_ctx}"
                 f"{_skill_probe_style}"
-                f"  -> If a skill already came up naturally in a project story, mark it covered -- don't ask again.\n"
+                f"  -> Ask a cold-reasoning question about each skill itself -- never reference the candidate's "
+                f"projects, resume, or work history when asking.\n"
             )
         else:
             skills_block = ""
-    # Band-aware follow-up pacing note. Coverage itself (which topics, in what
-    # order, situational/behavioral weaving) comes from interview_brief.topic_pool
-    # and interview_brief.interview_strategy -- both already candidate- and
-    # role-specific, so it isn't re-derived generically here per band.
+    # Band-aware follow-up pacing note. Coverage itself (which skills, in what
+    # order) comes from interview_brief.topic_pool and interview_strategy --
+    # both already role-specific, so it isn't re-derived generically here per band.
     _pacing_note = {
-        "fresher":     "  -> BREADTH FIRST -- 2-3 follow-ups per topic. Move on when you have signal. Accept incomplete answers, they're learning.\n",
-        "mid":         "  -> BALANCED -- 3-4 follow-ups per topic. Move on when you have clear ownership signal.\n",
-        "experienced": "  -> DEPTH OVER BREADTH -- 4-5 follow-ups per topic. Vague = probe harder, not move on.\n",
-        "senior":      "  -> DEPTH ONLY -- 5-6 follow-ups on critical topics. Breadth is secondary. Peer-level conversation.\n",
-    }.get(band, "  -> 3-4 follow-ups per topic. Move on when you have clear signal.\n")
+        "fresher": "  -> BREADTH FIRST -- 2-3 follow-ups per skill. Move on when you have signal. Accept incomplete answers, they're learning.\n",
+        "mid":     "  -> BALANCED -- 3-4 follow-ups per skill. Move on once reasoning (not just recall) is demonstrated.\n",
+        "senior":  "  -> DEPTH ONLY -- 4-6 follow-ups on critical skills. Breadth is secondary. Press on every tradeoff claim.\n",
+    }.get(band, "  -> 3-4 follow-ups per skill. Move on when you have clear signal.\n")
     _dry_run_questions = {
         "fresher": (
-            "  'What are you learning or building right now outside of work?'\n"
-            "  'What kind of work do you most enjoy doing day-to-day?'\n"
-            "  'What drew you to this specific role?'\n"
-            "  'What does your best work look like -- give me one example.'\n"
-            "  'What skill are you actively trying to get better at?'"
+            "  'What's a concept in this stack that's easy to get wrong at first -- and why?'\n"
+            "  'If two approaches to the same basic problem both work, how would you pick between them?'\n"
+            "  'What's something in this area that sounds simple but trips people up early on?'"
         ),
         "mid": (
-            "  'What's a project you're proud of that we haven't talked about yet?'\n"
-            "  'What kind of ownership do you want more of in your next role?'\n"
-            "  'What drew you to this specific role and company?'\n"
-            "  'Where do you want to be technically or career-wise in two years?'"
-        ),
-        "experienced": (
-            "  'What's a technical decision you made in the last year you'd make differently now?'\n"
-            "  'What's the hardest engineering or design problem you've worked through recently?'\n"
-            "  'Where do you think your current team's architecture has the most technical debt?'\n"
-            "  'What drew you to this specific role at this stage of your career?'"
+            "  'Where do people commonly cut corners with this that comes back to bite them later?'\n"
+            "  'If you had to explain the biggest gotcha in this area to a newer engineer, what would it be?'\n"
+            "  'What's a case where the textbook answer and the practical answer for this actually differ?'"
         ),
         "senior": (
-            "  'What's a call you made in the last year that turned out to be wrong -- and what did you learn?'\n"
-            "  'What's the most important thing you've changed your mind about in the last two years?'\n"
-            "  'Where do you think the industry is heading that most people are getting wrong?'\n"
-            "  'What kind of org or team do you do your best work in?'"
+            "  'Where do you think most engineers get this kind of tradeoff wrong?'\n"
+            "  'What's a widely-accepted best practice in this area you'd actually push back on?'\n"
+            "  'If you had to pick the single hardest thing to get right at scale here, what would it be?'"
         ),
     }.get(band, (
-        "  'What are you learning or building right now?'\n"
-        "  'What drew you to this specific role?'\n"
-        "  'What does your best work look like -- give me one example.'"
+        "  'What's a concept in this area that's genuinely tricky to explain to someone else?'\n"
+        "  'Where do you think most engineers get this kind of tradeoff wrong?'"
     ))
     return (
         f"[DO NOT SAY ALOUD]\n\n"
-        f"GOAL: In the next ~19 minutes, understand who this candidate really is --\n"
-        f"what they built, what they own, how they think, and how deep their skills go.\n\n"
+        f"GOAL: In the next ~19 minutes, test how deep this candidate's technical knowledge actually goes --\n"
+        f"pure skill/technical reasoning, never their personal project or work history.\n\n"
+        f"HARD RULE: Never ask about 'your project,' 'your resume,' 'a time when you,' or any company/project "
+        f"name. Every question must be answerable cold by anyone who knows the skill -- not prep-able from a resume.\n\n"
         f"IMPORTANT: If a [NEXT_TURN_DIRECTIVE] or [TOPIC_LOCK] appears in this context, follow it\n"
         f"EXACTLY and IMMEDIATELY -- it is a real-time routing decision and overrides everything below.\n\n"
         f"OPENING MOVE: {opening}\n\n"
@@ -233,11 +208,10 @@ def build_interview_directive(
         f"{cq_block}\n"
         f"HOW TO MOVE:\n"
         f"  -> Always follow the [NEXT_TURN_DIRECTIVE] when present -- it overrides everything below.\n"
-        f"  -> Start with the anchor. Follow what they say -- a tool, a decision, something that broke.\n"
+        f"  -> Start with the anchor skill. Follow what they say -- a claim, a tradeoff, a gap in reasoning.\n"
         f"{_pacing_note}"
-        f"  -> When a skill comes up naturally in a project story, drill into it right there -- no need to wait.\n"
         f"  -> Do NOT wrap up or say goodbye until the system signals you to.\n\n"
-        f"IF TOPICS RUN DRY -- keep going with adaptive questions (pick what fits for {band.upper()}):\n"
+        f"IF TOPICS RUN DRY -- keep going with adaptive, skill-focused questions (pick what fits for {band.upper()}):\n"
         f"{_dry_run_questions}\n"
-        f"There is always something to ask. Never close early."
+        f"There is always something to ask. Never close early. Never fall back to asking about projects or work."
     )

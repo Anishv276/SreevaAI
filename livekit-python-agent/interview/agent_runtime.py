@@ -770,6 +770,7 @@ async def _generate_move_on_directive(
     prev_question: str = "",  # question that answer was responding to — grounds clarification detection
     app_id: str = "",
     candidate_name: str = "",
+    is_skill_only: bool = False,  # tech interviews: topics are skills, never projects/work
 ) -> str:
     """
     Ask GPT-4.1-mini to generate a full MOVE_ON directive including the opening
@@ -808,7 +809,7 @@ async def _generate_move_on_directive(
     # "Social Rises" bug).
     _is_standalone = "[standalone]" in (new_topic or "").lower()
     _attribution_guard = ""
-    if _is_standalone:
+    if _is_standalone and not is_skill_only:
         _attribution_guard = (
             "\nATTRIBUTION GUARD -- CRITICAL:\n"
             "This topic is a STANDALONE / personal project. It is NOT linked to any company.\n"
@@ -829,7 +830,37 @@ async def _generate_move_on_directive(
     _topic_type_hint = (topic_item.topic_type if topic_item else "") or ""
     _probe_focus_str = "; ".join(topic_item.probe_focus[:3]) if (topic_item and topic_item.probe_focus) else ""
 
-    if source in ("RESUME_TOPIC", "resume_project", "resume_skill"):
+    if is_skill_only:
+        # Skill-only tech interview: every topic is a skill/concept, never a project or
+        # work-history item. Questions must be answerable cold -- never referencing the
+        # candidate's resume, projects, or "a time when you used X".
+        _band_skill = {
+            "fresher": "Open with a fundamentals-level distinction question -- basic but not trivial.",
+            "mid":     "Open with a mechanics or performance-triage question -- how it works, what to check first.",
+            "senior":  "Open with a tradeoff or systemic-scenario question -- no single correct answer.",
+        }.get(band, "Open with a cold-reasoning question testing real understanding.")
+        _skill_source_note = {
+            "RESUME_TOPIC": "On resume AND required by the JD -- a common skill for this role.",
+            "JD_TOPIC": "Required by the JD, not claimed on resume -- ask cold-reasoning anyway; accept no exposure gracefully.",
+            "ROLE_TOPIC": "Expert-knowledge check -- not on resume or JD.",
+        }.get(source, "A skill relevant to this role.")
+        _angle_guide = (
+            f"SOURCE: {source} -- {_skill_source_note}\n"
+            f"This is a SKILL-ONLY technical interview. NEVER reference the candidate's resume, "
+            f"projects, work history, or employer -- not even to 'ground' the question. Every question "
+            f"must be a cold-reasoning prompt about the skill itself, answerable by anyone who genuinely "
+            f"knows it.\n\n"
+            f"HOW TO BUILD THE QUESTION -- combine these, don't pick just one:\n"
+            f"  SKILL: {topic_item.title if topic_item else new_topic_title} -- name it naturally.\n"
+            f"  CONTEXT: {(topic_item.full_description if topic_item else '') or '(none)'} -- use it to ground "
+            f"a concrete distinction, mechanism, or scenario.\n"
+            f"  TECH STACK: {', '.join(topic_item.tech_stack) if (topic_item and topic_item.tech_stack) else '(none)'}\n"
+            f"  PROBE FOCUS (MANDATORY angle): {_probe_focus_str or 'a fundamentals or mechanics angle for this skill'}\n\n"
+            f"DEPTH TARGET ({band.upper()}): {_band_skill}\n"
+            f"FORBIDDEN: 'tell me about a project where', 'your resume', 'a time when you', 'have you used', "
+            f"any company/project name, any 'what did you build/own' framing."
+        )
+    elif source in ("RESUME_TOPIC", "resume_project", "resume_skill"):
         _standalone_note = (
             "NOTE: This is a standalone personal project — not built at any employer. "
             "Never attach a company name to it.\n"
@@ -914,6 +945,59 @@ async def _generate_move_on_directive(
             f"Open with a specific, grounded question about {new_topic_title} based on the brief context above. "
             f"Do NOT ask why they worked somewhere or what drew them to a company."
         )
+    if is_skill_only:
+        _open_examples = (
+            "HOW GOOD INTERVIEWERS OPEN A NEW SKILL TOPIC:\n"
+            "They don't say 'Next question' or 'Moving on'. They build the skill name INTO a cold-reasoning "
+            "question naturally -- never referencing the candidate's resume, projects, or work history.\n"
+            "  Common skill: 'You've listed Kafka -- where does partitioning actually help versus hurt?'\n"
+            "  JD-required skill: 'This role leans on Kubernetes a lot -- how would you think about scaling pods under load?'\n"
+            "  Role-depth topic: 'One thing that matters a lot in this kind of role is observability -- how do you think about it?'\n"
+            "Notice: the skill name is in the question, but the question is answerable purely from knowing the "
+            "skill -- never 'have you used X' or 'tell me about a project using X'.\n\n"
+
+            "━━━ PROBE FOCUS RULE (MANDATORY, every MOVE_ON) ━━━\n"
+            "The angle guidance below always includes a PROBE FOCUS list. Your OPENING ANGLE "
+            "must be built around ONE of those items -- a fundamentals, mechanics, performance, or "
+            "robustness angle, never a generic 'do you know X'.\n\n"
+
+            "━━━ SOURCE TAG RULES (skill-only) ━━━\n"
+            "  RESUME_TOPIC → Common skill: on resume AND required by JD. Ask a cold-reasoning question "
+            "about the skill itself.\n"
+            "                 Never: 'tell me about a project where', 'what did you build with X'\n\n"
+            "  JD_TOPIC     → Required by JD, not on resume. Ask the same kind of cold-reasoning question; "
+            "accept no exposure gracefully.\n"
+            "                 Never: assume prior usage, 'walk me through your experience with X'\n\n"
+            "  ROLE_TOPIC   → Expert domain check. Ask about understanding or approach in the abstract.\n"
+            "                 Never: 'what was your experience with X', frame it as if it's on their resume\n\n"
+        )
+    else:
+        _open_examples = (
+            "HOW GOOD INTERVIEWERS OPEN A NEW TOPIC:\n"
+            "They don't say 'Next question' or 'Moving on'. They build the topic name INTO the question naturally.\n"
+            "  RESUME project: 'You built the multi-channel lead qualifier — what was the trickiest part to get right?'\n"
+            "  RESUME work role: 'At DataFlow you were building pipelines — what did you personally own end to end?'\n"
+            "  RESUME skill: 'You've worked with Kafka — where did you actually use it and at what scale?'\n"
+            "  JD requirement: 'This role deals with Kubernetes a lot — what's your experience with it so far?'\n"
+            "  ROLE topic: 'One thing that matters a lot in this kind of role is observability — how do you think about it?'\n"
+            "Notice: the topic name is in the question. The candidate immediately knows the context.\n\n"
+
+            "━━━ PROBE FOCUS RULE (MANDATORY, every MOVE_ON) ━━━\n"
+            "The angle guidance below always includes a PROBE FOCUS list. Your OPENING ANGLE "
+            "must be built around ONE of those items — never a generic ownership question "
+            "('what did you build', 'what did you personally do') when a more specific angle is given.\n\n"
+
+            "━━━ SOURCE TAG RULES ━━━\n"
+            "  RESUME_TOPIC → Candidate did this. We know it. Never ask if they did it.\n"
+            "                 Ask about depth: what they built, what was their call, what broke, what they'd change.\n"
+            "                 Never: 'why did you work there', 'do you have experience', 'what drew you to X'\n\n"
+            "  JD_TOPIC     → Role requires it. Candidate hasn't claimed it. We don't know if they've used it.\n"
+            "                 Ask neutrally — frame it as a role requirement, not a resume claim.\n"
+            "                 Never: assume experience, 'walk me through your experience with X'\n\n"
+            "  ROLE_TOPIC   → Expert domain check. Not on resume, not in JD. They may have zero experience.\n"
+            "                 Ask about their thinking or approach — not their history with it.\n"
+            "                 Never: 'what was your experience with X', frame it as if it's on their resume\n\n"
+        )
     _system = (
         "You are writing an internal directive for an AI interviewer named Ishitha. "
         "This directive is NEVER spoken aloud — it is a private instruction she reads and acts on silently.\n\n"
@@ -927,30 +1011,7 @@ async def _generate_move_on_directive(
         "Your directive must ensure Ishitha's first question gives the candidate enough context to answer. "
         "A question with no context — 'What was your biggest challenge?' — is unanswerable without knowing what it refers to.\n\n"
 
-        "HOW GOOD INTERVIEWERS OPEN A NEW TOPIC:\n"
-        "They don't say 'Next question' or 'Moving on'. They build the topic name INTO the question naturally.\n"
-        "  RESUME project: 'You built the multi-channel lead qualifier — what was the trickiest part to get right?'\n"
-        "  RESUME work role: 'At DataFlow you were building pipelines — what did you personally own end to end?'\n"
-        "  RESUME skill: 'You've worked with Kafka — where did you actually use it and at what scale?'\n"
-        "  JD requirement: 'This role deals with Kubernetes a lot — what's your experience with it so far?'\n"
-        "  ROLE topic: 'One thing that matters a lot in this kind of role is observability — how do you think about it?'\n"
-        "Notice: the topic name is in the question. The candidate immediately knows the context.\n\n"
-
-        "━━━ PROBE FOCUS RULE (MANDATORY, every MOVE_ON) ━━━\n"
-        "The angle guidance below always includes a PROBE FOCUS list. Your OPENING ANGLE "
-        "must be built around ONE of those items — never a generic ownership question "
-        "('what did you build', 'what did you personally do') when a more specific angle is given.\n\n"
-
-        "━━━ SOURCE TAG RULES ━━━\n"
-        "  RESUME_TOPIC → Candidate did this. We know it. Never ask if they did it.\n"
-        "                 Ask about depth: what they built, what was their call, what broke, what they'd change.\n"
-        "                 Never: 'why did you work there', 'do you have experience', 'what drew you to X'\n\n"
-        "  JD_TOPIC     → Role requires it. Candidate hasn't claimed it. We don't know if they've used it.\n"
-        "                 Ask neutrally — frame it as a role requirement, not a resume claim.\n"
-        "                 Never: assume experience, 'walk me through your experience with X'\n\n"
-        "  ROLE_TOPIC   → Expert domain check. Not on resume, not in JD. They may have zero experience.\n"
-        "                 Ask about their thinking or approach — not their history with it.\n"
-        "                 Never: 'what was your experience with X', frame it as if it's on their resume\n\n"
+        + _open_examples +
 
         "━━━ DIRECTIVE STRUCTURE ━━━\n"
         "Write in plain text, no markdown:\n"
@@ -1464,6 +1525,7 @@ class InterviewContext(BaseModel):
     jobId: Optional[str] = None
     jobTitle: str
     interviewType: Optional[str] = "tech"
+    questionBand: Optional[str] = None
     language: str
     orgId: Optional[str] = None
     orgName: Optional[str] = None
@@ -1811,10 +1873,18 @@ async def entrypoint(ctx: JobContext):
     # ── BRIEF: slot confirmation flow loads from DB; test flow always generates live ──
     _brief_openai_client: AsyncOpenAI = _SHARED_OPENAI_CLIENT
 
-    # Band seed: resume-only classification passed to generate_interview_brief.
-    # _total_years and _seniority are not used downstream — discarded.
-    _band_seed, _, _ = classify_band(structured_resume)
-    logger.info("[BAND] seed=%s", _band_seed)
+    # Band seed passed to generate_interview_brief. Tech interviews use the
+    # admin-selected questionBand from the Job row (mandatory at JD upload
+    # time, fixed per job -- never recomputed per candidate). Conversational
+    # interviews keep the resume-derived classify_band() as before.
+    if interview_type == "tech":
+        _band_seed = (ctx_data.questionBand or "").strip().lower()
+        if _band_seed not in ("fresher", "mid", "senior"):
+            _band_seed = "mid"
+        logger.info("[BAND] tech interview -- admin band=%s", _band_seed)
+    else:
+        _band_seed, _, _ = classify_band(structured_resume)
+        logger.info("[BAND] seed=%s", _band_seed)
 
     _stored_brief_raw = ctx_data.interviewBrief if not _is_test_session else None
     _stored_brief_dict: dict | None = (
@@ -1863,7 +1933,9 @@ async def entrypoint(ctx: JobContext):
     # Use the LLM's band assessment -- more accurate than mechanical inference
     candidate_band = _interview_brief.candidate_band
     logger.info("[FLOW] Band=%s | candidate=%s | role=%s", candidate_band, candidate_name, job_title)
-    # Convenience views directly from InterviewBrief -- no wrapper objects needed
+    # Convenience views directly from InterviewBrief -- no wrapper objects needed.
+    # Tech interviews are skill-only: topic_type is never "project"/"work" there,
+    # only conversational briefs still produce those topic types.
     _brief_skills    = [t.title for t in _interview_brief.topic_pool if t.topic_type == "skill"]
     _brief_projects  = [t.title for t in _interview_brief.topic_pool if t.topic_type == "project"]
     _brief_work      = [t.title for t in _interview_brief.topic_pool if t.topic_type == "work"]
@@ -1922,7 +1994,7 @@ async def entrypoint(ctx: JobContext):
         "mid": "probe individual ownership, measurable impact, decision trade-offs",
         "experienced": "probe end-to-end ownership, architecture depth, scale constraints",
     }.get(_band, "probe ownership, depth, and specifics")
-    _context_block = (
+    _fetch_summary_block = (
         f"CANDIDATE: {candidate_name or 'unknown'} | ROLE: {job_title} | BAND: {_band} | TIME: {time_limit_mins}m\n"
         f"\n"
         f"FETCH SUMMARY:\n"
@@ -1931,17 +2003,32 @@ async def entrypoint(ctx: JobContext):
         f"  JD Nice-To-Have: {_jd_nice_str}\n"
         f"  Coverage Targets: {_coverage_str}\n"
         f"\n"
-        f"RESUME BRIEF:\n"
-        f"  Anchor: {_anchor_full[:120]} (type: {_anchor_type})\n"
-        f"  Skills: {_skills_str}\n"
-        f"  Projects: {_projects_str}\n"
-        f"  Work History: {_work_str}\n"
-        f"\n"
-        f"INTERVIEW PLAN: 20 min covering resume ownership, JD skills, situational, behavioural. "
-        f"Open with: '{_anchor_title}'. "
-        f"Band={_band}: {_band_note}. "
-        f"Must cover: resume projects, work history, JD must-have skills, at least 1 situational, at least 1 behavioural."
     )
+    if interview_type == "tech":
+        _context_block = (
+            _fetch_summary_block
+            + f"SKILL BRIEF:\n"
+            f"  Anchor: {_anchor_full[:120]} (type: {_anchor_type})\n"
+            f"  Skills: {_skills_str}\n"
+            f"\n"
+            f"INTERVIEW PLAN: 20 min, skill-only. Open with: '{_anchor_title}'. "
+            f"Band={_band}: {_band_note}. "
+            f"Must cover: common resume/JD skills, JD-required skills, expert role topics -- no project/work references."
+        )
+    else:
+        _context_block = (
+            _fetch_summary_block
+            + f"RESUME BRIEF:\n"
+            f"  Anchor: {_anchor_full[:120]} (type: {_anchor_type})\n"
+            f"  Skills: {_skills_str}\n"
+            f"  Projects: {_projects_str}\n"
+            f"  Work History: {_work_str}\n"
+            f"\n"
+            f"INTERVIEW PLAN: 20 min covering resume ownership, JD skills, situational, behavioural. "
+            f"Open with: '{_anchor_title}'. "
+            f"Band={_band}: {_band_note}. "
+            f"Must cover: resume projects, work history, JD must-have skills, at least 1 situational, at least 1 behavioural."
+        )
     logger.info("[INTERVIEW_CONTEXT]\n%s", _context_block)
     voice_layer_prompt = build_voice_layer_prompt(
         candidate_name=candidate_first_name or candidate_name,
@@ -3499,6 +3586,7 @@ async def entrypoint(ctx: JobContext):
                                 prev_question=_last_interviewer_question,
                                 app_id=app_id,
                                 candidate_name=candidate_name,
+                                is_skill_only=(interview_type == "tech"),
                             )
                         )
                     # When all topics are covered, go straight to WRAP_UP.
@@ -3614,6 +3702,7 @@ async def entrypoint(ctx: JobContext):
                             prev_question=_last_interviewer_question,
                             app_id=app_id,
                             candidate_name=candidate_name,
+                            is_skill_only=(interview_type == "tech"),
                         )
                     # If LLM directive generation failed, use a minimal instruction
                     # that lets the LLM generate a natural question from the TOPIC_LOCK context.
@@ -3654,12 +3743,15 @@ async def entrypoint(ctx: JobContext):
                     # opener based on the topic tag. Keyed on the real tag values.
                     # This is what makes "we require so-and-so skill" (JD) differ from
                     # "what did you build" (resume) and "how do you think about X" (role).
+                    _is_skill_only_lock = interview_type == "tech"
                     if _src == "JD_TOPIC":
                         _source_lock = (
                             "\nSOURCE: JD REQUIREMENT. The candidate has NOT claimed this on their resume.\n"
-                            "Frame it as 'this role requires X' and ask about their exposure. "
-                            "NEVER say 'you mentioned', 'you listed', or 'your resume says'. "
-                            "NEVER assume they have used it.\n"
+                            + ("Ask a cold-reasoning question about the skill itself; accept no exposure gracefully. "
+                               "NEVER frame it as 'tell me about a project using X'.\n" if _is_skill_only_lock else
+                               "Frame it as 'this role requires X' and ask about their exposure. "
+                               "NEVER say 'you mentioned', 'you listed', or 'your resume says'. "
+                               "NEVER assume they have used it.\n")
                         )
                     elif _src == "ROLE_TOPIC":
                         _source_lock = (
@@ -3669,6 +3761,10 @@ async def entrypoint(ctx: JobContext):
                         )
                     else:  # RESUME_TOPIC
                         _source_lock = (
+                            "\nSOURCE: COMMON SKILL (on resume AND required by JD).\n"
+                            "Ask a cold-reasoning question about the skill itself -- fundamentals, mechanics, "
+                            "performance, or robustness. NEVER 'tell me about a project where you used X'.\n"
+                        ) if _is_skill_only_lock else (
                             "\nSOURCE: RESUME. The candidate has direct experience here.\n"
                             "Ask about what they built, decided, or what broke. NEVER ask 'do you have "
                             "experience with X' or 'why did you work there' -- they did.\n"

@@ -39,7 +39,7 @@ logger = logging.getLogger("interview-agent")
 
 class TopicItem(BaseModel):
     id: str
-    topic_type: str  # "project" | "work" | "skill" | "role_topic"
+    topic_type: str  # "skill" | "role_topic"
     tag: str = "RESUME_TOPIC"  # "RESUME_TOPIC" | "JD_TOPIC" | "ROLE_TOPIC"
     title: str
     full_description: str
@@ -54,9 +54,9 @@ class TopicItem(BaseModel):
     @field_validator("topic_type", mode="before")
     @classmethod
     def _coerce_type(cls, v: Any) -> str:
-        allowed = {"project", "work", "skill", "role_topic"}
+        allowed = {"skill", "role_topic"}
         s = str(v or "").strip().lower()
-        return s if s in allowed else "project"
+        return s if s in allowed else "skill"
 
     @field_validator("tag", mode="before")
     @classmethod
@@ -93,146 +93,118 @@ class InterviewBrief(BaseModel):
 # ---------------------------------------------------------------------------
 
 _BRIEF_SYSTEM = """\
-You are an expert hiring manager and technical interviewer.
+You are an expert hiring manager and technical interviewer running a SKILL-ONLY interview.
+This interview never references the candidate's projects, work history, or resume narrative —
+every question tests cold knowledge of a skill/library/tool, not "tell me about a time you used X."
 You receive a pre-extracted, structured candidate profile — already parsed from the DB.
 No raw JSON. No parsing needed. Your jobs:
-  1. Turn every extracted item into a TopicItem with the correct tag and probe guidance
-  2. Select the anchor topic (most strategically valuable for this role + band)
-  3. Generate role_topic TopicItems from YOUR expert domain knowledge of the role — not from resume or JD
-  4. Merge overlapping resume and JD items into one TopicItem (never duplicate)
-  5. Write interview_strategy, red_flags, candidate_summary — calibrated to role and band
-  6. The interview_strategy must be SPECIFIC to this exact role, band, and candidate — not generic filler
+  1. Select the SKILL POOL for this interview (see SKILL POOL SELECTION below)
+  2. Turn every selected skill into a TopicItem with the correct tag and probe guidance
+  3. Select the anchor topic (the single strongest skill to open on)
+  4. Generate role_topic TopicItems from YOUR expert domain knowledge of the role — not from resume or JD
+  5. Merge overlapping resume and JD mentions of the same skill into one TopicItem (never duplicate)
+  6. Write interview_strategy, red_flags, candidate_summary — calibrated to role and band, skill-focused only
+  7. The interview_strategy must be SPECIFIC to this exact role, band, and skill pool — not generic filler
 
-━━━ ROLE RELEVANCE FILTER (apply BEFORE selecting any resume item) ━━━
-The user message opens with "WHAT THIS ROLE ACTUALLY NEEDS" — a short brief on what this
-specific role does and what actually matters for it. Treat it as the relevance bar:
-  - A resume project/work-entry/skill only becomes a TopicItem if it demonstrates something
-    that brief says matters for this role. Being ON THE RESUME is not sufficient by itself.
-  - If the role brief names the kind of content this role does NOT care about, DROP resume
-    items that match that description even if they are the candidate's most impressive work —
-    impressive-but-irrelevant is still irrelevant here.
-  - This filter applies on top of, not instead of, the BAND-DRIVEN SOURCE MIX below. The
-    source mix says how many resume items to take; the relevance filter says WHICH ones qualify
-    at all before that count is applied.
-  - JD_TOPIC and ROLE_TOPIC items are exempt from this filter (they are already role-derived).
+━━━ SKILL POOL SELECTION (replaces any project/work selection logic) ━━━
+The user message contains a "SKILLS FROM RESUME" list (skills the candidate listed, plus
+tech-stack tags pulled from their projects/work — never the project/work titles or
+narratives themselves) and a "JD MUST-HAVE SKILLS & CRITERIA" list. Build the skill pool
+from these two lists only:
+
+  1. COMMON SKILLS (minimum 7): a skill/library/tool/framework name that appears in BOTH
+     the resume skills list AND the JD must-have or nice-to-have list (case-insensitive,
+     synonym-aware — e.g. "Postgres" and "PostgreSQL" are the same skill). Tag these
+     RESUME_TOPIC, is_jd_must_have=true if the JD lists it as must-have. If fewer than 7
+     genuine overlaps exist, do not pad with unrelated resume skills — pull in the closest
+     related/adjacent skills (e.g. a related framework in the same ecosystem) and note the
+     thin overlap in red_flags instead of fabricating a match that isn't there.
+  2. JD-REQUIRED SKILLS (minimum 3 additional): skills from the JD's must-have list that
+     are NOT already counted in the common-skills set above (i.e. skills the JD requires
+     that the candidate has not listed on their resume). Tag these JD_TOPIC.
+  3. ROLE_TOPICS (exactly 2): see ROLE_TOPIC GENERATION below — independent of resume/JD.
+
+Every TopicItem's title MUST be a skill, library, framework, or tool name (e.g. "Python",
+"FastAPI", "Spring Boot", "Microservices", "Database indexing", "React hooks") — NEVER a
+project name, company name, or work-history entry. If the extracted input has no obvious
+skill name for something (e.g. a vague JD requirement like "strong communication"), skip it —
+it does not belong in a skill-only technical interview.
 
 ━━━ TOPIC TAGS (required on every TopicItem) ━━━
-  RESUME_TOPIC — from candidate's resume (projects, work history, resume skills)
-  JD_TOPIC     — from the job description (must-have / nice-to-have skills, JD requirements)
+  RESUME_TOPIC — a skill/tool the candidate has listed or demonstrated (resume skills list
+                 or project/work tech-stack tags) AND that also appears in the JD
+  JD_TOPIC     — a skill the JD requires that the candidate has NOT listed/demonstrated
   ROLE_TOPIC   — from your expert knowledge of the role (NOT from resume or JD)
 
-If a resume skill appears in the JD must-haves → tag=RESUME_TOPIC, is_jd_must_have=true (resume wins)
-If a JD requirement is not on the resume → tag=JD_TOPIC
-
 ━━━ TOPIC COUNT — HARD RANGE, CUSTOM QUESTIONS ARE ADDITIVE ━━━
-Base cap: topic_pool must contain BETWEEN 10 AND 12 TopicItems (including anchor
-+ the 2 expert role topics), BEFORE counting custom questions.
-  - Fewer than 10 (excluding custom questions) is INVALID. If your selected items total
-    under 10, you MUST add more — pull in additional JD requirements, resume skills, or
-    work/project detail splits (e.g. a work entry's two distinct ownership areas) until
-    you reach 10. When topping up, prefer JD_TOPIC and ROLE_TOPIC additions (already
-    role-relevant by definition) over resume items that failed the ROLE RELEVANCE FILTER
-    above. Only re-admit a filtered-out resume item as a last resort if JD/role material
-    genuinely runs out.
-  - More than 12 (excluding custom questions) is INVALID. If over 12, DROP the
-    lowest-relevance items down to 12.
+Base cap: topic_pool must contain BETWEEN 12 AND 14 TopicItems (7+ common skills + 3+
+JD-required skills + 2 expert role topics), BEFORE counting custom questions.
+  - Fewer than 12 (excluding custom questions) is INVALID. If your selected items total
+    under 12, you MUST add more — pull in additional JD must-have/nice-to-have skills or
+    additional resume-listed skills relevant to the role until you reach 12.
+  - More than 14 (excluding custom questions) is INVALID. If over 14, DROP the
+    lowest-relevance skills down to 14 (drop weakest common-skill matches first, never
+    drop below the 7 common / 3 JD-required / 2 role-topic floors).
 
-Custom questions (if the client provided any) are added ON TOP of this 10-12 base —
-they never displace resume/JD/role topics and are never counted against the 10-12 range:
+Custom questions (if the client provided any) are added ON TOP of this 12-14 base —
+they never displace skill topics and are never counted against the 12-14 range:
   - Every custom question becomes its own TopicItem: tag="ROLE_TOPIC", topic_type=
     "role_topic", is_custom_question=true.
   - ALL custom questions are included, always, with no cap. If the client gave 5 custom
-    questions, all 5 appear as 5 additional TopicItems beyond the 10-12 base.
+    questions, all 5 appear as 5 additional TopicItems beyond the 12-14 base.
   - is_custom_question=true items do NOT count toward "EXACTLY 2 role topics" below —
     that rule is only about the 2 topics YOU generate from expert knowledge.
-  - Do not shrink or drop resume/JD/role topics to "make room" for custom questions —
+  - Do not shrink or drop skill topics to "make room" for custom questions —
     there is no shared budget between them.
 
 Before returning JSON, COUNT topic_pool excluding is_custom_question=true items. That
-count must be 10-12. Then verify every custom question is present as its own item on
-top of that count.
-ROLE_TOPIC (expert-knowledge, non-custom) count: exactly 2, included in the 10-12 base.
+count must be 12-14, with at least 7 tagged RESUME_TOPIC (common skills) and at least 3
+tagged JD_TOPIC (JD-required, not on resume). Then verify every custom question is
+present as its own item on top of that count.
+ROLE_TOPIC (expert-knowledge, non-custom) count: exactly 2, included in the 12-14 base.
 
 ━━━ BAND CALIBRATION ━━━
 Each band changes: probing depth, question difficulty, what counts as a "good" answer,
-how many follow-ups are expected, and what the interviewer is looking for.
-
-FRESHER (0–2 years):
-  Evaluation goal: understand how they think, not just what they built.
-  Depth: surface ownership, specific role, why they chose X, what they learned.
-  Avoid: architecture at scale, strategic tradeoffs, team leadership, production metrics.
-  Anchor: most hands-on project with real personal contribution.
-  interview_strategy: Focus on learning mindset, decision reasoning, and real hands-on involvement.
-    Ask what they personally did, why they made choices, what surprised them.
-    Do not probe tradeoffs or scale — they haven't been there.
-
-MID (2–5 years):
-  Evaluation goal: verify real ownership and individual decision-making.
-  Depth: what was specifically theirs, what decisions they made, what broke and why, scale they operated at.
-  Avoid: pure theory, basic definitions.
-  Anchor: project or role with clearest personal ownership.
-  interview_strategy: Push past team language. Ask what was specifically theirs.
-    Probe one real tradeoff per major topic. Surface what broke and what they'd do differently.
-
-EXPERIENCED (5–8 years):
-  Evaluation goal: architectural judgment and real consequence of decisions.
-  Depth: architectural decisions, tradeoffs, what broke at scale, alternatives considered, measurable outcomes.
-  Avoid: basic concepts, surface familiarity.
-  Anchor: most architecturally complex role or system they owned.
-  interview_strategy: Go directly to hard tradeoffs. Vague answers are a red flag — probe harder.
-    Every answer should name a constraint, an outcome, or a decision they'd make differently.
-    Skip surface questions entirely.
-
-SENIOR (8+ years):
-  Evaluation goal: strategic judgment, org-level impact, high-stakes decision quality.
-  Depth: org-level decisions, team or system impact, high-stakes tradeoffs, what they'd change at org level.
-  Avoid: implementation details, basic anything.
-  Anchor: most strategically significant initiative, not just a technical project.
-  interview_strategy: Peer-level conversation. Challenge their reasoning directly.
-    Ask what they'd do differently at the org level. Press on polished answers — something always went wrong.
-    Topic count should be fewer but each explored at greater depth.
-
-━━━ BAND-DRIVEN SOURCE MIX (governs WHICH topics make the cut) ━━━
-Band changes not just depth but WHICH sources fill the 10-12 topic budget.
-Apply this priority order when selecting which extracted items become
-TopicItems (highest priority filled first, budget allows ~8-10 non-role slots):
+how many follow-ups are expected, and what the interviewer is looking for. This is a
+FIXED, admin-selected band for this job — it does not vary by candidate.
 
 FRESHER:
-  Priority: JD topics (skills + role responsibilities) FIRST, then 2-3 resume items.
-  Take ALL JD must-haves as JD_TOPIC (merge with resume if candidate has matching
-  project/skill — then tag RESUME_TOPIC, is_jd_must_have=true).
-  Take ONLY the 2-3 strongest resume projects/skills — pick by relevance to role,
-  not recency. Do not include every resume skill; freshers list many trivial skills.
-  Mix target: ~60% JD-sourced, ~30% resume (2-3 items), ~2 role topics.
+  Evaluation goal: understand how they reason about a skill, not just whether they've heard of it.
+  Depth: fundamentals, basic mechanics, simple applied tasks. No systems context assumed.
+  Avoid: architecture at scale, strategic tradeoffs, production incident scenarios.
+  Anchor: the strongest common skill (resume + JD overlap).
+  interview_strategy: Focus on whether fundamentals are genuinely understood, not memorized.
+    Accept partial answers on tradeoffs/performance — they're learning. Get one clear
+    reasoning example per skill, then move on.
 
 MID:
-  Priority order: 1) work history (all real roles) 2) JD must-have skills
-  3) strongest 2-3 projects 4) remaining resume skills only if budget allows.
-  Work history entries are the backbone — a mid-level candidate's ownership
-  lives in their job roles, not side projects.
-  Mix target: ~40% work history, ~30% JD skills, ~20% projects, ~10% resume skills.
+  Evaluation goal: verify real working knowledge under realistic constraints.
+  Depth: mechanics, performance triage, one real constraint per applied question.
+  Avoid: pure textbook recitation with no reasoning.
+  Anchor: the strongest common skill (resume + JD overlap).
+  interview_strategy: Push past textbook answers. Ask what they'd check first, not a full
+    checklist. Probe one real tradeoff per skill. Surface where their understanding is
+    genuinely applied versus surface-level.
 
-EXPERIENCED / SENIOR:
-  Priority order: 1) work history (every real role, especially most recent/senior)
-  2) JD must-have skills reframed as judgment/architecture questions 3) role topics.
-  De-prioritize: standalone resume skill lists (skip unless it's a genuinely
-  distinguishing/rare skill), toy/personal projects (skip unless flagship).
-  Only include a project if it was a flagship initiative with org-level impact —
-  not a resume bullet.
-  Mix target: ~55% work history, ~30% JD skills (as judgment topics), ~15% role/flagship.
-
-This priority order determines what gets CUT when there is more material than
-the 10-12 budget allows — always cut from the lowest-priority source first.
+SENIOR:
+  Evaluation goal: architectural judgment and tradeoff reasoning at a systems level.
+  Depth: multi-factor tradeoffs, no-single-correct-answer scenarios, systemic failure modes.
+  Avoid: basic definitions, surface familiarity questions.
+  Anchor: the skill most central to the role's architecture-level decisions.
+  interview_strategy: Go directly to hard tradeoffs. Vague or textbook answers are a red
+    flag — probe harder, invert their stated assumption. Every answer should reveal HOW
+    they reason, not just WHAT they know.
 
 ━━━ ROLE_TOPIC GENERATION (critical — this is where the interview gets depth) ━━━
-Generate ROLE_TOPICs from your expert knowledge of the role. These are conceptual areas that
-every competent person in this role should know — regardless of what is on the resume or JD.
+Generate ROLE_TOPICs from your expert knowledge of the role. These are conceptual/skill areas
+that every competent person in this role should know — regardless of what is on the resume or JD.
 The goal: test role depth, not just candidate experience.
 
 Rules:
   - EXACTLY 2 role topics. Choose the 2 highest-signal concepts for this role.
   - Do NOT copy resume or JD items. Completely independent.
-  - Each role_topic must be specific enough that Ishitha can ask one concrete, grounded question about it.
+  - Each role_topic must be a skill/concept name, specific enough that Ishitha can ask one
+    concrete, grounded question about it — never a project or company reference.
   - Role topics must change based on band: same concept, different depth.
 
 Examples for common roles (pick the 2 strongest for the actual role):
@@ -258,70 +230,64 @@ in that exact field would be expected to answer well. Ground each in the role br
 in a generic checklist for the job title.
 
 ━━━ PROBE_FOCUS GENERATION (critical — this is what MOVE_ON questions are built from) ━━━
-probe_focus is not a summary of the topic — it is the set of concrete angles an interviewer
+probe_focus is not a summary of the skill — it is the set of concrete angles an interviewer
 will interrogate. Every MOVE_ON question is synthesized directly from these items, so vague or
-generic probe_focus produces vague, generic questions (e.g. falling back to "what did you build").
+generic probe_focus produces vague, generic questions.
 
 Rules:
   - Each of the 3 items must be a DIFFERENT kind of angle, not 3 phrasings of the same theme:
-      1. A concrete MECHANISM or DECISION specific to this topic (not "workflow design" —
-         name the actual thing: "channel-to-CRM routing logic", "lead scoring criteria").
-      2. A FAILURE / TRADEOFF / CONSTRAINT angle (what could break, what they had to choose between,
-         what the limiting factor was).
-      3. An OUTCOME / METRIC angle (what changed, what was measured, what the result was) —
-         for JD_TOPIC/ROLE_TOPIC with no known outcome, use an approach/judgment angle instead.
-  - Ground every item in the topic's own full_description — never a generic GTM/eng/PM phrase
-    that could apply to any candidate's version of this topic.
+      1. A concrete MECHANISM or internal-behavior angle specific to this skill (not "how it
+         works" — name the actual thing: "connection pooling behavior", "event loop scheduling").
+      2. A FAILURE / TRADEOFF / PERFORMANCE angle (what breaks, what the tradeoff is, what the
+         limiting factor is at scale).
+      3. An APPLIED / DESIGN-DECISION angle (a concrete scenario where this skill's use requires
+         a judgment call).
+  - Ground every item in the skill itself — never a generic phrase that could apply to any skill.
   - If a red_flag applies to this topic, at least one probe_focus item must be the exact angle
-    that would surface it. Example: red_flag "Cannot explain lead qualification logic" requires
-    a probe_focus item like "lead scoring criteria used", not a generic "workflow design".
+    that would surface it.
 
-GOOD vs BAD example (topic: multi-channel lead capture unifying Instagram/Facebook/email):
-  BAD:  ["workflow design", "automation logic", "lead qualification criteria"]
-        — three overlapping phrasings of "how the system works", no failure/outcome angle,
-        forces the interviewer back onto generic "what did you build/own".
-  GOOD: ["channel-to-CRM routing rule", "what happens on a duplicate lead across channels",
-         "lead-to-reply conversion rate"]
-        — one mechanism, one edge-case/failure angle, one outcome angle. Each is answerable
-        only by someone who actually built this exact system.
+GOOD vs BAD example (topic: Database indexing):
+  BAD:  ["how indexes work", "performance", "best practices"]
+        — three vague restatements with no mechanism/failure/applied distinction.
+  GOOD: ["B-tree vs hash index internals", "write-amplification cost of over-indexing",
+         "choosing an index for a 3-table join that's suddenly slow"]
+        — one mechanism, one tradeoff angle, one applied-decision angle.
 
-  This is a STRUCTURE example, not content to reuse. Never emit a probe_focus item
-  naming a feature, metric, or scenario (e.g. "booking reminder", "checkout flow")
-  that does not appear in THIS topic's own full_description/tech_stack/impact —
-  copying an example's specific noun onto an unrelated candidate's topic produces a
-  probe about something they never built.
+  This is a STRUCTURE example, not content to reuse. Never emit a probe_focus item that
+  doesn't genuinely apply to THIS topic's own tech_stack/title.
 
 ━━━ DEDUP — NO CONCEPT MAY APPEAR TWICE ━━━
 Before finalizing topic_pool, verify: no two TopicItems test the same
 underlying concept/skill/technology, even under different titles.
-  - A "Python" resume skill entry and a resume project that used Python →
-    ONE TopicItem only (the project, with tech_stack containing "Python").
-    Do NOT also create a standalone "Python" skill topic.
-  - A JD must-have skill and a resume project/work entry that demonstrates it →
-    ONE TopicItem, tag=RESUME_TOPIC, is_jd_must_have=true (never two).
-  - Two work entries that both used the same primary tech → keep both only if
-    they represent genuinely different ownership/scope; otherwise merge.
-  - Record every skill folded into a project/work topic in skill_coverage_map
+  - A "Python" resume skill entry and a "Python" JD requirement → ONE TopicItem only
+    (tag=RESUME_TOPIC, is_jd_must_have=true). Never two.
+  - Two closely related skills (e.g. "REST API design" and "API design principles") →
+    merge into one TopicItem unless they are genuinely distinct enough to probe separately.
+  - Record every skill folded into another topic in skill_coverage_map
     (skill_key -> [topic_id]) so downstream code knows it's covered, but do
     NOT emit a separate TopicItem for it.
-This rule overrides "every project/skill -> topic" instincts. Concept coverage,
+This rule overrides "every extracted skill -> topic" instincts. Concept coverage,
 not item count, is what matters.
 
 ━━━ MANDATORY ━━━
-  - Apply BAND-DRIVEN SOURCE MIX to choose which extracted items become topics.
+  - Apply SKILL POOL SELECTION to choose which skills become topics: 7+ common, 3+ JD-required.
   - Apply DEDUP so no concept repeats across two TopicItems.
-  - Correctly tag every topic: RESUME_TOPIC (from resume), JD_TOPIC (from JD,
-    no resume match), ROLE_TOPIC (from your expert knowledge only — never
-    resume/JD content mislabeled as ROLE_TOPIC).
+  - Correctly tag every topic: RESUME_TOPIC (common skill, resume+JD overlap), JD_TOPIC (JD-required,
+    not on resume), ROLE_TOPIC (from your expert knowledge only — never resume/JD content mislabeled
+    as ROLE_TOPIC).
   - EXACTLY 2 ROLE_TOPICs from expert knowledge (is_custom_question=false), included
-    within the 10-12 base cap.
+    within the 12-14 base cap.
   - Custom questions (if provided) are ALWAYS included in full, added on top of the
-    10-12 base — see TOPIC COUNT section above. Never dropped, never counted against
-    the base cap, never displace resume/JD/role topics.
+    12-14 base — see TOPIC COUNT section above. Never dropped, never counted against
+    the base cap, never displace skill topics.
   - anchor_topic must also be the FIRST item in topic_pool.
-  - topic_pool base size (excluding custom questions): 10-12 TopicItems, BOTH bounds
-    mandatory. Count before output; if under 10, add more items; if over 12, cut the
-    weakest — then append all custom questions on top.
+  - topic_pool base size (excluding custom questions): 12-14 TopicItems, BOTH bounds
+    mandatory, with the 7 common / 3 JD-required / 2 role floors always met. Count
+    before output; if under 12, add more items; if over 14, cut the weakest — then
+    append all custom questions on top.
+  - No TopicItem may reference a project name, company name, or work-history narrative —
+    every title and full_description must be about the skill itself, not the candidate's
+    application of it in a specific project.
   - Return ONLY valid JSON. No markdown. No explanation.
 
 Schema:
@@ -339,7 +305,7 @@ Schema:
 TopicItem schema:
 {
   "id": str,
-  "topic_type": "project"|"work"|"skill"|"role_topic",
+  "topic_type": "skill"|"role_topic",
   "tag": "RESUME_TOPIC"|"JD_TOPIC"|"ROLE_TOPIC",
   "title": str,
   "full_description": str,
@@ -428,7 +394,7 @@ async def _understand_role(
 
 _TOPUP_SYSTEM = """\
 You are an expert hiring manager. A topic_pool for this interview lost some items
-to deduplication and now needs topping up to reach the 12-topic target. Generate
+to deduplication and now needs topping up to reach the 12-topic floor. Generate
 ADDITIONAL role-knowledge TopicItems from your own expert domain knowledge of the
 role — the same kind of item as an ROLE_TOPIC, testing conceptual/practical depth
 that any competent person in this role should have, independent of this specific
@@ -473,7 +439,7 @@ async def _topup_role_topics(
     usage_sink: Any = None,
 ) -> list[TopicItem]:
     """Generates extra ROLE_TOPIC items when dedup drops the pool below the
-    12-topic target, instead of re-admitting the duplicates dedup just removed."""
+    12-topic floor, instead of re-admitting the duplicates dedup just removed."""
     existing_summary = "\n".join(
         f"- {t.title}: {t.full_description}" for t in existing_topics
     )
@@ -615,7 +581,7 @@ async def generate_interview_brief(
     brief.topic_pool = _dedup_jd_vs_resume(brief.topic_pool)
     brief.topic_pool = _dedup_any_overlap(brief.topic_pool)
 
-    # Dedup can pull the pool below the 12-topic target (dropped duplicates
+    # Dedup can pull the pool below the 12-topic floor (dropped duplicates
     # aren't re-admitted). Top back up with fresh, non-duplicate role topics
     # rather than silently shipping a shorter interview.
     non_custom_count = sum(1 for t in brief.topic_pool if not t.is_custom_question)

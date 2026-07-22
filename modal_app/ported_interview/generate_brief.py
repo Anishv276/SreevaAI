@@ -76,6 +76,7 @@ class ApplicationRow(BaseModel):
     orgId: Optional[str] = None
     llmInterviewBrief: Optional[str] = None
     interviewType: Optional[str] = None
+    questionBand: Optional[str] = None
 
     @model_validator(mode="after")
     def _resolve_job_title(self) -> "ApplicationRow":
@@ -98,6 +99,14 @@ class ApplicationRow(BaseModel):
     @property
     def interview_type(self) -> str:
         return self.interviewType if self.interviewType == "conversational" else "tech"
+
+    @property
+    def admin_question_band(self) -> str:
+        """Admin-selected band for tech interviews. Mandatory at JD upload time;
+        'mid' is only a defensive fallback for rows created before this field
+        existed. Not used for conversational interviews."""
+        band = str(self.questionBand or "").strip().lower()
+        return band if band in ("fresher", "mid", "senior") else "mid"
 
     @property
     def resume_json(self) -> dict:
@@ -178,6 +187,7 @@ class BriefRepository:
         d."aiGeneratedInterviewQuestions"           AS "interviewQuestions",
         d."organizationId"                          AS "orgId",
         d."interviewType",
+        d."questionBand",
         o."llmInterviewBrief"
     FROM "Application" a
     JOIN "Job" d ON a."jobId" = d.id
@@ -264,10 +274,18 @@ class BriefPipeline:
         return {"row": row, "t_fetch_done": time.perf_counter()}
 
     def _node_classify_band(self, state: BriefWorkerState) -> dict:
-        """Node 2: Deterministic band classification from resume (zero LLM)."""
+        """Node 2: Determine the interview band.
+
+        Tech interviews use the admin-selected questionBand from the Job row
+        (mandatory at JD upload time) -- never the resume. Conversational
+        interviews keep the resume-derived classify_band() as before."""
         if state.get("error"):
             return {}
         row: ApplicationRow = state["row"]
+        if row.interview_type == "tech":
+            band_seed = row.admin_question_band
+            logger.info("[NODE:classify_band] tech interview -- admin band=%s", band_seed)
+            return {"band_seed": band_seed, "total_years": 0.0}
         band_seed, total_years, seniority = classify_band(row.resume_json)
         logger.info(
             "[NODE:classify_band] band=%s | total_years=%.1f | seniority=%s",
