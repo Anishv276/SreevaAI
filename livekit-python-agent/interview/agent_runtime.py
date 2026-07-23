@@ -752,6 +752,7 @@ def _build_probe_directive(
     ladder_rung: str = "",
     recent_question_patterns: str = "(none yet)",
     declined_facts: str = "(none yet)",
+    cross_cutting_signal: Optional[str] = None,
 ) -> str:
     """
     Builds the probe directive synchronously — no LLM call.
@@ -765,10 +766,16 @@ def _build_probe_directive(
     topic's probe_focus list — never asking about the same sub-concept twice on
     one topic when other sub-concepts are still un-probed.
 
-    ladder_rung: fixed difficulty rung ("fundamentals"/"core_mechanics"/
-    "performance"/"probe") from TopicState.current_rung_name() -- forwarded
+    ladder_rung: fixed question-type rung ("definition"/"mechanism"/
+    "difference"/"scenario") from TopicState.current_rung_name() -- forwarded
     verbatim into get_probe_context() so the next question never escalates past
-    what the ladder allows, and steps down after a denial instead of up.
+    what the ladder allows, steps down after a denial-tier signal instead of up,
+    and never reaches "scenario" (the gated rung) unless the candidate's
+    conceptual average has cleared TopicState.CONCEPTUAL_GATE_THRESHOLD_PCT.
+
+    cross_cutting_signal: Part B's optional cross-cutting signal (verbal_disfluency/
+    buzzword_without_substance/self_correction_recovery/internal_contradiction/
+    pure_denial) fired alongside the primary stage signal this turn, if any.
 
     interview_type: routes to interview.tech.probe or interview.conversational.probe
     for the signal-specific probe directive (different signal sets per module).
@@ -838,6 +845,7 @@ def _build_probe_directive(
         recent_question_patterns=recent_question_patterns,
         declined_facts=declined_facts,
         ladder_rung=ladder_rung,
+        cross_cutting_signal=cross_cutting_signal,
     )
 
     # Filler guidance -- classify prev answer intent so Ishitha's reaction is connected.
@@ -912,8 +920,10 @@ def _build_probe_directive(
             parts_out += [
                 f"CRITICAL SUB-CONCEPT LOCK: This turn's question MUST be about '{_mandatory_subconcept}' — "
                 f"not about any other sub-concept of '{topic_item.title if topic_item else active_topic}'. ",
-                f"If you previously probed '{_mandatory_subconcept}' already, dig deeper INTO IT (an internal "
-                f"mechanism, an edge case, a decision) — never pivot to a different sub-concept mid-turn.",
+                f"If you previously probed '{_mandatory_subconcept}' already, dig deeper INTO IT — ask for a "
+                f"CONCRETE EXAMPLE of it, or ask them to CONTRAST it with a closely related concept — never "
+                f"pivot to an unrelated sub-concept just because this one didn't land yet. Only a genuinely "
+                f"new sub-concept is allowed once this one is either answered well or has failed twice in a row.",
                 f"Do NOT ask a generic overview question about the topic. Do NOT ask about a different sub-concept.",
                 "",
             ]
@@ -1351,6 +1361,17 @@ class InterviewAgent(Agent):
         # After that single skip, normal eval resumes.
         self._move_on_opener_pending: bool = False
         self._completed_user_turn_handler = None
+        # Step 5 hard stop: once the session-end sequence has started (time
+        # limit reached, candidate disconnected, or the interview was marked
+        # finished), llm_node must never generate another question -- this is
+        # a blocking bug, not cosmetic, if a race lets one slip through after
+        # the goodbye has already been queued/spoken. Set via
+        # set_session_end_event() once the outer runtime creates its
+        # disconnect/finished events (they don't exist yet at agent
+        # construction time).
+        self._session_end_event: Optional[asyncio.Event] = None
+    def set_session_end_event(self, event: asyncio.Event) -> None:
+        self._session_end_event = event
     def _record_tts_text(self, text: str) -> None:
         if text:
             self._tts_text_characters += len(text)
@@ -1393,6 +1414,16 @@ class InterviewAgent(Agent):
             return (INTERVIEW_TEMPERATURE, "greeting_rapport_closing")
         return (INTERVIEW_TEMPERATURE, "adaptive_listener_core")
     async def llm_node(self, chat_ctx, tools, model_settings):
+        # Step 5 hard stop: once the session-end sequence has been signaled
+        # (time limit reached, candidate disconnected, or interview marked
+        # finished), no further question may be generated -- a race between
+        # LiveKit's own teardown and an in-flight user turn must never
+        # produce one more spoken question after the goodbye has fired. This
+        # is a blocking check, not a best-effort one: it runs before anything
+        # else in this method, including the eval-directive wait below.
+        if self._session_end_event is not None and self._session_end_event.is_set():
+            logger.warning("[LLM_GATE] session already ended -- refusing to generate a new question")
+            return
         activity = self._get_activity_or_raise()
         assert activity.llm is not None, "llm_node called but no LLM node is available"
         assert isinstance(activity.llm, llm.LLM), (
@@ -2779,6 +2810,11 @@ async def entrypoint(ctx: JobContext):
     participant: Optional[Any] = None
     disconnect_event = asyncio.Event()
     interview_finished_event = asyncio.Event()
+    # Step 5 hard stop: every session-end path (time-expired, finished,
+    # disconnect) sets disconnect_event -- give llm_node a direct handle so it
+    # can refuse to generate once any of them has fired, instead of relying
+    # on LiveKit's own teardown timing to race a new question out of it.
+    agent.set_session_end_event(disconnect_event)
     interview_marked_finished = False
     turn_count = 0
     warmup_complete = False  # True after candidate confirms the short readiness check
@@ -2814,7 +2850,7 @@ async def entrypoint(ctx: JobContext):
     # recorded into _asked_questions_log (see turn-completion block below).
     _recent_question_patterns: collections.deque = collections.deque(maxlen=8)  # each: {"opener":str,"construction":str,"signal":str}
     _declined_facts_log: list[str] = []  # facts the candidate explicitly could not produce (persists all interview)
-    _teach_back_used: bool = False  # explanation_shallow's no-jargon teach-back construction -- at most ONCE per interview, not once per topic (see PROBLEM 3 fix)
+    _teach_back_used: bool = False  # the no-jargon teach-back construction (used for mechanism_shallow/definition_partial etc.) -- at most ONCE per interview, not once per topic (see PROBLEM 3 fix)
     _last_depth_decay_turn: int = -999           # turn when depth_decay last fired; -999 = never
     _last_applied_eval_turn: int = 0             # monotonic guard against stale eval results
     _question_asked_at: float = 0.0
@@ -3585,13 +3621,18 @@ async def entrypoint(ctx: JobContext):
                 _eval_result_inline: dict = await run_eval_and_build_directive(payload, _eval_openai_client)
                 # -- Unpack eval result ----------------------------------------
                 _eval_signal        = _eval_result_inline.get("signal")         # str | None
+                _eval_cross_cutting = _eval_result_inline.get("cross_cutting_signal")  # str | None
                 _eval_signal_reason = _eval_result_inline.get("signal_reason")  # str | None
                 _saturation   = _eval_result_inline.get("saturation") or {}
                 # H5 fix: read rotation index from TopicState and advance it so
                 # consecutive PROBE turns on the same topic cycle through different
                 # goal angles instead of random-picking each time.
+                # Item 3 gate: only actually advance when eval says the current
+                # sub-concept's gap resolved or 2 consecutive failed probes on it
+                # already happened -- see should_rotate_subconcept below.
                 _new_topic_state_dict_pre = _saturation.get("topic_state_dict") if _eval_result_inline.get("saturation") else None
                 _rotation_idx = int((_new_topic_state_dict_pre or {}).get("probe_rotation_index", 0) or 0)
+                _should_rotate_subconcept = bool(_saturation.get("should_rotate_subconcept", True))
                 _qr           = _eval_result_inline.get("quality_record") or {}
                 _signals      = [_eval_signal] if _eval_signal else []
 
@@ -3646,8 +3687,8 @@ async def entrypoint(ctx: JobContext):
                 # Test events: log decision
                 if _action == "MOVE_ON":
                     _reason = "Unknown"
-                    if _eval_signal == "pure_denial":
-                        _reason = "pure_denial signal"
+                    if (_eval_signal or "").endswith("_absent") or _eval_cross_cutting == "pure_denial":
+                        _reason = "denial-tier signal (topic_floor_reached)"
                     elif _is_saturated:
                         _reason = "topic saturated"
                     elif _weak_exit:
@@ -4063,7 +4104,7 @@ async def entrypoint(ctx: JobContext):
                     )
                     # Ladder rung names must match TopicState.LADDER in interview/tech/eval.py
                     # exactly -- ladder_rung there is an index into that same tuple.
-                    _LADDER_NAMES = ("fundamentals", "core_mechanics", "performance", "probe")
+                    _LADDER_NAMES = ("definition", "mechanism", "difference", "scenario")
                     _ladder_rung_idx = max(0, min(int((_new_topic_state_dict or {}).get("ladder_rung", 0) or 0), len(_LADDER_NAMES) - 1))
                     _ladder_rung_this_turn = _LADDER_NAMES[_ladder_rung_idx]
                     _directive = _build_probe_directive(
@@ -4085,14 +4126,16 @@ async def entrypoint(ctx: JobContext):
                         ladder_rung=_ladder_rung_this_turn,
                         recent_question_patterns=render_recent_question_patterns(_recent_question_patterns),
                         declined_facts=render_declined_facts(_declined_facts_log),
+                        cross_cutting_signal=_eval_cross_cutting,
                     )
                     if _teach_back_used:
                         # PROBLEM 3 hard cap: the no-jargon teach-back construction may
                         # fire AT MOST ONCE across the entire interview, not once per
-                        # topic. explanation_shallow's own per-topic pivot (probe.py) only
-                        # knows about repeats on THE SAME topic -- this catches the
-                        # cross-topic reuse the transcript showed (used for list
-                        # mutability, then again for embeddings, attention, retrievers).
+                        # topic. The stage signals' own per-signal pivot (e.g.
+                        # mechanism_shallow's directive in probe.py) only knows about
+                        # repeats on THE SAME concept -- this catches the cross-topic
+                        # reuse the transcript showed (used for list mutability, then
+                        # again for embeddings, attention, retrievers).
                         _directive += (
                             "\n\nNO-JARGON TEACH-BACK -- ALREADY USED (HARD BAN):\n"
                             "The 'explain it with no jargon / to someone who's never touched it' "
@@ -4107,7 +4150,14 @@ async def entrypoint(ctx: JobContext):
                     if _scoring_topic_log and _scoring_topic_log != "?":
                         _ts_for_rotation = _topic_states.get(_normalize_topic_key(_scoring_topic_log))
                         if isinstance(_ts_for_rotation, dict):
-                            _ts_for_rotation["probe_rotation_index"] = _rotation_idx + 1
+                            # Item 3: only advance the rotation index when the current
+                            # sub-concept's gap actually resolved, or 2 consecutive
+                            # failed probes on it already happened (should_rotate_
+                            # subconcept, computed in eval.py from this turn's signal).
+                            # Otherwise hold so the NEXT probe stays on the SAME
+                            # sub-concept instead of pivoting to an unrelated one.
+                            if _should_rotate_subconcept:
+                                _ts_for_rotation["probe_rotation_index"] = _rotation_idx + 1
                     _sub_concepts_all = list((_probe_brief_item.probe_focus or [])) if _probe_brief_item else []
                     _sub_concept_this_turn = (
                         _sub_concepts_all[_rotation_idx % len(_sub_concepts_all)]

@@ -9,6 +9,13 @@ Returns:
   quality scores  : clarity, depth, specificity, grounding, overall
   routing         : action (PROBE/MOVE_ON)
   signal          : one signal name + the exact reason it fired (never null)
+
+Staged signal taxonomy: the signal classifier is scoped to whichever question
+STAGE (definition/mechanism/difference/scenario) the answer was responding to
+-- see STAGE_SIGNAL_DEFINITIONS below and eval.py's TopicState.current_rung_name().
+Each stage has exactly 4 possible outcomes; at most one CROSS_CUTTING_SIGNAL
+may fire alongside the stage signal (never instead of it, never stacked with
+another cross-cutting signal).
 """
 from __future__ import annotations
 import asyncio
@@ -22,20 +29,13 @@ from interview.agent_runtime_utils import token_limit_kwarg
 
 
 # ---------------------------------------------------------------------------
-# Signal definitions -- what each signal means and what it maps to.
-# Used here to train the scoring LLM. Also imported by probe_strategy.py.
+# Response-shape signals (G0) -- fire if the candidate's response is a special
+# SHAPE (asking to clarify/redo, or answering something unrelated) rather than
+# a content-bearing attempt at the question. Orthogonal to the staged content
+# taxonomy below -- these are about the shape of the reply, not which concept
+# stage it was answering.
 # ---------------------------------------------------------------------------
-
-# Response-level signals (G0) -- fire if candidate's response type is special
 RESPONSE_SIGNALS = {
-    "pure_denial": {
-        "description": "Answer is ONLY denial, zero attempt, nothing substantive.",
-        "action": "MOVE_ON (forced)",
-    },
-    "denial_with_continuation": {
-        "description": "Starts with denial but adds substantive content (partial admission).",
-        "action": "CONTINUE (score normally, cap at 5 to prevent saturation)",
-    },
     "clarification_request": {
         "description": "Candidate asks to clarify/rephrase the question.",
         "action": "REPHRASE (ask question again, clearer)",
@@ -50,129 +50,177 @@ RESPONSE_SIGNALS = {
     },
 }
 
-# Content-level signals (G1-G6) -- fire based on answer quality/pattern
-SIGNAL_DEFINITIONS = {
+# ---------------------------------------------------------------------------
+# PART B — STAGED SIGNAL TAXONOMY
+#
+# Each question stage has its own fixed 4-outcome signal set. The classifier
+# is told which stage is active (via active_stage) and picks ONE of that
+# stage's 4 signals -- never all 16 at once. Outcome tiers, consistent across
+# every stage:
+#   *_correct / *_clear / *_grounded  -- concept cleared, no gap
+#   *_partial / *_shallow / *_one_sided / *_generic / reasoning_unjustified
+#       -- GAP tier: attempted, engaged, but didn't fully land. Probe-on-same-
+#          gap (Part C.2) holds the sub-concept rotation here.
+#   *_confused / *_incorrect / *_reversed
+#       -- ACTIVE WRONGNESS tier: not just a gap, actively wrong. Scored WORSE
+#          than the corresponding *_absent outcome (Part D.3) but flow-wise
+#          also holds the rotation like the gap tier (not cleared).
+#   *_absent -- DENIAL tier: essentially nothing on this concept. Part C.1's
+#          2-consecutive-occurrence cap (shared with cross-cutting pure_denial).
+# ---------------------------------------------------------------------------
+STAGE_SIGNAL_DEFINITIONS: dict[str, dict[str, dict]] = {
 
-    # PATTERN: answer is a rule/habit, not a real event
-    "example_evaded": {
-        "trigger": "Question asked for ONE real past instance. Answer describes how they GENERALLY operate — a rule, not a memory.",
-        "pattern": "The shape is 'usually I...', 'normally...', 'I always...', 'typically we...' — a description of a type of behaviour, not one specific event that happened.",
-        "examples": [
-            # tech -- describes habit not event
-            "Q: Tell me about a time your model gave wrong results. A: Usually I check the training data first and retrain.",
-            # sales -- describes approach not incident
-            "Q: Tell me about a deal you almost lost. A: I always follow up quickly and stay persistent with the client.",
-            # HR -- describes process not moment
-            "Q: Describe a time you handled a difficult hire. A: Normally I involve the team and keep the process structured.",
-        ],
-        "not_this": "NOT this if they gave any real specific instance, even briefly or imperfectly — then null or a different signal. "
-                    "NOT this if they tried to recall and ran dry — that is depth_ceiling_hit. "
-                    "ONLY fire when they clearly HAVE substance but chose the generic version over the real one.",
+    "definition": {
+        "definition_correct": {
+            "trigger": "Candidate states what the concept IS, accurately, in their own words -- not a verbatim textbook recitation, but the right idea.",
+            "pattern": "The core definitional claim is right. Minor imprecision in wording is fine as long as the underlying idea is correct.",
+            "examples": ["A hash map is a structure that maps keys to values using a hash function to find the right bucket fast."],
+            "not_this": "NOT this if the definition is half-right or missing a key qualifier -- that's definition_partial. NOT this if they mix up two related concepts' properties -- that's definition_confused.",
+        },
+        "definition_partial": {
+            "trigger": "Candidate gets PART of the definition right but is missing a key element, hedges heavily, or only defines it by example without the general claim.",
+            "pattern": "Real engagement, real partial knowledge -- not wrong, just incomplete. 'It's like a list but... I think faster for lookups?' -- right direction, no confident landing.",
+            "examples": ["It's kind of like a dictionary I think, where you look things up... not totally sure how."],
+            "not_this": "NOT this if they get the core claim actively backwards -- that's definition_confused. NOT this if there's no attempt at all -- that's definition_absent.",
+        },
+        "definition_confused": {
+            "trigger": "Candidate states the definition ACTIVELY WRONG -- swaps it with a different concept's definition, or asserts a property that is the opposite of true.",
+            "pattern": "This is not a gap, it's a wrong claim stated with some confidence. Worse than silence because it reveals a real misconception, not just missing knowledge.",
+            "examples": ["A hash map keeps things in sorted order automatically, that's the whole point of it. [Backwards -- that's a sorted structure, not a hash map's defining property.]"],
+            "not_this": "NOT this if they simply don't know and say so, or trail off uncertainly -- that's definition_partial or definition_absent. Reserve this for a confidently WRONG claim.",
+        },
+        "definition_absent": {
+            "trigger": "Candidate gives essentially nothing -- a flat 'I don't know', silence, or a non-answer with zero definitional content.",
+            "pattern": "No real attempt. Distinct from definition_confused (which is a wrong attempt) and definition_partial (a real but incomplete attempt).",
+            "examples": ["I don't know.", "Not sure, honestly.", "..."],
+            "not_this": "NOT this if there's ANY real attempt, even a wrong one -- a wrong attempt is definition_confused, a thin attempt is definition_partial.",
+        },
     },
 
-    # PATTERN: tried to answer, visibly ran out
-    "depth_ceiling_hit": {
-        "trigger": "They engaged and tried, then visibly ran out of knowledge — partial start that trails off, one-word non-denial, or 'I don't have much idea' after attempting.",
-        "pattern": "Not dodging, not giving a habit — just empty. They reached the edge of what they know and stopped. The answer starts with intent but has no landing.",
-        "examples": [
-            # tech -- started, ran out
-            "I've used FAISS but I don't really have a lot of idea about how the indexing actually works.",
-            # sales -- started, ran out
-            "I've done territory planning but the forecasting side... yeah, I'm not too sure how that part worked.",
-            # HR -- one word after a real question
-            "Q: Walk me through how you structured the interview panel. A: Okay.",
-        ],
-        "not_this": "NOT this if it is a flat 'I don't know' with zero attempt — that is a denial, return null. "
-                    "NOT this if they gave a general habit — that is example_evaded. "
-                    "Fire only when they attempted and then ran empty.",
+    "mechanism": {
+        "mechanism_correct": {
+            "trigger": "Candidate explains HOW it actually works internally -- the real steps or data flow, not just the label or the outcome.",
+            "pattern": "Real internal mechanism traced, even briefly -- 'it hashes the key, mods by the table size, and lands in that bucket' shows the actual steps.",
+            "examples": ["It computes a hash of the key, then uses that to index into an array of buckets, resolving collisions with chaining or probing."],
+            "not_this": "NOT this if they only restate WHAT it does without HOW -- that's mechanism_shallow.",
+        },
+        "mechanism_shallow": {
+            "trigger": "Candidate names the mechanism or restates its effect ('it makes lookups fast') but gives no internal steps, no data flow, no real trace of HOW.",
+            "pattern": "Confident but hollow -- the label is right, the internals are absent. A real practitioner can open the box; this answer describes the outside only.",
+            "examples": ["It just makes things faster to look up, that's how it works."],
+            "not_this": "NOT this if they get an internal step actively backwards -- that's mechanism_incorrect. NOT this if there's zero engagement -- that's mechanism_absent.",
+        },
+        "mechanism_incorrect": {
+            "trigger": "Candidate describes an internal step or mechanism that is ACTIVELY WRONG -- not just vague, but a specific false claim about how it works.",
+            "pattern": "A confident, specific, wrong claim about the internals -- worse than a shallow non-answer because it's actively misleading about the mechanism.",
+            "examples": ["It works by keeping every entry in a linked list and scanning from the front each time. [That's linear search, not how the mechanism actually works.]"],
+            "not_this": "NOT this if the answer is just thin/generic with no specific wrong claim -- that's mechanism_shallow.",
+        },
+        "mechanism_absent": {
+            "trigger": "Candidate gives essentially nothing about how it works -- flat denial or non-answer.",
+            "pattern": "No real attempt at the internals at all.",
+            "examples": ["I don't know how it works internally.", "No idea."],
+            "not_this": "NOT this if there's any real (even hollow) attempt -- that's mechanism_shallow or mechanism_incorrect.",
+        },
     },
 
-    # PATTERN: team language, personal contribution invisible
-    "ownership_ambiguous": {
-        "trigger": "'We/team/they' throughout — no 'I did', 'I decided', 'I built' anywhere. Contribution is invisible.",
-        "pattern": "The work sounds real but collective. Every verb is plural. You cannot tell what this one person specifically did, decided, or delivered.",
-        "examples": [
-            # tech -- all team verbs
-            "We built the retrieval pipeline, the team set up the vector store, they handled the deployment.",
-            # sales -- team credit
-            "Our team closed the deal, we handled the negotiation together, the account manager did the follow-up.",
-            # HR -- collective ownership
-            "The hiring team ran the process, we interviewed together, and the decision was made as a group.",
-        ],
-        "not_this": "NOT this if they said 'I did X' or 'my part was Y' anywhere — ownership is clear. "
-                    "NOT this if they claim to have personally done everything but can't explain it — that is explanation_shallow. "
-                    "ownership_ambiguous = too little 'I'; explanation_shallow = too much 'I', nothing behind it.",
+    "difference": {
+        "distinction_clear": {
+            "trigger": "Candidate correctly contrasts the two concepts -- what's actually different, and it changes something (when you'd pick one over the other).",
+            "pattern": "The distinction lands and is directionally correct for both concepts.",
+            "examples": ["A list preserves order and allows duplicates, a set doesn't -- so you'd use a set when you just need fast membership checks."],
+            "not_this": "NOT this if they only characterize ONE side accurately and gloss the other -- that's distinction_one_sided. NOT this if they swap the two concepts' properties -- that's distinction_reversed.",
+        },
+        "distinction_one_sided": {
+            "trigger": "Candidate correctly describes ONE of the two concepts but is vague, hedging, or silent on the other -- no real contrast lands.",
+            "pattern": "Real partial engagement -- they know something, but the comparison itself doesn't complete.",
+            "examples": ["A list is ordered, um, and a set is... I think similar but I'm not sure what's actually different."],
+            "not_this": "NOT this if they get the comparison backwards for either side -- that's distinction_reversed, not this.",
+        },
+        "distinction_reversed": {
+            "trigger": "Candidate swaps the two concepts' properties -- attributes concept A's real trait to concept B, or vice versa. Confidently stated.",
+            "pattern": "ACTIVE CONFUSION, not just a gap -- this is worse than not attempting the distinction at all, because it reveals a real misconception about both concepts at once. Score this WORSE than distinction_absent.",
+            "examples": ["A set preserves insertion order and allows duplicates, a list doesn't. [Exactly backwards.]"],
+            "not_this": "NOT this if they're just vague/hedging on one side without confidently asserting the wrong direction -- that's distinction_one_sided.",
+        },
+        "distinction_absent": {
+            "trigger": "Candidate gives essentially nothing on the comparison -- flat denial or non-answer.",
+            "pattern": "No real attempt at contrasting the two concepts at all.",
+            "examples": ["I don't know the difference.", "Not sure honestly."],
+            "not_this": "NOT this if there's any real attempt, even a backwards one -- a backwards attempt is distinction_reversed, which is WORSE, not this.",
+        },
     },
 
-    # PATTERN: loud personal claim, hollow explanation
-    "explanation_shallow": {
-        "trigger": "Strong personal ownership claim ('I built it all', 'I'm really strong at X', 'entire thing by me') + description that reads like an outsider's — no internals, no decisions, no friction.",
-        "pattern": "Ownership is asserted loudly; understanding is absent. A real owner can open the box. This person describes the label. Works across every domain — the claim can be about a technical build, a sales skill, or an HR process.",
-        "examples": [
-            # tech -- ownership claim + no internals
-            "Entire functionality is completely built by me. It's a RAG-based system. [Claims it all, explains none of it.]",
-            # sales -- ability claim + no substance
-            "I'm really strong at closing deals. I always know what the client needs and I close it. [Bold claim, zero example or mechanic.]",
-            # HR -- process claim + no detail
-            "I designed the whole onboarding programme myself. It covers everything a new hire needs. [Owns it, can't describe any of it.]",
-        ],
-        "not_this": "NOT this if they only named a tool or method without a personal strength/ownership claim — that is tool_named_not_used. "
-                    "NOT this if they used 'we/team' language — that is ownership_ambiguous. "
-                    "ONLY fires when the personal claim is strong AND the explanation is hollow. "
-                    "IMPORTANT: 'I'm really strong at X', 'I'm great at Y', 'I always do best' are personal ability claims → fire this, not example_evaded.",
-    },
-
-    # PATTERN: name dropped, nothing behind it
-    "tool_named_not_used": {
-        "trigger": "A specific tool / method / framework / process is NAMED — then immediately defined, listed, or abandoned. Zero operational memory of using it.",
-        "pattern": "The name appears but there is no 'I did X with it', no step they ran, no problem it caused or solved. Could be a tech tool, a sales methodology, an HR framework — any named thing with no usage shown.",
-        "examples": [
-            # tech -- list of names
-            "Vector database — ChromaDB, FAISS, Pinecone. [Three names, zero usage behind any of them.]",
-            # sales -- methodology named, defined, not used
-            "I use SPIN selling. It stands for Situation, Problem, Implication, Need-payoff. [Names and defines it, never shows using it.]",
-            # HR -- framework named, defined, not applied
-            "We used a competency framework. It's a structured way to evaluate candidates against defined criteria. [Names it, describes what it is, not what they did with it.]",
-        ],
-        "not_this": "NOT this if they showed real usage — 'I stored embeddings in ChromaDB', 'I ran discovery calls using SPIN', 'I scored candidates against the framework' — that is tech_choice_unjustified. "
-                    "NOT this if they described a general correct flow with no tool name — that is scenario_untested. "
-                    "CRITICAL: if they said what they DID with it (any operational verb), do not fire this — check SIGNAL 6.",
-    },
-
-    # PATTERN: used it, never said why that one
-    "tech_choice_unjustified": {
-        "trigger": "Real usage IS shown — they operated it, built with it, ran it — but never said WHY that tool/method over alternatives.",
-        "pattern": "Usage is evident; the decision behind the choice is absent. You can't tell if they chose it deliberately or just defaulted to it. Applies to any domain — tech stack, sales method, HR process — wherever a choice was made but not reasoned.",
-        "examples": [
-            # tech -- used it, no why
-            "I stored the embeddings in ChromaDB and queried them through LangChain. It worked fine. [Clear usage — but why ChromaDB over FAISS or Pinecone?]",
-            # sales -- used it, no why
-            "I ran discovery calls and used SPIN to structure my questions. It went well with most clients. [Used it — but why SPIN over MEDDIC or BANT?]",
-            # HR -- used it, no why
-            "I ran structured interviews using a scorecard for every candidate. [Clear process — but why a scorecard over panel discussion or work sample?]",
-        ],
-        "not_this": "NOT this if there is no evidence they used it — that is tool_named_not_used. "
-                    "NOT this if they gave even a simple reason ('easier to set up', 'team was familiar with it') — then null. "
-                    "tech_choice_unjustified = operational verb present, rationale absent.",
-    },
-
-    # PATTERN: correct textbook flow, no lived friction
-    "scenario_untested": {
-        "trigger": "Correct, complete, process-level description — technically accurate, no specific tool to chase, no personal claim — but reads memorised not lived. No edge case, no failure, no friction.",
-        "pattern": "The answer is right but frictionless. It is the version from the documentation or a training course, not from having actually done it. A practitioner would remember something that was hard or broke — this person has only the clean flow.",
-        "examples": [
-            # tech -- correct flow, zero texture
-            "Embedding goes into chunks, chunks become vectors, vectors go into the store, similarity search retrieves top results. [Correct — but no lived friction anywhere in this.]",
-            # sales -- correct process, no friction
-            "You qualify the lead, do discovery, present the solution, handle objections, then close. [Textbook sales process — no real deal, no real friction.]",
-            # HR -- correct sequence, no texture
-            "You define the role, write the JD, post it, screen CVs, do interviews, then make an offer. [Correct sequence — but anyone who read an HR guide could say this.]",
-        ],
-        "not_this": "NOT this if a specific named tool is the center of the answer with no usage — that is tool_named_not_used. "
-                    "NOT this if they claimed personal ownership but explained it shallowly — that is explanation_shallow. "
-                    "scenario_untested = correct + generic + no tool to chase + no personal claim.",
+    "scenario": {
+        "application_grounded": {
+            "trigger": "Candidate gives a concrete, plausible diagnostic/action plan for the scenario, grounded in the actual mechanism -- not a generic checklist.",
+            "pattern": "Real triage instinct -- names what they'd check or do FIRST and why that's the right first move given how the concept actually works.",
+            "examples": ["I'd check whether the hash function is producing too many collisions for this key distribution before assuming it's a capacity issue."],
+            "not_this": "NOT this if it's a generic 'I'd check the logs / check performance' with no specific tie to the mechanism -- that's application_generic.",
+        },
+        "application_generic": {
+            "trigger": "Candidate gives a plausible-sounding but generic response -- a checklist that could apply to almost any performance/failure scenario, not tied to the specific mechanism.",
+            "pattern": "Real engagement, but the answer reads as memorized best-practice rather than reasoning from the mechanism itself.",
+            "examples": ["I'd check the logs and monitor performance, then look at the metrics dashboard."],
+            "not_this": "NOT this if they give a real but unjustified guess with no reasoning path at all -- that's reasoning_unjustified. NOT this if it's actually grounded in the mechanism -- that's application_grounded.",
+        },
+        "reasoning_unjustified": {
+            "trigger": "Candidate names a plausible action or decision for the scenario but gives NO reasoning for why -- a bare assertion with no triage logic behind it.",
+            "pattern": "Different from application_generic: this is a bare claim ('I'd just restart it') with zero explanation of why that's the right first move, not even a generic justification.",
+            "examples": ["I'd just restart the service and see if that fixes it."],
+            "not_this": "NOT this if they at least gave a generic justification -- that's application_generic. Reserve this for reasoning-free bare assertions.",
+        },
+        "application_absent": {
+            "trigger": "Candidate gives essentially nothing for the scenario -- flat denial or non-answer.",
+            "pattern": "No real attempt at the scenario at all.",
+            "examples": ["I don't know what I'd check.", "No idea."],
+            "not_this": "NOT this if there's any real attempt, even ungrounded -- that's application_generic or reasoning_unjustified.",
+        },
     },
 }
+
+# ---------------------------------------------------------------------------
+# Cross-cutting signals -- may fire ALONGSIDE (never instead of) the primary
+# stage signal, at most ONE per turn. Describe HOW the answer was delivered
+# or a denial shape, not WHICH concept-outcome it was.
+# ---------------------------------------------------------------------------
+CROSS_CUTTING_SIGNAL_DEFINITIONS: dict[str, dict] = {
+    "verbal_disfluency": {
+        "trigger": "Filler words ('um', 'like'), restarting a sentence, run-on/rambling phrasing -- DELIVERY noise around an otherwise gradeable answer.",
+        "pattern": "Purely about HOW it was said, never evidence of a wrong or shallow answer by itself -- see Part D.1's scoring calibration.",
+    },
+    "buzzword_without_substance": {
+        "trigger": "Candidate drops technical-sounding terms or name-drops a concept/tool with no real content behind them for the CURRENT question's concept.",
+        "pattern": "Jargon used as a shield -- distinct from a stage-level shallow answer because the tell here is specifically buzzword density with no substance, not just brevity.",
+    },
+    "self_correction_recovery": {
+        "trigger": "Candidate states something, catches their own mistake mid-answer or shortly after, and corrects it to something accurate.",
+        "pattern": "A GOOD sign, not a fumble -- see Part D.2: this should raise sat relative to where the fumble alone would have landed, since catching your own error is evidence of real understanding.",
+    },
+    "internal_contradiction": {
+        "trigger": "Candidate says two things in the same answer that directly conflict with each other, without resolving which one they mean, and without it being a caught self-correction.",
+        "pattern": "Distinct from self_correction_recovery: here the contradiction is left unresolved, not caught and fixed.",
+    },
+    "pure_denial": {
+        "trigger": "The ENTIRE answer is a flat denial with nothing else -- 'I don't know', silence, 'not sure' -- and nothing else was said this turn.",
+        "pattern": "Cross-cutting version of the stage's own '*_absent' outcome, for use when denial is the whole story and no stage-specific framing adds anything. Counts toward the same Part C.1 2-consecutive-occurrence cap as '*_absent'.",
+    },
+}
+
+# Flow-control signals are SYSTEM-COMPUTED (TopicState in eval.py) -- never
+# returned by the LLM, never appear in the prompts below. Listed here only for
+# documentation/completeness of the full taxonomy.
+FLOW_CONTROL_SIGNALS: tuple[str, ...] = (
+    "concept_cleared", "concept_gap_repeated", "topic_floor_reached", "scenario_gate_failed",
+)
+
+# Flat superset of all stage signals across all 4 stages -- used for
+# validating an LLM-returned signal name regardless of which stage was active
+# (e.g. a stale/cross-stage signal from a race condition should still be
+# recognized as "a real taxonomy signal" even if it's the wrong stage).
+_ALL_STAGE_SIGNALS: frozenset[str] = frozenset(
+    name for _stage_defs in STAGE_SIGNAL_DEFINITIONS.values() for name in _stage_defs
+)
 
 # ---------------------------------------------------------------------------
 # SIGNAL DETECTION -- direct classification.
@@ -184,77 +232,15 @@ SIGNAL_DEFINITIONS = {
 # worse, not better. Keeping it as a single classification call.
 # ---------------------------------------------------------------------------
 
-def _build_signal_prompt_block() -> str:
+def _build_response_shape_gate_block() -> str:
+    """G0-equivalent response-shape gates -- checked FIRST, first-match-wins,
+    independent of which question stage is active. These describe the SHAPE
+    of the reply (asking to clarify/redo, or answering something unrelated),
+    never a content-outcome judgment."""
     return """\
--- SIGNAL DETECTION (EVIDENCE-WEIGHTED GATE CHECK) --
+---- RESPONSE-SHAPE GATES — check these FIRST, before any stage signal ----
 
-You are a signal classifier. Your job is to pick the ONE signal that BEST describes
-the SPECIFIC GAP in this answer. This is NOT a first-match-wins check — it is a
-best-match check. Read the answer, then look at every gate, then pick the gate whose
-trigger pattern is MOST STRONGLY present in the answer.
-
-This is a SKILL-ONLY technical interview: the candidate is never asked about their own
-projects or work history, so gates that only make sense for personal-narrative answers
-(team-vs-personal-ownership language, "give me a real instance of using this") do not
-apply here and are excluded below.
-
-STEP 0 — RESPONSE-LEVEL GATES (G0). Only these are first-match-wins.
-G0 gates describe the SHAPE of the reply itself (denial, clarification ask, off-topic).
-If any G0 gate fires, return that signal immediately. CANDIDATE for this signal.
-
-STEP 1 — CONTENT-LEVEL GATES (G1-G4). NOT first-match-wins.
-Every content gate is checked. For each one, ask: "How strongly does THIS answer match
-this pattern?" Then pick the gate with the STRONGEST match.
-
-STEP 2 — VARIETY RULE (HARD). If the sidebar shows signals already fired on THIS topic,
-those signals are BANNED for this turn unless literally no other content gate matches
-the answer at all. Pick the STRONGEST gate that has NOT already fired on this topic.
-This is a hard requirement — even if depth_ceiling_hit looks like the "best" fit, if it
-already fired, choose the second-best gate. Every content signal has a real interpretation
-of nearly every answer — find it.
-  - Depth-ceiling-hit already fired? → look for explanation_shallow, tech_choice_unjustified, scenario_untested.
-  - Scenario_untested already fired? → look for explanation_shallow, tech_choice_unjustified, depth_ceiling_hit.
-  - Explanation_shallow already fired? → look for tech_choice_unjustified, scenario_untested, depth_ceiling_hit.
-  The point of variety is that a fresh signal produces a fresh probe angle.
-  Firing the same signal again produces the same question and wastes a turn.
-
-STEP 3 — REINTERPRET RULE. Because gates overlap, the SAME answer can honestly fit
-multiple content gates. Use the variety rule to break ties:
-  - "It's basically a RAG pipeline" could be explanation_shallow OR scenario_untested.
-    Pick the one that HASN'T fired yet.
-  - "Chunks become vectors, vectors go into the store" could be scenario_untested OR
-    explanation_shallow. Pick the one that hasn't fired yet.
-Reinterpretation is not cheating — it is picking a different lens on the same gap.
-
----- RESPONSE-LEVEL GATES (G0) — check these FIRST ----
-
-G0a — PURE_DENIAL: STRICT. Fires ONLY for a flat "I don't know / I'm not sure" about their
-      OWN knowledge, and ONLY when that is the ENTIRE answer, nothing substantive.
-      ONLY these phrasings qualify: "I don't know" | "I'm not sure" | "I don't remember" |
-      "I have no idea" | "Not sure" | "No idea" — and equivalents that say the SAME thing
-      (candidate genuinely doesn't know the answer to the question asked).
-      NOT this — denying exposure to a specific tool/tech/concept is NOT pure_denial, even
-      standing alone. "No experience with Kubernetes" | "Never used Docker" | "I haven't done
-      DevOps" are about a TOOL/TOPIC, not a genuine "I don't know" — these fall through to
-      G1-G4 content scoring (e.g. depth_ceiling_hit) or off_topic, NOT G0a.
-      NOT this if they're saying they didn't understand the QUESTION rather than denying they
-      have the answer — "I didn't get you" / "I don't get it" / "I don't understand" are about
-      not following the question, not about lacking knowledge. That is G0c, not G0a.
-      NOT this if they're checking the connection or whether you can hear them — "Can you hear
-      me?" / "Are you there?" is not an attempt to deny knowledge, it's not addressing the
-      question at all. That is also G0c, not G0a.
-      EXAMPLE (pure_denial): Q: "What's the difference between an index and a full scan?"
-        A: "I don't know, not sure how that works." → SIGNAL = pure_denial.
-      EXAMPLE (NOT pure_denial): Q: "How would you decide between these two approaches?"
-        A: "I haven't worked with this before" → this denies EXPOSURE, not KNOWLEDGE of
-        the answer — falls through to G1-G4, NOT pure_denial.
-      → YES: SIGNAL = pure_denial. STOP (G0 gates ARE first-match).
-
-G0b — DENIAL_WITH_CONTINUATION: Starts with denial BUT adds substantive content?
-      "...but I think it's related to X" | "...though I'd guess Y" | "...I'd try Z"
-      → YES: SIGNAL = denial_with_continuation. STOP.
-
-G0c — CLARIFICATION_REQUEST: Is candidate asking YOU to clarify/rephrase the question,
+RS-a — CLARIFICATION_REQUEST: Is candidate asking YOU to clarify/rephrase the question,
       saying they didn't understand/follow the question, OR checking the connection/
       whether you can hear them (not answering the question at all, just checking in)?
       "What do you mean?" | "Can you rephrase?" | "Can you repeat?" | "I didn't get you" |
@@ -262,60 +248,68 @@ G0c — CLARIFICATION_REQUEST: Is candidate asking YOU to clarify/rephrase the q
       "Hey, can you hear me?" | "Are you there?" | "Hello? Can you hear me?"
       → YES: SIGNAL = clarification_request. STOP.
 
-G0d — REPHRASE_REQUEST: Is candidate asking to RESTART or correct THEIR OWN answer?
+RS-b — REPHRASE_REQUEST: Is candidate asking to RESTART or correct THEIR OWN answer?
       "Let me say that again" | "I misspoke, what I meant..." | "Sorry, I said that wrong"
       → YES: SIGNAL = rephrase_request. STOP.
 
-G0e — OFF_TOPIC: Did candidate answer a COMPLETELY DIFFERENT question — one that has
+RS-c — OFF_TOPIC: Did candidate answer a COMPLETELY DIFFERENT question — one that has
       NOTHING to do with the topic or question asked?
       Q: "Kubernetes scaling?" A: "I love React" | Q: "Indexing tradeoffs?" A: "I like Python"
       → YES: SIGNAL = off_topic. STOP.
-      NOT this if they attempted to address the topic but gave a vague, shallow, or
-      generic answer — a partial technical attempt is ON-TOPIC even if it lacks detail.
-      Vague answers that attempt the question → fall through to G1-G4 (explanation_shallow,
-      scenario_untested, etc).
-      NOT this if the signal_reason would be "vague", "lacks detail", "not specific",
-      "generic", or similar — those are content-level signal reasons, not off_topic.
+      NOT this if they attempted to address the question but gave a vague, shallow, wrong,
+      or confused answer — a partial or even incorrect technical attempt is ON-TOPIC and
+      falls through to the staged signal below, NOT off_topic.
       off_topic ONLY fires when the subject matter itself is unrelated to what was asked.
 
-If G0a-G0e = NO: evaluate ALL of G1-G4 and pick the STRONGEST match.
+If none of RS-a/b/c fired: this answer gets exactly ONE stage signal (below), plus
+optionally exactly ONE cross-cutting signal.\
+"""
 
----- CONTENT-LEVEL GATES (G1-G4) — only if no G0 fired ----
-For each gate: rate how strongly the answer matches (strong / weak / not-present).
-DO NOT stop at the first strong match — check every gate, then pick the strongest
-overall that has NOT already fired on this topic (variety rule).
 
-G1 — DEPTH_CEILING_HIT: Did they name a SPECIFIC technical detail (a mechanism, a term,
-     a distinction) AND EXPLICITLY admit they don't know more about it?
-     REQUIRES BOTH: (1) real named substance BEFORE the gap AND (2) an explicit
-     "I don't know / not sure / no idea / can't recall" acknowledgement about it.
-     "Indexes speed up reads but I don't really know how the internal structure works" ✓
-     "I know embeddings are vectors but I'm not too sure how they're generated" ✓
-     NOT this if the answer is just vague, shallow, or generic without an explicit
-     "I don't know" admission — vague explanations of a mechanism fall through to
-     G2/G3/G4 (hollow explanation, no justification, textbook flow with no friction).
-     "Chunks become vectors and vectors go into a store" is NOT depth_ceiling_hit — it's
-     scenario_untested (G4). A bare claim with zero specific technical detail is G2, not G1.
-     G1 requires: real named substance + explicit "I don't know / not sure" about it.
-     → YES: SIGNAL = depth_ceiling_hit. CANDIDATE for this signal.
+def _build_stage_signal_prompt_block(active_stage: str) -> str:
+    """Part B: stage-scoped signal detection. Only the 4 signals for the
+    CURRENTLY ACTIVE stage are ever valid outcomes for this turn -- the model
+    is never asked to disambiguate across all 16 stage signals at once."""
+    _stage_defs = STAGE_SIGNAL_DEFINITIONS.get(active_stage, STAGE_SIGNAL_DEFINITIONS["definition"])
+    _stage_upper = active_stage.upper()
+    _gate_lines = []
+    for _name, _defn in _stage_defs.items():
+        _gate_lines.append(
+            f"  \"{_name}\": {_defn['trigger']}\n"
+            f"    Pattern: {_defn['pattern']}\n"
+            f"    Example: {_defn['examples'][0]}\n"
+            f"    {_defn['not_this']}"
+        )
+    _gates_block = "\n\n".join(_gate_lines)
 
-G2 — EXPLANATION_SHALLOW: Confident claim about the skill + hollow explanation with no
-     real mechanism, decision, or internals behind it?
-     "It's basically just a RAG system" [names it, explains nothing about how/why]
-     "Indexes just make things faster" [true but zero mechanism, no internals]
-     → YES: SIGNAL = explanation_shallow. CANDIDATE for this signal.
+    return f"""\
+---- STAGE SIGNAL — active stage: {_stage_upper} ----
 
-G3 — TECH_CHOICE_UNJUSTIFIED: Named a real tradeoff or choice BUT never said WHY one
-     option over the alternative?
-     "You'd use an index here." [states the choice, no reasoning for why it's the right one]
-     → YES: SIGNAL = tech_choice_unjustified. CANDIDATE for this signal.
+The question just answered was a {_stage_upper} question. Pick EXACTLY ONE of these
+{len(_stage_defs)} signals — the ONE outcome tier that BEST describes this specific
+answer. This is a best-match check across all {len(_stage_defs)}, not first-match-wins.
 
-G4 — SCENARIO_UNTESTED: Correct textbook flow but ZERO lived friction/edge case/failure mode?
-     "Chunks become vectors, vectors go into store, search retrieves results"
-     [Correct but memorized, no sense of what breaks or when it goes wrong]
-     → YES: SIGNAL = scenario_untested. CANDIDATE for this signal.
+{_gates_block}
 
-Output exactly ONE signal. Never null, never multiple.\
+CRITICAL — tier ordering matters: "confused"/"incorrect"/"reversed" (active wrongness) is
+NOT the same as "partial"/"shallow"/"one_sided"/"generic" (a gap) — a candidate who states
+something ACTIVELY WRONG with confidence must get the wrongness-tier signal, never the
+gap-tier signal, even though both are "not fully correct." Confidently wrong is worse than
+an honest partial attempt, and both are worse than "_absent" is DIFFERENT FROM but not
+necessarily worse — distinction_reversed specifically is scored WORSE than
+distinction_absent (active confusion beats silence in severity), and the same STRUCTURE
+(a confidently wrong claim beats a bare non-attempt in severity) applies conceptually to
+definition_confused vs definition_absent and mechanism_incorrect vs mechanism_absent too.
+
+---- CROSS-CUTTING SIGNAL (optional, at most ONE) ----
+
+After picking the stage signal, check if exactly one of these ALSO applies. Do not force
+one if none clearly fits — most turns have zero cross-cutting signals.
+
+{chr(10).join(f'  "{name}": {defn["trigger"]}' for name, defn in CROSS_CUTTING_SIGNAL_DEFINITIONS.items())}
+
+Output the stage signal, and the cross-cutting signal if any (else null). Never stack two
+stage signals. Never stack two cross-cutting signals.\
 """
 
 
@@ -325,35 +319,30 @@ async def _classify_signal_from_answer(
     last_question: str,
     client: Any,
     llm_model: str,
-    signals_already_fired: list | None = None,
+    active_stage: str = "definition",
 ) -> tuple[str, str | None, dict | None]:
     """
-    Fallback: compare the answer against every content-level signal definition
+    Fallback: compare the answer against the ACTIVE STAGE's 4 signal outcomes
     and return (signal, signal_reason). Called only when the main eval LLM
-    failed to return a valid signal.
+    failed to return a valid stage signal.
 
-    Respects the variety rule: banned signals (already fired on this topic) are
-    excluded from the candidate set.
+    Unlike the old flat 7-signal pool, there is no "variety rule" here: each
+    stage only has 4 outcomes and firing the same outcome twice on the same
+    sub-concept is what the rotation lock (Part C.2, TopicState.
+    register_subconcept_probe) is FOR -- it's a meaningful repeated signal, not
+    a stale fallback pattern to avoid.
     """
-    # Skill-only tech interviews exclude personal-narrative-only signals -- see
-    # the matching exclusion note in _call_signal_classification's _CONTENT_SIGNALS.
-    _ACTIVE_SIGNALS = {
-        name for name in SIGNAL_DEFINITIONS
-        if name not in ("ownership_ambiguous", "example_evaded", "tool_named_not_used")
-    }
-    _fired = set(signals_already_fired or [])
-    _remaining = [name for name in _ACTIVE_SIGNALS if name not in _fired]
-    if not _remaining:
-        _remaining = list(_ACTIVE_SIGNALS)
+    _stage_defs = STAGE_SIGNAL_DEFINITIONS.get(active_stage, STAGE_SIGNAL_DEFINITIONS["definition"])
+    _candidates = list(_stage_defs.keys())
     _signal_descriptions = "\n".join(
-        f'"{name}": {SIGNAL_DEFINITIONS[name]["trigger"]}'
-        for name in _remaining
+        f'"{name}": {_stage_defs[name]["trigger"]}'
+        for name in _candidates
     )
     _system = (
         "You are a signal classifier for an interview evaluation system.\n"
-        "Given a question and a candidate's answer, pick the ONE signal from the list below "
-        "that best describes the gap or pattern in the answer.\n"
-        "Signals already fired on this topic have been EXCLUDED — pick only from the list.\n\n"
+        f"The question just answered was a {active_stage.upper()} question. Given the question and "
+        "the candidate's answer, pick the ONE signal from the list below that best describes this "
+        "specific answer.\n\n"
         f"SIGNALS (choose exactly one):\n{_signal_descriptions}\n\n"
         "Output ONLY valid JSON: {\"signal\": \"<signal_name>\", \"signal_reason\": \"<3-12 word exact quote from their answer>\"}\n"
         "signal MUST be exactly one of the signal names listed above. Nothing else."
@@ -382,23 +371,17 @@ async def _classify_signal_from_answer(
         result = json.loads(raw)
         chosen = str(result.get("signal", "")).strip()
         reason = str(result.get("signal_reason") or "").strip() or None
-        if not reason and chosen in SIGNAL_DEFINITIONS:
-            reason = SIGNAL_DEFINITIONS[chosen]["trigger"]
-        if chosen in _remaining:
-            return chosen, reason, _usage
-        if chosen in _ACTIVE_SIGNALS:
+        if not reason and chosen in _stage_defs:
+            reason = _stage_defs[chosen]["trigger"]
+        if chosen in _candidates:
             return chosen, reason, _usage
     except Exception as exc:
-        logger.warning("[EVAL] _classify_signal_from_answer failed (%s) — rotating fallback", exc)
-    # Deterministic rotation across banned/unfired signals -- never always the same one.
-    _rotation_order = [
-        "tech_choice_unjustified", "scenario_untested", "explanation_shallow", "depth_ceiling_hit",
-    ]
-    for name in _rotation_order:
-        if name in _remaining:
-            return name, SIGNAL_DEFINITIONS[name]["trigger"], _usage
-    _fallback = _rotation_order[len(_fired) % len(_rotation_order)]
-    return _fallback, SIGNAL_DEFINITIONS[_fallback]["trigger"], _usage
+        logger.warning("[EVAL] _classify_signal_from_answer failed (%s) — using gap-tier fallback", exc)
+    # Deterministic fallback: the stage's gap-tier outcome (2nd entry in each
+    # stage's tuple) -- "attempted but not fully clear" is the safest default
+    # when classification itself failed, never asserting absent or wrongness.
+    _gap_fallback = _candidates[1] if len(_candidates) > 1 else _candidates[0]
+    return _gap_fallback, _stage_defs[_gap_fallback]["trigger"], _usage
 
 
 async def _call_scoring(
@@ -441,6 +424,15 @@ async def _call_scoring(
             "  If answers_question = false, you MUST set clarity=0, depth=0, specificity=0, grounding=0.\n"
             "  No score at all for an answer that does not address the question.\n\n"
             "STEP 2 — Score normally (only if answers_question = true).\n\n"
+            "── SCORE ADDITIVELY, PER CORRECT ELEMENT PRESENT (do this before assigning any number) ──\n"
+            "Before scoring depth/specificity, silently list the specific correct sub-elements of THIS\n"
+            "concept that a strong answer would contain (e.g. for checked vs. unchecked exceptions: a\n"
+            "correct example of each, the compiler-enforcement distinction, the throw-vs-throws\n"
+            "distinction). Then check which of those the candidate's answer actually contains, and\n"
+            "credit each one present — do not default to a flat mid/low score just because you are\n"
+            "unsure or the answer isn't exhaustive. An answer with 2 of 3 correct sub-elements scores\n"
+            "meaningfully higher than one with 0 or 1, even though neither is a 'complete' answer. Never\n"
+            "round an uncertain case down to a generic default penalty — score exactly what is present.\n\n"
             f"Role: {job_title or 'not specified'} | Topic: {active_topic or 'general'}"
             f" | Tag: {topic_tag} | Importance: {topic_importance}\n"
         )
@@ -455,6 +447,35 @@ async def _call_scoring(
             "BEFORE YOU SCORE: Read the answer as a real interviewer would.\n"
             "Ask yourself: does this person sound like they actually did this work?\n"
             "Strip away fluency and polish. Look for the substance underneath.\n\n"
+
+            "── DISFLUENCY VS. CORRECTNESS (apply this before scoring any dimension) ──\n"
+            "Separate HOW they said it from WHAT they said. Filler words ('um', 'like'), "
+            "run-on or rambling phrasing, restarting a sentence, or self-correcting mid-answer "
+            "are DELIVERY, not substance — they are NOT evidence of a wrong or shallow answer.\n"
+            "Score in this order: (1) first identify whether the correct key concepts are present "
+            "and correctly related to each other — this is the primary driver of clarity/depth; "
+            "(2) only then apply a SMALL deduction for delivery quality (confusing rambling that "
+            "actually obscures WHICH concept they mean, not just clumsy phrasing of a clear one).\n"
+            "A rambling, hedging, self-correcting answer that arrives at the right concept and "
+            "relationship must score MEANINGFULLY HIGHER than an answer that is fluent and confident "
+            "but substantively wrong or contains no real answer — fluency is not a proxy for "
+            "correctness, and correctness must not be suppressed to near-zero just because the "
+            "delivery was messy. Reserve low clarity/depth scores for answers that are actually "
+            "wrong, empty, or off-target — not for answers that are merely awkwardly phrased.\n\n"
+
+            "── SELF-CORRECTION IS A GOOD SIGN, NOT A FUMBLE ──\n"
+            "If the candidate states something, then catches their OWN mistake and corrects it to "
+            "something accurate (even mid-sentence), score the CORRECTED version, and score it "
+            "HIGHER than if they'd only given the fumble — catching your own error is evidence of "
+            "real understanding, not a penalty-worthy stumble. Do not average the wrong first attempt "
+            "with the corrected one; weight toward the correction they landed on.\n\n"
+
+            "── ACTIVE WRONGNESS IS WORSE THAN NO ATTEMPT ──\n"
+            "A confident, specific claim that is ACTUALLY WRONG (states a mechanism backwards, swaps "
+            "two concepts' properties, asserts something false with certainty) reveals a real "
+            "misconception — this must score LOWER than a flat 'I don't know' on the same question, "
+            "not the same or higher. Silence is a gap; a confident wrong answer is active confusion. "
+            "Do not be fooled by confident delivery into scoring a wrong claim as if it were correct.\n\n"
 
             "── CLARITY (20%) ──────────────────────────────\n"
             "Did they answer what was actually asked — not a safer, easier version of it?\n"
@@ -574,73 +595,39 @@ async def _call_signal_classification(
     active_topic: str,
     topic_importance: str,
     topic_tag: str,
-    signals_already_fired: list | None,
-) -> tuple[str | None, str | None, dict]:
+    active_stage: str = "definition",
+) -> tuple[str | None, str | None, str | None, dict]:
     """
     Call 2 — signal classification only, with its own 400-600 token reasoning budget.
     Brief chain-of-thought is allowed before the final JSON to reduce conjunctive-logic
     collapse that occurred when scoring and signal detection shared 200 tokens.
 
-    Returns (signal, signal_reason, llm_usage_dict).
+    Part B: scoped to whichever STAGE (definition/mechanism/difference/scenario)
+    the question just answered belongs to -- the model picks from that stage's
+    4 signals only, plus optionally one cross-cutting signal. There is no
+    "variety rule" here (unlike the old flat 7-signal pool): repeating the same
+    stage-signal on the same sub-concept is meaningful, tracked by
+    TopicState.register_subconcept_probe(), not something to avoid at the
+    classification layer.
+
+    Returns (stage_signal, cross_cutting_signal, signal_reason, llm_usage_dict).
     """
-    # Skill-only tech interviews never involve the candidate narrating their own
-    # projects/work, so signals that exist purely to catch personal-narrative
-    # patterns (team vs. personal ownership language, "give me a real instance
-    # of using this tool") have no meaning here and are excluded:
-    #   ownership_ambiguous  -- tests "we" vs "I" in team-work narration
-    #   example_evaded       -- tests dodging "tell me about a real instance"
-    #   tool_named_not_used  -- tests whether a named tool was actually USED by them
-    _CONTENT_SIGNALS = {
-        "depth_ceiling_hit", "explanation_shallow",
-        "tech_choice_unjustified",
-        "scenario_untested",
-    }
-    _fired = set(signals_already_fired or [])
-    _fired_content = _fired & _CONTENT_SIGNALS
-    _remaining_content = _CONTENT_SIGNALS - _fired_content
-
     def _build_signal_system_prompt() -> str:
-        _off_topic_was_fired = "off_topic" in _fired
-
-        ban_block = ""
-        if _fired_content and _remaining_content:
-            ban_block = (
-                f"\nHARD VARIETY RULE — CONTENT SIGNALS ALREADY FIRED ON THIS TOPIC: {', '.join(sorted(_fired_content))}.\n"
-                f"These signals are BANNED for this turn. You MUST pick from the REMAINING set:\n"
-                f"  {', '.join(sorted(_remaining_content))}\n"
-                f"Reinterpret the answer through a different lens — every content signal has a valid\n"
-                f"reading of almost any substantive answer. Find the one that has NOT fired yet.\n"
-                f"Firing a banned signal is a HARD FAILURE.\n"
-            )
-        elif _fired_content and not _remaining_content:
-            _lru = next(iter(s for s in (signals_already_fired or []) if s in _CONTENT_SIGNALS), None)
-            ban_block = (
-                f"\nALL content signals have fired on this topic: {', '.join(sorted(_fired_content))}.\n"
-                f"Variety is impossible. Pick the best fit among all G1-G7 gates; prefer the least-recently-used"
-                + (f" ({_lru!r}).\n" if _lru else ".\n")
-            )
-
-        special_note = ""
-        if _off_topic_was_fired:
-            special_note = (
-                "\nSPECIAL NOTE: off_topic already fired on a previous turn (likely a non-answer like 'I am ready'). "
-                "The candidate is now actually attempting to answer. If this answer is AT ALL related to the "
-                "topic — even vaguely, even shallowly — do NOT re-fire off_topic. Score it on content gates "
-                "(G1-G4) instead: explanation_shallow, scenario_untested, etc.\n"
-            )
-
         return (
             "You are a signal classifier for an interview evaluation system.\n"
-            "Your ONLY job is to identify ONE signal that best describes the gap in the candidate's answer.\n\n"
+            "Your job is to identify the signal(s) that best describe the candidate's answer.\n\n"
             "You may reason briefly (2-4 sentences) before giving your final answer, but your final output\n"
             "MUST end with valid JSON on its own line:\n"
-            '{"signal": "<signal_name>", "signal_reason": "<3-12 word exact quote from their answer>"}\n\n'
-            "signal MUST be exactly one of the 9 valid signal names listed below. NEVER null.\n"
-            f"Topic: {active_topic or 'general'} | Tag: {topic_tag} | Importance: {topic_importance}\n"
-            + ban_block
-            + special_note
-            + "\n"
-            + _build_signal_prompt_block()
+            '{"signal": "<stage_signal_name_or_response_shape_signal>", '
+            '"cross_cutting_signal": "<cross_cutting_name_or_null>", '
+            '"signal_reason": "<3-12 word exact quote from their answer>"}\n\n'
+            "signal MUST be exactly one of the response-shape or stage signal names below. NEVER null.\n"
+            "cross_cutting_signal is OPTIONAL -- use null if none clearly applies. Never put a\n"
+            "response-shape or stage signal name in cross_cutting_signal.\n"
+            f"Topic: {active_topic or 'general'} | Tag: {topic_tag} | Importance: {topic_importance}\n\n"
+            + _build_response_shape_gate_block()
+            + "\n\n"
+            + _build_stage_signal_prompt_block(active_stage)
         )
 
     resp = await asyncio.wait_for(
@@ -678,25 +665,30 @@ async def _call_signal_classification(
 
     # Extract the last JSON object from the response (chain-of-thought comes first)
     signal: str | None = None
+    cross_cutting_signal: str | None = None
     signal_reason: str | None = None
     import re as _re
     _json_matches = _re.findall(r'\{[^{}]+\}', raw)
+    _stage_defs = STAGE_SIGNAL_DEFINITIONS.get(active_stage, STAGE_SIGNAL_DEFINITIONS["definition"])
     for _candidate_json in reversed(_json_matches):
         try:
             _parsed = json.loads(_candidate_json)
             _sig = str(_parsed.get("signal", "")).strip()
+            _cc = str(_parsed.get("cross_cutting_signal") or "").strip() or None
             _reason = str(_parsed.get("signal_reason") or "").strip() or None
             if _sig:
                 signal = _sig
+                if _cc and _cc in CROSS_CUTTING_SIGNAL_DEFINITIONS:
+                    cross_cutting_signal = _cc
                 if not _reason:
-                    _defn = SIGNAL_DEFINITIONS.get(_sig) or RESPONSE_SIGNALS.get(_sig)
+                    _defn = _stage_defs.get(_sig) or RESPONSE_SIGNALS.get(_sig) or CROSS_CUTTING_SIGNAL_DEFINITIONS.get(_sig)
                     _reason = _defn.get("trigger") or _defn.get("description") if _defn else None
                 signal_reason = _reason
                 break
         except (json.JSONDecodeError, ValueError):
             continue
 
-    return signal, signal_reason, _llm_usage
+    return signal, cross_cutting_signal, signal_reason, _llm_usage
 
 
 async def evaluate_answer(
@@ -714,15 +706,19 @@ async def evaluate_answer(
     topic_tag: str = "RESUME_TOPIC",
     topic_probe_focus: list | None = None,
     job_title: str = "",
-    signals_already_fired: list | None = None,
+    active_stage: str = "definition",
 ) -> dict:
     """
-    Two dedicated LLM calls: Call 1 scores the answer, Call 2 classifies the signal.
+    Two dedicated LLM calls: Call 1 scores the answer, Call 2 classifies the
+    stage signal (+ optional cross-cutting signal). active_stage tells both
+    calls which of definition/mechanism/difference/scenario the question just
+    answered belongs to (see TopicState.current_rung_name() in eval.py).
 
     Returns:
       clarity, depth, specificity, grounding, overall  — quality scores
       action       — PROBE | MOVE_ON
-      signal       — one signal name, never null
+      signal       — one stage or response-shape signal name, never null
+      cross_cutting_signal — one cross-cutting signal name, or null
       signal_reason — exact quote from their answer that triggered it, or null
       reason       — short phrase for the routing decision
     """
@@ -731,18 +727,27 @@ async def evaluate_answer(
             "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0, "overall": 0.0,
             "is_warmup": True,
             "action": "MOVE_ON", "forced_action": True,
-            "signal": None, "signal_reason": None, "reason": "warmup turn",
+            "signal": None, "cross_cutting_signal": None, "signal_reason": None, "reason": "warmup turn",
         }
 
     if not candidate_answer or not candidate_answer.strip():
+        # Empty answer = the "*_absent" outcome for whichever stage was active.
+        # Not a forced MOVE_ON: a denial-tier signal (even an empty one) steps
+        # the ladder DOWN one rung and stays on the same skill (see
+        # TopicState.register_denial in eval.py). The skill is only closed out
+        # after 2 consecutive denial-tier signals (TopicState.should_exit_on_denials
+        # -> topic_floor_reached), never on the very first one.
+        _absent_signal = {
+            "definition": "definition_absent",
+            "mechanism": "mechanism_absent",
+            "difference": "distinction_absent",
+            "scenario": "application_absent",
+        }.get(active_stage, "definition_absent")
         return {
             "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0, "overall": 0.0,
-            # Not a forced MOVE_ON: a denial (even an empty one) steps the ladder
-            # DOWN one rung and stays on the same skill (see TopicState.register_denial
-            # in eval.py). The skill is only closed out after 2 consecutive denials
-            # (TopicState.should_exit_on_denials), never on the very first one.
             "action": "PROBE", "forced_action": False,
-            "signal": "pure_denial", "signal_reason": None, "reason": "empty answer",
+            "signal": _absent_signal, "cross_cutting_signal": "pure_denial",
+            "signal_reason": None, "reason": "empty answer",
         }
 
     word_count = len(candidate_answer.strip().split())
@@ -767,7 +772,7 @@ async def evaluate_answer(
 
     try:
         # Fire both calls concurrently -- scoring and signal classification are independent.
-        (scoring_data, _scoring_usage), (raw_signal, signal_reason, _signal_usage) = (
+        (scoring_data, _scoring_usage), (raw_signal, raw_cross_cutting, signal_reason, _signal_usage) = (
             await asyncio.gather(
                 _call_scoring(
                     **_common_kwargs,
@@ -778,7 +783,7 @@ async def evaluate_answer(
                 ),
                 _call_signal_classification(
                     **_common_kwargs,
-                    signals_already_fired=signals_already_fired,
+                    active_stage=active_stage,
                 ),
             )
         )
@@ -814,92 +819,96 @@ async def evaluate_answer(
                 + grounding * 0.25
             )
 
-        # Normalise signal from the dedicated signal call
+        # Normalise signals from the dedicated signal call
         signal = str(raw_signal).strip() if raw_signal else None
+        cross_cutting_signal = str(raw_cross_cutting).strip() if raw_cross_cutting else None
 
-        _response_signals = {
-            # pure_denial is NOT a forced topic exit: it steps the ladder down one
-            # rung and stays on the same skill (TopicState.register_denial). The
-            # skill only closes after 2 consecutive denials
-            # (TopicState.should_exit_on_denials), applied in eval.py's decision
-            # block -- not here, since that requires per-topic denial-streak state
-            # this function doesn't have access to.
-            "pure_denial": ("PROBE", False),                    # scores=0, ladder steps down
-            "denial_with_continuation": ("CAP_SCORES", False),  # mark for scoring cap at 5, ladder steps down
-            "clarification_request": ("REPHRASE", True),       # forced_action=True, scores=0
-            "rephrase_request": ("ACCEPT_REPHRASE", True),     # forced_action=True, don't score this answer
-            "off_topic": ("REDIRECT", True),                   # forced_action=True, scores=0
-        }
+        _stage_defs = STAGE_SIGNAL_DEFINITIONS.get(active_stage, STAGE_SIGNAL_DEFINITIONS["definition"])
+        _stage_absent = {
+            "definition": "definition_absent", "mechanism": "mechanism_absent",
+            "difference": "distinction_absent", "scenario": "application_absent",
+        }.get(active_stage, "definition_absent")
 
         action = "PROBE"
         forced_action = False
-        cap_scores_at_5 = False
         zero_scores = False
 
-        if signal in _response_signals:
-            action, forced_action = _response_signals[signal]
-            if signal == "denial_with_continuation":
-                cap_scores_at_5 = True
-            elif signal in ("pure_denial", "clarification_request", "off_topic", "rephrase_request"):
+        # Response-shape signals (Part B, orthogonal to the staged taxonomy).
+        if signal in RESPONSE_SIGNALS:
+            if signal == "clarification_request":
+                action, forced_action = "REPHRASE", True
                 zero_scores = True
-
-        # Validate content-level signals against defined signals
-        if signal not in _response_signals and signal not in SIGNAL_DEFINITIONS and signal is not None:
-            logger.warning("[EVAL] unknown signal %r — ignoring", signal)
+            elif signal == "rephrase_request":
+                action, forced_action = "ACCEPT_REPHRASE", True
+                zero_scores = True
+            elif signal == "off_topic":
+                action, forced_action = "REDIRECT", True
+                zero_scores = True
+        elif signal == "pure_denial" or (cross_cutting_signal == "pure_denial" and signal is None):
+            # Cross-cutting pure_denial with no stage signal returned -- treat as
+            # this stage's *_absent outcome (Part C.1's denial tier).
+            signal = _stage_absent
+            zero_scores = True
+        elif signal not in _stage_defs and signal is not None:
+            logger.warning("[EVAL] unknown/wrong-stage signal %r for stage=%s — ignoring", signal, active_stage)
             signal = None
 
-        # If signal is still None, compare the answer against all content-level signal
-        # definitions and pick the best match -- never fall back to the default probe.
-        if signal is None and not zero_scores and not cap_scores_at_5:
+        # If signal is still None, fall back to stage-scoped classification --
+        # never fall back to a generic default probe.
+        if signal is None and not zero_scores:
             signal, signal_reason, _fallback_usage = await _classify_signal_from_answer(
                 candidate_answer=candidate_answer,
                 last_question=last_question,
                 client=client,
                 llm_model=llm_model,
-                signals_already_fired=signals_already_fired,
+                active_stage=active_stage,
             )
             if _fallback_usage:
                 _eval_llm_usages.append(_fallback_usage)
-            logger.info("[EVAL] signal was None — best-match classification selected %r", signal)
+            logger.info("[EVAL] signal was None — stage best-match classification selected %r", signal)
 
         # signal_reason comes from the dedicated signal call (already extracted)
         signal_reason = str(signal_reason or "").strip() or None
         if signal is None:
             signal_reason = None
 
-        # Post-hoc variety enforcement: even if the eval LLM ignored the ban above,
-        # rewrite banned content-signals to an unfired one. Response signals (G0)
-        # legitimately re-fire -- only content signals are ever banned.
-        _CONTENT = {
-            "depth_ceiling_hit", "ownership_ambiguous", "explanation_shallow",
-            "tool_named_not_used", "tech_choice_unjustified", "example_evaded",
-            "scenario_untested",
-        }
-        _already = set(signals_already_fired or [])
-        _fired_content = _already & _CONTENT
-        if signal in _CONTENT and signal in _fired_content:
-            _remaining = _CONTENT - _fired_content
-            if _remaining:
-                _reroll, _reroll_reason, _reroll_usage = await _classify_signal_from_answer(
-                    candidate_answer=candidate_answer,
-                    last_question=last_question,
-                    client=client,
-                    llm_model=llm_model,
-                    signals_already_fired=list(_fired_content),
-                )
-                if _reroll_usage:
-                    _eval_llm_usages.append(_reroll_usage)
-                if _reroll and _reroll != signal:
-                    logger.info(
-                        "[EVAL] variety-enforcement: LLM picked banned %r on topic — rerolled to %r",
-                        signal, _reroll,
-                    )
-                    signal = _reroll
-                    signal_reason = _reroll_reason
+        # Denial-tier stage signal ("*_absent") also zeroes scores -- same
+        # treatment as the cross-cutting pure_denial case above.
+        if signal == _stage_absent:
+            zero_scores = True
 
         reason = str(data.get("reason", ""))[:120]
 
-        # Apply score zeroing/capping for response signals (overrides answers_question zeroing if both fire)
+        # -- Part D scoring calibration -----------------------------------
+        # D.3: distinction_reversed is ACTIVE WRONGNESS, scored WORSE than
+        # distinction_absent (which just zeroes). A candidate who confidently
+        # states the two concepts' properties backwards should score BELOW a
+        # flat "I don't know" -- reversed reveals a real misconception,
+        # silence reveals only a gap.
+        _ACTIVE_WRONGNESS = {"definition_confused", "mechanism_incorrect", "distinction_reversed"}
+        if signal in _ACTIVE_WRONGNESS:
+            zero_scores = False  # override -- these get a real (low, penalized) score, not a flat zero
+            _wrongness_penalty = 2.0 if signal == "distinction_reversed" else 1.0
+            clarity = max(0.0, clarity - _wrongness_penalty)
+            depth = max(0.0, depth - _wrongness_penalty)
+            specificity = max(0.0, specificity - _wrongness_penalty)
+            grounding = max(0.0, grounding - _wrongness_penalty)
+            overall = (clarity * 0.20 + depth * 0.35 + specificity * 0.20 + grounding * 0.25)
+            reason = f"{signal} — active wrongness, scored below a non-attempt"
+
+        # D.2: self_correction_recovery raises sat relative to the fumble alone
+        # -- reward catching and correcting your own mistake. Small, fixed
+        # boost (not a full reset to "correct") since the fumble itself still
+        # happened; this must not push scores above the stage-correct ceiling.
+        if cross_cutting_signal == "self_correction_recovery" and not zero_scores:
+            _recovery_boost = 1.5
+            clarity = min(10.0, clarity + _recovery_boost)
+            depth = min(10.0, depth + _recovery_boost)
+            overall = min(10.0, (clarity * 0.20 + depth * 0.35 + specificity * 0.20 + grounding * 0.25))
+            reason = f"{reason} — self-correction recovery credited" if reason else "self-correction recovery credited"
+
+        # Apply score zeroing for response-shape/denial-tier signals (overrides
+        # answers_question zeroing if both fire).
         if zero_scores:
             clarity = 0.0
             depth = 0.0
@@ -907,17 +916,10 @@ async def evaluate_answer(
             grounding = 0.0
             overall = 0.0
             reason = f"{signal} — no scoring"
-        elif cap_scores_at_5:
-            clarity = min(clarity, 5.0)
-            depth = min(depth, 5.0)
-            specificity = min(specificity, 5.0)
-            grounding = min(grounding, 5.0)
-            overall = min(overall, 5.0)
-            reason = "denial with continuation — scores capped at 5"
 
         logger.info(
-            "[EVAL] [OK] signal=%s action=%s | clarity=%d depth=%d spec=%d ground=%d | reason=%s",
-            signal, action,
+            "[EVAL] [OK] signal=%s cross_cutting=%s action=%s | clarity=%d depth=%d spec=%d ground=%d | reason=%s",
+            signal, cross_cutting_signal, action,
             int(clarity), int(depth), int(specificity), int(grounding),
             repr(reason),
         )
@@ -931,19 +933,29 @@ async def evaluate_answer(
             "action": action,
             "forced_action": forced_action if action != "PROBE" else False,
             "signal": signal,
+            "cross_cutting_signal": cross_cutting_signal,
             "signal_reason": signal_reason,
             "reason": reason,
             "_llm_usage": _eval_llm_usages,
         }
 
     except Exception as e:
-        logger.error("[EVAL] evaluate_answer failed (%s) — returning low-confidence recovery", e)
+        # Step 0 instrumentation: log the exception type (a TypeError here
+        # means a bad call site / signature mismatch, NOT a slow/unavailable
+        # LLM -- those two causes need to be distinguishable in logs) plus
+        # the actual answer text, so a fallback firing on substantive
+        # answers is visible immediately instead of silently flattening sat.
+        logger.error(
+            "[EVAL_FALLBACK] evaluate_answer failed: %s: %s | stage=%s | answer=%r",
+            type(e).__name__, e, active_stage, (candidate_answer or "")[:300],
+        )
         return {
             "clarity": 2.0, "depth": 1.0, "specificity": 1.0, "grounding": 1.0,
             "overall": 1.3,
             "action": "PROBE",
             "signal": None,
-            "signal_reason": None,
+            "cross_cutting_signal": None,
+            "signal_reason": f"eval recovery — {type(e).__name__}: {str(e)[:120]}",
             "reason": "eval recovery (llm slow/unavailable)",
             "is_eval_recovery": True,
         }

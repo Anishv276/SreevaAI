@@ -7,12 +7,16 @@ brief generation, eval pipeline, and report pipeline for technical roles.
 from interview.tech.scoring import (
     evaluate_answer,
     RESPONSE_SIGNALS,
-    SIGNAL_DEFINITIONS,
+    STAGE_SIGNAL_DEFINITIONS,
+    CROSS_CUTTING_SIGNAL_DEFINITIONS,
+    FLOW_CONTROL_SIGNALS,
 )
 from interview.tech.probe import (
     SIGNAL_PROBES,
     QUESTION_GENERATION_SYSTEM,
     CORE_SKILL_QUESTION_SYSTEM,
+    TOPIC_QUESTION_GENERATION_SYSTEM,
+    validate_topic_question_set,
     get_probe_context,
     get_reaction_hint,
 )
@@ -46,10 +50,14 @@ from interview.tech.band import classify_band, CandidateBand, BandClassifier
 __all__ = [
     "evaluate_answer",
     "RESPONSE_SIGNALS",
-    "SIGNAL_DEFINITIONS",
+    "STAGE_SIGNAL_DEFINITIONS",
+    "CROSS_CUTTING_SIGNAL_DEFINITIONS",
+    "FLOW_CONTROL_SIGNALS",
     "SIGNAL_PROBES",
     "QUESTION_GENERATION_SYSTEM",
     "CORE_SKILL_QUESTION_SYSTEM",
+    "TOPIC_QUESTION_GENERATION_SYSTEM",
+    "validate_topic_question_set",
     "get_probe_context",
     "get_reaction_hint",
     "TopicState",
