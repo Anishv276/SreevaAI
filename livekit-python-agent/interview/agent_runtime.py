@@ -673,6 +673,26 @@ def render_declined_facts(declined_facts_log: list[str]) -> str:
 # ordinary PROBE turns (the free-form spoken-question path) before anything
 # reaches TTS.
 # ---------------------------------------------------------------------------
+_CODE_FENCE_RE = re.compile(r"```(?:\w+)?\n?.*?```", re.S)
+
+
+def extract_code_card(text: str) -> tuple[str, str] | None:
+    """If `text` contains a fenced code block, splits it into (spoken_text, code).
+    spoken_text is everything outside the fence, whitespace-collapsed -- this is
+    what TTS actually says. Returns None if there's no fence (the common case --
+    most questions are spoken-only). Only the FIRST fence is used; a question
+    should only ever carry one card."""
+    m = _CODE_FENCE_RE.search(text or "")
+    if not m:
+        return None
+    code = m.group(0).strip("`").strip()
+    if code.startswith(("python", "sql", "sh", "bash", "js", "javascript")):
+        code = code.split("\n", 1)[1] if "\n" in code else ""
+    spoken = (text[: m.start()] + " " + text[m.end():]).strip()
+    spoken = re.sub(r"\s+", " ", spoken)
+    return spoken, code
+
+
 def validate_spoken_question(text: str, *, max_words: int = 30) -> list[str]:
     """Returns a list of violation reasons (empty list = passes). Pure/sync so
     it's trivially unit-testable without any LLM or audio dependency."""
@@ -680,6 +700,15 @@ def validate_spoken_question(text: str, *, max_words: int = 30) -> list[str]:
     stripped = (text or "").strip()
     if not stripped or stripped == "NO_FOLLOW_UP_NEEDED":
         return violations  # sentinel / empty outputs are a valid non-question turn
+
+    # Code-card questions: validate only the SPOKEN part (the lead-in), never the
+    # fenced code -- code legitimately contains newlines/words/no '?' that would
+    # otherwise fail every check below for the wrong reason.
+    _card = extract_code_card(stripped)
+    if _card is not None:
+        stripped = _card[0]
+        if not stripped:
+            return violations
 
     word_count = len(stripped.split())
     if word_count > max_words:
@@ -1350,8 +1379,16 @@ class InterviewAgent(Agent):
         # disconnect/finished events (they don't exist yet at agent
         # construction time).
         self._session_end_event: Optional[asyncio.Event] = None
+        # Code-card overlay: room isn't available at construction time (created
+        # later in entrypoint), set via set_room() once it exists -- same pattern
+        # as set_session_end_event(). code_card_active is read by the inactivity
+        # gate below to suspend nudges while a card is on screen.
+        self._room = None
+        self.code_card_active: bool = False
     def set_session_end_event(self, event: asyncio.Event) -> None:
         self._session_end_event = event
+    def set_room(self, room) -> None:
+        self._room = room
     def _record_tts_text(self, text: str) -> None:
         if text:
             self._tts_text_characters += len(text)
@@ -1545,6 +1582,48 @@ class InterviewAgent(Agent):
             # moving on without a spoken filler.
             logger.info("[LLM_GATE] NO_FOLLOW_UP_NEEDED -- suppressing turn, nothing will be spoken")
             return
+
+        # Code-card overlay: the question-generation prompt is allowed to emit a
+        # fenced ```code block``` for a TRACE/OUTPUT question ("what does this
+        # return?"). Detect it here, publish it to the frontend over the data
+        # channel, and replace raw_chunks with a synthetic one carrying ONLY the
+        # spoken lead-in -- TTS must never speak the code itself. Rebuilding as
+        # one clean chunk (rather than patching the streamed raw_chunks in place)
+        # sidesteps the fence markers being split across arbitrary chunk
+        # boundaries, which streamed token-by-token text makes unreliable to
+        # detect chunk-by-chunk.
+        _card = extract_code_card(full_text) if full_text else None
+        if _card is not None:
+            spoken_text, code = _card
+            if code and self._room is not None:
+                _complexity_secs = max(20, min(90, 20 + 4 * code.count("\n")))
+                try:
+                    await self._room.local_participant.publish_data(
+                        json.dumps({
+                            "type": "code_card",
+                            "prompt": spoken_text,
+                            "code": code,
+                            "timer_secs": _complexity_secs,
+                        }).encode("utf-8"),
+                        reliable=True,
+                    )
+                    self.code_card_active = True
+                    logger.info(
+                        "[CODE_CARD] published | timer=%ds | code_lines=%d",
+                        _complexity_secs, code.count("\n") + 1,
+                    )
+                except Exception as _card_err:
+                    logger.warning("[CODE_CARD] publish failed: %s -- speaking full text as fallback", _card_err)
+                    spoken_text = full_text
+            elif not code:
+                # Fence matched but no code survived stripping (e.g. an empty
+                # ``` ``` block) -- fall back to speaking the raw text rather
+                # than silently dropping content.
+                spoken_text = full_text
+            if spoken_text:
+                yield llm.ChatChunk(id="code-card-spoken", delta=llm.ChoiceDelta(role="assistant", content=spoken_text))
+            return
+
         for chunk in raw_chunks:
             yield chunk
     async def tts_node(self, text, model_settings):
@@ -2775,6 +2854,7 @@ async def entrypoint(ctx: JobContext):
         *_end_call_tool.tools,
     ]
     agent = InterviewAgent(instructions=system_prompt, chat_ctx=chat_ctx, tools=_interview_tools)
+    agent.set_room(ctx.room)
     # CRITICAL: Agent.__init__ does `self._chat_ctx = chat_ctx.copy(...)`, creating a
     # SEPARATE ChatContext (new items list) from the local `chat_ctx` above. LiveKit
     # generates every reply from `agent._chat_ctx` (see AgentActivity: it does
@@ -3320,6 +3400,16 @@ async def entrypoint(ctx: JobContext):
             content = _clean_stt_text(content)
             if not content:
                 return
+            # Code card: candidate answered (real speech reached this point), so dismiss
+            # it and let inactivity nudges resume normally on their next turn.
+            if agent.code_card_active:
+                agent.code_card_active = False
+                try:
+                    await ctx.room.local_participant.publish_data(
+                        json.dumps({"type": "code_card_dismiss"}).encode("utf-8"), reliable=True,
+                    )
+                except Exception:
+                    pass
             # Turn 2 = warmup response. It's always intentional candidate speech -- skip noise filters.
             is_warmup_response = not warmup_complete and turn_snapshot >= 2
             if is_warmup_response:
@@ -5112,6 +5202,7 @@ async def entrypoint(ctx: JobContext):
             and awaiting_candidate_response
             and inactivity_elapsed >= INACTIVITY_NUDGE_SECS
             and not _eval_in_flight_after_reply
+            and not agent.code_card_active  # code card has its own on-screen timer; no inactivity nudge while it's up
         )
         # Log timing every 5 seconds so we can verify nudge schedule
         if int(inactivity_elapsed) % 5 == 0 and inactivity_elapsed >= 5:

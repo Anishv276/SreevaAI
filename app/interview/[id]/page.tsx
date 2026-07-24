@@ -1812,6 +1812,23 @@ function InterviewRoomContent({
     }, [connectionState, lkRoom]);
     const launchReadySignalSentRef = useRef(false);
     const [launchPrereqsReady, setLaunchPrereqsReady] = useState(false);
+    const [codeCard, setCodeCard] = useState<{ prompt: string; code: string; timerSecs: number } | null>(null);
+    const [codeCardSecsLeft, setCodeCardSecsLeft] = useState(0);
+    useEffect(() => {
+        if (!codeCard) return;
+        setCodeCardSecsLeft(codeCard.timerSecs);
+        const interval = setInterval(() => {
+            setCodeCardSecsLeft((s) => {
+                if (s <= 1) {
+                    clearInterval(interval);
+                    setCodeCard(null); // local auto-dismiss; the backend dismisses independently on answer
+                    return 0;
+                }
+                return s - 1;
+            });
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [codeCard]);
     const finishStartedRef = useRef(false);
     const egressStartedRef = useRef(false);
     const egressStartingRef = useRef<Promise<void> | null>(null);
@@ -2081,6 +2098,14 @@ function InterviewRoomContent({
                         packet.reason || "Sound anomaly detected",
                         packet.severity || "medium"
                     );
+                } else if (packet.type === "code_card") {
+                    setCodeCard({
+                        prompt: String(packet.prompt || ""),
+                        code: String(packet.code || ""),
+                        timerSecs: Number(packet.timer_secs) || 45,
+                    });
+                } else if (packet.type === "code_card_dismiss") {
+                    setCodeCard(null);
                 }
             } catch {
                 // Ignore non-JSON packets.
@@ -2155,6 +2180,37 @@ function InterviewRoomContent({
             </div>
 
             {/* Status Pill removed in favor of center voice UI */}
+
+            {/* Code Card Overlay -- shown when the interviewer asks a query/snippet question */}
+            <AnimatePresence>
+                {codeCard && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -16, scale: 0.97 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -16, scale: 0.97 }}
+                        transition={{ duration: 0.2 }}
+                        className="absolute top-24 left-1/2 -translate-x-1/2 z-[70] w-[min(640px,90vw)] pointer-events-none"
+                    >
+                        <div className="rounded-2xl border border-zinc-200/70 bg-white/95 backdrop-blur-md shadow-[0_20px_60px_rgba(0,0,0,0.15)] overflow-hidden">
+                            <div className="flex items-center justify-between px-5 py-3 border-b border-zinc-100 bg-zinc-50/80">
+                                <p className="text-sm font-medium text-zinc-700">{codeCard.prompt}</p>
+                                <div className="flex items-center gap-1.5 shrink-0 ml-4 tabular-nums text-xs font-semibold text-zinc-500">
+                                    <div
+                                        className={cn(
+                                            "w-1.5 h-1.5 rounded-full",
+                                            codeCardSecsLeft <= 5 ? "bg-red-500" : "bg-violet-500"
+                                        )}
+                                    />
+                                    {codeCardSecsLeft}s
+                                </div>
+                            </div>
+                            <pre className="px-5 py-4 text-sm leading-relaxed overflow-x-auto text-zinc-800 bg-zinc-900/[0.03]">
+                                <code>{codeCard.code}</code>
+                            </pre>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* Candidate Video Feed - TOP RIGHT */}
             <div className="absolute top-24 right-10 z-50 pointer-events-auto flex flex-col items-end gap-3">
