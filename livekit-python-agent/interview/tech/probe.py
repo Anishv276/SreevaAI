@@ -319,71 +319,49 @@ _LEVEL_OVERLAYS: dict[str, dict[int, str]] = {
 # that tone and ground it in a specific word they used, so openers vary
 # naturally turn to turn instead of defaulting to "Mm".
 # ---------------------------------------------------------------------------
-_SIGNAL_REACTIONS: dict[str, dict] = {
-    "depth_shallow": {
-        "tone": "lightly impressed then probing — acknowledge the claim, then open the box",
-        "openers": ["Okay, so —", "Right, and —", "Got it, so —"],
-    },
-    "depth_misconception": {
-        "tone": "curious, non-confrontational — surfacing a mix-up, not correcting",
-        "openers": ["Interesting —", "Okay, let's check that —", "Hm, let's see —"],
-    },
-    "depth_generic": {
-        "tone": "engaged and conversational — you followed the flow, now push for specifics",
-        "openers": ["Right, that tracks —", "Okay, I follow —", "Makes sense —"],
-    },
-    "pure_denial": {
-        "tone": "warm and reassuring — make it safe that they don't know",
-        "openers": ["No worries —", "That's alright —", "Fair enough —"],
-    },
-    "depth_clear": {
-        "tone": "encouraging, matter-of-fact — most of it landed, sharpen the rest",
-        "openers": ["Right, and —", "Okay, close —", "Good start —"],
-    },
-    "depth_applied": {
-        "tone": "genuinely impressed, curious for the edge",
-        "openers": ["Nice, and —", "Okay, real scenario —", "Good, so —"],
-    },
-    "depth_mastered": {
-        "tone": "genuinely impressed, curious for the edge",
-        "openers": ["Nice, and —", "Okay, real scenario —", "Good, so —"],
-    },
-    "recovery_attempted": {
-        "tone": "warm, brief acknowledgement of the catch, then build on the corrected claim",
-        "openers": ["Right, and —", "Okay, so —", "Got it —"],
-    },
+# Tone per signal -- shapes WHICH kind of reaction fits (impressed vs. reassuring vs.
+# curious), not the literal wording. The actual filler word is picked live from
+# _ALLOWED_FILLERS below, chosen to fit prev_question/prev_answer -- not hardcoded
+# per signal, so the same signal doesn't always produce the same opener.
+_SIGNAL_TONES: dict[str, str] = {
+    "depth_shallow": "lightly impressed then probing — acknowledge the claim, then open the box",
+    "depth_misconception": "curious, non-confrontational — surfacing a mix-up, not correcting",
+    "depth_generic": "engaged and conversational — you followed the flow, now push for specifics",
+    "pure_denial": "warm and reassuring — make it safe that they don't know",
+    "depth_clear": "encouraging, matter-of-fact — most of it landed, sharpen the rest",
+    "depth_applied": "genuinely impressed, curious for the edge",
+    "depth_mastered": "genuinely impressed, curious for the edge",
+    "recovery_attempted": "warm, brief acknowledgement of the catch, then build on the corrected claim",
 }
 
-# Banned hollow-filler openers -- exact ban list plus the pattern class it belongs to.
-# Kept as an explicit list (not just 3 examples) since a narrow ban list is exactly
-# what let "Impressive process!" slip through in testing.
-_BANNED_FILLER_OPENERS = (
-    "great!", "awesome!", "that's interesting!", "impressive!", "impressive ",
-    "solid!", "nice!", "cool!", "wow!", "amazing!",
+# The ONLY fillers allowed as a reaction opener. Short, natural, low-key -- picked
+# to fit the specific answer/question in front of the LLM at generation time, not
+# tied to a fixed signal. Anything outside this list (hollow praise, "Got it",
+# "Right", "That tracks", "Makes sense", "Spot on", etc.) is banned.
+_ALLOWED_FILLERS = (
+    "Ok", "Understood", "Alright", "Fine", "Ah, I see", "Exactly",
+    "No worries", "Good start", "Fair enough", "I see",
 )
 
 
-def get_reaction_hint(signal: str | None, prev_answer: str) -> str:
+def get_reaction_hint(signal: str | None, prev_answer: str, prev_question: str = "") -> str:
     """
-    Returns a one-line reaction directive matching the INTENT of the answer
-    (via the fired signal), so the opener varies and fits what they said.
+    Returns a one-line reaction directive: pick a filler from _ALLOWED_FILLERS that
+    actually fits prev_question/prev_answer and the tone for this signal, rather than
+    a fixed per-signal opener list -- so the same signal doesn't always produce the
+    same wording, and the choice is grounded in what was actually said.
     """
-    r = _SIGNAL_REACTIONS.get(signal or "")
-    _banned_note = (
-        "  Do NOT open with hollow praise words: 'Great!', 'Awesome!', 'That's interesting!', "
-        "'Impressive!', 'Solid!', 'Nice!', 'Cool!', 'Wow!', 'Amazing!' — none of these, in any tone."
-    )
-    if not r:
-        return (
-            "REACTION: open with a short, specific beat that reacts to a real word they used "
-            "(not a generic 'Mm').\n" + _banned_note
-        )
+    tone = _SIGNAL_TONES.get(signal or "", "engaged and conversational, reacting to what they just said")
+    _allowed_list = ", ".join(f"'{w}'" for w in _ALLOWED_FILLERS)
     return (
-        f"REACTION TONE: {r['tone']}.\n"
-        f"  Example openers (adapt — replace [tool] with the real thing they named, vary the wording): "
-        f"{' / '.join(r['openers'])}\n"
-        f"  Make it specific to what they actually said. Do NOT default to a bland 'Mm' or 'Hmm'.\n"
-        + _banned_note
+        f"REACTION TONE: {tone}.\n"
+        f"  Pick ONE filler from this exact list, whichever best fits their answer "
+        f"(\"{prev_answer[:160]}\") to your last question (\"{prev_question[:120]}\") — "
+        f"do not invent a new one, do not always default to the same one: {_allowed_list}.\n"
+        f"  Follow it with a dash and go straight into the reaction/question — do not add any "
+        f"other hollow praise or conversational crutch ('Great!', 'Impressive!', 'Got it', 'Right', "
+        f"'That tracks', 'Makes sense', 'Spot on') before or after the chosen filler.\n"
+        f"  Make the reaction specific to what they actually said. Never default to a bland 'Mm' or 'Hmm'."
     )
 
 
@@ -493,109 +471,31 @@ one you have not used in RECENT_QUESTION_PATTERNS. If every construction listed 
 directive's examples is already used, invent a new one that still fits the question type; the
 question type is the constraint, the wording is never fixed.
 
+SHOWING A CODE CARD (code_trace / snippet_eval / query_trace question types only):
+If the PROBE DIRECTIVE's question type is code_trace, snippet_eval, or query_trace, you MUST
+show the snippet as an actual markdown fenced code block — not describe it in words. The fence's
+language tag MUST be exactly one of these three words, matching which kind of card it is (this
+tag is machine-parsed downstream, not just decoration):
+  code_trace   -- candidate traces execution/output of normal code
+  snippet_eval -- candidate spots a bug planted in the snippet
+  query_trace  -- candidate traces what a SQL/data query returns
+Output:
+  <your spoken reaction + setup, under 12 words>
+  ```code_trace
+  <the code, real and runnable — not pseudocode>
+  ```
+(swap the fence tag for `snippet_eval` or `query_trace` to match the question type you were
+asked to produce). The fenced block is REQUIRED for these three types — a code question with no
+fence is broken, the candidate will see nothing. For every other question type, never include a
+fenced block.
+
 OUTPUT FORMAT — READ CAREFULLY:
-Output ONLY the reaction + question (or exactly NO_FOLLOW_UP_NEEDED). Do not show your
-reasoning, do not name the scaffold you picked, do not add any parenthetical note, meta-comment,
-or explanation before or after the question — the candidate hears this verbatim, so anything
-other than the spoken reaction+question breaks the interview. Think before you answer, but the
-final message you produce must contain nothing except what Ishitha would actually say out loud.
-"""
-
-
-# ---------------------------------------------------------------------------
-# Core skill question generator -- TECH INTERVIEWS ONLY.
-# Generates a structured 6-item question set for a given skill × level.
-#
-# NOT used for real-time follow-up (that is QUESTION_GENERATION_SYSTEM above).
-# This is an OFFLINE / pre-interview call: for each priority skill extracted
-# by the brief pipeline, call the LLM once with this system prompt to produce
-# the full question set for that skill before the interview begins.
-#
-# The six sections deliberately avoid any "tell me about a project" framing —
-# every question stands alone as a cold-reasoning prompt the candidate cannot
-# prep for by rehearsing their resume.
-# ---------------------------------------------------------------------------
-CORE_SKILL_QUESTION_SYSTEM = """\
-You are generating the CORE QUESTION SET for a technical interview skill — testing actual
-capability, not project history, not resume claims, not "tell me about a time you used X."
-Every question must be answerable cold, by someone who genuinely knows the skill, with zero
-reference to what the candidate has personally built or worked on.
-
-INPUT: SKILL = "{skill}"  |  LEVEL = {level}
-  (1=junior/entry · 2=mid-level · 3=senior · 4=staff/principal)
-
-Generate exactly SEVEN items. Each tests a different layer of real understanding of {skill}.
-No question may reference the candidate's past work, teams, or resume in ANY item.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. DEFINITION
-   Tests whether a core DISTINCTION is understood, not memorized.
-   Pick two concepts commonly confused within {skill}. Ask for the difference AND a concrete
-   case where getting it wrong causes a real bug or failure — never a plain "define X."
-   Bad:  "What is X?"
-   Good: "What's the difference between X and Y, and name a case where confusing them
-          breaks something?"
-
-2. CORE_MECHANICS
-   Tests HOW it works internally — not what it's called.
-   Pick one mechanism of {skill} that's easy to name but hard to actually trace. Ask them to
-   walk through what happens step by step for a CONCRETE INPUT, or justify a real design
-   choice tied to that mechanism.
-   Bad:  "How does X work?"
-   Good: "Walk me through what happens when you do [concrete operation] on [specific input]."
-
-3. FAILURE_MODE
-   A SPECIFIC, numbers-bearing failure scenario native to {skill}.
-   Name the load/size/concurrency/condition. Ask what breaks and what they'd check FIRST.
-   Not "what can go wrong" — name the specific trigger, ask them to trace the failure.
-   Bad:  "What can fail with X?"
-   Good: "You have [specific scenario + a number]. At [trigger point], what breaks and where
-          do you look first?"
-
-4. CODE_TRACE  (Level 3-4: generate a real code snippet; Level 1-2: use a second DEFINITION)
-   Level 3-4 only: Show a short, self-contained code snippet via code_card (≤ 12 lines, real
-   runnable behavior). Ask what it outputs or what happens step by step for a specific input.
-   The answer must require tracing execution — not just recognizing the pattern by name.
-   The snippet must have ONE non-obvious behavior (a mutation, a scope issue, a short-circuit,
-   an unexpected return value). Candidate reads the card and SPEAKS the answer — no writing.
-   Level 1-2: produce a second DEFINITION question on a different pair of concepts instead.
-   Code card: {{"code": "<real snippet>", "prompt": "What does this output?", "timer_secs": 45}}
-
-5. APPLIED  (level-scaled)
-   Level 1: A small, self-contained task solvable with fundamentals. One real constraint.
-            No systems context assumed. "Given [concrete setup], what would you do/what's wrong?"
-   Level 2: A task in a realistic single-service context with one real constraint (time, data
-            size, an existing system). "Your service does X, you see Y — first step?"
-   Level 3: A tradeoff decision — two valid approaches, a constraint that makes the choice
-            non-obvious. The question is HOW they reason, not which answer they pick.
-   Level 4: An architecture-level judgment across multiple interacting components. Failure
-            modes, conflicting constraints, second-order consequences.
-   Do not restate the definition of {skill} for context — assume they already have it.
-
-6. TRADEOFF_DEBATE  (Level 3-4: real debate; Level 1-2: use an APPLIED edge case instead)
-   Level 3-4: Force a pick between two valid approaches under a constraint that makes the
-   choice non-obvious. Include the specific constraint IN the question. Never ask open "what
-   are the tradeoffs" — force a pick and ask them to defend it against the alternative.
-   Bad:  "What are the tradeoffs of X vs Y?"
-   Good: "Under [specific constraint], you have X or Y. Which do you pick and what does the
-          other one cost you?"
-   Level 1-2: produce an applied edge case instead.
-
-7. PROBE_VARIANT
-   A follow-up to use ONLY if the APPLIED answer is shallow, textbook, or evasive.
-   Must escalate one level deeper — invert a stated assumption or ask what breaks the approach
-   they just gave. Make it a falsify question: "OK — but what about [edge case]?"
-   This is the one question the interviewer holds in reserve.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-HARD CONSTRAINTS:
-- Never say "your project," "your resume," "a time when," or "have you used." Cold reasoning only.
-- Each item must be answerable in under 30 seconds of spoken reasoning. One concept per question.
-- No repeated concepts across items — each must test a genuinely different layer.
-- Ground every failure/applied scenario in a REAL number, constraint, or concrete noun specific
-  to {skill} — never "a large dataset" or "under load" with no anchor.
-- For CODE_TRACE at Level 1-2: produce a second DEFINITION question instead.
-- Output ONLY the seven items, labeled by section. No preamble, no explanation.
+Output ONLY the reaction + question (or exactly NO_FOLLOW_UP_NEEDED), optionally followed by a
+fenced code block per the rule above. Do not show your reasoning, do not name the scaffold you
+picked, do not add any parenthetical note, meta-comment, or explanation before or after the
+question — the candidate hears the spoken part verbatim and sees the code block verbatim, so
+anything else breaks the interview. Think before you answer, but the final message you produce
+must contain nothing except what Ishitha would actually say out loud, plus the fence when required.
 """
 
 
@@ -645,10 +545,11 @@ CODE_CARD_RULES: dict[str, dict] = {
 # candidate's level (1-4). Level gates are HARD — using a type outside the
 # allowed pool for that level is forbidden.
 #
-# Type pool summary:
-#   Level 1: definition | mechanism | difference | followup
-#   Level 2: definition | mechanism | difference | failure_mode | scenario | followup
-#   Level 3: mechanism | difference | code_trace | failure_mode | tradeoff_debate | scenario | followup
+# Type pool summary (all code-card types available at every level, EASY at 1
+# scaling to HARDEST at 4 -- see per-type level notes below):
+#   Level 1: definition | mechanism | difference | code_trace | snippet_eval | query_trace | followup
+#   Level 2: definition | mechanism | difference | failure_mode | scenario | code_trace | snippet_eval | query_trace | followup
+#   Level 3: mechanism | difference | code_trace | snippet_eval | query_trace | failure_mode | tradeoff_debate | scenario | followup
 #   Level 4: code_trace | snippet_eval | query_trace | failure_mode | tradeoff_debate | scenario | followup
 #
 # Code card types (code_trace / snippet_eval / query_trace):
@@ -674,10 +575,14 @@ LEVEL 4 (staff/principal): Mastery. Code bugs, query behavior, architecture judg
 ━━━ TYPE POOL BY LEVEL (HARD GATES) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Use ONLY the types listed for the candidate's level. Using a type outside this list is WRONG.
 
-LEVEL 1:  definition | mechanism | difference | followup
-LEVEL 2:  definition | mechanism | difference | failure_mode | scenario | followup
-LEVEL 3:  mechanism | difference | code_trace | failure_mode | tradeoff_debate | scenario | followup
+LEVEL 1:  definition | mechanism | difference | code_trace | snippet_eval | query_trace | followup
+LEVEL 2:  definition | mechanism | difference | failure_mode | scenario | code_trace | snippet_eval | query_trace | followup
+LEVEL 3:  mechanism | difference | code_trace | snippet_eval | query_trace | failure_mode | tradeoff_debate | scenario | followup
 LEVEL 4:  code_trace | snippet_eval | query_trace | failure_mode | tradeoff_debate | scenario | followup
+
+All three code-card types are available at every level -- only DIFFICULTY scales (see EASY/
+MEDIUM/HARD notes under each type below). Never omit a type just because the level is low --
+make it easier instead.
 
 ━━━ TYPE DEFINITIONS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -736,33 +641,55 @@ IMPORTANT: The code card is displayed on the candidate's screen.
   The spoken question must be SHORT (under 12 words) — the card carries the content.
   Only use these types after at least ONE verbal question on this topic has been asked.
 
-CODE_TRACE  (Level 3-4)
+CODE_TRACE  (all levels — difficulty scales with level)
   Show a short code snippet; ask what it outputs or what happens for a specific input.
   Requirements:
   - Snippet ≤ 12 lines. Self-contained. Actually runnable. Real language (Python/JS/SQL/etc).
-  - Must have ONE non-obvious behavior: mutation, scope issue, short-circuit, unexpected type.
   - The output must REQUIRE tracing — not guessable just by recognizing the pattern name.
   - Do NOT use code_trace as the first question in a topic.
+  DIFFICULTY BY LEVEL:
+    Level 1 (EASY): 3-6 lines, one obvious operation (a single loop, a print, basic
+      arithmetic/string op). No tricks, output derivable by reading it once.
+    Level 2 (EASY-MEDIUM): one function, one clear behavior (a running total, a simple
+      conditional, basic list/dict mutation). No nested edge cases.
+    Level 3 (MEDIUM-HARD): one function with a real gotcha (mutable default arg, closure
+      over a loop variable, off-by-one, shared-reference mutation). Non-obvious on a skim.
+    Level 4 (HARDEST): the gotcha requires multi-step reasoning, not a single named pattern —
+      combine two subtle behaviors (e.g. mutation + late binding).
   Spoken: "Look at this — what does it print when called with n=0?" (≤ 12 words)
   Code card: {{"code": "<snippet>", "prompt": "What does this output?", "timer_secs": 45}}
 
-SNIPPET_EVAL  (Level 4 only)
+SNIPPET_EVAL  (all levels — difficulty scales with level)
   Show a code snippet that has exactly ONE real bug; ask the candidate to identify it.
   Requirements:
-  - Bug must be REAL and SUBTLE — logic error, race condition, off-by-one, wrong default,
-    resource leak. NOT a syntax error or missing import.
   - "What's wrong" must have a specific, traceable answer — not "it could be many things."
-  - Snippet is realistic (10-15 lines), not a toy example.
+  - NOT a syntax error or missing import at any level — always a logic bug.
+  DIFFICULTY BY LEVEL:
+    Level 1 (EASY): the bug is OBVIOUS on a skim — a clear typo, wrong operator, or missing
+      return. Short snippet (5-8 lines).
+    Level 2 (EASY-MEDIUM): the bug takes one careful read to spot (an off-by-one, a wrong
+      comparison) but isn't hidden behind other logic.
+    Level 3 (MEDIUM-HARD): the bug needs real tracing to find — not visible from a skim,
+      requires following execution through 2-3 steps.
+    Level 4 (HARDEST): SUBTLE — a stale reference, a race/ordering issue, an off-by-one buried
+      in realistic code (10-15 lines). Candidate must reason it out, not spot a typo.
   Spoken: "This function has a bug that only shows up in one specific case — what is it?"
   Code card: {{"code": "<snippet>", "prompt": "What's the bug?", "timer_secs": 60}}
 
-QUERY_TRACE  (Level 4 only — data/query/DB skills ONLY)
+QUERY_TRACE  (all levels — difficulty scales with level; data/query/DB skills ONLY)
   Show a SQL or data query; ask what it returns, what's wrong, or what it costs.
   Requirements:
   - Use ONLY for data/query/DB/analytics skills. NEVER for React, Docker, Kubernetes, etc.
-  - Query must have a non-obvious answer: wrong result for an edge case, unexpected NULL
-    behavior, index that won't be used, a grouping that silently drops rows.
-  - Query ≤ 15 lines.
+  - If the topic has no query/DB angle, skip this type entirely rather than forcing one.
+  DIFFICULTY BY LEVEL:
+    Level 1 (EASY): a single-table SELECT/WHERE/simple filter — no joins, no aggregation.
+    Level 2 (EASY-MEDIUM): one join or a basic GROUP BY — still traceable in one pass, no
+      subqueries.
+    Level 3 (MEDIUM-HARD): a join plus a filter/aggregation where the result set takes actual
+      reasoning, not just reading the WHERE clause.
+    Level 4 (HARDEST): joins, aggregation, or a subquery where the returned rows/values aren't
+      obvious at a glance — unexpected NULL behavior, an index that won't be used, a grouping
+      that silently drops rows.
   Spoken: "What does this return when a user has no orders?" (≤ 12 words)
   Code card: {{"code": "<query>", "prompt": "What does this return?", "timer_secs": 40}}
 
@@ -854,11 +781,16 @@ _VALID_TOPIC_QUESTION_TYPES: tuple[str, ...] = (
 # Code card types — those that REQUIRE a code_card field in the output JSON
 _CODE_CARD_QUESTION_TYPES: frozenset[str] = frozenset({"code_trace", "snippet_eval", "query_trace"})
 
-# Types available per level (HARD GATES — enforced by validate_topic_question_set)
+# Types available per level (HARD GATES — enforced by validate_topic_question_set).
+# All three code-card types are allowed at every level -- only their DIFFICULTY scales
+# (see the per-type "DIFFICULTY BY LEVEL" notes in TOPIC_QUESTION_GENERATION_SYSTEM
+# above). Only failure_mode/tradeoff_debate/scenario remain level-gated, since those
+# are inherently applied-judgment question shapes, not something that has an "easy"
+# version worth asking a junior candidate.
 _LEVEL_TYPE_GATES: dict[int, frozenset[str]] = {
-    1: frozenset({"definition", "mechanism", "difference", "followup"}),
-    2: frozenset({"definition", "mechanism", "difference", "failure_mode", "scenario", "followup"}),
-    3: frozenset({"mechanism", "difference", "code_trace", "failure_mode", "tradeoff_debate", "scenario", "followup"}),
+    1: frozenset({"definition", "mechanism", "difference", "code_trace", "snippet_eval", "query_trace", "followup"}),
+    2: frozenset({"definition", "mechanism", "difference", "failure_mode", "scenario", "code_trace", "snippet_eval", "query_trace", "followup"}),
+    3: frozenset({"mechanism", "difference", "code_trace", "snippet_eval", "query_trace", "failure_mode", "tradeoff_debate", "scenario", "followup"}),
     4: frozenset({"code_trace", "snippet_eval", "query_trace", "failure_mode", "tradeoff_debate", "scenario", "followup"}),
 }
 
@@ -1153,7 +1085,7 @@ def get_probe_context(
     lines.append("DIRECTIVE (verbatim framing instructions for this signal):")
     lines.append(_directive)
     lines.append(f"VOICE: {probe['voice_note']}")
-    lines.append(get_reaction_hint(signal, prev_answer))
+    lines.append(get_reaction_hint(signal, prev_answer, prev_question))
 
     _level_note = _LEVEL_OVERLAYS.get(signal or "", {}).get(level)
     if _level_note:

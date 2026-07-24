@@ -13,7 +13,6 @@ from interview.tech.scoring import (
 from interview.tech.probe import (
     SIGNAL_PROBES,
     QUESTION_GENERATION_SYSTEM,
-    CORE_SKILL_QUESTION_SYSTEM,
     TOPIC_QUESTION_GENERATION_SYSTEM,
     validate_topic_question_set,
     get_probe_context,
@@ -52,7 +51,6 @@ __all__ = [
     "ALL_SIGNALS",
     "SIGNAL_PROBES",
     "QUESTION_GENERATION_SYSTEM",
-    "CORE_SKILL_QUESTION_SYSTEM",
     "TOPIC_QUESTION_GENERATION_SYSTEM",
     "validate_topic_question_set",
     "get_probe_context",

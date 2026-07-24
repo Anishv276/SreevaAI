@@ -70,21 +70,23 @@ def build_interview_directive(
             f"FIRST QUESTION RULE: start with a DEFINITION or MECHANISM question on {anchor_name} — \n"
             f"a basic distinction or a simple trace question. Ask for the difference between two \n"
             f"commonly-confused concepts in {anchor_name}, or trace what happens for a simple input.\n"
-            f"Do NOT ask code_trace, snippet_eval, failure_mode, or tradeoff_debate at level 1.\n"
+            f"Do NOT ask failure_mode or tradeoff_debate at level 1 -- easy code_trace/snippet_eval/query_trace\n"
+            f"is fine after the opener.\n"
             f"Do not ask about tradeoffs, scale, or architecture yet."
         ),
         2: (
             f"FIRST QUESTION RULE: start with a MECHANISM or DIFFERENCE question on {anchor_name} — \n"
             f"how it actually works under the hood, or a concrete case where two things diverge.\n"
             f"Do NOT ask a plain definition — assume fundamentals are solid at level 2.\n"
-            f"Do NOT use code_trace, snippet_eval, or query_trace at level 2.\n"
+            f"Easy-medium code_trace/snippet_eval/query_trace is available after the first verbal question.\n"
             f"failure_mode is available after the first concept question."
         ),
         3: (
             f"FIRST QUESTION RULE: start with a MECHANISM or FAILURE_MODE question on {anchor_name} — \n"
             f"a concrete failure scenario with numbers, or tracing internals under a constraint.\n"
             f"Do NOT start with a plain definition — push for the 'why' behind it immediately.\n"
-            f"code_trace is available after the first verbal question on {anchor_name}."
+            f"code_trace, snippet_eval, and query_trace (harder than level 2) are available after the first\n"
+            f"verbal question on {anchor_name}."
         ),
         4: (
             f"FIRST QUESTION RULE: start with a FAILURE_MODE or TRADEOFF_DEBATE question on {anchor_name} — \n"
@@ -115,37 +117,73 @@ def build_interview_directive(
     # resume_brief.skills + jd_skills when brief is not provided.
     _skill_probe_style = {
         1: (
-            "  QUESTION TYPES (Level 1 — verbal only):\n"
-            "    definition | mechanism | difference | followup\n"
+            "  QUESTION TYPES (Level 1 — mostly verbal, all code-card types allowed at EASY difficulty):\n"
+            "    definition | mechanism | difference | code_trace | snippet_eval | query_trace | followup\n"
             "  HOW TO ASK: Basics and simple distinctions. 'What's the difference between X and Y?'\n"
             "  PROBE: Accept partial answers — they're learning. Get one clear reasoning example, then move on.\n"
-            "  NO CODE CARDS at level 1. No failure_mode, no tradeoff_debate, no scenario until later.\n"
+            "  CODE CARDS: After the first verbal question, you may show a code_card. Timer: 45 seconds.\n"
+            "    code_trace: tiny — 3-6 lines, one obvious operation (a single loop, a print, basic\n"
+            "    arithmetic/string op). Output derivable by reading it once.\n"
+            "    snippet_eval: the bug is OBVIOUS on a skim — a clear typo, wrong operator, or missing return.\n"
+            "    query_trace: a single-table SELECT/WHERE/simple filter — no joins, no aggregation.\n"
+            "  No failure_mode, no tradeoff_debate, no scenario until later.\n"
         ),
         2: (
-            "  QUESTION TYPES (Level 2 — verbal only, failure_mode unlocked):\n"
-            "    definition | mechanism | difference | failure_mode | scenario | followup\n"
+            "  QUESTION TYPES (Level 2 — mostly verbal, all code-card types at EASY-MEDIUM, failure_mode unlocked):\n"
+            "    definition | mechanism | difference | failure_mode | scenario | code_trace | snippet_eval | query_trace | followup\n"
             "  HOW TO ASK: Mechanics + one-constraint applied questions. 'What would you check first if X was slow?'\n"
             "  PROBE: If they give a textbook answer with no reasoning, push: 'What's the tradeoff there?'\n"
-            "  NO CODE CARDS at level 2. failure_mode available after first concept question.\n"
+            "  CODE CARDS: After the first verbal question, you may show a code_card. Timer: 45 seconds.\n"
+            "    code_trace: one function, one clear behavior to trace (a loop with a running total, a simple\n"
+            "    conditional, basic list/dict mutation). No nested edge cases or multi-function chains.\n"
+            "    snippet_eval: the bug takes one careful read to spot (an off-by-one, a wrong comparison) but\n"
+            "    isn't hidden behind other logic.\n"
+            "    query_trace: one join or a basic GROUP BY -- still traceable in one pass, no subqueries.\n"
+            "  failure_mode available after first concept question.\n"
         ),
         3: (
-            "  QUESTION TYPES (Level 3 — code cards unlocked after first verbal question):\n"
-            "    mechanism | difference | code_trace | failure_mode | tradeoff_debate | scenario | followup\n"
+            "  QUESTION TYPES (Level 3 — code cards more frequent, harder snippets):\n"
+            "    mechanism | difference | code_trace | snippet_eval | query_trace | failure_mode | tradeoff_debate | scenario | followup\n"
             "  HOW TO ASK: Applied questions with a genuine tradeoff. 'Why this approach over the alternative?'\n"
-            "  CODE TRACE: After the first verbal question, you may show a code snippet via code_card.\n"
-            "    Candidate reads the card and speaks the answer. No writing. Timer: 45 seconds.\n"
+            "  CODE CARDS: After the first verbal question, you may show a code_card. Candidate reads the card\n"
+            "    and speaks the answer -- no writing. Timer: 45 seconds.\n"
+            "    code_trace: a step up from level 2 — one function but with a real gotcha (a mutable default\n"
+            "    arg, a closure over a loop variable, an off-by-one, shared-reference mutation). Non-obvious on\n"
+            "    a skim, still solvable by tracing it once. Not staff-level, no multi-function chains.\n"
+            "    snippet_eval: a bug that takes real tracing to find — not visible from a skim, needs following\n"
+            "    execution through 2-3 steps.\n"
+            "    query_trace: a join plus a filter/aggregation where the result set takes actual reasoning,\n"
+            "    not just reading the WHERE clause.\n"
             "  PROBE: A confident-but-shallow answer is a signal to probe deeper, not a pass.\n"
         ),
         4: (
-            "  QUESTION TYPES (Level 4 — all types available, code cards preferred for code skills):\n"
+            "  QUESTION TYPES (Level 4 — all types available at HARDEST difficulty, code cards preferred for code skills):\n"
             "    code_trace | snippet_eval | query_trace | failure_mode | tradeoff_debate | scenario | followup\n"
             "  HOW TO ASK: Tradeoffs and systemic judgment. 'What breaks about that approach at scale?'\n"
             "  CODE CARDS: After the first verbal question, prefer code_trace/snippet_eval to test real code reading.\n"
-            "    snippet_eval: show a snippet with a subtle bug. Candidate identifies it verbally.\n"
-            "    query_trace: for DB/query skills only. Candidate explains what the query returns.\n"
+            "    code_trace: multi-step gotcha combining two subtle behaviors (e.g. mutation + late binding).\n"
+            "    Not a single named pattern — candidate must trace through two interacting rules.\n"
+            "    snippet_eval: show a snippet with a SUBTLE bug — wrong by one condition, a stale reference,\n"
+            "    a race/ordering issue, an off-by-one -- nothing that jumps out on a skim. Candidate must reason\n"
+            "    it out, not just spot a typo.\n"
+            "    query_trace: for DB/query skills only. Advanced query — joins, aggregation, or a subquery —\n"
+            "    where the returned rows/values aren't obvious at a glance. Candidate explains what it actually\n"
+            "    returns and why, not just what it looks like it does.\n"
             "  PROBE: Surface-level or textbook answers are a red flag — invert their assumption and press harder.\n"
         ),
     }.get(level, "  -> Ask a cold-reasoning question grounded in the skill itself, never 'do you know X?'\n")
+    _code_card_format_rule = (
+        "  HOW TO SHOW A CODE CARD: when you ask a code_trace/snippet_eval/query_trace question, you MUST\n"
+        "  output an actual markdown fenced code block -- never describe the snippet in words. The fence's\n"
+        "  language tag must be exactly one of code_trace / snippet_eval / query_trace, matching the type of\n"
+        "  question (this tag is machine-parsed downstream, not decoration). Example:\n"
+        "    <your spoken setup, under 12 words>\n"
+        "    ```code_trace\n"
+        "    <the code, real and runnable -- not pseudocode>\n"
+        "    ```\n"
+        "  (swap the fence tag for snippet_eval or query_trace to match what you're asking). A code question\n"
+        "  with no fence is broken -- the candidate sees nothing. Never include a fence for any other type.\n"
+    )
     if interview_brief is not None:
         _brief_skills = [t for t in interview_brief.topic_pool if t.topic_type in ("skill", "role_topic")]
         if _brief_skills:
@@ -178,6 +216,7 @@ def build_interview_directive(
                 f"  [ROLE DEPTH]   → Expert-knowledge check. Ask about understanding/approach in the abstract.\n"
                 + "\n".join(_skill_lines) + "\n"
                 + f"{_skill_probe_style}"
+                + f"{_code_card_format_rule}"
                 + "  -> Every question about a skill must stand alone -- answerable cold, with no project/resume reference.\n"
                 + "  -> If the candidate can't answer a skill question, acknowledge once and move to the next skill.\n"
             )
@@ -192,6 +231,7 @@ def build_interview_directive(
                 f"  Resume skills: {', '.join(_resume_skills) or 'none listed'}\n"
                 f"  JD must-have skills: {', '.join(_jd_skill_list) or 'none listed'}\n"
                 f"{_skill_probe_style}"
+                f"{_code_card_format_rule}"
                 f"  -> Ask a cold-reasoning question about each skill itself -- never reference the candidate's "
                 f"projects, resume, or work history when asking.\n"
             )

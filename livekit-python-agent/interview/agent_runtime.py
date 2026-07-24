@@ -465,8 +465,11 @@ def _classify_candidate_intent(
     LLM to stay on the same question when the candidate was confused, since
     there the topic genuinely isn't moving.
     """
+    from interview.tech.probe import _ALLOWED_FILLERS  # single source of truth -- see probe.py
+
     prev_lower = (prev_answer or "").lower().strip()
     prev_q_stripped = (prev_question or "").strip()
+    _fillers_note = ", ".join(f"'{w}'" for w in _ALLOWED_FILLERS)
 
     is_connection_check = any(
         p in prev_lower for p in ("can you hear", "are you there", "hello?", "you there?")
@@ -524,8 +527,8 @@ def _classify_candidate_intent(
         if for_move_on:
             hint = (
                 f"CLARIFICATION DETECTED: They were confused or asking what you meant{_q_ref} -- "
-                "they never actually answered it. Acknowledge that briefly and naturally -- "
-                "e.g. 'No worries,' / 'All good,' / 'Sure,' -- then move into the new topic. "
+                f"they never actually answered it. Acknowledge that briefly -- pick ONE that fits "
+                f"from this exact list: {_fillers_note} -- then move into the new topic. "
                 "Do not imply their confusion was an answer or that the old question got resolved."
             )
         else:
@@ -538,23 +541,23 @@ def _classify_candidate_intent(
             )
     elif is_no_recall:
         hint = (
-            "FILLER: they couldn't recall — vary it, e.g. 'No worries.' / 'Fair enough.' / "
-            "'That's alright.' Don't reuse recent turns' wording."
+            f"FILLER: they couldn't recall — pick ONE that fits from this exact list: {_fillers_note}. "
+            "Don't reuse recent turns' wording."
         )
     elif len(prev_lower.split()) <= 8:
         hint = (
-            "FILLER: short answer, acknowledge briefly — vary it, e.g. 'Hmm, okay.' / 'Right.' / "
-            "'Got it.' Don't reuse recent turns' wording."
+            f"FILLER: short answer, acknowledge briefly — pick ONE that fits from this exact list: "
+            f"{_fillers_note}. Don't reuse recent turns' wording."
         )
     elif is_hedge:
         hint = (
-            "FILLER: they hedged, don't praise it — vary it, e.g. 'Hmm, okay.' / 'Mm.' / 'Alright.' "
-            "Don't reuse recent turns' wording."
+            f"FILLER: they hedged, don't praise it — pick ONE that fits from this exact list: "
+            f"{_fillers_note}. Don't reuse recent turns' wording."
         )
     else:
         hint = (
-            "FILLER: substantive answer — vary it, e.g. 'Ah, makes sense.' / 'Got it.' / "
-            "'That tracks.' Don't reuse recent turns' wording."
+            f"FILLER: substantive answer — pick ONE that fits from this exact list: {_fillers_note}. "
+            "Don't reuse recent turns' wording."
         )
 
     return _CandidateIntent(
@@ -676,21 +679,36 @@ def render_declined_facts(declined_facts_log: list[str]) -> str:
 _CODE_FENCE_RE = re.compile(r"```(?:\w+)?\n?.*?```", re.S)
 
 
-def extract_code_card(text: str) -> tuple[str, str] | None:
-    """If `text` contains a fenced code block, splits it into (spoken_text, code).
-    spoken_text is everything outside the fence, whitespace-collapsed -- this is
-    what TTS actually says. Returns None if there's no fence (the common case --
-    most questions are spoken-only). Only the FIRST fence is used; a question
-    should only ever carry one card."""
+_CODE_CARD_TYPE_TAGS = ("code_trace", "snippet_eval", "query_trace")
+_LANG_FENCE_TAGS = ("python", "sql", "sh", "bash", "js", "javascript")
+
+
+def extract_code_card(text: str) -> tuple[str, str, str] | None:
+    """If `text` contains a fenced code block, splits it into (spoken_text, code,
+    question_type). spoken_text is everything outside the fence, whitespace-collapsed
+    -- this is what TTS actually says. Returns None if there's no fence (the common
+    case -- most questions are spoken-only). Only the FIRST fence is used; a question
+    should only ever carry one card.
+
+    question_type is read from the fence's language tag (e.g. ```code_trace) per the
+    QUESTION_GENERATION_SYSTEM contract -- falls back to "code_trace" for an ordinary
+    language tag (```python) or no tag, so scoring still gets code-question calibration
+    even if the LLM used a plain language tag instead of the type tag."""
     m = _CODE_FENCE_RE.search(text or "")
     if not m:
         return None
     code = m.group(0).strip("`").strip()
-    if code.startswith(("python", "sql", "sh", "bash", "js", "javascript")):
+    first_line = code.split("\n", 1)[0].strip().lower() if code else ""
+    if first_line in _CODE_CARD_TYPE_TAGS:
+        question_type = first_line
         code = code.split("\n", 1)[1] if "\n" in code else ""
+    else:
+        question_type = "code_trace"
+        if first_line in _LANG_FENCE_TAGS:
+            code = code.split("\n", 1)[1] if "\n" in code else ""
     spoken = (text[: m.start()] + " " + text[m.end():]).strip()
     spoken = re.sub(r"\s+", " ", spoken)
-    return spoken, code
+    return spoken, code, question_type
 
 
 def validate_spoken_question(text: str, *, max_words: int = 30) -> list[str]:
@@ -1385,10 +1403,50 @@ class InterviewAgent(Agent):
         # gate below to suspend nudges while a card is on screen.
         self._room = None
         self.code_card_active: bool = False
+        # Type of the most recently published code card ("code_trace"/"snippet_eval"/
+        # "query_trace"), read by _build_eval_payload() to score the candidate's next
+        # answer with code-question calibration. Cleared once that answer is scored.
+        self.last_code_card_question_type: str = ""
+        # Bumped every time a card is published; a pending timeout task checks its own
+        # stamp before clearing code_card_active, so a stale timeout from an earlier
+        # card can never clobber a newer one (or a state the candidate already answered
+        # and dismissed themselves). See _clear_code_card_after_timeout below.
+        self._code_card_generation: int = 0
+        # Set via set_code_card_timeout_speaker() once the entrypoint's _deliver_nudge
+        # closure exists -- lets _clear_code_card_after_timeout speak a nudge through
+        # the same session.say() path as the regular inactivity nudges, instead of
+        # duplicating TTS/state-tracking logic here.
+        self._speak_nudge: Any = None
     def set_session_end_event(self, event: asyncio.Event) -> None:
         self._session_end_event = event
     def set_room(self, room) -> None:
         self._room = room
+    def set_code_card_timeout_speaker(self, speak_nudge) -> None:
+        self._speak_nudge = speak_nudge
+    async def _clear_code_card_after_timeout(self, timer_secs: int, generation: int) -> None:
+        """Backend mirror of the frontend's local countdown -- if the candidate never
+        speaks while a card is up, this fires once the card's own timer would have run
+        out, clears code_card_active so inactivity nudges resume, and speaks a short
+        nudge so the candidate isn't left looking at a blank screen wondering what
+        happened. The generation check means this is a no-op if the candidate already
+        answered (dismissal path already cleared code_card_active) or a newer card was
+        shown in the meantime."""
+        await asyncio.sleep(timer_secs)
+        if self.code_card_active and self._code_card_generation == generation:
+            self.code_card_active = False
+            logger.info("[CODE_CARD] timed out with no answer -- inactivity nudges resumed")
+            if self._room is not None:
+                try:
+                    await self._room.local_participant.publish_data(
+                        json.dumps({"type": "code_card_dismiss"}).encode("utf-8"), reliable=True,
+                    )
+                except Exception:
+                    pass
+            if self._speak_nudge is not None:
+                try:
+                    await self._speak_nudge("Looks like time's up on that one -- let's move on.")
+                except Exception as e:
+                    logger.warning("[CODE_CARD] timeout nudge failed: %s", e)
     def _record_tts_text(self, text: str) -> None:
         if text:
             self._tts_text_characters += len(text)
@@ -1594,7 +1652,7 @@ class InterviewAgent(Agent):
         # detect chunk-by-chunk.
         _card = extract_code_card(full_text) if full_text else None
         if _card is not None:
-            spoken_text, code = _card
+            spoken_text, code, _card_question_type = _card
             if code and self._room is not None:
                 _complexity_secs = max(20, min(90, 20 + 4 * code.count("\n")))
                 try:
@@ -1608,9 +1666,23 @@ class InterviewAgent(Agent):
                         reliable=True,
                     )
                     self.code_card_active = True
+                    # Read back by _build_eval_payload() so the candidate's answer to
+                    # THIS card is scored with code-question calibration instead of
+                    # defaulting to generic "mechanism" -- see eval.py QuestionRecord.
+                    self.last_code_card_question_type = _card_question_type
                     logger.info(
-                        "[CODE_CARD] published | timer=%ds | code_lines=%d",
-                        _complexity_secs, code.count("\n") + 1,
+                        "[CODE_CARD] published | type=%s | timer=%ds | code_lines=%d",
+                        _card_question_type, _complexity_secs, code.count("\n") + 1,
+                    )
+                    # The frontend auto-hides the card locally after timer_secs but never
+                    # tells the backend -- without this, a candidate who never speaks at
+                    # all leaves code_card_active=True forever, which permanently disables
+                    # inactivity nudges (see the gate at "and not agent.code_card_active"
+                    # below) for the rest of the interview. Mirror the same timeout here so
+                    # a silent candidate still gets the normal nudge/recovery flow.
+                    self._code_card_generation += 1
+                    asyncio.create_task(
+                        self._clear_code_card_after_timeout(_complexity_secs, self._code_card_generation)
                     )
                 except Exception as _card_err:
                     logger.warning("[CODE_CARD] publish failed: %s -- speaking full text as fallback", _card_err)
@@ -3609,6 +3681,10 @@ async def entrypoint(ctx: JobContext):
                         "turn": turn,
                         "answer": answer,
                         "question": resolved_question,
+                        # The candidate is answering the code card just shown (if any) --
+                        # tells eval to use code-question scoring calibration instead of
+                        # defaulting to generic "mechanism". See last_code_card_question_type.
+                        "question_type": agent.last_code_card_question_type,
                         "transcript_lines": lines[-6:],
                         "topic_score_history": _topic_score_history_snap,
                         "topic_depth_history": _topic_depth_history_snap,
@@ -3672,6 +3748,9 @@ async def entrypoint(ctx: JobContext):
                     ))
                 async with _session_state_lock:
                     payload = _build_eval_payload()
+                    # Snapshot consumed -- clear so a later non-code turn doesn't
+                    # inherit this card's type by mistake.
+                    agent.last_code_card_question_type = ""
                 _scoring_topic_log = payload.get("active_topic", "?")
                 _sat_before_log = (payload.get("active_topic_state") or {}).get("saturation_score", 0.0)
                 logger.info(
@@ -5075,6 +5154,7 @@ async def entrypoint(ctx: JobContext):
         awaiting_candidate_response = True
         if awaiting_candidate_since is None:
             awaiting_candidate_since = time.monotonic()
+    agent.set_code_card_timeout_speaker(_deliver_nudge)
     async def _send_termination_signal(reason: str):
         try:
             payload = json.dumps({"type": "interview_terminated", "reason": reason}).encode("utf-8")

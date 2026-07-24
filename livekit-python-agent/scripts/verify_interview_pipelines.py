@@ -263,6 +263,7 @@ async def run_pipeline(
     which: str,
     num_turns: int,
     client: AsyncOpenAI,
+    level: int = 2,
 ) -> dict:
     is_sales = which == "sales"
     job_title = SALES_JOB_TITLE if is_sales else TECH_JOB_TITLE
@@ -296,7 +297,7 @@ async def run_pipeline(
 
     # -- Step 1: level + brief --------------------------------------------------
     _hr(f"[{which.upper()}] STEP 1 -- Brief generation")
-    level = 2  # admin-selected level -- fixed for this verify script, never inferred
+    # admin-selected level -- passed in via --level, never inferred from candidate/JD
     print(f"level={level}")
 
     _brief_usages: list[dict] = []
@@ -305,7 +306,6 @@ async def run_pipeline(
         candidate_name=candidate_name,
         job_title=job_title,
         level=level,
-        resume_json=resume_json,
         jd_data=jd_data,
         custom_questions=CUSTOM_QUESTIONS,
         openai_client=client,
@@ -495,6 +495,7 @@ async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--which", choices=["tech", "sales", "both"], default="both")
     parser.add_argument("--turns", type=int, default=6)
+    parser.add_argument("--level", type=int, choices=[1, 2, 3, 4], default=2)
     args = parser.parse_args()
 
     if not os.environ.get("OPENAI_API_KEY"):
@@ -507,7 +508,7 @@ async def main() -> None:
     run_id = time.strftime("%Y%m%d_%H%M%S")
     results: dict[str, Any] = {}
     for which in targets:
-        results[which] = await run_pipeline(which=which, num_turns=args.turns, client=client)
+        results[which] = await run_pipeline(which=which, num_turns=args.turns, client=client, level=args.level)
         out_path = OUTPUT_DIR / f"{run_id}_{which}.json"
         out_path.write_text(json.dumps(results[which], indent=2, default=str), encoding="utf-8")
         print(f"\n[{which.upper()}] Full trace written to {out_path}")

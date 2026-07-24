@@ -390,80 +390,41 @@ _LEVEL_OVERLAYS: dict[str, dict[int, str]] = {
 # ---------------------------------------------------------------------------
 # Intent-based reactions.
 # ---------------------------------------------------------------------------
-_SIGNAL_REACTIONS: dict[str, dict] = {
-    "deal_example_evaded": {
-        "tone": "gently redirecting — you accept the general point but want the real deal",
-        "openers": ["Sure, generally —", "Okay, in general terms —", "Right, but specifically —"],
-    },
-    "deal_metrics_missing": {
-        "tone": "direct and practical — asking for a number is completely normal",
-        "openers": ["Got it —", "Okay —", "Right —"],
-    },
-    "revenue_ownership_ambiguous": {
-        "tone": "neutral and matter-of-fact — you noticed it was a team effort",
-        "openers": ["Right, the team —", "Okay, so collectively —", "Got it, a group effort —"],
-    },
-    "impact_not_measured": {
-        "tone": "curious — you want the real number behind 'it went well'",
-        "openers": ["Okay, went well —", "Right, better —", "Got it —"],
-    },
-    "sales_tool_named_not_used": {
-        "tone": "curious — pick up the specific tool name they dropped",
-        "openers": ["Okay, [tool] —", "[tool], right —", "Ah, you mentioned [tool] —"],
-    },
-    "strategy_choice_unjustified": {
-        "tone": "genuinely interested in the decision",
-        "openers": ["Interesting call —", "Okay, [channel] —", "Makes sense you went that way —"],
-    },
-    "pipeline_thinking_weak": {
-        "tone": "engaged and practical — you followed the process",
-        "openers": ["Right, that makes sense —", "Okay, I follow —", "Got it —"],
-    },
-    "objection_handling_theoretical": {
-        "tone": "curious for the real moment behind the method",
-        "openers": ["Okay, that approach —", "Right, makes sense —", "Got it —"],
-    },
-    "conflict_story_sanitized": {
-        "tone": "warm and normalizing — real friction is expected, not a bad look",
-        "openers": ["Fair enough —", "Okay —", "Right —"],
-    },
-    "reflection_missing": {
-        "tone": "genuinely curious about what changed",
-        "openers": ["Okay —", "Got it —", "Right —"],
-    },
-    "customer_focus_missing": {
-        "tone": "curious, redirecting the lens to the buyer's side",
-        "openers": ["Okay, from your side —", "Got it —", "Right —"],
-    },
-    "decision_logic_opaque": {
-        "tone": "genuinely interested in the reasoning",
-        "openers": ["Interesting —", "Okay —", "Got it —"],
-    },
+# Tone per signal -- shapes WHICH kind of reaction fits, not the literal wording.
+# The actual filler word is picked live from _ALLOWED_FILLERS (interview.tech.probe),
+# chosen to fit prev_question/prev_answer -- not hardcoded per signal.
+_SIGNAL_TONES: dict[str, str] = {
+    "deal_example_evaded": "gently redirecting — you accept the general point but want the real deal",
+    "deal_metrics_missing": "direct and practical — asking for a number is completely normal",
+    "revenue_ownership_ambiguous": "neutral and matter-of-fact — you noticed it was a team effort",
+    "impact_not_measured": "curious — you want the real number behind 'it went well'",
+    "sales_tool_named_not_used": "curious — pick up the specific tool name they dropped",
+    "strategy_choice_unjustified": "genuinely interested in the decision",
+    "pipeline_thinking_weak": "engaged and practical — you followed the process",
+    "objection_handling_theoretical": "curious for the real moment behind the method",
+    "conflict_story_sanitized": "warm and normalizing — real friction is expected, not a bad look",
+    "reflection_missing": "genuinely curious about what changed",
+    "customer_focus_missing": "curious, redirecting the lens to the buyer's side",
+    "decision_logic_opaque": "genuinely interested in the reasoning",
 }
 
-_BANNED_FILLER_OPENERS = (
-    "great!", "awesome!", "that's interesting!", "impressive!", "impressive ",
-    "solid!", "nice!", "cool!", "wow!", "amazing!",
-)
+def get_reaction_hint(signal: str | None, prev_answer: str, prev_question: str = "") -> str:
+    """Pick a filler from the shared _ALLOWED_FILLERS (interview.tech.probe) that fits
+    prev_question/prev_answer and this signal's tone -- single source of truth shared
+    with the tech interview track, no separate opener list here."""
+    from interview.tech.probe import _ALLOWED_FILLERS  # single source of truth -- see probe.py
 
-
-def get_reaction_hint(signal: str | None, prev_answer: str) -> str:
-    r = _SIGNAL_REACTIONS.get(signal or "")
-    _banned_note = (
-        "  Do NOT open with hollow praise words: 'Great!', 'Awesome!', 'That's interesting!', "
-        "'Impressive!', 'Solid!', 'Nice!', 'Cool!', 'Wow!', 'Amazing!' — none of these, in any tone."
-    )
-    if not r:
-        return (
-            "REACTION: open with a short, specific beat that reacts to a real word they used "
-            "(not a generic 'Mm').\n" + _banned_note
-        )
+    tone = _SIGNAL_TONES.get(signal or "", "engaged and conversational, reacting to what they just said")
+    _allowed_list = ", ".join(f"'{w}'" for w in _ALLOWED_FILLERS)
     return (
-        f"REACTION TONE: {r['tone']}.\n"
-        f"  Example openers (adapt — replace [tool]/[channel] with the real thing they named, vary wording): "
-        f"{' / '.join(r['openers'])}\n"
-        f"  Make it specific to what they actually said. Do NOT default to a bland 'Mm' or 'Hmm'.\n"
-        + _banned_note
+        f"REACTION TONE: {tone}.\n"
+        f"  Pick ONE filler from this exact list, whichever best fits their answer "
+        f"(\"{prev_answer[:160]}\") to your last question (\"{prev_question[:120]}\") — "
+        f"do not invent a new one, do not always default to the same one: {_allowed_list}.\n"
+        f"  Follow it with a dash and go straight into the reaction/question — do not add any "
+        f"other hollow praise or conversational crutch ('Great!', 'Impressive!', 'Got it', 'Right', "
+        f"'That tracks', 'Makes sense', 'Spot on') before or after the chosen filler.\n"
+        f"  Make the reaction specific to what they actually said. Never default to a bland 'Mm' or 'Hmm'."
     )
 
 
@@ -595,7 +556,7 @@ def get_probe_context(
     lines.append("DIRECTIVE (verbatim framing instructions for this signal):")
     lines.append(_directive)
     lines.append(f"VOICE: {probe['voice_note']}")
-    lines.append(get_reaction_hint(signal, prev_answer))
+    lines.append(get_reaction_hint(signal, prev_answer, prev_question))
 
     _level_note = _LEVEL_OVERLAYS.get(signal or "", {}).get(level)
     if _level_note:
