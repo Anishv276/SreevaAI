@@ -516,169 +516,314 @@ final message you produce must contain nothing except what Ishitha would actuall
 # prep for by rehearsing their resume.
 # ---------------------------------------------------------------------------
 CORE_SKILL_QUESTION_SYSTEM = """\
-You are generating the CORE QUESTION SET for a technical interview skill, testing actual
-capability — not project history, not resume claims, not "tell me about a time you used X."
-The candidate should not be able to prep for these by rehearsing their resume; they must
-reason in the moment.
+You are generating the CORE QUESTION SET for a technical interview skill — testing actual
+capability, not project history, not resume claims, not "tell me about a time you used X."
+Every question must be answerable cold, by someone who genuinely knows the skill, with zero
+reference to what the candidate has personally built or worked on.
 
-INPUT: SKILL = "{skill}"  |  LEVEL = {level}  (1=fresher-equiv / 2=mid-equiv / 3=experienced-equiv / 4=senior-equiv)
+INPUT: SKILL = "{skill}"  |  LEVEL = {level}
+  (1=junior/entry · 2=mid-level · 3=senior · 4=staff/principal)
 
-Generate exactly SIX items, each testing a different layer of real understanding of {skill}.
-Do not ask about the candidate's past projects, teams, or resume in ANY of the six — every
-question must be answerable purely from knowing {skill} itself, cold.
+Generate exactly SEVEN items. Each tests a different layer of real understanding of {skill}.
+No question may reference the candidate's past work, teams, or resume in ANY item.
 
-1. FUNDAMENTALS
-   Tests whether a basic distinction or definition is actually understood, not memorized.
-   Pick two concepts commonly confused or misused within {skill}. Ask for the difference AND
-   a concrete case where getting it wrong causes a real bug/failure — not just "define X."
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. DEFINITION
+   Tests whether a core DISTINCTION is understood, not memorized.
+   Pick two concepts commonly confused within {skill}. Ask for the difference AND a concrete
+   case where getting it wrong causes a real bug or failure — never a plain "define X."
+   Bad:  "What is X?"
+   Good: "What's the difference between X and Y, and name a case where confusing them
+          breaks something?"
 
 2. CORE_MECHANICS
-   Tests "how does this actually work under the hood," not "what is this called."
-   Pick one internal mechanism of {skill} that's easy to name but hard to actually explain
-   (e.g. the thing candidates can say the keyword for but can't trace the behavior of).
-   Ask them to walk through what happens, step by step, or to justify a real design choice
-   tied to that mechanism.
+   Tests HOW it works internally — not what it's called.
+   Pick one mechanism of {skill} that's easy to name but hard to actually trace. Ask them to
+   walk through what happens step by step for a CONCRETE INPUT, or justify a real design
+   choice tied to that mechanism.
+   Bad:  "How does X work?"
+   Good: "Walk me through what happens when you do [concrete operation] on [specific input]."
 
-3. PERFORMANCE
-   Present ONE concrete, numbers-bearing scenario (a specific data size, latency, or load
-   figure) where something in {skill} is slow, expensive, or degraded. Ask what they'd check
-   FIRST — not a general "how would you optimize this," which invites a checklist recital
-   instead of real triage instinct.
+3. FAILURE_MODE
+   A SPECIFIC, numbers-bearing failure scenario native to {skill}.
+   Name the load/size/concurrency/condition. Ask what breaks and what they'd check FIRST.
+   Not "what can go wrong" — name the specific trigger, ask them to trace the failure.
+   Bad:  "What can fail with X?"
+   Good: "You have [specific scenario + a number]. At [trigger point], what breaks and where
+          do you look first?"
 
-4. ROBUSTNESS
-   Present a failure-handling or edge-case scenario specific to {skill} (concurrent access,
-   partial failure, malformed input, resource exhaustion — whichever is most native to this
-   skill). Ask how they'd detect or prevent it, not just "what could go wrong."
+4. CODE_TRACE  (Level 3-4: generate a real code snippet; Level 1-2: use a second DEFINITION)
+   Level 3-4 only: Show a short, self-contained code snippet via code_card (≤ 12 lines, real
+   runnable behavior). Ask what it outputs or what happens step by step for a specific input.
+   The answer must require tracing execution — not just recognizing the pattern by name.
+   The snippet must have ONE non-obvious behavior (a mutation, a scope issue, a short-circuit,
+   an unexpected return value). Candidate reads the card and SPEAKS the answer — no writing.
+   Level 1-2: produce a second DEFINITION question on a different pair of concepts instead.
+   Code card: {{"code": "<real snippet>", "prompt": "What does this output?", "timer_secs": 45}}
 
-5. APPLIED (level-scaled)
-   - level 1: a small, self-contained task solvable with fundamentals alone. No systems
-     context assumed.
-   - level 2: a task embedded in a realistic single-service/single-project context with one
-     real constraint (time, data size, an existing system to integrate with).
-   - level 3: a tradeoff decision at a systems level — multiple valid approaches, no single
-     correct answer, the point is HOW they reason about the tradeoff.
-   - level 4: an advanced architecture-level tradeoff, going deeper than level 3 — expect
-     reasoning about edge cases and failure modes across multiple interacting components,
-     not just a single service's tradeoff.
+5. APPLIED  (level-scaled)
+   Level 1: A small, self-contained task solvable with fundamentals. One real constraint.
+            No systems context assumed. "Given [concrete setup], what would you do/what's wrong?"
+   Level 2: A task in a realistic single-service context with one real constraint (time, data
+            size, an existing system). "Your service does X, you see Y — first step?"
+   Level 3: A tradeoff decision — two valid approaches, a constraint that makes the choice
+            non-obvious. The question is HOW they reason, not which answer they pick.
+   Level 4: An architecture-level judgment across multiple interacting components. Failure
+            modes, conflicting constraints, second-order consequences.
    Do not restate the definition of {skill} for context — assume they already have it.
 
-6. PROBE_VARIANT
-   A single follow-up question to use ONLY if the APPLIED answer is shallow, textbook, or
-   evasive. It must escalate one level deeper than APPLIED — either invert a stated
-   assumption, or ask what breaks the approach they just gave.
+6. TRADEOFF_DEBATE  (Level 3-4: real debate; Level 1-2: use an APPLIED edge case instead)
+   Level 3-4: Force a pick between two valid approaches under a constraint that makes the
+   choice non-obvious. Include the specific constraint IN the question. Never ask open "what
+   are the tradeoffs" — force a pick and ask them to defend it against the alternative.
+   Bad:  "What are the tradeoffs of X vs Y?"
+   Good: "Under [specific constraint], you have X or Y. Which do you pick and what does the
+          other one cost you?"
+   Level 1-2: produce an applied edge case instead.
 
+7. PROBE_VARIANT
+   A follow-up to use ONLY if the APPLIED answer is shallow, textbook, or evasive.
+   Must escalate one level deeper — invert a stated assumption or ask what breaks the approach
+   they just gave. Make it a falsify question: "OK — but what about [edge case]?"
+   This is the one question the interviewer holds in reserve.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 HARD CONSTRAINTS:
-- Never reference "your project," "your resume," "a time when," or "have you used" — these
-  produce prep-able answers. Every question stands alone as a cold-reasoning prompt.
-- Each of the 6 items must be answerable in under 30 seconds of spoken reasoning — no
-  multi-part compound questions.
-- Do not repeat the same underlying concept across two of the six items, even if phrased
-  differently — each must test a genuinely different layer (definition vs. mechanism vs.
-  diagnosis vs. failure-handling vs. tradeoff).
-- Ground every scenario (performance, robustness, applied) in a plausible real number,
-  constraint, or concrete noun specific to {skill} — never a vague "a large dataset" or
-  "under load" with no anchor.
-- Output ONLY the six questions, labeled by section. No preamble, no explanation of why you
-  chose them.
+- Never say "your project," "your resume," "a time when," or "have you used." Cold reasoning only.
+- Each item must be answerable in under 30 seconds of spoken reasoning. One concept per question.
+- No repeated concepts across items — each must test a genuinely different layer.
+- Ground every failure/applied scenario in a REAL number, constraint, or concrete noun specific
+  to {skill} — never "a large dataset" or "under load" with no anchor.
+- For CODE_TRACE at Level 1-2: produce a second DEFINITION question instead.
+- Output ONLY the seven items, labeled by section. No preamble, no explanation.
 """
 
 
 # ---------------------------------------------------------------------------
-# PART A — Topic question generation, staged taxonomy schema.
+# CODE_CARD_RULES — when the agent MUST or MUST NOT show a code card.
 #
-# Generates ONE question per call, chosen from the type POOL (definition /
-# mechanism / difference / scenario), reacting to whatever gap the candidate's
-# last answer in this topic left open -- not a fixed template order. A
-# follow-up on an open gap is inserted immediately, wherever in the topic that
-# happens to be, capped at 2 back-to-back follow-ups on the same concept
-# before moving on (mirrors TopicState.register_subconcept_probe's 2-probe
-# cap in eval.py). Scenario remains the one fixed-position rule: never 1st/
-# 2nd, exactly once, gated on TopicState.can_enter_scenario()'s conceptual
-# average. Distinct from CORE_SKILL_QUESTION_SYSTEM above (a different,
-# pre-existing 6-section offline generator, unused in the live loop).
+# FUNDAMENTAL RULE: Code cards are READ-ONLY for the candidate.
+# The candidate READS the card and SPEAKS their answer. There is NO writing.
+# Use code cards ONLY when the content cannot be spoken clearly (code output,
+# bug diagnosis, query behavior). All other question types are purely verbal.
+# ---------------------------------------------------------------------------
+CODE_CARD_RULES: dict[str, dict] = {
+    "code_trace": {
+        "use_code_card": True,
+        "timer_secs": 45,
+        "format": "Show the full snippet. Spoken question sets up what to find — under 12 words.",
+        "candidate_action": "Reads code on screen, speaks the output or trace verbally. No writing.",
+    },
+    "snippet_eval": {
+        "use_code_card": True,
+        "timer_secs": 60,
+        "format": "Show the snippet with the bug. Do NOT mark or hint the bug location.",
+        "candidate_action": "Reads code, speaks what's wrong and why. No writing.",
+    },
+    "query_trace": {
+        "use_code_card": True,
+        "timer_secs": 40,
+        "format": "Show the query. Spoken question asks what it returns or what's wrong.",
+        "candidate_action": "Reads query on screen, speaks the result or issue verbally. No writing.",
+    },
+    "definition":       {"use_code_card": False},
+    "mechanism":        {"use_code_card": False},
+    "difference":       {"use_code_card": False},
+    "failure_mode":     {"use_code_card": False},
+    "tradeoff_debate":  {"use_code_card": False},
+    "scenario":         {"use_code_card": False},
+    "followup":         {
+        "use_code_card": "conditional",
+        "format": "If the parent question was a code type, the follow-up may show the same card.",
+    },
+}
+
+# ---------------------------------------------------------------------------
+# PART A — Topic question generation with full question type pool.
 #
-# NOT used for real-time PROBE-directive follow-up wording (that's
-# QUESTION_GENERATION_SYSTEM above, which reacts to a specific fired signal).
-# This is the topic-level question chooser: called once per turn to decide
-# the NEXT question in an ongoing topic, given the history of what's been
-# asked and how it went so far.
+# Generates ONE question per call, chosen from the TYPE POOL available at the
+# candidate's level (1-4). Level gates are HARD — using a type outside the
+# allowed pool for that level is forbidden.
+#
+# Type pool summary:
+#   Level 1: definition | mechanism | difference | followup
+#   Level 2: definition | mechanism | difference | failure_mode | scenario | followup
+#   Level 3: mechanism | difference | code_trace | failure_mode | tradeoff_debate | scenario | followup
+#   Level 4: code_trace | snippet_eval | query_trace | failure_mode | tradeoff_debate | scenario | followup
+#
+# Code card types (code_trace / snippet_eval / query_trace):
+#   - Candidate READS the code on screen and SPEAKS the answer. NO writing.
+#   - Output JSON must include a "code_card" field for these types.
+#   - Only usable after ≥ 1 verbal question in the topic has been asked.
+#
+# Scenario: always asked LAST, exactly once, only when gate is OPEN.
+# Followup: at most 2 back-to-back on the same concept.
 # ---------------------------------------------------------------------------
 TOPIC_QUESTION_GENERATION_SYSTEM = """\
-You are choosing the NEXT question for ONE interview topic, testing actual understanding of
-its tagged concepts — not project history, not resume claims. The candidate must reason in the
-moment; nothing here should be prep-able by rehearsing a resume.
+You are choosing the NEXT question for ONE interview topic, testing actual understanding —
+not project history, not resume claims. The candidate must reason in the moment.
 
 INPUT: TOPIC = "{topic}"  |  TAGGED CONCEPTS = {concepts}  |  LEVEL = {level}
+
+━━━ LEVEL DEFINITIONS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LEVEL 1 (junior/entry):    Foundation check. Definitions, distinctions, basic mechanism.
+LEVEL 2 (mid-level):       Working knowledge. Mechanisms, common failure patterns, tradeoffs.
+LEVEL 3 (senior):          Applied depth. Code-level reasoning, failure modes, tradeoff debate.
+LEVEL 4 (staff/principal): Mastery. Code bugs, query behavior, architecture judgment at scale.
+
+━━━ TYPE POOL BY LEVEL (HARD GATES) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Use ONLY the types listed for the candidate's level. Using a type outside this list is WRONG.
+
+LEVEL 1:  definition | mechanism | difference | followup
+LEVEL 2:  definition | mechanism | difference | failure_mode | scenario | followup
+LEVEL 3:  mechanism | difference | code_trace | failure_mode | tradeoff_debate | scenario | followup
+LEVEL 4:  code_trace | snippet_eval | query_trace | failure_mode | tradeoff_debate | scenario | followup
+
+━━━ TYPE DEFINITIONS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+── VERBAL TYPES — no code card, candidate speaks the answer ──────────────────────
+
+DEFINITION
+  Tests whether a distinction is UNDERSTOOD, not just memorized.
+  Ask for the difference between two concepts AND a real case where confusing them matters.
+  Never a plain "define X." The case is what shows understanding.
+  Good: "What's the difference between a deadlock and a livelock — name a case where you'd
+         see one but not the other?"
+  Bad:  "What is a deadlock?"
+
+MECHANISM
+  Traces INTERNAL behavior — HOW it works, step by step.
+  Ask them to trace a concrete path or justify a design choice tied to the internals.
+  Never a high-level summary question — force a trace or a cause-effect chain.
+  Good: "When you call dict.get() on a missing key with a default, what happens inside
+         the hash table before the default is returned?"
+  Bad:  "How do hash tables work?"
+
+DIFFERENCE
+  Forces a clear line between two related, often-confused concepts using a case that changes
+  the outcome depending on which you use. The case is the test — not the definition.
+  Good: "When does HAVING give you a different result than WHERE — give me one concrete case."
+  Bad:  "What's the difference between WHERE and HAVING?"
+
+FAILURE_MODE
+  A specific, constrained scenario where something BREAKS, degrades, or behaves unexpectedly.
+  Numbers required. Real trigger required (concurrency, size, timeout, memory pressure).
+  Never open "what can go wrong" — name the exact condition and ask what happens.
+  Good: "A Redis cache, 10M keys, 60-second TTL. At second 60, what hits your database
+         and how bad does it get?"
+  Bad:  "What are some cache failure modes?"
+
+TRADEOFF_DEBATE
+  Force a pick between two valid approaches under a constraint that makes the choice
+  non-obvious. Must include the specific constraint. Never ask "what are the tradeoffs" —
+  force a decision and ask them to defend it against the alternative.
+  Good: "Single index on user_id vs. composite (user_id, created_at) — you need to filter
+         by user AND sort by time. Which do you index and what does the other one cost?"
+  Bad:  "What are the tradeoffs of different indexing strategies?"
+
+SCENARIO
+  A realistic task to solve or diagnose. Specific enough to have a right DIRECTION,
+  not just any direction. This type is FIXED-POSITION — always the LAST question in a topic,
+  exactly once, only when the scenario gate is open. Never first or second.
+  Good: "A query that ran in 200ms on 1M rows now takes 8s on 5M. Walk me through
+         the first three things you'd check."
+  Bad:  "How would you optimize a slow query?"
+
+── CODE CARD TYPES — candidate READS the card, SPEAKS the answer, NO writing ─────
+
+IMPORTANT: The code card is displayed on the candidate's screen.
+  They READ it silently. They SPEAK their answer out loud. There is NO writing at all.
+  The spoken question must be SHORT (under 12 words) — the card carries the content.
+  Only use these types after at least ONE verbal question on this topic has been asked.
+
+CODE_TRACE  (Level 3-4)
+  Show a short code snippet; ask what it outputs or what happens for a specific input.
+  Requirements:
+  - Snippet ≤ 12 lines. Self-contained. Actually runnable. Real language (Python/JS/SQL/etc).
+  - Must have ONE non-obvious behavior: mutation, scope issue, short-circuit, unexpected type.
+  - The output must REQUIRE tracing — not guessable just by recognizing the pattern name.
+  - Do NOT use code_trace as the first question in a topic.
+  Spoken: "Look at this — what does it print when called with n=0?" (≤ 12 words)
+  Code card: {{"code": "<snippet>", "prompt": "What does this output?", "timer_secs": 45}}
+
+SNIPPET_EVAL  (Level 4 only)
+  Show a code snippet that has exactly ONE real bug; ask the candidate to identify it.
+  Requirements:
+  - Bug must be REAL and SUBTLE — logic error, race condition, off-by-one, wrong default,
+    resource leak. NOT a syntax error or missing import.
+  - "What's wrong" must have a specific, traceable answer — not "it could be many things."
+  - Snippet is realistic (10-15 lines), not a toy example.
+  Spoken: "This function has a bug that only shows up in one specific case — what is it?"
+  Code card: {{"code": "<snippet>", "prompt": "What's the bug?", "timer_secs": 60}}
+
+QUERY_TRACE  (Level 4 only — data/query/DB skills ONLY)
+  Show a SQL or data query; ask what it returns, what's wrong, or what it costs.
+  Requirements:
+  - Use ONLY for data/query/DB/analytics skills. NEVER for React, Docker, Kubernetes, etc.
+  - Query must have a non-obvious answer: wrong result for an edge case, unexpected NULL
+    behavior, index that won't be used, a grouping that silently drops rows.
+  - Query ≤ 15 lines.
+  Spoken: "What does this return when a user has no orders?" (≤ 12 words)
+  Code card: {{"code": "<query>", "prompt": "What does this return?", "timer_secs": 40}}
+
+━━━ DECISION LOGIC ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 QUESTIONS ASKED SO FAR IN THIS TOPIC (type, targeted concept, how it went):
 {questions_so_far}
 
-TYPE POOL (not a fixed sequence — pick whichever fits what's untested and what the last answer
-suggests should be checked next):
-- DEFINITION — define or explain a core term/concept.
-- MECHANISM — how something works internally, or what it actually does.
-- DIFFERENCE — distinguish between two related concepts.
-- SCENARIO — a concrete "what would you check/do" situation.
+1. GAP CHECK: Did the most recent answer show a gap on the concept just asked?
+   YES → this question MUST be a followup on SAME concept. Max 2 back-to-back follow-ups.
+   NO  → pick the best type from the pool for what hasn't been tested yet.
 
-Definition does not have to come first, and a topic does not need to touch all three conceptual
-types before moving on. Choose whichever conceptual type from the pool best fits what hasn't
-been tested yet in this topic and what the candidate's last answer suggests should be checked
-next.
+2. CODE CARD GATE: code_trace / snippet_eval / query_trace require at least 1 verbal
+   question in this topic to have been asked first. Never open with a code card.
 
-NEXT-QUESTION DECISION LOGIC — run this before choosing:
-A follow-up is not reserved for the end of the topic — insert it IMMEDIATELY, right after
-whichever question exposed the gap, wherever in the topic that happens to be. It can happen
-after question 1, after question 3, after another follow-up, anywhere.
+3. SCENARIO GATE: scenario is always LAST — never first or second. Only when gate is OPEN.
 
-1. Check the candidate's most recent answer in this topic (see QUESTIONS ASKED SO FAR). If it
-   showed a gap on the concept just asked (partial, shallow, confused, or absent), the question
-   you produce right now must be a FOLLOW-UP on that SAME concept — ask for a concrete example,
-   ask them to restate it differently, or ask a simpler angle on it. Never move to a new
-   conceptual type while a gap is open, no matter how many questions have already been asked.
-2. At most 2 follow-ups on the same concept, back to back. If it's still unresolved after 2,
-   drop that concept and pick a different, untested conceptual type from the pool instead — do
-   not keep hammering the same gap indefinitely.
-3. Only when the current concept is cleared (no open gap) do you pick a new conceptual type
-   from the pool — in whatever order fits the conversation, not a fixed template order.
-4. A topic can legitimately end after just 2 conceptual questions if those already give a clear
-   read (strong or weak). Do not force extra questions just to complete a checklist.
-5. SCENARIO is the only fixed-position rule: it is asked LAST, exactly once per topic, and ONLY
-   if the candidate's average performance across the conceptual questions asked so far clears
-   the gate threshold (TopicState.can_enter_scenario() in eval.py decides this at runtime — you
-   are told below whether the gate is currently open). Never produce it as the 1st or 2nd
-   question. If the gate is not open, do not produce a scenario question at all.
+4. A topic can end after 2 strong answers (depth_mastered / depth_applied). Don't force
+   extra questions to fill a checklist — real interviewers move on when they have signal.
+
+5. Never retarget a concept already tested by a non-followup question in this topic.
 
 SCENARIO GATE STATUS: {scenario_gate_status}
-
-PHRASING RULES — the question you produce must follow ALL of these:
-- One complete, grammatically clean sentence, phrased the way a real interviewer would say it
-  out loud — conversational, not textbook. "What happens when two keys hash to the same
-  bucket?" not "Define hash collision and its resolution strategies."
-- No compound/double-barreled questions — never "what is X and why does Y happen."
-- At most ONE unfamiliar technical term — don't jargon-stack a second one in the same sentence.
-- Under ~25 words where possible — this is a voice/TTS pipeline; long sentences degrade badly.
-- Vary openers — do not default to "Can you explain...". Rotate across: "What's the difference
-  between...", "How does...", "Why would you...", "What happens when...", "Walk me through...".
-  Never repeat the exact opener you used on the immediately preceding question in this topic.
-- Never phrase a question so it hints at or contains the answer.
-- Interviewer filler ("Got it," "Alright," "Makes sense") stays OUTSIDE the question text —
-  appended by the delivery layer at runtime, never part of what you generate here.
-- Tests EXACTLY ONE concept, drawn only from TAGGED CONCEPTS for this topic — never invent a
-  tangential concept outside that list.
-- Never target a concept already tested earlier in the interview, even under a different topic
-  — check ALREADY-TESTED CONCEPTS below.
-- A follow-up must feel like a natural rephrase or a different angle on the same concept, not a
-  verbatim repeat of the question that exposed the gap.
 
 ALREADY-TESTED CONCEPTS (do not target any of these again):
 {already_tested_concepts}
 
-OUTPUT FORMAT — output ONLY a single JSON object, nothing else, no preamble or explanation:
+━━━ PHRASING RULES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- One complete sentence, conversational, not textbook.
+- Under 25 words for verbal types; under 12 words for the spoken setup of code card types.
+- EXACTLY one question mark in the spoken text.
+- No compound questions. No double-barreled questions.
+- Vary openers — never repeat the exact opener from the previous question in this topic.
+- Never phrase a question so it hints at the answer.
+- Interviewer filler ("Got it", "Alright", "Makes sense") stays OUTSIDE question text.
+- Tests EXACTLY ONE concept from TAGGED CONCEPTS — never invent tangential concepts.
+- A follow-up must feel like a different angle on the same concept, not a verbatim repeat.
+
+━━━ OUTPUT FORMAT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Output ONLY a single JSON object. No preamble, no explanation.
+
+For verbal questions (definition / mechanism / difference / failure_mode / tradeoff_debate / scenario / followup):
 {{
-  "type": "definition | mechanism | difference | scenario | followup",
+  "type": "<type>",
   "targets_concept": "the specific concept this question tests",
-  "is_followup_on": "concept id if this is a follow-up, else null",
-  "text": "..."
+  "is_followup_on": "concept id if followup, else null",
+  "text": "the exact spoken question",
+  "code_card": null
+}}
+
+For code card questions (code_trace / snippet_eval / query_trace):
+{{
+  "type": "code_trace | snippet_eval | query_trace",
+  "targets_concept": "the specific concept",
+  "is_followup_on": null,
+  "text": "short spoken setup question — under 12 words",
+  "code_card": {{
+    "code": "actual runnable code or query — short, real behavior, ≤ 12 lines",
+    "prompt": "what to look for — shown as card header, ≤ 10 words",
+    "timer_secs": 45
+  }}
 }}
 """
 
@@ -699,16 +844,37 @@ OUTPUT FORMAT — output ONLY a single JSON object, nothing else, no preamble or
 # one question mark, no compound "and"/"or" double-asks, and a soft word-count
 # check (~25 words, "where possible" per the spec, so this only WARNS).
 # ---------------------------------------------------------------------------
-_VALID_TOPIC_QUESTION_TYPES: tuple[str, ...] = ("definition", "mechanism", "difference", "scenario", "followup")
+_VALID_TOPIC_QUESTION_TYPES: tuple[str, ...] = (
+    "definition", "mechanism", "difference",
+    "code_trace", "snippet_eval", "query_trace",
+    "failure_mode", "tradeoff_debate",
+    "scenario", "followup",
+)
+
+# Code card types — those that REQUIRE a code_card field in the output JSON
+_CODE_CARD_QUESTION_TYPES: frozenset[str] = frozenset({"code_trace", "snippet_eval", "query_trace"})
+
+# Types available per level (HARD GATES — enforced by validate_topic_question_set)
+_LEVEL_TYPE_GATES: dict[int, frozenset[str]] = {
+    1: frozenset({"definition", "mechanism", "difference", "followup"}),
+    2: frozenset({"definition", "mechanism", "difference", "failure_mode", "scenario", "followup"}),
+    3: frozenset({"mechanism", "difference", "code_trace", "failure_mode", "tradeoff_debate", "scenario", "followup"}),
+    4: frozenset({"code_trace", "snippet_eval", "query_trace", "failure_mode", "tradeoff_debate", "scenario", "followup"}),
+}
 
 
-def validate_topic_question_set(questions: list[dict]) -> list[str]:
+def validate_topic_question_set(questions: list[dict], level: int = 2) -> list[str]:
     """Validates the running sequence of topic questions asked so far (the
-    list of {"type", "targets_concept", "is_followup_on", "text"} dicts
+    list of {"type", "targets_concept", "is_followup_on", "text", "code_card"} dicts
     TOPIC_QUESTION_GENERATION_SYSTEM produces one at a time) against Part A's
-    pool/gap-driven rules. Returns a list of violation strings (empty =
-    passes). Pure/sync, no LLM or network dependency, so it's trivially
-    unit-testable and can run as a real post-generation gate after each turn."""
+    pool/gap-driven rules. Returns a list of violation strings (empty = passes).
+
+    Now also enforces:
+    - Level gate: question type must be in the allowed pool for that level.
+    - Code card presence: code_trace/snippet_eval/query_trace must include a code_card field.
+    - Code card first-question gate: code card types cannot be the first question in a topic.
+
+    Pure/sync, no LLM or network dependency."""
     violations: list[str] = []
 
     if not questions:
@@ -720,6 +886,36 @@ def validate_topic_question_set(questions: list[dict]) -> list[str]:
     for t in types:
         if t not in _VALID_TOPIC_QUESTION_TYPES:
             violations.append(f"invalid question type {t!r}")
+
+    # -- Level gate: each type must be in the allowed pool for this level.
+    _allowed_for_level = _LEVEL_TYPE_GATES.get(level, set(_VALID_TOPIC_QUESTION_TYPES))
+    for i, t in enumerate(types):
+        if t in _VALID_TOPIC_QUESTION_TYPES and t not in _allowed_for_level:
+            violations.append(
+                f"item {i}: type {t!r} not allowed at level {level} "
+                f"(allowed: {sorted(_allowed_for_level)})"
+            )
+
+    # -- Code card gate: code card types cannot be the first question in a topic.
+    if types and types[0] in _CODE_CARD_QUESTION_TYPES:
+        violations.append(
+            f"item 0: type {types[0]!r} is a code card type and cannot be the first "
+            f"question in a topic (at least 1 verbal question must come first)"
+        )
+
+    # -- Code card presence: code card types must include a non-null code_card field.
+    for i, q in enumerate(questions):
+        t = types[i]
+        if t in _CODE_CARD_QUESTION_TYPES:
+            cc = q.get("code_card")
+            if not cc or not isinstance(cc, dict):
+                violations.append(
+                    f"item {i} ({t}): code card type requires a non-null 'code_card' field"
+                )
+            elif not str(cc.get("code", "")).strip():
+                violations.append(
+                    f"item {i} ({t}): code_card.code is empty"
+                )
 
     # -- Scenario: the only fixed-position rule. Never 1st/2nd, exactly one,
     # and (since this is the sequence so far) it must be the LAST item once
@@ -780,10 +976,7 @@ def validate_topic_question_set(questions: list[dict]) -> list[str]:
             _seen_concepts.add(concept)
 
     # -- Per-question phrasing checks (word count soft-warn, '?' count, compound-ask).
-    # Compound-ask detection mirrors agent_runtime.validate_spoken_question's two
-    # shapes: (a) content stacked after the '?', (b) a second interrogative clause
-    # joined by and/or BEFORE the (only) '?' -- e.g. "What is X and how does Y work?"
-    # has just one '?' but is still a double-barreled question (phrasing rule ban).
+    # Code card spoken setup questions are capped at 12 words (harder limit).
     _WH_OPENER_RE = re.compile(
         r"^(what|who|when|where|why|how|which|do|does|did|is|are|was|were|"
         r"can|could|would|will|should|have|has)\b",
@@ -795,33 +988,37 @@ def validate_topic_question_set(questions: list[dict]) -> list[str]:
             violations.append(f"item {i} ({types[i] if i < len(types) else '?'}): empty text")
             continue
         word_count = len(text.split())
-        if word_count > 25:
-            violations.append(f"item {i} ({types[i]}): word_count={word_count} exceeds ~25 (soft limit)")
+        t = types[i] if i < len(types) else "?"
+        # Stricter word count for code card setup questions
+        if t in _CODE_CARD_QUESTION_TYPES:
+            if word_count > 12:
+                violations.append(
+                    f"item {i} ({t}): spoken setup is {word_count} words (code card setups must be ≤ 12 words)"
+                )
+        elif word_count > 25:
+            violations.append(f"item {i} ({t}): word_count={word_count} exceeds ~25 (soft limit)")
         q_count = text.count("?")
         if q_count != 1:
-            violations.append(f"item {i} ({types[i]}): question_mark_count={q_count} (must be exactly 1)")
+            violations.append(f"item {i} ({t}): question_mark_count={q_count} (must be exactly 1)")
         if re.search(r"\bgot it\b|\balright\b|\bmakes sense\b", text, re.I):
-            violations.append(f"item {i} ({types[i]}): contains interviewer filler in question text")
+            violations.append(f"item {i} ({t}): contains interviewer filler in question text")
         _first_q_idx = text.find("?")
         _compound_found = False
         if _first_q_idx != -1 and _first_q_idx < len(text) - 1:
             if re.search(r"\b(and|or)\b", text[_first_q_idx + 1:], re.I):
-                violations.append(f"item {i} ({types[i]}): compound question -- content stacked after the '?'")
+                violations.append(f"item {i} ({t}): compound question -- content stacked after the '?'")
                 _compound_found = True
         if not _compound_found:
             for m in re.finditer(r"\b(?:and|or)\b\s+(.+)", text, re.I):
                 if _WH_OPENER_RE.match(m.group(1).strip()):
                     violations.append(
-                        f"item {i} ({types[i]}): compound/double-barreled question "
+                        f"item {i} ({t}): compound/double-barreled question "
                         f"(second interrogative clause after and/or: {m.group(1)[:40]!r}...)"
                     )
                     break
 
     # -- Opener variety: a question must not repeat the exact opener of the
-    # question immediately preceding it in the topic (consecutive-only check,
-    # since across a long gap-driven topic the same opener recurring much
-    # later is not the "always says the same thing" failure mode this guards
-    # against).
+    # question immediately preceding it in the topic.
     _openers = [" ".join(str(q.get("text", "")).strip().split()[:3]).lower() for q in questions]
     for i in range(1, len(_openers)):
         if _openers[i] and _openers[i] == _openers[i - 1]:
@@ -871,6 +1068,7 @@ def get_probe_context(
     ladder_rung: str = "",
     cross_cutting_signal: str | None = None,
     topic_score_history: list[float] | None = None,
+    last_question_type: str = "",
 ) -> str:
     """
     Returns the probe context block injected into the directive.
@@ -895,6 +1093,11 @@ def get_probe_context(
       (oldest first, including the current turn). Rendered as one trend line
       so a single bad turn after two strong ones reads as a stumble, not a
       fresh knowledge gap. Optional -- omitted entirely if fewer than 2 points.
+
+    last_question_type: the type of the question the candidate just answered
+      (e.g. "code_trace", "snippet_eval", "query_trace", "mechanism", etc.).
+      Used to inject code-type-specific follow-up guidance when the question
+      was a code card. Defaults to empty string (no special guidance).
     """
     lines: list[str] = []
     _signals_history = signals_history or []
@@ -955,6 +1158,78 @@ def get_probe_context(
     _level_note = _LEVEL_OVERLAYS.get(signal or "", {}).get(level)
     if _level_note:
         lines.append(f"LEVEL ({level}): {_level_note}")
+
+    # -- Code-type-specific follow-up guidance ----------------------------------
+    # When the candidate's last answer was in response to a code card question,
+    # the follow-up probe must be calibrated differently from a verbal question.
+    # The candidate READ code and SPOKE their answer — the gap is about code
+    # reasoning, not verbal recall, so the probe must stay in that domain.
+    _lqt = (last_question_type or "").strip().lower()
+    if _lqt in ("code_trace", "snippet_eval", "query_trace"):
+        lines.append("")
+        lines.append(f"LAST QUESTION TYPE: {_lqt.upper()} (candidate read code on screen, spoke answer)")
+        if _lqt == "code_trace":
+            if signal == "depth_shallow":
+                lines.append(
+                    "  CODE PROBE GUIDANCE: They gave the right output label but couldn't trace how. "
+                    "Ask them to go line-by-line — 'start at line 1, what's the state of X at that point?' "
+                    "Don't ask a generic 'how does it work' — force a concrete trace step."
+                )
+            elif signal == "depth_misconception":
+                lines.append(
+                    "  CODE PROBE GUIDANCE: They said the WRONG output. Surface it by asking about "
+                    "a specific line or variable: 'after line 3 runs, what is the value of X?' "
+                    "Don't correct them directly — let the trace reveal the error."
+                )
+            elif signal == "pure_denial":
+                lines.append(
+                    "  CODE PROBE GUIDANCE: They couldn't read the code at all. Drop the code card. "
+                    "Ask a verbal mechanism question on the same concept — 'what does this construct "
+                    "do in general?' without showing code again."
+                )
+            elif signal in ("depth_clear", "depth_mastered", "depth_applied"):
+                lines.append(
+                    "  CODE PROBE GUIDANCE: They traced it correctly. If probing further, escalate "
+                    "to a harder case: change one input value or add a constraint and ask what changes."
+                )
+        elif _lqt == "snippet_eval":
+            if signal == "depth_shallow":
+                lines.append(
+                    "  CODE PROBE GUIDANCE: They said 'something is wrong' but couldn't name what. "
+                    "Point to a specific function or line: 'look at line N — what does that return "
+                    "when X is empty?' Force them to trace the specific condition that triggers the bug."
+                )
+            elif signal == "depth_misconception":
+                lines.append(
+                    "  CODE PROBE GUIDANCE: They named a bug that doesn't exist (wrong diagnosis). "
+                    "Ask them to trace the actual execution: 'if X is empty, walk me through what "
+                    "happens on that specific line.' Let the trace surface the real issue."
+                )
+            elif signal == "pure_denial":
+                lines.append(
+                    "  CODE PROBE GUIDANCE: They couldn't find any bug. Don't show another snippet. "
+                    "Ask verbally: 'what would happen if this function was called with an empty input?' "
+                    "Give them a foothold into the problem without the code overhead."
+                )
+        elif _lqt == "query_trace":
+            if signal == "depth_shallow":
+                lines.append(
+                    "  CODE PROBE GUIDANCE: They named the general behavior but couldn't trace it. "
+                    "Ask about the specific edge case: 'what does the JOIN return when there are no "
+                    "matching rows on the right side?' Force them to reason about the specific case."
+                )
+            elif signal == "depth_misconception":
+                lines.append(
+                    "  CODE PROBE GUIDANCE: They gave the wrong result. Ask a falsifying question: "
+                    "'if that were true, what would happen when a user has NULL in that column?' "
+                    "Let their own reasoning surface the error."
+                )
+            elif signal == "pure_denial":
+                lines.append(
+                    "  CODE PROBE GUIDANCE: They couldn't reason about the query. Drop to a verbal "
+                    "question about the underlying concept: 'what does a LEFT JOIN do when there's "
+                    "no matching row on the right side?' No code card this time."
+                )
 
 
 

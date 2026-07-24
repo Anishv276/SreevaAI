@@ -243,6 +243,8 @@ class EvaluationPayload(BaseModel):
     topic_tag: str = "RESUME_TOPIC"
     topic_probe_focus: str = ""
     topic_why_relevant: str = ""
+    question_type: str = "mechanism"  # type of question asked: mechanism | definition | difference |
+    # failure_mode | tradeoff_debate | scenario | code_trace | snippet_eval | query_trace | followup
     model_config = {"extra": "allow"}
 
 
@@ -317,6 +319,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             level=p.level,
             topic_probe_focus=p.topic_probe_focus,
             job_title=p.job_title,
+            question_type=p.question_type,
         )
     except Exception as ex:
         # Step 0 instrumentation: this except must only ever catch a genuine

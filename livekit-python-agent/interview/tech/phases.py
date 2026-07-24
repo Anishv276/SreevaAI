@@ -67,24 +67,30 @@ def build_interview_directive(
         _brief_strategy_note = ""
     _first_q_rule = {
         1: (
-            f"FIRST QUESTION RULE: start with a FUNDAMENTALS-level question on {anchor_name} -- a basic "
-            f"distinction or definition, testing real understanding not memorization.\n"
+            f"FIRST QUESTION RULE: start with a DEFINITION or MECHANISM question on {anchor_name} — \n"
+            f"a basic distinction or a simple trace question. Ask for the difference between two \n"
+            f"commonly-confused concepts in {anchor_name}, or trace what happens for a simple input.\n"
+            f"Do NOT ask code_trace, snippet_eval, failure_mode, or tradeoff_debate at level 1.\n"
             f"Do not ask about tradeoffs, scale, or architecture yet."
         ),
         2: (
-            f"FIRST QUESTION RULE: start with a CORE_MECHANICS question on {anchor_name} -- how it actually "
-            f"works under the hood, not just what it's called.\n"
-            f"Do NOT ask a pure definition question -- assume fundamentals are already solid."
+            f"FIRST QUESTION RULE: start with a MECHANISM or DIFFERENCE question on {anchor_name} — \n"
+            f"how it actually works under the hood, or a concrete case where two things diverge.\n"
+            f"Do NOT ask a plain definition — assume fundamentals are solid at level 2.\n"
+            f"Do NOT use code_trace, snippet_eval, or query_trace at level 2.\n"
+            f"failure_mode is available after the first concept question."
         ),
         3: (
-            f"FIRST QUESTION RULE: start with an APPLIED question on {anchor_name} involving a genuine "
-            f"tradeoff or constraint -- not a definition, not pure mechanics.\n"
-            f"Do NOT ask a pure definition question -- push for the 'why' behind their choice."
+            f"FIRST QUESTION RULE: start with a MECHANISM or FAILURE_MODE question on {anchor_name} — \n"
+            f"a concrete failure scenario with numbers, or tracing internals under a constraint.\n"
+            f"Do NOT start with a plain definition — push for the 'why' behind it immediately.\n"
+            f"code_trace is available after the first verbal question on {anchor_name}."
         ),
         4: (
-            f"FIRST QUESTION RULE: start with a PERFORMANCE or ROBUSTNESS question on {anchor_name} -- a "
-            f"concrete, numbers-bearing scenario requiring real triage or tradeoff judgment.\n"
-            f"Do NOT start with basics or mechanics -- go straight to a scenario with no single correct answer."
+            f"FIRST QUESTION RULE: start with a FAILURE_MODE or TRADEOFF_DEBATE question on {anchor_name} — \n"
+            f"a concrete, numbers-bearing scenario requiring real triage or tradeoff judgment.\n"
+            f"Do NOT start with basics or mechanics — go straight to a scenario with no single correct answer.\n"
+            f"code_trace, snippet_eval, and query_trace are available after the first verbal question."
         ),
     }.get(level, "FIRST QUESTION RULE: start with a fundamentals or core-mechanics question testing real understanding.")
     opening = (
@@ -109,20 +115,35 @@ def build_interview_directive(
     # resume_brief.skills + jd_skills when brief is not provided.
     _skill_probe_style = {
         1: (
-            "  -> Ask fundamentals and simple applied questions. 'What's the difference between X and Y?'\n"
-            "  -> Accept partial answers -- they're learning. Get one clear reasoning example, then move on.\n"
+            "  QUESTION TYPES (Level 1 — verbal only):\n"
+            "    definition | mechanism | difference | followup\n"
+            "  HOW TO ASK: Basics and simple distinctions. 'What's the difference between X and Y?'\n"
+            "  PROBE: Accept partial answers — they're learning. Get one clear reasoning example, then move on.\n"
+            "  NO CODE CARDS at level 1. No failure_mode, no tradeoff_debate, no scenario until later.\n"
         ),
         2: (
-            "  -> Ask mechanics + one-constraint applied questions. 'What would you check first if X was slow?'\n"
-            "  -> If they give a textbook answer with no reasoning, push: 'What's the tradeoff there?'\n"
+            "  QUESTION TYPES (Level 2 — verbal only, failure_mode unlocked):\n"
+            "    definition | mechanism | difference | failure_mode | scenario | followup\n"
+            "  HOW TO ASK: Mechanics + one-constraint applied questions. 'What would you check first if X was slow?'\n"
+            "  PROBE: If they give a textbook answer with no reasoning, push: 'What's the tradeoff there?'\n"
+            "  NO CODE CARDS at level 2. failure_mode available after first concept question.\n"
         ),
         3: (
-            "  -> Ask applied questions with a genuine tradeoff. 'Why this approach over the alternative?'\n"
-            "  -> A confident-but-shallow answer is a signal to probe deeper, not a pass.\n"
+            "  QUESTION TYPES (Level 3 — code cards unlocked after first verbal question):\n"
+            "    mechanism | difference | code_trace | failure_mode | tradeoff_debate | scenario | followup\n"
+            "  HOW TO ASK: Applied questions with a genuine tradeoff. 'Why this approach over the alternative?'\n"
+            "  CODE TRACE: After the first verbal question, you may show a code snippet via code_card.\n"
+            "    Candidate reads the card and speaks the answer. No writing. Timer: 45 seconds.\n"
+            "  PROBE: A confident-but-shallow answer is a signal to probe deeper, not a pass.\n"
         ),
         4: (
-            "  -> Probe tradeoffs and systemic judgment. 'What breaks about that approach at scale?'\n"
-            "  -> Surface-level or textbook answers are a red flag -- invert their assumption and press harder.\n"
+            "  QUESTION TYPES (Level 4 — all types available, code cards preferred for code skills):\n"
+            "    code_trace | snippet_eval | query_trace | failure_mode | tradeoff_debate | scenario | followup\n"
+            "  HOW TO ASK: Tradeoffs and systemic judgment. 'What breaks about that approach at scale?'\n"
+            "  CODE CARDS: After the first verbal question, prefer code_trace/snippet_eval to test real code reading.\n"
+            "    snippet_eval: show a snippet with a subtle bug. Candidate identifies it verbally.\n"
+            "    query_trace: for DB/query skills only. Candidate explains what the query returns.\n"
+            "  PROBE: Surface-level or textbook answers are a red flag — invert their assumption and press harder.\n"
         ),
     }.get(level, "  -> Ask a cold-reasoning question grounded in the skill itself, never 'do you know X?'\n")
     if interview_brief is not None:

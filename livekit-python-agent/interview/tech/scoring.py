@@ -77,16 +77,23 @@ RESPONSE_SIGNALS = {
 CONTENT_SIGNAL_DEFINITIONS: dict[str, dict] = {
 
     "depth_mastered": {
-        "trigger": "CORRECT + APPLIED depth. Explains the mechanism (HOW), the tradeoff or failure mode (WHY it breaks), AND judgment about when to use it vs alternatives. All three present and technically accurate. Survives a 'what breaks this' push.",
+        "trigger": "CORRECT + APPLIED depth. Explains the mechanism (HOW), the tradeoff or failure mode (WHY it breaks), AND judgment about when to use it vs alternatives. All three present and technically accurate. Survives a 'what breaks this' push. For code/query questions: correctly traces the execution or returns the right result AND explains WHY the code behaves that way (scope rule, evaluation order, NULL semantics, etc.) — not just the output.",
         "pattern": "A practitioner's answer, not a textbook one. They can trace the internals, name the failure cases, and defend a real judgment call. This is the ceiling — reserve it.",
-        "examples": ["For DB indexing: 'A B-tree keeps keys sorted so range scans walk leaf nodes in order — that's why BETWEEN is fast. But a low-cardinality column like a boolean flag, the planner ignores the index and does a seq scan anyway because the index isn't selective. I'd only index it if it's part of a composite with a selective leading column.'"],
+        "examples": [
+            "For DB indexing: 'A B-tree keeps keys sorted so range scans walk leaf nodes in order — that's why BETWEEN is fast. But a low-cardinality column like a boolean flag, the planner ignores the index and does a seq scan anyway because the index isn't selective. I'd only index it if it's part of a composite with a selective leading column.'",
+            "For a code_trace: correctly says output is '[1, 2]' AND explains that list slicing creates a new list so the original is unchanged — traces the memory model, not just the output",
+        ],
         "not_this": "NOT this if any dimension (mechanism/tradeoff/judgment) is missing → depth_clear. NOT this if any specific claim in it is factually WRONG, however fluent → depth_misconception. NOT this if it's a real-experience story without the mechanism → depth_applied.",
     },
 
     "depth_clear": {
-        "trigger": "CORRECT + MECHANISM depth. Everything stated is accurate and they genuinely explain HOW it works or trace the concrete case — real understanding, not a label — but one layer is missing (no tradeoff, or no failure mode, or no 'when NOT to use it').",
+        "trigger": "CORRECT + MECHANISM depth. Everything stated is accurate and they genuinely explain HOW it works or trace the concrete case — real understanding, not a label — but one layer is missing (no tradeoff, or no failure mode, or no 'when NOT to use it'). For code/query questions: states the correct output or result AND traces at least one step of the execution (e.g. 'because the list is modified in place'), but doesn't explain the full evaluation order or edge cases.",
         "pattern": "Solid, correct, mechanism-level. One targeted push (a tradeoff, a failure case, a harder input) away from mastered. This is the expected 'good answer' floor for a competent candidate.",
-        "examples": ["For hashing: 'Two keys can hash to the same bucket — a collision — so it chains them in a list at that slot and walks the list on lookup. Worst case all keys collide and it degrades to O(n).' — correct mechanism, but didn't mention resize/load factor or how a real impl mitigates it."],
+        "examples": [
+            "For hashing: 'Two keys can hash to the same bucket — a collision — so it chains them in a list at that slot and walks the list on lookup. Worst case all keys collide and it degrades to O(n).' — correct mechanism, but didn't mention resize/load factor or how a real impl mitigates it.",
+            "For a code_trace: 'It prints 4 because the loop runs n-1 times, not n.' — correct output with correct reason, but didn't explain what happens at the boundary condition",
+            "For a query_trace: 'It returns nothing because the LEFT JOIN on orders filters to only users WITH orders — wait, no, the WHERE on orders.id IS NOT NULL is doing that.' — traced the right issue, missed explaining why NULL propagation causes it",
+        ],
         "not_this": "NOT this if a tradeoff AND judgment are also present and accurate → depth_mastered. NOT this if it's just a correct-sounding label with no real mechanism traced → depth_shallow. NOT this if any claim is wrong → depth_misconception.",
     },
 
@@ -98,16 +105,30 @@ CONTENT_SIGNAL_DEFINITIONS: dict[str, dict] = {
     },
 
     "depth_shallow": {
-        "trigger": "CORRECT LABEL, NO MECHANISM. Names the right concept or restates its effect but cannot open the box — no internal steps, no trace, no 'how'. Exactly what a memorized label produces: right word, hollow underneath. Would NOT survive 'trace it for this input'.",
+        "trigger": "CORRECT LABEL, NO MECHANISM. Names the right concept or restates its effect but cannot open the box — no internal steps, no trace, no 'how'. Exactly what a memorized label produces: right word, hollow underneath. Would NOT survive 'trace it for this input'. For code/query questions: states the right output label or result name but cannot explain why the code produces it or trace through the execution.",
         "pattern": "The most common real-interview failure mode, and the one that separates recall from understanding. Correct at the surface, empty below it. Grade the substance under the label — the label alone is worth little.",
-        "examples": ["For hash maps: 'It makes lookups fast, that's the whole point.'", "For generators: 'They're memory efficient and lazy.'", "For an index: 'It speeds up the query.'"],
+        "examples": [
+            "For hash maps: 'It makes lookups fast, that's the whole point.'",
+            "For generators: 'They're memory efficient and lazy.'",
+            "For an index: 'It speeds up the query.'",
+            "For a code_trace: 'It prints 3.' (correct output, but zero explanation of how the recursion/closure/mutation arrived there)",
+            "For a query_trace: 'It returns the users.' (right direction, no tracing of the JOIN or NULL behavior)",
+        ],
         "not_this": "NOT this if any real mechanism is actually traced, even partially → depth_clear. NOT this if the claim is actively WRONG → depth_misconception. NOT this if it's a generic best-practice checklist rather than a hollow label → depth_generic. NOT this if it's a flat non-attempt → pure_denial.",
     },
 
     "depth_misconception": {
-        "trigger": "INCORRECT claim, stated as if true. ANY affirmatively FALSE technical claim — a wrong mechanism, an inversion, a swapped property, OR a wrong how-to/wrong syntax/wrong name for a thing (naming the wrong construct, wrong keyword, wrong function). It does not need to be delivered confidently — a hesitant wrong claim ('umm, we create a list using def?') is still a wrong claim. What matters is that a specific stated thing is FALSE, not how sure they sounded.",
+        "trigger": "INCORRECT claim, stated as if true. ANY affirmatively FALSE technical claim — a wrong mechanism, an inversion, a swapped property, OR a wrong how-to/wrong syntax/wrong name for a thing (naming the wrong construct, wrong keyword, wrong function). For code/query questions: states a WRONG output value, a wrong diagnosis of a bug, or a wrong explanation of what a query returns. It does not need to be delivered confidently — a hesitant wrong claim ('umm, we create a list using def?') is still a wrong claim. What matters is that a specific stated thing is FALSE, not how sure they sounded.",
         "pattern": "The single most important signal to get right: a wrong answer must score BELOW a hesitant right one and below a flat 'I don't know'. Silence is a gap; a wrong claim is active confusion that would ship a bug. This is a COMMON case, not a rare one — do not shy away from it and default to depth_shallow just because the answer was short.",
-        "examples": ["For hash maps: 'Hash maps keep everything in sorted order.' (false — that's a tree)", "For generators: 'Generators run in a separate thread.' (false — same thread, suspended frame)", "For Python: 'We create a list using def / using diff.' (false — that's a function / that's not a thing; a list is [] )", "For SQL: 'LEFT JOIN is faster than INNER because it returns fewer rows.' (false on both counts)"],
+        "examples": [
+            "For hash maps: 'Hash maps keep everything in sorted order.' (false — that's a tree)",
+            "For generators: 'Generators run in a separate thread.' (false — same thread, suspended frame)",
+            "For Python: 'We create a list using def / using diff.' (false — that's a function / that's not a thing; a list is [] )",
+            "For SQL: 'LEFT JOIN is faster than INNER because it returns fewer rows.' (false on both counts)",
+            "For a code_trace: candidate says the output is '5' when the actual output is '4' (wrong value, not just vague)",
+            "For a snippet_eval: candidate identifies the wrong line as the bug, or invents a bug that isn't there",
+            "For a query_trace: candidate says the query returns all rows when it actually returns nothing due to an unmatched JOIN",
+        ],
         "not_this": "NOT this if the answer is merely thin/vague but nothing in it is actually WRONG → depth_shallow. NOT this if it's mostly right with a missing piece → depth_clear. NOT this if it's a complete non-attempt with no claim at all ('I don't know') → pure_denial. Fires whenever a specific stated claim is FALSE.",
     },
 
@@ -186,15 +207,61 @@ If none of RS-a/b/c fired: this answer gets exactly ONE content signal (below).\
 """
 
 
-def _build_content_signal_prompt_block(level: int) -> str:
+def _build_content_signal_prompt_block(level: int, question_type: str = "") -> str:
     """Universal content signal detection — all 8 signals always available, no stage scoping.
-    Level (1-4) calibrates how seriously each outcome is weighted."""
+    Level (1-4) calibrates how seriously each outcome is weighted.
+    question_type (optional): the type of question that was asked (e.g. 'code_trace',
+    'snippet_eval', 'query_trace'). Used to inject code-question-specific calibration."""
     _level_context = {
         1: "LEVEL 1 (junior/entry): depth_shallow is a real gap but not a red flag. depth_clear is a strong positive.",
         2: "LEVEL 2 (mid-level): depth_clear is the expected floor. depth_shallow signals a knowledge gap worth probing.",
         3: "LEVEL 3 (senior): depth_mastered or depth_applied expected. depth_shallow is a significant gap.",
         4: "LEVEL 4 (principal/staff): depth_applied or depth_mastered is the baseline. depth_shallow is a red flag.",
     }.get(level, "Grade for genuine understanding at the expected level.")
+
+    # Code-question-specific calibration injected when the question was a code type.
+    _qt = (question_type or "").strip().lower()
+    _code_q_note = ""
+    if _qt in ("code_trace", "snippet_eval", "query_trace"):
+        if _qt == "code_trace":
+            _code_q_note = (
+                "\nCODE TRACE QUESTION: The candidate read a code snippet and answered verbally.\n"
+                "  depth_shallow: stated the correct output/behavior but gave NO explanation of why the "
+                "code produces it (no trace of execution, no naming of the rule or mechanism).\n"
+                "  depth_clear: correct output AND explained at least one execution step (e.g. 'because "
+                "the loop starts at index 1, not 0' or 'because append mutates in place').\n"
+                "  depth_mastered: correct output + full trace of execution + explains edge case or "
+                "boundary behavior without being asked.\n"
+                "  depth_misconception: stated the WRONG output value, or wrong diagnosis of why it "
+                "behaves that way (e.g. said 'it prints 5' when it prints 4).\n"
+                "  pure_denial: said 'I don't know' or 'I can't read this' with no attempt.\n"
+            )
+        elif _qt == "snippet_eval":
+            _code_q_note = (
+                "\nSNIPPET EVAL QUESTION: The candidate read a code snippet with a bug and answered verbally.\n"
+                "  depth_shallow: said 'something is wrong' or named a vague area but could not "
+                "identify the specific bug or the condition that triggers it.\n"
+                "  depth_clear: correctly identified the bug AND the condition that triggers it, but "
+                "did not explain the underlying mechanism (why the code is wrong).\n"
+                "  depth_mastered: correctly identified the bug, the trigger condition, AND explained "
+                "why the code fails (the language rule or logic gap being violated).\n"
+                "  depth_misconception: identified a bug that does NOT exist, or misidentified the "
+                "wrong line/function as the source of the bug.\n"
+                "  pure_denial: said 'I can't find it' or 'I don't know' with no attempt.\n"
+            )
+        elif _qt == "query_trace":
+            _code_q_note = (
+                "\nQUERY TRACE QUESTION: The candidate read a SQL/data query and answered verbally.\n"
+                "  depth_shallow: stated a correct general answer ('it returns users') but did not "
+                "trace the JOIN/WHERE/GROUP behavior or the specific case asked about.\n"
+                "  depth_clear: correctly described what the query returns in the specific case AND "
+                "explained one key behavior (e.g. NULL propagation, LEFT JOIN semantics).\n"
+                "  depth_mastered: correct result + full trace of the query plan + identifies a "
+                "performance trap or edge case (e.g. missing index, unexpected NULL, dropped rows).\n"
+                "  depth_misconception: said the query returns a wrong result, or described the "
+                "JOIN/WHERE behavior incorrectly.\n"
+                "  pure_denial: said 'I don't know SQL' or 'I can't read this' with no attempt.\n"
+            )
 
     _gate_lines = []
     for name, defn in CONTENT_SIGNAL_DEFINITIONS.items():
@@ -210,7 +277,7 @@ def _build_content_signal_prompt_block(level: int) -> str:
 ---- CONTENT SIGNAL — pick exactly ONE of these 8 ----
 
 {_level_context}
-
+{_code_q_note}
 RESOLVE TWO AXES FIRST, THEN MAP TO THE SIGNAL (do this before picking a name):
 
   AXIS 1 — CORRECTNESS: Is the specific technical claim right?
@@ -525,12 +592,14 @@ async def _call_signal_classification(
     org_id: str,
     active_topic: str,
     level: int = 2,
+    question_type: str = "",
 ) -> tuple[str | None, str | None, dict]:
     """
     Call 2 — universal signal classification, with its own 400-600 token reasoning budget.
     Brief chain-of-thought is allowed before the final JSON.
     Returns (signal, signal_reason, llm_usage_dict).
-    No cross_cutting_signal — universal signals already encode all key dimensions.
+    question_type: the type of question that was asked (code_trace, snippet_eval, query_trace,
+    mechanism, etc.) — used to calibrate signal classification for code card questions.
     """
     def _build_signal_system_prompt() -> str:
         return (
@@ -540,10 +609,12 @@ async def _call_signal_classification(
             "MUST end with valid JSON on its own line:\n"
             '{"signal": "<signal_name>", "signal_reason": "<3-12 word exact quote from their answer>"}\n\n'
             "signal MUST be exactly one of the signal names below. NEVER null. If unsure, use depth_shallow.\n"
-            f"Topic: {active_topic or 'general'} | Level: {level}\n\n"
+            f"Topic: {active_topic or 'general'} | Level: {level}\n"
+            + (f"Question type: {question_type} (see code-question calibration rules below)\n" if question_type else "")
+            + "\n"
             + _build_response_shape_gate_block()
             + "\n\n"
-            + _build_content_signal_prompt_block(level)
+            + _build_content_signal_prompt_block(level, question_type=question_type)
         )
 
     resp = await asyncio.wait_for(
@@ -615,12 +686,16 @@ async def evaluate_answer(
     level: int = 2,
     topic_probe_focus: str | None = None,
     job_title: str = "",
+    question_type: str = "",
 ) -> dict:
     """
     Two dedicated LLM calls: Call 1 scores the answer, Call 2 classifies the signal.
     Signal taxonomy is now universal (8 content signals + 3 response shape signals).
     No active_stage, no topic_tag, no cross_cutting_signal.
     Level (1-4) calibrates scoring and signal severity.
+
+    question_type: the type of question that was asked — passed to the signal classifier
+      to calibrate it for code card questions (code_trace, snippet_eval, query_trace).
 
     Returns:
       clarity, depth, specificity, grounding, overall  — quality scores
@@ -678,6 +753,7 @@ async def evaluate_answer(
                 _call_signal_classification(
                     **_common_kwargs,
                     level=level,
+                    question_type=question_type,
                 ),
             )
         )
