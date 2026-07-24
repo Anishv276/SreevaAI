@@ -418,11 +418,10 @@ async def _call_scoring(
     client: Any,
     llm_model: str,
     org_id: str,
-    candidate_band: str,
+    level: int,
     active_topic: str,
-    topic_importance: str,
     topic_tag: str,
-    topic_probe_focus: list | None,
+    topic_probe_focus: str | None,
     job_title: str,
 ) -> tuple[dict, dict]:
     """
@@ -449,11 +448,10 @@ async def _call_scoring(
             "  depth/specificity, do NOT set answers_question=false.\n"
             "  If answers_question = false, you MUST set clarity=0, depth=0, specificity=0, grounding=0.\n\n"
             "STEP 2 — Score normally (only if answers_question = true).\n\n"
-            f"Role: {job_title or 'not specified'} | Topic: {active_topic or 'general'}"
-            f" | Tag: {topic_tag} | Importance: {topic_importance}\n"
+            f"Role: {job_title or 'not specified'} | Topic: {active_topic or 'general'} | Tag: {topic_tag}\n"
         )
         if topic_probe_focus:
-            ctx += f"Probe focus: {', '.join(topic_probe_focus)}\n"
+            ctx += f"Probe focus: {topic_probe_focus}\n"
         ctx += (
             "Tag context: RESUME_TOPIC = they claimed this experience, hold them to it. "
             "JD_TOPIC = they may be new to it, credit honest partial exposure. "
@@ -469,8 +467,8 @@ async def _call_scoring(
             "Low (0-4): off-topic, tangent, or answered a related but different question.\n"
             "Mid (5-6): addressed the question but missed part of the intent or drifted.\n"
             "High (7-10): directly answered what was asked. You got what you needed.\n"
-            f"{'FRESHER: forgive nervousness and rambling — did they try to answer it? ' if candidate_band == 'fresher' else ''}"
-            f"{'SENIOR/EXPERIENCED: precision expected. Tangents and pivots lower the score. ' if candidate_band in ('senior', 'experienced') else ''}\n\n"
+            f"{'LEVEL 1: forgive nervousness and rambling — did they try to answer it? ' if level == 1 else ''}"
+            f"{'LEVEL 3/4: precision expected. Tangents and pivots lower the score. ' if level in (3, 4) else ''}\n\n"
 
             "── DEPTH (35%) ────────────────────────────────\n"
             "Did they explain the HOW and WHY of a real sales decision — or just describe the WHAT?\n"
@@ -480,10 +478,10 @@ async def _call_scoring(
             "High (7-10): explained a real decision AND why it made sense given the buyer, the account, "
             "or the deal's specific constraints. Best answers show cause-effect — what they tried, what "
             "happened, what they adjusted.\n"
-            f"{'FRESHER: a simple genuine reason counts. One honest WHY = 5+.' if candidate_band == 'fresher' else ''}"
-            f"{'MID: expect at least one real constraint or tradeoff behind a sales decision. Generic reasoning = 4 max.' if candidate_band == 'mid' else ''}"
-            f"{'EXPERIENCED: expect competing options considered and a real tradeoff explained. Single-reason answers = 5 max.' if candidate_band == 'experienced' else ''}"
-            f"{'SENIOR: expect strategic judgment — territory/team/process level thinking. No tradeoff = 6 max.' if candidate_band == 'senior' else ''}\n\n"
+            f"{'LEVEL 1: a simple genuine reason counts. One honest WHY = 5+.' if level == 1 else ''}"
+            f"{'LEVEL 2: expect at least one real constraint or tradeoff behind a sales decision. Generic reasoning = 4 max.' if level == 2 else ''}"
+            f"{'LEVEL 3: expect competing options considered and a real tradeoff explained. Single-reason answers = 5 max.' if level == 3 else ''}"
+            f"{'LEVEL 4: expect strategic judgment — territory/team/process level thinking. No tradeoff = 6 max.' if level == 4 else ''}\n\n"
 
             "── SPECIFICITY (20%) ──────────────────────────\n"
             "Did they give operational detail that could only exist if they actually did this work?\n"
@@ -494,9 +492,9 @@ async def _call_scoring(
             "Low (0-4): generic — anyone who read a sales blog could say this.\n"
             "Mid (5-6): one real operational detail that required being there.\n"
             "High (7-10): multiple real details that make the deal/story traceable to a real event.\n"
-            f"{'FRESHER: any real detail counts, even small-scale internship/practice numbers.' if candidate_band == 'fresher' else ''}"
-            f"{'MID: expect at least one real number or constraint. Vague operational language = 4 max.' if candidate_band == 'mid' else ''}"
-            f"{'EXPERIENCED/SENIOR: expect real scale and multiple concrete details. Generic descriptions = 3 max.' if candidate_band in ('experienced', 'senior') else ''}\n\n"
+            f"{'LEVEL 1: any real detail counts, even small-scale internship/practice numbers.' if level == 1 else ''}"
+            f"{'LEVEL 2: expect at least one real number or constraint. Vague operational language = 4 max.' if level == 2 else ''}"
+            f"{'LEVEL 3/4: expect real scale and multiple concrete details. Generic descriptions = 3 max.' if level in (3, 4) else ''}\n\n"
 
             "── GROUNDING (25%) ────────────────────────────\n"
             "Does this answer sound like someone who was actually on the call/in the room — or someone "
@@ -510,10 +508,10 @@ async def _call_scoring(
             "Low (0-4): plausible but hollow. Reads like a description of selling, not a memory of a deal.\n"
             "Mid (5-6): at least one grounding signal — a real result, a real friction point, a real constraint.\n"
             "High (7-10): the story has texture. Something was hard or imperfect or specific to that deal.\n"
-            f"{'FRESHER: a real outcome from an internship or practice sale counts. A failure they learned from = 6+.' if candidate_band == 'fresher' else ''}"
-            f"{'MID: expect at least one friction point or specific outcome. Clean perfect narrative = 4 max.' if candidate_band == 'mid' else ''}"
-            f"{'EXPERIENCED: expect real account/territory texture and real constraints. Smooth polished story with no friction = 4 max.' if candidate_band == 'experienced' else ''}"
-            f"{'SENIOR: expect reflection or judgment under uncertainty. A perfect linear story with no tradeoff = 3 max.' if candidate_band == 'senior' else ''}\n\n"
+            f"{'LEVEL 1: a real outcome from an internship or practice sale counts. A failure they learned from = 6+.' if level == 1 else ''}"
+            f"{'LEVEL 2: expect at least one friction point or specific outcome. Clean perfect narrative = 4 max.' if level == 2 else ''}"
+            f"{'LEVEL 3: expect real account/territory texture and real constraints. Smooth polished story with no friction = 4 max.' if level == 3 else ''}"
+            f"{'LEVEL 4: expect reflection or judgment under uncertainty. A perfect linear story with no tradeoff = 3 max.' if level == 4 else ''}\n\n"
         )
         return ctx
 
@@ -540,8 +538,7 @@ async def _call_scoring(
             store=True,
             metadata={
                 "call_type": "eval_scoring_sales",
-                "band": candidate_band,
-                "topic_importance": topic_importance,
+                "level": level,
                 "org_id": org_id or "",
             },
         ),
@@ -572,7 +569,6 @@ async def _call_signal_classification(
     llm_model: str,
     org_id: str,
     active_topic: str,
-    topic_importance: str,
     topic_tag: str,
     signals_already_fired: list | None,
 ) -> tuple[str | None, str | None, dict]:
@@ -619,7 +615,7 @@ async def _call_signal_classification(
             "MUST end with valid JSON on its own line:\n"
             '{"signal": "<signal_name>", "signal_reason": "<3-12 word exact quote from their answer>"}\n\n'
             "signal MUST be exactly one of the 12 valid signal names listed below. NEVER null.\n"
-            f"Topic: {active_topic or 'general'} | Tag: {topic_tag} | Importance: {topic_importance}\n"
+            f"Topic: {active_topic or 'general'} | Tag: {topic_tag}\n"
             + ban_block
             + special_note
             + "\n"
@@ -645,7 +641,6 @@ async def _call_signal_classification(
             store=True,
             metadata={
                 "call_type": "eval_signal_sales",
-                "topic_importance": topic_importance,
                 "org_id": org_id or "",
             },
         ),
@@ -690,11 +685,10 @@ async def evaluate_answer(
     llm_model: str,
     org_id: Optional[str] = None,
     is_warmup: bool = False,
-    candidate_band: str = "mid",
+    level: int = 2,
     active_topic: str = "",
-    topic_importance: str = "HIGH",
     topic_tag: str = "RESUME_TOPIC",
-    topic_probe_focus: list | None = None,
+    topic_probe_focus: str | None = None,
     job_title: str = "",
     signals_already_fired: list | None = None,
 ) -> dict:
@@ -735,7 +729,6 @@ async def evaluate_answer(
         llm_model=llm_model,
         org_id=org_id or "",
         active_topic=active_topic,
-        topic_importance=topic_importance,
         topic_tag=topic_tag,
     )
 
@@ -745,7 +738,7 @@ async def evaluate_answer(
                 _call_scoring(
                     **_common_kwargs,
                     topic_follow_up_count=topic_follow_up_count,
-                    candidate_band=candidate_band,
+                    level=level,
                     topic_probe_focus=topic_probe_focus,
                     job_title=job_title,
                 ),

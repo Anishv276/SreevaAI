@@ -34,7 +34,7 @@ image = (
     # BFS -- excludes lazy/function-local imports like billing.billing's
     # `from interview.agent_persistence import DatabasePool`, which this call path
     # never executes):
-    #   generate_brief.py -> band_classifier, interview_brief, billing.billing
+    #   generate_brief.py -> interview_brief, billing.billing
     #   interview_brief.py -> brief_extraction
     #   billing.billing -> agent_utils, agent_runtime_support
     #   agent_runtime_support -> agent_runtime_utils
@@ -44,10 +44,6 @@ image = (
     .add_local_file(
         "modal_app/ported_interview/generate_brief.py",
         remote_path="/root/interview/generate_brief.py",
-    )
-    .add_local_file(
-        "livekit-python-agent/interview/band_classifier.py",
-        remote_path="/root/interview/band_classifier.py",
     )
     .add_local_file(
         "livekit-python-agent/interview/interview_brief.py",

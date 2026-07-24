@@ -106,8 +106,8 @@ def build_evaluation_layer_prompt(
     *,
     candidate_name: str,
     job_title: str,
-    candidate_band: str = "mid",
     interview_brief,
+    level: int = 2,
 ) -> str:
     _strategy = interview_brief.interview_strategy or ""
     _summary  = interview_brief.candidate_summary or ""
@@ -143,43 +143,43 @@ def build_evaluation_layer_prompt(
                 "    RIGHT: 'How do you think about qualifying a deal before investing real time in it?'"
             )
 
-    def _band_depth_hint(t, band: str) -> str:
+    def _level_depth_hint(t, level: int) -> str:
         tag = (t.tag or "").upper()
         if tag == "RESUME_TOPIC":
             return {
-                "fresher":    "Ask WHAT they did and what their specific role in the deal/account was.",
-                "mid":        "Ask what was specifically their call — push past 'we'.",
-                "experienced":"Go straight to a tradeoff or negotiation decision. Skip setup.",
-                "senior":     "Ask about strategic consequence or territory/team-level impact.",
-            }.get(band, "Ask what they personally owned.")
+                1: "Ask WHAT they did and what their specific role in the deal/account was.",
+                2: "Ask what was specifically their call — push past 'we'.",
+                3: "Ask about a real tradeoff or negotiation decision, pushed past surface setup.",
+                4: "Go straight to a tradeoff or negotiation decision. Skip setup.",
+            }.get(level, "Ask what they personally owned.")
         elif tag == "JD_TOPIC":
             return {
-                "fresher":    "Ask gently — 'have you had a chance to work with X or explore it?'",
-                "mid":        "Ask where they've actually used it in a real deal.",
-                "experienced":"Ask about real depth and constraints under quota pressure.",
-                "senior":     "Ask about strategic judgment around it, not just usage.",
-            }.get(band, "Ask about their exposure neutrally.")
+                1: "Ask gently — 'have you had a chance to work with X or explore it?'",
+                2: "Ask where they've actually used it in a real deal.",
+                3: "Ask about real depth and constraints under quota pressure.",
+                4: "Ask about strategic judgment around it, not just usage.",
+            }.get(level, "Ask about their exposure neutrally.")
         else:
             return {
-                "fresher":    "Check if they understand the concept — not whether they've done it at scale.",
-                "mid":        "Ask about their approach or any real exposure they've had.",
-                "experienced":"Ask about a concrete decision or tradeoff in this area.",
-                "senior":     "Ask about territory or team-level thinking.",
-            }.get(band, "Ask how they think about or approach this.")
+                1: "Check if they understand the concept — not whether they've done it at scale.",
+                2: "Ask about their approach or any real exposure they've had.",
+                3: "Ask about a concrete decision or tradeoff in this area.",
+                4: "Ask about territory or team-level thinking.",
+            }.get(level, "Ask how they think about or approach this.")
 
     _topics_summary = "\n".join(
         f"  {i+1}. {t.title}\n"
         f"     {_topic_source_contract(t)}\n"
-        f"     BAND HINT ({candidate_band.upper()}): {_band_depth_hint(t, candidate_band)}\n"
+        f"     LEVEL HINT (LEVEL {level}): {_level_depth_hint(t, level)}\n"
         f"     CONTEXT: {t.full_description}\n"
-        f"     {('PROBE: ' + ', '.join(t.probe_focus[:3])) if t.probe_focus else ''}"
+        f"     {('PROBE: ' + t.probe_focus) if t.probe_focus else ''}"
         f"{'  |  ' if t.probe_focus and t.probe_avoid else ''}"
         f"{('AVOID: ' + ', '.join(t.probe_avoid[:2])) if t.probe_avoid else ''}"
         for i, t in enumerate(interview_brief.topic_pool)
     )
 
     brief_block = f"""CANDIDATE: {candidate_name}
-ROLE: {job_title}  |  BAND: {candidate_band.upper()}
+ROLE: {job_title}  |  LEVEL: {level}
 
 ANALYST READ:
 {_summary}
@@ -212,7 +212,7 @@ ANCHOR TOPIC (open here):
   {_anchor.title}
   {_topic_source_contract(_anchor)}
   CONTEXT: {_anchor.full_description}
-  Probe focus: {', '.join(_anchor.probe_focus[:3]) if _anchor.probe_focus else 'depth, ownership'}
+  Probe focus: {_anchor.probe_focus if _anchor.probe_focus else 'Probe for depth and genuine ownership of the topic.'}
   Probe avoid: {', '.join(_anchor.probe_avoid[:2]) if _anchor.probe_avoid else 'none'}
 
 TOPIC POOL (work through in order — each has its own source framing above):
@@ -223,37 +223,37 @@ JD MUST-HAVES:
 
 RED FLAGS (watch for these — do not ignore):
 {chr(10).join('  ⚠ ' + f for f in _flags) if _flags else '  (none)'}"""
-    # Band-specific evaluation posture -- what "good" looks like at each level, sales-flavored
-    band_eval = {
-        "fresher": (
-            "This is a FRESHER. Evaluate HOW they think about selling, not just their numbers.\n"
+    # Level-specific evaluation posture -- what "good" looks like at each level, sales-flavored
+    level_eval = {
+        1: (
+            "This is a LEVEL 1 interview. Evaluate HOW they think about selling, not just their numbers.\n"
             "Good signal: they understood WHY they made a choice on a call/deal, even if the choice was simple.\n"
             "Expected gap: they may not have big quota history or negotiation depth -- that's fine.\n"
             "Red flag: can't explain any real decision in a practice sale, internship, or early role at all."
         ),
-        "mid": (
-            "This is a MID-LEVEL candidate. Real quota ownership and real decisions are the bar.\n"
+        2: (
+            "This is a LEVEL 2 interview. Real quota ownership and real decisions are the bar.\n"
             "Good signal: clear 'I' in the story -- what they specifically ran, decided, closed.\n"
             "Expected gap: may not have full territory-level depth -- probe the deals they DID own.\n"
             "Red flag: everything is 'we', no personal ownership of any deal anywhere."
         ),
-        "experienced": (
-            "This is an EXPERIENCED candidate. Real numbers and specifics are expected, not optional.\n"
+        3: (
+            "This is a LEVEL 3 interview. Real numbers and specifics are expected, not optional.\n"
             "Good signal: end-to-end deal ownership, real objections handled, measurable quota results.\n"
             "Expected gap: may not have led territory-wide initiatives -- probe depth on what they owned.\n"
             "Red flag: vague answers, no numbers, no real objections -- probe harder, don't move on."
         ),
-        "senior": (
-            "This is a SENIOR candidate. Strategic judgment and team/territory impact are the bar.\n"
+        4: (
+            "This is a LEVEL 4 interview. Strategic judgment and team/territory impact are the bar.\n"
             "Good signal: influenced others, made high-stakes deal calls alone, built repeatable process.\n"
             "Expected gap: may not have deep individual-contributor selling recently -- probe judgment and decisions.\n"
             "Red flag: polished but shallow -- if it sounds rehearsed, press on what actually went wrong on a deal."
         ),
-    }.get(candidate_band, "Probe for real ownership and specific sales decisions.")
+    }.get(level, "Probe for real ownership and specific sales decisions.")
     return f"""━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ANALYST BRIEF -- READ THIS FIRST
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-The section below is a pre-interview analyst read of {candidate_name} for the {job_title} role ({candidate_band.upper()} band).
+The section below is a pre-interview analyst read of {candidate_name} for the {job_title} role (LEVEL {level}).
 It was written specifically to give you a FORMED OPINION before the interview starts.
 This brief is your SOURCE OF TRUTH for:
   - Which topics to open on (OPENING ANGLE section)
@@ -264,9 +264,9 @@ Every question you generate should be grounded in this brief.
 Never ask a generic question when the brief gives you a specific angle.
 {brief_block}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-BAND POSTURE: {candidate_band.upper()}
+LEVEL: {level}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-{band_eval}
+{level_eval}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 DIRECTIVE SYSTEM
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

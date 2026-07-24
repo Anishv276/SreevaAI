@@ -79,7 +79,7 @@ export async function GET(request: Request) {
                     aiInterviewerVoiceId: true,
                     interviewMode: true,
                     interviewType: true,
-                    questionBand: true,
+                    level: true,
                     _count: {
                         select: { applications: { where: { isDeleted: false } } },
                     },
@@ -218,7 +218,7 @@ export async function POST(request: Request) {
                 aiInterviewerName: data.aiInterviewerName || "Ishitha",
                 interviewMode: data.interviewMode || "ats",
                 interviewType: data.interviewType || "tech",
-                questionBand: data.interviewType === "conversational" ? null : (data.questionBand || "mid"),
+                level: data.level || 2,
                 organizationId: session.orgId!,
                 createdByCredentialId: session.userId,
                 ...aiConfig,

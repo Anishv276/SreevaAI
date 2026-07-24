@@ -26,8 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from interview.tech.eval import TopicState
 
 
-def _ts(importance: str = "HIGH", band: str = "mid") -> TopicState:
-    return TopicState("Some Topic", importance, band=band)
+def _ts(level: int = 2) -> TopicState:
+    return TopicState("Some Topic", level=level)
 
 
 def test_below_3_turns_never_forces_exit_regardless_of_score():
@@ -40,7 +40,7 @@ def test_below_3_turns_never_forces_exit_regardless_of_score():
 
 def test_turn_3_below_50_pct_forces_exit():
     ts = _ts()
-    # Threshold for HIGH/mid is 5.5 (see _BAND_SATURATION) -- 3 weak answers
+    # Threshold for HIGH/level 2 is 5.5 (see _LEVEL_SATURATION) -- 3 weak answers
     # keep saturation well under 50% (2.75).
     ts.add_contribution(weighted=0.0, signal="definition_absent", turn=1)
     ts.add_contribution(weighted=1.0, signal="mechanism_shallow", turn=2)

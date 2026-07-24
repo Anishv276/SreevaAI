@@ -87,8 +87,8 @@ def build_evaluation_layer_prompt(
     *,
     candidate_name: str,
     job_title: str,
-    candidate_band: str = "mid",
     interview_brief,
+    level: int = 2,
 ) -> str:
     _strategy = interview_brief.interview_strategy or ""
     _summary  = interview_brief.candidate_summary or ""
@@ -127,41 +127,44 @@ def build_evaluation_layer_prompt(
                 "    RIGHT: 'How do you think about X in practice?' / 'How would you approach X?'"
             )
 
-    def _band_depth_hint(t, band: str) -> str:
+    def _level_depth_hint(t, level: int) -> str:
         tag = (t.tag or "").upper()
         if tag == "RESUME_TOPIC":
             return {
-                "fresher": "Ask a fundamentals-level distinction question — basic definitions, common confusions.",
-                "mid":     "Ask a mechanics or performance-triage question — how it works, what to check first.",
-                "senior":  "Go straight to a tradeoff or systemic-failure scenario. Skip setup and basics.",
-            }.get(band, "Ask a cold-reasoning question testing real understanding.")
+                1: "Ask a fundamentals-level distinction question — basic definitions, common confusions.",
+                2: "Ask a mechanics or performance-triage question — how it works, what to check first.",
+                3: "Ask an applied tradeoff question grounded in a realistic constraint — push past textbook.",
+                4: "Go straight to a tradeoff or systemic-failure scenario. Skip setup and basics.",
+            }.get(level, "Ask a cold-reasoning question testing real understanding.")
         elif tag == "JD_TOPIC":
             return {
-                "fresher": "Ask a gentle fundamentals question — accept 'I haven't worked with this' gracefully.",
-                "mid":     "Ask a practical reasoning question — how would they approach a realistic constraint.",
-                "senior":  "Ask about strategic judgment or tradeoffs around it, not just familiarity.",
-            }.get(band, "Ask a neutral cold-reasoning question about this skill.")
+                1: "Ask a gentle fundamentals question — accept 'I haven't worked with this' gracefully.",
+                2: "Ask a practical reasoning question — how would they approach a realistic constraint.",
+                3: "Ask a judgment question that assumes some exposure — how they'd reason through a real tradeoff.",
+                4: "Ask about strategic judgment or tradeoffs around it, not just familiarity.",
+            }.get(level, "Ask a neutral cold-reasoning question about this skill.")
         else:
             return {
-                "fresher": "Check if they understand the concept — not whether they've done it at scale.",
-                "mid":     "Ask about their approach to a realistic scenario in this area.",
-                "senior":  "Ask about systemic or architectural-level tradeoffs in this area.",
-            }.get(band, "Ask how they think about or approach this.")
+                1: "Check if they understand the concept — not whether they've done it at scale.",
+                2: "Ask about their approach to a realistic scenario in this area.",
+                3: "Ask about a tradeoff decision they'd need to make applying this at a systems level.",
+                4: "Ask about systemic or architectural-level tradeoffs in this area.",
+            }.get(level, "Ask how they think about or approach this.")
 
     _topics_summary = "\n".join(
         f"  {i+1}. {t.title}\n"
         f"     {_topic_source_contract(t)}\n"
-        f"     BAND HINT ({candidate_band.upper()}): {_band_depth_hint(t, candidate_band)}\n"
+        f"     LEVEL HINT (LEVEL {level}): {_level_depth_hint(t, level)}\n"
         f"     CONTEXT: {t.full_description}\n"
         f"     {('TECH: ' + ', '.join(t.tech_stack)) + chr(10) + '     ' if t.tech_stack else ''}"
-        f"     {('PROBE: ' + ', '.join(t.probe_focus[:3])) if t.probe_focus else ''}"
+        f"     {('PROBE: ' + t.probe_focus) if t.probe_focus else ''}"
         f"{'  |  ' if t.probe_focus and t.probe_avoid else ''}"
         f"{('AVOID: ' + ', '.join(t.probe_avoid[:2])) if t.probe_avoid else ''}"
         for i, t in enumerate(interview_brief.topic_pool)
     )
 
     brief_block = f"""CANDIDATE: {candidate_name}
-ROLE: {job_title}  |  BAND: {candidate_band.upper()}
+ROLE: {job_title}  |  LEVEL: {level}
 
 ANALYST READ:
 {_summary}
@@ -196,7 +199,7 @@ ANCHOR TOPIC (open here):
   {_topic_source_contract(_anchor)}
   CONTEXT: {_anchor.full_description}
   {('TECH: ' + ', '.join(_anchor.tech_stack)) if _anchor.tech_stack else ''}
-  Probe focus: {', '.join(_anchor.probe_focus[:3]) if _anchor.probe_focus else 'depth, ownership'}
+  Probe focus: {_anchor.probe_focus if _anchor.probe_focus else 'Probe for depth and genuine ownership of the topic.'}
   Probe avoid: {', '.join(_anchor.probe_avoid[:2]) if _anchor.probe_avoid else 'none'}
 
 TOPIC POOL (work through in order — each has its own source framing above):
@@ -207,41 +210,47 @@ JD MUST-HAVES:
 
 RED FLAGS (watch for these — do not ignore):
 {chr(10).join('  ⚠ ' + f for f in _flags) if _flags else '  (none)'}"""
-    # Band-specific evaluation posture -- what "good" looks like at each level.
-    # This is a fixed, admin-selected band for the job -- not derived from the
+    # Level-specific evaluation posture -- what "good" looks like at each level.
+    # This is a fixed, admin-selected level for the job -- not derived from the
     # candidate's resume/experience, and evaluation is purely skill/knowledge-based.
-    band_eval = {
-        "fresher": (
-            "This is a FRESHER-band interview. Evaluate whether fundamentals are genuinely understood.\n"
+    level_eval = {
+        1: (
+            "This is a LEVEL 1 interview. Evaluate whether fundamentals are genuinely understood.\n"
             "Good signal: they can explain WHY, not just recite a definition.\n"
             "Expected gap: they may not know tradeoffs, architecture, or scale -- that's fine.\n"
             "Red flag: can't explain a basic distinction in the skill at all, even with a hint."
         ),
-        "mid": (
-            "This is a MID-band interview. Real working knowledge under realistic constraints is the bar.\n"
+        2: (
+            "This is a LEVEL 2 interview. Real working knowledge under realistic constraints is the bar.\n"
             "Good signal: they reason through a mechanism or performance question, not recite a checklist.\n"
             "Expected gap: may not have deep architectural judgment -- probe reasoning they DO show.\n"
             "Red flag: purely textbook answers with zero applied reasoning, even when pushed."
         ),
-        "senior": (
-            "This is a SENIOR-band interview. Architectural judgment and tradeoff reasoning are the bar.\n"
+        3: (
+            "This is a LEVEL 3 interview. Applied judgment under real tradeoffs is the bar, not just correctness.\n"
+            "Good signal: they can walk through a genuine tradeoff and justify the choice they'd make.\n"
+            "Expected gap: may not have systems-wide architectural scope -- that's fine, depth of reasoning matters.\n"
+            "Red flag: confident but shallow reasoning that doesn't hold up when pushed on the 'why'."
+        ),
+        4: (
+            "This is a LEVEL 4 interview. Architectural judgment and tradeoff reasoning are the bar.\n"
             "Good signal: they can argue multiple valid approaches and explain HOW they'd decide.\n"
             "Expected gap: may not know every implementation detail -- that's fine, judgment is what matters.\n"
             "Red flag: polished but shallow -- if it sounds rehearsed, invert the assumption and press."
         ),
-    }.get(candidate_band, "Probe for genuine skill understanding, not memorized recitation.")
+    }.get(level, "Probe for genuine skill understanding, not memorized recitation.")
     return f"""━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ANALYST BRIEF -- READ THIS FIRST
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-The section below is a pre-interview analyst read of {candidate_name} for the {job_title} role ({candidate_band.upper()} band).
+The section below is a pre-interview analyst read of {candidate_name} for the {job_title} role (LEVEL {level}).
 It was written specifically to give you a FORMED OPINION before the interview starts.
 Every question you generate should be grounded in this brief.
 Never ask a generic question when the brief gives you a specific angle.
 {brief_block}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-BAND POSTURE: {candidate_band.upper()}
+LEVEL: {level}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-{band_eval}
+{level_eval}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 DIRECTIVE SYSTEM
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

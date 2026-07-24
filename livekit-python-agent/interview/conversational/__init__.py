@@ -4,9 +4,9 @@ interview/conversational/__init__.py
 Conversational-interview module (sales roles today; other non-tech role
 families can extend this later). Mirrors interview.tech's public surface.
 
-Note: band.py, brief_extraction.py, and debug.py re-export interview.tech's
-implementation unchanged -- candidate banding, resume/JD extraction, and debug
-PDF rendering are domain-independent. brief.py, scoring.py, probe.py, prompts.py,
+Note: brief_extraction.py and debug.py re-export interview.tech's
+implementation unchanged -- resume/JD extraction and debug PDF rendering are
+domain-independent. brief.py, scoring.py, probe.py, prompts.py,
 phases.py, eval.py, and report.py are sales-specific implementations.
 """
 from interview.conversational.scoring import (
@@ -42,7 +42,6 @@ from interview.conversational.prompts import (
     build_system_prompt,
 )
 from interview.conversational.phases import build_greeting_text, build_interview_directive
-from interview.conversational.band import classify_band, CandidateBand, BandClassifier
 from interview.conversational.report import (
     generate_interview_report,
     generate_interview_summary,
@@ -79,9 +78,6 @@ __all__ = [
     "build_system_prompt",
     "build_greeting_text",
     "build_interview_directive",
-    "classify_band",
-    "CandidateBand",
-    "BandClassifier",
     "generate_interview_report",
     "generate_interview_summary",
     "build_debug_pdf",

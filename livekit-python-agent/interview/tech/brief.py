@@ -48,7 +48,7 @@ class TopicItem(BaseModel):
     is_jd_must_have: bool = False
     is_custom_question: bool = False
     why_relevant: str = ""
-    probe_focus: list[str] = Field(default_factory=list)
+    probe_focus: str = ""
     probe_avoid: list[str] = Field(default_factory=list)
 
     @field_validator("topic_type", mode="before")
@@ -72,7 +72,7 @@ class RoleContext(BaseModel):
 
 class InterviewBrief(BaseModel):
     role_context: RoleContext
-    candidate_band: str = "mid"
+    level: int = 2
     candidate_summary: str = ""
     anchor_topic: TopicItem
     topic_pool: list[TopicItem] = Field(default_factory=list)
@@ -80,12 +80,14 @@ class InterviewBrief(BaseModel):
     interview_strategy: str = ""
     red_flags: list[str] = Field(default_factory=list)
 
-    @field_validator("candidate_band", mode="before")
+    @field_validator("level", mode="before")
     @classmethod
-    def _coerce_band(cls, v: Any) -> str:
-        allowed = {"fresher", "mid", "experienced", "senior"}
-        s = str(v or "").strip().lower()
-        return s if s in allowed else "mid"
+    def _coerce_level(cls, v: Any) -> int:
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            return 2
+        return n if n in (1, 2, 3, 4) else 2
 
 
 # ---------------------------------------------------------------------------
@@ -103,8 +105,8 @@ No raw JSON. No parsing needed. Your jobs:
   3. Select the anchor topic (the single strongest skill to open on)
   4. Generate role_topic TopicItems from YOUR expert domain knowledge of the role — not from resume or JD
   5. Merge overlapping resume and JD mentions of the same skill into one TopicItem (never duplicate)
-  6. Write interview_strategy, red_flags, candidate_summary — calibrated to role and band, skill-focused only
-  7. The interview_strategy must be SPECIFIC to this exact role, band, and skill pool — not generic filler
+  6. Write interview_strategy, red_flags, candidate_summary — calibrated to role and level, skill-focused only
+  7. The interview_strategy must be SPECIFIC to this exact role, level, and skill pool — not generic filler
 
 ━━━ SKILL POOL SELECTION (replaces any project/work selection logic) ━━━
 The user message contains a "SKILLS FROM RESUME" list (skills the candidate listed, plus
@@ -163,12 +165,12 @@ tagged JD_TOPIC (JD-required, not on resume). Then verify every custom question 
 present as its own item on top of that count.
 ROLE_TOPIC (expert-knowledge, non-custom) count: exactly 2, included in the 12-14 base.
 
-━━━ BAND CALIBRATION ━━━
-Each band changes: probing depth, question difficulty, what counts as a "good" answer,
+━━━ QUESTION LEVEL (1-4) ━━━
+Each level changes: probing depth, question difficulty, what counts as a "good" answer,
 how many follow-ups are expected, and what the interviewer is looking for. This is a
-FIXED, admin-selected band for this job — it does not vary by candidate.
+FIXED, admin-selected level for this job — it does not vary by candidate.
 
-FRESHER:
+LEVEL 1 (basic):
   Evaluation goal: understand how they reason about a skill, not just whether they've heard of it.
   Depth: fundamentals, basic mechanics, simple applied tasks. No systems context assumed.
   Avoid: architecture at scale, strategic tradeoffs, production incident scenarios.
@@ -177,7 +179,7 @@ FRESHER:
     Accept partial answers on tradeoffs/performance — they're learning. Get one clear
     reasoning example per skill, then move on.
 
-MID:
+LEVEL 2 (moderate):
   Evaluation goal: verify real working knowledge under realistic constraints.
   Depth: mechanics, performance triage, one real constraint per applied question.
   Avoid: pure textbook recitation with no reasoning.
@@ -186,7 +188,17 @@ MID:
     checklist. Probe one real tradeoff per skill. Surface where their understanding is
     genuinely applied versus surface-level.
 
-SENIOR:
+LEVEL 3 (experienced):
+  Evaluation goal: verify applied depth and judgment under real tradeoffs, not just correctness.
+  Depth: applied scenarios with a genuine tradeoff or constraint, multi-step reasoning, "why
+    this over that" questions grounded in something they'd actually hit in production.
+  Avoid: pure definitions, single-fact recall.
+  Anchor: the strongest common skill (resume + JD overlap), pushed harder than level 2.
+  interview_strategy: Open with an applied scenario, not a definition. Push on the "why" behind
+    their choice at least once per skill. Treat a confident-but-shallow answer as a signal to
+    probe deeper, not as a pass.
+
+LEVEL 4 (advanced/senior):
   Evaluation goal: architectural judgment and tradeoff reasoning at a systems level.
   Depth: multi-factor tradeoffs, no-single-correct-answer scenarios, systemic failure modes.
   Avoid: basic definitions, surface familiarity questions.
@@ -205,7 +217,7 @@ Rules:
   - Do NOT copy resume or JD items. Completely independent.
   - Each role_topic must be a skill/concept name, specific enough that Ishitha can ask one
     concrete, grounded question about it — never a project or company reference.
-  - Role topics must change based on band: same concept, different depth.
+  - Role topics must change based on level: same concept, different depth.
 
 Examples for common roles (pick the 2 strongest for the actual role):
   DevOps/SRE:       Observability strategy, Incident management runbooks, Reliability engineering (SLO/SLI/error budgets),
@@ -230,31 +242,35 @@ in that exact field would be expected to answer well. Ground each in the role br
 in a generic checklist for the job title.
 
 ━━━ PROBE_FOCUS GENERATION (critical — this is what MOVE_ON questions are built from) ━━━
-probe_focus is not a summary of the skill — it is the set of concrete angles an interviewer
-will interrogate. Every MOVE_ON question is synthesized directly from these items, so vague or
-generic probe_focus produces vague, generic questions.
+probe_focus is ONE short paragraph (2-3 sentences) written in plain English that tells the
+interviewer exactly what to probe for on this topic, at THIS topic's level. Not a list of
+keywords — a concrete instruction an interviewer could read once and know what to ask, the
+way a human interview lead would brief a colleague before the call.
 
-Rules:
-  - Each of the 3 items must be a DIFFERENT kind of angle, not 3 phrasings of the same theme:
-      1. A concrete MECHANISM or internal-behavior angle specific to this skill (not "how it
-         works" — name the actual thing: "connection pooling behavior", "event loop scheduling").
-      2. A FAILURE / TRADEOFF / PERFORMANCE angle (what breaks, what the tradeoff is, what the
-         limiting factor is at scale).
-      3. An APPLIED / DESIGN-DECISION angle (a concrete scenario where this skill's use requires
-         a judgment call).
-  - Ground every item in the skill itself — never a generic phrase that could apply to any skill.
-  - If a red_flag applies to this topic, at least one probe_focus item must be the exact angle
-    that would surface it.
+Write it to cover, in prose:
+  1. The concrete mechanism or internal-behavior angle specific to this skill (name the
+     actual thing, not "how it works").
+  2. A failure / tradeoff / performance angle — what breaks, or what the tradeoff is.
+  3. An applied, judgment-call scenario where this skill's use requires a real decision.
+Calibrate the depth of what you ask for to the topic's level (see QUESTION LEVEL above):
+level 1 sentences should point at a basic-fundamentals probe; level 4 sentences should point
+at an advanced tradeoffs/systems-level probe.
 
-GOOD vs BAD example (topic: Database indexing):
-  BAD:  ["how indexes work", "performance", "best practices"]
-        — three vague restatements with no mechanism/failure/applied distinction.
-  GOOD: ["B-tree vs hash index internals", "write-amplification cost of over-indexing",
-         "choosing an index for a 3-table join that's suddenly slow"]
-        — one mechanism, one tradeoff angle, one applied-decision angle.
+If a red_flag applies to this topic, the paragraph must include the exact angle that would
+surface it.
 
-  This is a STRUCTURE example, not content to reuse. Never emit a probe_focus item that
-  doesn't genuinely apply to THIS topic's own tech_stack/title.
+GOOD vs BAD example (topic: Database indexing, level 2):
+  BAD:  "Ask about how indexes work and best practices."
+        — vague, no mechanism/failure/applied distinction, no level calibration.
+  GOOD: "Ask them to explain B-tree vs hash index internals and when they'd pick one over
+        the other. Push on the write-amplification cost of over-indexing a write-heavy
+        table. Then give them a concrete scenario — a 3-table join that's suddenly slow —
+        and see how they'd decide which index to add."
+        — one mechanism, one tradeoff angle, one applied-decision scenario, in natural
+        interviewer language.
+
+  This is a STRUCTURE example, not content to reuse. Never emit a probe_focus paragraph
+  that doesn't genuinely apply to THIS topic's own tech_stack/title.
 
 ━━━ DEDUP — NO CONCEPT MAY APPEAR TWICE ━━━
 Before finalizing topic_pool, verify: no two TopicItems test the same
@@ -290,10 +306,13 @@ not item count, is what matters.
     application of it in a specific project.
   - Return ONLY valid JSON. No markdown. No explanation.
 
+This level is fixed and admin-selected — always echo back the exact LEVEL given to you,
+never infer or change it.
+
 Schema:
 {
   "role_context": { "must_have_skills": [str] },
-  "candidate_band": "fresher"|"mid"|"experienced"|"senior",
+  "level": 1|2|3|4,
   "candidate_summary": str,
   "anchor_topic": TopicItem,
   "topic_pool": [TopicItem],
@@ -314,18 +333,18 @@ TopicItem schema:
   "is_jd_must_have": bool,
   "is_custom_question": bool,
   "why_relevant": str,
-  "probe_focus": [str],
+  "probe_focus": str,
   "probe_avoid": [str]
 }
 
 OUTPUT SIZE RULES:
   - full_description: 1–2 sentences. Specific enough to ground a question.
   - why_relevant: 1 short phrase.
-  - probe_focus: max 3 items, 3–5 words each. Follow PROBE_FOCUS GENERATION rules above —
-    one mechanism/decision, one failure/tradeoff, one outcome/metric angle. Never 3 overlapping
-    restatements of the same theme.
+  - probe_focus: 2-3 sentences of plain English. Follow PROBE_FOCUS GENERATION rules above —
+    one mechanism/decision, one failure/tradeoff, one applied-scenario angle, calibrated to
+    this topic's level. Never a list of keywords.
   - probe_avoid: max 2 items, 3–5 words each.
-  - interview_strategy: 3–5 sentences. Must be specific to this role, band, and candidate — not generic.
+  - interview_strategy: 3–5 sentences. Must be specific to this role, level, and candidate — not generic.
   - candidate_summary: 1–2 sentences.
   - red_flags: up to 5 items, short phrases.
 """
@@ -407,14 +426,15 @@ Rules:
     generic ("tell me about automation") but specific ("how do you decide chunk
     size when documents vary in length").
   - Tag every new topic "ROLE_TOPIC", topic_type "role_topic", is_custom_question=false.
-  - probe_focus: exactly 3 items, 3-5 words each, CONCRETE to this topic's own
-    full_description (never the literal words "mechanism", "tradeoff", "outcome",
-    or "judgment" themselves — those are categories to fill, not values to output):
+  - probe_focus: 2-3 sentences of plain English, CONCRETE to this topic's own
+    full_description, covering:
       1. A specific mechanism or decision point for this topic.
       2. A specific failure/tradeoff/constraint angle for this topic.
-      3. A specific outcome/metric or judgment angle for this topic.
-    Example for a topic on caching strategy: ["cache invalidation trigger choice",
-    "stale-read risk under high write volume", "hit-rate improvement measured"].
+      3. A specific applied scenario or judgment-call angle for this topic.
+    Calibrate depth to the given level (1=basic through 4=advanced).
+    Example for a topic on caching strategy: "Ask what triggers a cache invalidation in
+    their design and why. Push on the stale-read risk under high write volume. Then ask
+    how they'd measure whether a cache change actually improved hit rate."
   - Return ONLY valid JSON: {"topics": [TopicItem, ...]}. No markdown, no explanation.
 
 TopicItem schema:
@@ -422,7 +442,7 @@ TopicItem schema:
   "id": str, "topic_type": "role_topic", "tag": "ROLE_TOPIC", "title": str,
   "full_description": str, "tech_stack": [str], "impact": str,
   "is_jd_must_have": false, "is_custom_question": false, "why_relevant": str,
-  "probe_focus": [str], "probe_avoid": [str]
+  "probe_focus": str, "probe_avoid": [str]
 }
 """
 
@@ -430,7 +450,7 @@ TopicItem schema:
 async def _topup_role_topics(
     *,
     job_title: str,
-    candidate_band: str,
+    level: int,
     role_understanding: str,
     existing_topics: list[TopicItem],
     needed: int,
@@ -444,7 +464,7 @@ async def _topup_role_topics(
         f"- {t.title}: {t.full_description}" for t in existing_topics
     )
     user_prompt = (
-        f"ROLE: {job_title}  |  BAND: {candidate_band.upper()}\n\n"
+        f"ROLE: {job_title}  |  LEVEL: {level}\n\n"
         f"WHAT THIS ROLE ACTUALLY NEEDS:\n{role_understanding}\n\n"
         f"EXISTING TOPICS (do not duplicate any of these):\n{existing_summary}\n\n"
         f"Generate exactly {needed} additional role-knowledge topic(s) now."
@@ -495,12 +515,12 @@ async def generate_interview_brief(
     *,
     candidate_name: str,
     job_title: str,
-    candidate_band: str,
     resume_json: dict,
     jd_data: dict,
     custom_questions: list[str],
     openai_client: AsyncOpenAI,
     llm_model: str,
+    level: int = 2,
     usage_sink: Any = None,
 ) -> InterviewBrief:
     # Step 1: deterministic extraction (zero LLM) + role understanding (small LLM
@@ -511,7 +531,7 @@ async def generate_interview_brief(
             jd_data=jd_data,
             candidate_name=candidate_name,
             job_title=job_title,
-            band=candidate_band,
+            level=level,
             custom_questions=custom_questions or [],
         ),
         _understand_role(
@@ -528,7 +548,7 @@ async def generate_interview_brief(
         f"WHAT THIS ROLE ACTUALLY NEEDS (read this first — it is the relevance bar "
         f"for every topic you select below):\n{role_understanding}\n\n"
         f"{llm_input_block}\n"
-        f"BAND: {candidate_band.upper()}\n"
+        f"LEVEL: {level}\n"
         f"Generate the InterviewBrief JSON now. Keep all text fields SHORT (see SPEED RULES)."
     )
 
@@ -588,7 +608,7 @@ async def generate_interview_brief(
     if non_custom_count < 12:
         topup = await _topup_role_topics(
             job_title=job_title,
-            candidate_band=candidate_band,
+            level=level,
             role_understanding=role_understanding,
             existing_topics=brief.topic_pool,
             needed=12 - non_custom_count,
@@ -604,8 +624,8 @@ async def generate_interview_brief(
             brief.topic_pool.extend(topup)
 
     logger.info(
-        "[BRIEF] LLM brief generated: %d topics | anchor=%r | band=%s",
-        len(brief.topic_pool), brief.anchor_topic.title, brief.candidate_band,
+        "[BRIEF] LLM brief generated: %d topics | anchor=%r | level=%s",
+        len(brief.topic_pool), brief.anchor_topic.title, brief.level,
     )
     return brief
 
@@ -658,10 +678,7 @@ def _probe_tokens(t: TopicItem) -> set[str]:
     """Normalized word tokens from probe_focus -- catches concept overlap
     (e.g. 'duplicate lead handling' vs 'duplicate handling rule') that
     tech_stack comparison misses because both topics may share no listed tech."""
-    words: set[str] = set()
-    for phrase in t.probe_focus:
-        words.update(w.strip().lower() for w in phrase.split() if len(w.strip()) > 3)
-    return words
+    return {w.strip().lower() for w in t.probe_focus.split() if len(w.strip()) > 3}
 
 
 def _dedup_any_overlap(topics: list[TopicItem]) -> list[TopicItem]:

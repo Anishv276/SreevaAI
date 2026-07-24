@@ -337,51 +337,52 @@ Never ask a generic "tell me more".""",
 
 
 # ---------------------------------------------------------------------------
-# Band overlays -- per-signal, per-band. Adjusts depth/stakes of the probe.
+# Level overlays -- per-signal, per-level (1=fresher-equiv .. 4=senior-equiv).
+# Adjusts depth/stakes of the probe.
 # ---------------------------------------------------------------------------
-_BAND_OVERLAYS: dict[str, dict[str, str]] = {
+_LEVEL_OVERLAYS: dict[str, dict[int, str]] = {
 
     "deal_example_evaded": {
-        "fresher":     "A real moment from an internship, practice sale, or class project counts — keep the bar accessible.",
-        "mid":         "Push for a real deal or account situation, not a hypothetical.",
-        "experienced": "The instance must come from real quota-carrying work. Push for the deal, not the category.",
-        "senior":      "Push for an instance with real stakes — a decision with real consequences for the number or the team.",
+        1: "A real moment from an internship, practice sale, or class project counts — keep the bar accessible.",
+        2: "Push for a real deal or account situation, not a hypothetical.",
+        3: "The instance must come from real quota-carrying work. Push for the deal, not the category.",
+        4: "Push for an instance with real stakes — a decision with real consequences for the number or the team.",
     },
     "deal_metrics_missing": {
-        "fresher":     "Any real number counts, even small-scale (internship leads, practice calls booked).",
-        "mid":         "Expect a real quota, deal size, or rate figure tied to actual quota-carrying work.",
-        "experienced": "Expect precise figures — quota attainment percentage, ACV, win rate — not rounded platitudes.",
-        "senior":      "Expect team or territory-level numbers, not just individual figures.",
+        1: "Any real number counts, even small-scale (internship leads, practice calls booked).",
+        2: "Expect a real quota, deal size, or rate figure tied to actual quota-carrying work.",
+        3: "Expect precise figures — quota attainment percentage, ACV, win rate — not rounded platitudes.",
+        4: "Expect team or territory-level numbers, not just individual figures.",
     },
     "revenue_ownership_ambiguous": {
-        "fresher":     "Ask for their single concrete task on the deal — one action they personally took is enough.",
-        "mid":         "Ask what decision or call on the deal was specifically theirs.",
-        "experienced": "Ask which part of the deal cycle they owned end-to-end.",
-        "senior":      "Ask what decision was theirs to make — probe territory/team leadership, not just deal execution.",
+        1: "Ask for their single concrete task on the deal — one action they personally took is enough.",
+        2: "Ask what decision or call on the deal was specifically theirs.",
+        3: "Ask which part of the deal cycle they owned end-to-end.",
+        4: "Ask what decision was theirs to make — probe territory/team leadership, not just deal execution.",
     },
     "pipeline_thinking_weak": {
-        "fresher":     "A basic sense of stages is enough — don't push for forecast-category nuance.",
-        "mid":         "Expect real stage criteria from their own deals.",
-        "experienced": "Expect forecast category logic (commit/best-case) with real reasoning.",
-        "senior":      "Expect territory or team-level pipeline judgment, not just their own deals.",
+        1: "A basic sense of stages is enough — don't push for forecast-category nuance.",
+        2: "Expect real stage criteria from their own deals.",
+        3: "Expect forecast category logic (commit/best-case) with real reasoning.",
+        4: "Expect territory or team-level pipeline judgment, not just their own deals.",
     },
     "sales_tool_named_not_used": {
-        "fresher":     "Even light usage in training or a practice environment counts.",
-        "mid":         "Ask what they built or ran in it for a real deal or sequence.",
-        "experienced": "Push for a specific workflow or report they relied on regularly.",
-        "senior":      "Ask how it fit into team process or what adoption/rollout decision they made.",
+        1: "Even light usage in training or a practice environment counts.",
+        2: "Ask what they built or ran in it for a real deal or sequence.",
+        3: "Push for a specific workflow or report they relied on regularly.",
+        4: "Ask how it fit into team process or what adoption/rollout decision they made.",
     },
     "strategy_choice_unjustified": {
-        "fresher":     "They may not have had a choice — ask if they considered anything else, even briefly.",
-        "mid":         "Expect a simple reason — buyer type, timing, prior response rate.",
-        "experienced": "Expect a real tradeoff — what they gave up by choosing this play over another.",
-        "senior":      "Expect a considered decision with team or territory-level consequences.",
+        1: "They may not have had a choice — ask if they considered anything else, even briefly.",
+        2: "Expect a simple reason — buyer type, timing, prior response rate.",
+        3: "Expect a real tradeoff — what they gave up by choosing this play over another.",
+        4: "Expect a considered decision with team or territory-level consequences.",
     },
     "objection_handling_theoretical": {
-        "fresher":     "A practice or roleplay objection counts if a real client one isn't available.",
-        "mid":         "Expect a real client objection with a real response.",
-        "experienced": "Expect a hard objection (competitor, budget cut, exec pushback) handled with real skill.",
-        "senior":      "Expect a high-stakes objection at the executive or contract-negotiation level.",
+        1: "A practice or roleplay objection counts if a real client one isn't available.",
+        2: "Expect a real client objection with a real response.",
+        3: "Expect a hard objection (competitor, budget cut, exec pushback) handled with real skill.",
+        4: "Expect a high-stakes objection at the executive or contract-negotiation level.",
     },
 }
 
@@ -522,7 +523,7 @@ def get_probe_context(
     *,
     signal: str | None,
     signal_reason: str | None,
-    band: str,
+    level: int,
     topic_follow_ups: int,
     topic_denied: bool,
     prev_answer: str,
@@ -594,9 +595,9 @@ def get_probe_context(
     lines.append(f"VOICE: {probe['voice_note']}")
     lines.append(get_reaction_hint(signal, prev_answer))
 
-    _band_note = _BAND_OVERLAYS.get(signal or "", {}).get(band)
-    if _band_note:
-        lines.append(f"BAND ({band}): {_band_note}")
+    _level_note = _LEVEL_OVERLAYS.get(signal or "", {}).get(level)
+    if _level_note:
+        lines.append(f"LEVEL ({level}): {_level_note}")
 
     if topic_follow_ups <= 1:
         lines += [

@@ -69,7 +69,7 @@ class DemoTopicItem(BaseModel):
     tag: str = "JD_TOPIC"
     topic_type: str = "skill"
     tech_stack: list[str] = Field(default_factory=list)
-    probe_focus: list[str] = Field(default_factory=list)   # exactly 3 items
+    probe_focus: str = ""   # 2-3 sentence probing paragraph, matches interview.tech.brief.TopicItem
     probe_avoid: list[str] = Field(default_factory=list)
     importance: str = "HIGH"
     # "dsa" | "oops" | "system_design" | "jd_skill" | "behavioral" | "judgment"
@@ -106,7 +106,7 @@ class DemoBrief(BaseModel):
     topic_pool: list[DemoTopicItem] = Field(default_factory=list)
     # Fixed for demo (no resume)
     candidate_summary: str = "Demo interview — role-based assessment, no resume."
-    candidate_band: str = "mid"
+    level: int = 2
     skill_coverage_map: dict = Field(default_factory=dict)
     red_flags: list[str] = Field(default_factory=list)
     role_context: dict = Field(default_factory=dict)
@@ -133,7 +133,8 @@ Rules:
   - Exactly 8 topics total. anchor_topic = single most differentiating technical skill for this role.
   - topic_pool includes anchor first, then the other 7.
   - tag = "JD_TOPIC" on every topic (never RESUME_TOPIC).
-  - probe_focus: exactly 3 strings — (1) mechanism/decision, (2) failure/tradeoff, (3) outcome/approach.
+  - probe_focus: 2-3 sentences of plain English covering (1) a mechanism/decision angle, (2) a
+    failure/tradeoff angle, (3) an outcome/approach angle — never a list of keywords.
   - importance: "CRITICAL" for the 2 most essential, "HIGH" for next 4, "MEDIUM" for remaining 2.
   - topic_category: "dsa" | "oops" | "system_design" | "jd_skill" | "behavioral" | "judgment"
 
@@ -156,7 +157,7 @@ TopicItem schema:
   "tag": "JD_TOPIC",
   "topic_type": "skill",
   "tech_stack": ["<tech if applicable>"],
-  "probe_focus": ["<mechanism/decision>", "<failure/tradeoff>", "<outcome/approach>"],
+  "probe_focus": "<2-3 sentences: mechanism/decision angle, failure/tradeoff angle, outcome/approach angle>",
   "probe_avoid": ["<what not to ask>"],
   "importance": "CRITICAL|HIGH|MEDIUM|LOW",
   "topic_category": "dsa|oops|system_design|jd_skill",
@@ -189,7 +190,8 @@ Rules:
   - topic_pool includes anchor first, then the other 7.
   - tag = "JD_TOPIC" on every topic.
   - tech_stack = [] for all conversational topics.
-  - probe_focus: exactly 3 strings — (1) mechanism/decision, (2) conflict/tradeoff, (3) outcome/approach.
+  - probe_focus: 2-3 sentences of plain English covering (1) a mechanism/decision angle, (2) a
+    conflict/tradeoff angle, (3) an outcome/approach angle — never a list of keywords.
   - importance: "CRITICAL" for the 2 most essential, "HIGH" for next 4, "MEDIUM" for remaining 2.
   - topic_category: "behavioral" | "judgment" | "jd_skill"
 
@@ -212,7 +214,7 @@ TopicItem schema:
   "tag": "JD_TOPIC",
   "topic_type": "skill",
   "tech_stack": [],
-  "probe_focus": ["<mechanism/decision>", "<conflict/tradeoff>", "<outcome/approach>"],
+  "probe_focus": "<2-3 sentences: mechanism/decision angle, conflict/tradeoff angle, outcome/approach angle>",
   "probe_avoid": ["<what not to ask>"],
   "importance": "CRITICAL|HIGH|MEDIUM|LOW",
   "topic_category": "behavioral|judgment|jd_skill",
@@ -298,7 +300,7 @@ async def generate_demo_brief(
 
     # Inject fixed demo fields before validation
     parsed.setdefault("candidate_summary", f"Demo interview: role-based {'technical' if mode_upper == 'TECH' else 'conversational'} assessment for {role_title}.")
-    parsed.setdefault("candidate_band", "mid")
+    parsed.setdefault("level", 2)
     parsed.setdefault("skill_coverage_map", {})
     parsed.setdefault("red_flags", [])
     parsed.setdefault("role_context", {})

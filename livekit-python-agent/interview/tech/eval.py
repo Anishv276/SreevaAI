@@ -23,33 +23,14 @@ logger = logging.getLogger("interview-agent")
 _NO_NEW_QUESTION_CUTOFF_SECONDS: int = 45
 
 # ---------------------------------------------------------------------------
-# Band-aware saturation thresholds
+# Level-aware saturation thresholds -- one threshold per level, every topic
+# held to the same bar (no CRITICAL/HIGH/MEDIUM/LOW importance tiering).
 # ---------------------------------------------------------------------------
-_BAND_SATURATION: dict[str, dict[str, dict]] = {
-    "fresher": {
-        "CRITICAL": {"threshold": 5.5, "base_credit": 1.0},
-        "HIGH":     {"threshold": 5.0, "base_credit": 1.0},
-        "MEDIUM":   {"threshold": 5.0, "base_credit": 1.2},
-        "LOW":      {"threshold": 2.5, "base_credit": 1.4},
-    },
-    "mid": {
-        "CRITICAL": {"threshold": 7.0, "base_credit": 0.8},
-        "HIGH":     {"threshold": 5.5, "base_credit": 0.9},
-        "MEDIUM":   {"threshold": 4.0, "base_credit": 1.0},
-        "LOW":      {"threshold": 3.0, "base_credit": 1.2},
-    },
-    "experienced": {
-        "CRITICAL": {"threshold": 9.0,  "base_credit": 0.7},
-        "HIGH":     {"threshold": 7.0,  "base_credit": 0.8},
-        "MEDIUM":   {"threshold": 5.0,  "base_credit": 0.9},
-        "LOW":      {"threshold": 3.5,  "base_credit": 1.0},
-    },
-    "senior": {
-        "CRITICAL": {"threshold": 11.0, "base_credit": 0.6},
-        "HIGH":     {"threshold": 8.5,  "base_credit": 0.7},
-        "MEDIUM":   {"threshold": 6.0,  "base_credit": 0.8},
-        "LOW":      {"threshold": 4.0,  "base_credit": 0.9},
-    },
+_LEVEL_SATURATION: dict[int, dict]= {
+    1: {"threshold": 5.0, "base_credit": 1.1},
+    2: {"threshold": 5.5, "base_credit": 0.9},
+    3: {"threshold": 7.0, "base_credit": 0.8},
+    4: {"threshold": 8.5, "base_credit": 0.7},
 }
 
 
@@ -135,14 +116,12 @@ class TopicState:
         "definition_confused", "mechanism_incorrect", "distinction_reversed",
     })
 
-    def __init__(self, topic_name: str, importance: str, updated_turn: int = 0, band: str = "mid"):
+    def __init__(self, topic_name: str, updated_turn: int = 0, level: int = 2):
         self.topic_name = topic_name
-        self.importance = importance
-        self.band = band
+        self.level = level
         self.updated_turn = updated_turn
 
-        _band_cfg = _BAND_SATURATION.get(band, _BAND_SATURATION["mid"])
-        _cfg = _band_cfg.get(importance, _band_cfg.get("HIGH", {"threshold": 5.5, "base_credit": 0.8}))
+        _cfg = _LEVEL_SATURATION.get(level, _LEVEL_SATURATION[2])
         self.saturation_threshold: float = _cfg["threshold"]
         self.base_turn_credit: float = _cfg["base_credit"]
 
@@ -465,8 +444,7 @@ class TopicState:
     def to_dict(self) -> dict:
         return {
             "topic_name":          self.topic_name,
-            "importance":          self.importance,
-            "band":                self.band,
+            "level":               self.level,
             "saturation_threshold":self.saturation_threshold,
             "saturation_score":    round(self.saturation_score, 2),
             "follow_up_turns":     self.follow_up_turns,
@@ -491,9 +469,8 @@ class TopicState:
     def from_dict(cls, d: dict) -> "TopicState":
         obj = cls(
             topic_name=str(d.get("topic_name", "")),
-            importance=str(d.get("importance", "HIGH")),
             updated_turn=int(d.get("updated_turn", 0) or 0),
-            band=str(d.get("band", "mid")),
+            level=int(d.get("level", 2) or 2),
         )
         obj.saturation_score    = float(d.get("saturation_score", 0.0) or 0.0)
         obj.follow_up_turns     = int(d.get("follow_up_turns", 0) or 0)
@@ -516,18 +493,6 @@ class TopicState:
         if "base_turn_credit" in d:
             obj.base_turn_credit = float(d["base_turn_credit"])
         return obj
-
-
-class TopicImportanceClassifier:
-    @staticmethod
-    def classify(topic_source: str, is_anchor: bool) -> str:
-        if is_anchor:
-            return "CRITICAL"
-        if topic_source == "resume":
-            return "HIGH"
-        if topic_source == "skill":
-            return "MEDIUM"
-        return "LOW"
 
 
 def _weighted_score(quality: dict) -> float:
@@ -571,13 +536,13 @@ class EvaluationPayload(BaseModel):
     job_title: str = "the role"
     remaining_seconds: float = 999.0
     candidate_name: str = "?"
-    band: str = "mid"
+    level: int = 2
     time_limit_mins: int = 20
     topic_score_history: List[float] = Field(default_factory=list)
     topic_depth_history: List[float] = Field(default_factory=list)
     ai_question_this_turn: str = ""
     topic_tag: str = "RESUME_TOPIC"
-    topic_probe_focus: List[str] = Field(default_factory=list)
+    topic_probe_focus: str = ""
     topic_why_relevant: str = ""
     model_config = {"extra": "allow"}
 
@@ -598,21 +563,16 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     if p.active_topic and p.active_topic_state:
         current_topic_state = TopicState.from_dict(p.active_topic_state)
         logger.info(
-            "[TOPIC_STATE] RESTORED | topic=%s importance=%s | score=%.1f/%.1f follow_ups=%d",
-            current_topic_state.topic_name, current_topic_state.importance,
+            "[TOPIC_STATE] RESTORED | topic=%s | score=%.1f/%.1f follow_ups=%d",
+            current_topic_state.topic_name,
             current_topic_state.saturation_score, current_topic_state.saturation_threshold,
             current_topic_state.follow_up_turns,
         )
     elif p.active_topic:
-        _tag_to_source = {"RESUME_TOPIC": "resume", "JD_TOPIC": "skill", "ROLE_TOPIC": "skill"}
-        importance = TopicImportanceClassifier.classify(
-            topic_source=_tag_to_source.get(p.topic_tag, "resume"),
-            is_anchor=p.active_topic == p.anchor_item,
-        )
-        current_topic_state = TopicState(p.active_topic, importance, updated_turn=p.turn, band=p.band)
+        current_topic_state = TopicState(p.active_topic, updated_turn=p.turn, level=p.level)
         logger.info(
-            "[TOPIC_STATE] CREATED | topic=%s tag=%s importance=%s band=%s | threshold=%.1f",
-            p.active_topic, p.topic_tag, importance, p.band,
+            "[TOPIC_STATE] CREATED | topic=%s tag=%s level=%s | threshold=%.1f",
+            p.active_topic, p.topic_tag, p.level,
             current_topic_state.saturation_threshold,
         )
 
@@ -644,7 +604,6 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         return result
 
     _follow_up_count = (current_topic_state.follow_up_turns + 1) if current_topic_state else 0
-    _topic_importance = current_topic_state.importance if current_topic_state else "HIGH"
     # Part B: the staged signal taxonomy is scoped to whichever rung
     # (definition/mechanism/difference/scenario) the LAST question targeted --
     # current_rung_name() reflects that rung (it's mutated to the NEXT rung
@@ -662,9 +621,8 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             client=client,
             org_id=p.org_id,
             llm_model=p.llm_model,
-            candidate_band=p.band,
             active_topic=p.active_topic or "",
-            topic_importance=_topic_importance,
+            level=p.level,
             topic_tag=p.topic_tag,
             topic_probe_focus=p.topic_probe_focus,
             job_title=p.job_title,
@@ -789,9 +747,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     if is_saturated:
         logger.info("[SAT] SATURATED | score=%.1f >= threshold=%.1f (%.0f%%)", sat_score, sat_threshold, pct_done)
     else:
-        logger.info("[SAT] %.0f%% done | score=%.1f need %.1f more | importance=%s",
-                    pct_done, sat_score, remaining,
-                    current_topic_state.importance if current_topic_state else "?")
+        logger.info("[SAT] %.0f%% done | score=%.1f need %.1f more", pct_done, sat_score, remaining)
 
     # -- Decision (priority order; response signals override saturation) ----
     # Response-shape signals (clarification_request/rephrase_request/off_topic)
@@ -885,7 +841,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         "response_latency_sec":    p.response_latency_sec,
         "question_asked_at_wall_ms": p.question_asked_at_wall_ms,
         "action":                  action,
-        "band":                    p.band,
+        "level":                   p.level,
         "is_saturated":            is_saturated,
         "weak_exit":               _weak_exit,
         "dry_topic":               _dry_topic,

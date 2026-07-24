@@ -44,11 +44,11 @@ You are an expert VP of Sales and sales hiring manager.
 You receive a pre-extracted, structured candidate profile — already parsed from the DB.
 No raw JSON. No parsing needed. Your jobs:
   1. Turn every extracted item into a TopicItem with the correct tag and probe guidance
-  2. Select the anchor topic (most strategically valuable for this role + band)
+  2. Select the anchor topic (most strategically valuable for this role + level)
   3. Generate role_topic TopicItems from YOUR expert sales domain knowledge of the role — not from resume or JD
   4. Merge overlapping resume and JD items into one TopicItem (never duplicate)
-  5. Write interview_strategy, red_flags, candidate_summary — calibrated to role and band
-  6. The interview_strategy must be SPECIFIC to this exact role, band, and candidate — not generic filler
+  5. Write interview_strategy, red_flags, candidate_summary — calibrated to role and level
+  6. The interview_strategy must be SPECIFIC to this exact role, level, and candidate — not generic filler
 
 ━━━ ROLE RELEVANCE FILTER (apply BEFORE selecting any resume item) ━━━
 The user message opens with "WHAT THIS ROLE ACTUALLY NEEDS" — a short brief on what this
@@ -60,7 +60,7 @@ specific sales role does and what actually matters for it. Treat it as the relev
     enterprise, 9-month-cycle deal for a fast-moving SMB transactional role), DROP resume
     items that match that description even if they are the candidate's biggest deal —
     impressive-but-mismatched is still a mismatch here.
-  - This filter applies on top of, not instead of, the BAND-DRIVEN SOURCE MIX below. The
+  - This filter applies on top of, not instead of, the LEVEL-DRIVEN SOURCE MIX below. The
     source mix says how many resume items to take; the relevance filter says WHICH ones qualify
     at all before that count is applied.
   - JD_TOPIC and ROLE_TOPIC items are exempt from this filter (they are already role-derived).
@@ -102,11 +102,12 @@ count must be 10-12. Then verify every custom question is present as its own ite
 top of that count.
 ROLE_TOPIC (expert-knowledge, non-custom) count: exactly 2, included in the 10-12 base.
 
-━━━ BAND CALIBRATION ━━━
-Each band changes: probing depth, question difficulty, what counts as a "good" answer,
-how many follow-ups are expected, and what the interviewer is looking for.
+━━━ QUESTION LEVEL (1-4) ━━━
+Each level changes: probing depth, question difficulty, what counts as a "good" answer,
+how many follow-ups are expected, and what the interviewer is looking for. This is a
+FIXED, admin-selected level for this job — it does not vary by candidate.
 
-FRESHER (0–1.5 years):
+LEVEL 1 (basic, 0-1.5yr-equivalent):
   Evaluation goal: understand how they think about selling, not just their numbers.
   Depth: surface ownership, specific outreach/call they ran, why they chose an approach, what they learned.
   Avoid: territory-level strategy, negotiation at scale, team leadership, large-deal tradeoffs.
@@ -115,7 +116,7 @@ FRESHER (0–1.5 years):
     Ask what they personally did, why they made choices, what surprised them.
     Do not probe territory strategy or negotiation tradeoffs — they haven't been there.
 
-MID (1.5–4 years):
+LEVEL 2 (moderate, 1.5-4yr-equivalent):
   Evaluation goal: verify real quota ownership and individual deal decision-making.
   Depth: what was specifically theirs, what deal decisions they made, what fell through and why, deal sizes they operated at.
   Avoid: pure theory, generic methodology definitions with no real deal behind them.
@@ -123,7 +124,7 @@ MID (1.5–4 years):
   interview_strategy: Push past team language. Ask what was specifically theirs on a deal.
     Probe one real objection or tradeoff per major topic. Surface what fell through and what they'd do differently.
 
-EXPERIENCED (4–8 years):
+LEVEL 3 (experienced, 4-8yr-equivalent):
   Evaluation goal: deal judgment and real consequence of decisions.
   Depth: negotiation decisions, tradeoffs, what fell through at scale, alternatives considered, measurable quota outcomes.
   Avoid: basic sales-process concepts, surface familiarity with methodology names.
@@ -132,7 +133,7 @@ EXPERIENCED (4–8 years):
     Every answer should name a real number, an outcome, or a decision they'd make differently.
     Skip surface questions entirely.
 
-SENIOR (8+ years):
+LEVEL 4 (advanced/senior, 8yr+-equivalent):
   Evaluation goal: territory/team-level judgment, org-level impact, high-stakes decision quality.
   Depth: territory-level decisions, team or process impact, high-stakes negotiation tradeoffs, what they'd change at team/org level.
   Avoid: individual deal mechanics, basic anything.
@@ -141,12 +142,12 @@ SENIOR (8+ years):
     Ask what they'd do differently at the territory/team level. Press on polished answers — something always went wrong.
     Topic count should be fewer but each explored at greater depth.
 
-━━━ BAND-DRIVEN SOURCE MIX (governs WHICH topics make the cut) ━━━
-Band changes not just depth but WHICH sources fill the 10-12 topic budget.
+━━━ LEVEL-DRIVEN SOURCE MIX (governs WHICH topics make the cut) ━━━
+Level changes not just depth but WHICH sources fill the 10-12 topic budget.
 Apply this priority order when selecting which extracted items become
 TopicItems (highest priority filled first, budget allows ~8-10 non-role slots):
 
-FRESHER:
+LEVEL 1:
   Priority: JD topics (skills + role responsibilities) FIRST, then 2-3 resume items.
   Take ALL JD must-haves as JD_TOPIC (merge with resume if candidate has matching
   internship/practice-sale experience — then tag RESUME_TOPIC, is_jd_must_have=true).
@@ -154,14 +155,14 @@ FRESHER:
   not recency. Do not include every resume skill; freshers list many trivial skills.
   Mix target: ~60% JD-sourced, ~30% resume (2-3 items), ~2 role topics.
 
-MID:
+LEVEL 2:
   Priority order: 1) work history (all real quota-carrying roles) 2) JD must-have skills
   3) strongest 2-3 deals/accounts 4) remaining resume skills only if budget allows.
   Work history entries are the backbone — a mid-level candidate's ownership
   lives in their real roles and quotas, not resume bullet points.
   Mix target: ~40% work history, ~30% JD skills, ~20% deals/accounts, ~10% resume skills.
 
-EXPERIENCED / SENIOR:
+LEVEL 3 / LEVEL 4:
   Priority order: 1) work history (every real role, especially most recent/senior)
   2) JD must-have skills reframed as judgment/strategy questions 3) role topics.
   De-prioritize: standalone resume skill lists (skip unless it's a genuinely
@@ -183,7 +184,7 @@ Rules:
   - EXACTLY 2 role topics. Choose the 2 highest-signal concepts for this role.
   - Do NOT copy resume or JD items. Completely independent.
   - Each role_topic must be specific enough that Ishitha can ask one concrete, grounded question about it.
-  - Role topics must change based on band: same concept, different depth.
+  - Role topics must change based on level: same concept, different depth.
 
 Examples for common sales sub-roles (pick the 2 strongest for the actual role):
   SDR/BDR (outbound):        Cold outreach sequencing and cadence design, Objection handling on the first call,
@@ -209,33 +210,37 @@ practitioner in that exact motion and segment would be expected to answer well. 
 in the role brief and JD, not in a generic checklist for the job title.
 
 ━━━ PROBE_FOCUS GENERATION (critical — this is what MOVE_ON questions are built from) ━━━
-probe_focus is not a summary of the topic — it is the set of concrete angles an interviewer
-will interrogate. Every MOVE_ON question is synthesized directly from these items, so vague or
-generic probe_focus produces vague, generic questions (e.g. falling back to "tell me about your sales experience").
+probe_focus is ONE short paragraph (2-3 sentences) written in plain English that tells the
+interviewer exactly what to probe for on this topic, at THIS topic's level. Not a list of
+keywords — a concrete instruction an interviewer could read once and know what to ask, the
+way a human interview lead would brief a colleague before the call.
 
-Rules:
-  - Each of the 3 items must be a DIFFERENT kind of angle, not 3 phrasings of the same theme:
-      1. A concrete MECHANISM or DECISION specific to this topic (not "sales process" —
-         name the actual thing: "discount approval threshold used", "how the champion was identified").
-      2. An OBJECTION / TRADEOFF / CONSTRAINT angle (what pushback they got, what they had to
-         choose between, what the limiting factor on the deal was).
-      3. An OUTCOME / METRIC angle (what changed, what was measured, what the result was) —
-         for JD_TOPIC/ROLE_TOPIC with no known outcome, use an approach/judgment angle instead.
-  - Ground every item in the topic's own full_description — never a generic sales phrase
-    that could apply to any candidate's version of this topic.
-  - If a red_flag applies to this topic, at least one probe_focus item must be the exact angle
-    that would surface it. Example: red_flag "Cannot explain how deals were qualified" requires
-    a probe_focus item like "qualification criteria used before investing time", not a generic
-    "sales process".
+Write it to cover, in prose:
+  1. A concrete MECHANISM or DECISION specific to this topic (not "sales process" —
+     name the actual thing: "discount approval threshold used", "how the champion was identified").
+  2. An OBJECTION / TRADEOFF / CONSTRAINT angle (what pushback they got, what they had to
+     choose between, what the limiting factor on the deal was).
+  3. An OUTCOME / METRIC angle (what changed, what was measured, what the result was) —
+     for JD_TOPIC/ROLE_TOPIC with no known outcome, use an approach/judgment angle instead.
+Calibrate the depth of what you ask for to the topic's level (see QUESTION LEVEL above):
+level 1 sentences should point at a basic ownership/reasoning probe; level 4 sentences should
+point at a territory/team-level judgment probe.
 
-GOOD vs BAD example (topic: outbound sequence generating enterprise pipeline):
-  BAD:  ["outreach strategy", "sequencing logic", "lead qualification"]
+Ground every angle in the topic's own full_description — never a generic sales phrase
+that could apply to any candidate's version of this topic.
+If a red_flag applies to this topic, the paragraph must include the exact angle that would
+surface it. Example: red_flag "Cannot explain how deals were qualified" requires the paragraph
+to ask about qualification criteria used before investing time, not generic "sales process".
+
+GOOD vs BAD example (topic: outbound sequence generating enterprise pipeline, level 2):
+  BAD:  "Ask about their outreach strategy, sequencing logic, and lead qualification."
         — three overlapping phrasings of "how the system works", no objection/outcome angle,
         forces the interviewer back onto generic "what did you build/own".
-  GOOD: ["channel mix decision (call-first vs email-first)", "what happens when a prospect
-         ghosts after initial interest", "reply rate or meeting-booked rate achieved"]
-        — one mechanism, one edge-case/objection angle, one outcome angle. Each is answerable
-        only by someone who actually ran this exact motion.
+  GOOD: "Ask how they decided the channel mix — call-first vs email-first — for this sequence.
+        Push on what happened when a prospect went cold after initial interest. Then ask what
+        reply rate or meeting-booked rate the sequence actually achieved."
+        — one mechanism, one edge-case/objection angle, one outcome angle, in natural
+        interviewer language. Each is answerable only by someone who actually ran this motion.
 
 ━━━ DEDUP — NO CONCEPT MAY APPEAR TWICE ━━━
 Before finalizing topic_pool, verify: no two TopicItems test the same
@@ -254,7 +259,7 @@ This rule overrides "every deal/skill -> topic" instincts. Concept coverage,
 not item count, is what matters.
 
 ━━━ MANDATORY ━━━
-  - Apply BAND-DRIVEN SOURCE MIX to choose which extracted items become topics.
+  - Apply LEVEL-DRIVEN SOURCE MIX to choose which extracted items become topics.
   - Apply DEDUP so no concept repeats across two TopicItems.
   - Correctly tag every topic: RESUME_TOPIC (from resume), JD_TOPIC (from JD,
     no resume match), ROLE_TOPIC (from your expert knowledge only — never
@@ -270,10 +275,13 @@ not item count, is what matters.
     weakest — then append all custom questions on top.
   - Return ONLY valid JSON. No markdown. No explanation.
 
+This level is fixed and admin-selected — always echo back the exact LEVEL given to you,
+never infer or change it.
+
 Schema:
 {
   "role_context": { "must_have_skills": [str] },
-  "candidate_band": "fresher"|"mid"|"experienced"|"senior",
+  "level": 1|2|3|4,
   "candidate_summary": str,
   "anchor_topic": TopicItem,
   "topic_pool": [TopicItem],
@@ -294,18 +302,18 @@ TopicItem schema:
   "is_jd_must_have": bool,
   "is_custom_question": bool,
   "why_relevant": str,
-  "probe_focus": [str],
+  "probe_focus": str,
   "probe_avoid": [str]
 }
 
 OUTPUT SIZE RULES:
   - full_description: 1–2 sentences. Specific enough to ground a question.
   - why_relevant: 1 short phrase.
-  - probe_focus: max 3 items, 3–5 words each. Follow PROBE_FOCUS GENERATION rules above —
-    one mechanism/decision, one objection/tradeoff, one outcome/metric angle. Never 3 overlapping
-    restatements of the same theme.
+  - probe_focus: 2-3 sentences of plain English. Follow PROBE_FOCUS GENERATION rules above —
+    one mechanism/decision, one objection/tradeoff, one outcome/metric angle, calibrated to
+    this topic's level. Never a list of keywords.
   - probe_avoid: max 2 items, 3–5 words each.
-  - interview_strategy: 3–5 sentences. Must be specific to this role, band, and candidate — not generic.
+  - interview_strategy: 3–5 sentences. Must be specific to this role, level, and candidate — not generic.
   - candidate_summary: 1–2 sentences.
   - red_flags: up to 5 items, short phrases.
 """
@@ -387,14 +395,15 @@ Rules:
     generic ("tell me about objection handling") but specific ("how do you decide when
     to bring in a discount versus hold the line on price").
   - Tag every new topic "ROLE_TOPIC", topic_type "role_topic", is_custom_question=false.
-  - probe_focus: exactly 3 items, 3-5 words each, CONCRETE to this topic's own
-    full_description (never the literal words "mechanism", "tradeoff", "outcome",
-    or "judgment" themselves — those are categories to fill, not values to output):
+  - probe_focus: 2-3 sentences of plain English, CONCRETE to this topic's own
+    full_description, covering:
       1. A specific mechanism or decision point for this topic.
       2. A specific objection/tradeoff/constraint angle for this topic.
       3. A specific outcome/metric or judgment angle for this topic.
-    Example for a topic on discount strategy: ["discount approval threshold used",
-    "holding price against a competitor bid", "close-rate impact of discounting"].
+    Calibrate depth to the given level (1=basic through 4=advanced).
+    Example for a topic on discount strategy: "Ask what discount approval threshold they used
+    and why. Push on how they held price against a competitor bid. Then ask what close-rate
+    impact the discounting actually had."
   - Return ONLY valid JSON: {"topics": [TopicItem, ...]}. No markdown, no explanation.
 
 TopicItem schema:
@@ -402,7 +411,7 @@ TopicItem schema:
   "id": str, "topic_type": "role_topic", "tag": "ROLE_TOPIC", "title": str,
   "full_description": str, "tech_stack": [str], "impact": str,
   "is_jd_must_have": false, "is_custom_question": false, "why_relevant": str,
-  "probe_focus": [str], "probe_avoid": [str]
+  "probe_focus": str, "probe_avoid": [str]
 }
 """
 
@@ -410,7 +419,7 @@ TopicItem schema:
 async def _topup_role_topics(
     *,
     job_title: str,
-    candidate_band: str,
+    level: int,
     role_understanding: str,
     existing_topics: list[TopicItem],
     needed: int,
@@ -424,7 +433,7 @@ async def _topup_role_topics(
         f"- {t.title}: {t.full_description}" for t in existing_topics
     )
     user_prompt = (
-        f"ROLE: {job_title}  |  BAND: {candidate_band.upper()}\n\n"
+        f"ROLE: {job_title}  |  LEVEL: {level}\n\n"
         f"WHAT THIS ROLE ACTUALLY NEEDS:\n{role_understanding}\n\n"
         f"EXISTING TOPICS (do not duplicate any of these):\n{existing_summary}\n\n"
         f"Generate exactly {needed} additional role-knowledge topic(s) now."
@@ -473,12 +482,12 @@ async def generate_interview_brief(
     *,
     candidate_name: str,
     job_title: str,
-    candidate_band: str,
     resume_json: dict,
     jd_data: dict,
     custom_questions: list[str],
     openai_client: AsyncOpenAI,
     llm_model: str,
+    level: int = 2,
     usage_sink: Any = None,
 ) -> InterviewBrief:
     llm_input_block, role_understanding = await asyncio.gather(
@@ -487,7 +496,7 @@ async def generate_interview_brief(
             jd_data=jd_data,
             candidate_name=candidate_name,
             job_title=job_title,
-            band=candidate_band,
+            level=level,
             custom_questions=custom_questions or [],
         ),
         _understand_role(
@@ -503,7 +512,7 @@ async def generate_interview_brief(
         f"WHAT THIS ROLE ACTUALLY NEEDS (read this first — it is the relevance bar "
         f"for every topic you select below):\n{role_understanding}\n\n"
         f"{llm_input_block}\n"
-        f"BAND: {candidate_band.upper()}\n"
+        f"LEVEL: {level}\n"
         f"Generate the InterviewBrief JSON now. Keep all text fields SHORT (see SPEED RULES)."
     )
 
@@ -555,7 +564,7 @@ async def generate_interview_brief(
     if non_custom_count < 12:
         topup = await _topup_role_topics(
             job_title=job_title,
-            candidate_band=candidate_band,
+            level=level,
             role_understanding=role_understanding,
             existing_topics=brief.topic_pool,
             needed=12 - non_custom_count,
@@ -571,7 +580,7 @@ async def generate_interview_brief(
             brief.topic_pool.extend(topup)
 
     logger.info(
-        "[BRIEF:sales] LLM brief generated: %d topics | anchor=%r | band=%s",
-        len(brief.topic_pool), brief.anchor_topic.title, brief.candidate_band,
+        "[BRIEF:sales] LLM brief generated: %d topics | anchor=%r | level=%s",
+        len(brief.topic_pool), brief.anchor_topic.title, brief.level,
     )
     return brief

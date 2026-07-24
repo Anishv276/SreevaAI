@@ -393,17 +393,30 @@ async def _call_scoring(
     client: Any,
     llm_model: str,
     org_id: str,
-    candidate_band: str,
     active_topic: str,
-    topic_importance: str,
+    level: int,
     topic_tag: str,
-    topic_probe_focus: list | None,
+    topic_probe_focus: str | None,
     job_title: str,
 ) -> tuple[dict, dict]:
     """
     Call 1 — quality scoring only (no signal logic).
     Returns (parsed_data_dict, llm_usage_dict).
     """
+    _level_bar = {
+        1: "This is a LEVEL 1 (basic) question. Grade for genuine understanding of "
+           "fundamentals, not polish. A simple, honest, correct answer with one real "
+           "reason behind it deserves a high score even without tradeoffs or scale context.",
+        2: "This is a LEVEL 2 (moderate) question. Expect real working knowledge, not just "
+           "textbook recall. A generic, no-reasoning answer should be capped well below the top.",
+        3: "This is a LEVEL 3 (experienced) question. Expect applied depth: a real tradeoff, "
+           "constraint, or judgment call behind the answer. A single-reason, no-tradeoff answer "
+           "should be capped in the middle of the range, not the top.",
+        4: "This is a LEVEL 4 (advanced/senior) question. Expect strategic judgment — why this "
+           "over the alternatives, second-order thinking, awareness of failure modes at scale. "
+           "A textbook-correct but shallow answer should be capped well below the top.",
+    }.get(level, "Grade for genuine understanding, not polish.")
+
     def _build_scoring_system_prompt() -> str:
         ctx = (
             "You are an experienced interviewer scoring a candidate's answer.\n"
@@ -433,11 +446,11 @@ async def _call_scoring(
             "unsure or the answer isn't exhaustive. An answer with 2 of 3 correct sub-elements scores\n"
             "meaningfully higher than one with 0 or 1, even though neither is a 'complete' answer. Never\n"
             "round an uncertain case down to a generic default penalty — score exactly what is present.\n\n"
-            f"Role: {job_title or 'not specified'} | Topic: {active_topic or 'general'}"
-            f" | Tag: {topic_tag} | Importance: {topic_importance}\n"
+            f"Role: {job_title or 'not specified'} | Topic: {active_topic or 'general'} | Tag: {topic_tag}\n"
+            f"{_level_bar}\n"
         )
         if topic_probe_focus:
-            ctx += f"Probe focus: {', '.join(topic_probe_focus)}\n"
+            ctx += f"Probe focus: {topic_probe_focus}\n"
         ctx += (
             "Tag context: RESUME_TOPIC = they claimed this experience, hold them to it. "
             "JD_TOPIC = they may be learning, credit honest partial exposure. "
@@ -482,9 +495,7 @@ async def _call_scoring(
             "A polished answer to the wrong question scores low. A rough answer to the right question scores high.\n"
             "Low (0-4): off-topic, tangent, or answered a related but different question.\n"
             "Mid (5-6): addressed the question but missed part of the intent or drifted.\n"
-            "High (7-10): directly answered what was asked. You got what you needed.\n"
-            f"{'FRESHER: forgive nervousness and rambling — did they try to answer it? ' if candidate_band == 'fresher' else ''}"
-            f"{'SENIOR/EXPERIENCED: precision expected. Tangents and pivots lower the score. ' if candidate_band in ('senior', 'experienced') else ''}\n\n"
+            "High (7-10): directly answered what was asked. You got what you needed.\n\n"
 
             "── DEPTH (35%) ────────────────────────────────\n"
             "Did they explain the HOW and WHY — or just describe the WHAT?\n"
@@ -494,11 +505,8 @@ async def _call_scoring(
             "Low (0-4): described what happened, no reasoning behind it.\n"
             "Mid (5-6): gave a real reason for a choice but it's thin — one layer, no constraint or tradeoff behind it.\n"
             "High (7-10): explained a real decision AND why that decision made sense given their specific situation. "
-            "The best answers show a cause-effect chain — what they tried, what happened, why they adjusted.\n"
-            f"{'FRESHER: a simple genuine reason counts. One honest WHY = 5+. No tradeoffs expected.' if candidate_band == 'fresher' else ''}"
-            f"{'MID: expect at least one real constraint or tradeoff behind a decision. Generic reasoning = 4 max.' if candidate_band == 'mid' else ''}"
-            f"{'EXPERIENCED: expect competing options considered and a real tradeoff explained. Single-reason answers = 5 max.' if candidate_band == 'experienced' else ''}"
-            f"{'SENIOR: expect strategic judgment — why this over alternatives, second-order thinking. No tradeoff = 6 max.' if candidate_band == 'senior' else ''}\n\n"
+            "The best answers show a cause-effect chain — what they tried, what happened, why they adjusted. "
+            "Expect at least one real constraint or tradeoff behind a decision — generic reasoning caps at 4.\n\n"
 
             "── SPECIFICITY (20%) ──────────────────────────\n"
             "Did they give you operational detail that could only exist if they actually did this work?\n"
@@ -510,10 +518,8 @@ async def _call_scoring(
             "'I usually handle X type of client' = pattern, not specificity.\n"
             "Low (0-4): generic — anyone who read one article could say this.\n"
             "Mid (5-6): one real operational detail that required being there.\n"
-            "High (7-10): multiple real details that together make the work traceable to a real event, not a type of event.\n"
-            f"{'FRESHER: any real operational detail counts, even small-scale internship numbers.' if candidate_band == 'fresher' else ''}"
-            f"{'MID: expect at least one real number or constraint. Vague operational language = 4 max.' if candidate_band == 'mid' else ''}"
-            f"{'EXPERIENCED/SENIOR: expect real scale and multiple concrete details. Generic descriptions = 3 max.' if candidate_band in ('experienced', 'senior') else ''}\n\n"
+            "High (7-10): multiple real details that together make the work traceable to a real event, not a type of event. "
+            "Expect at least one real number or constraint — vague operational language caps at 4.\n\n"
 
             "── GROUNDING (25%) ────────────────────────────\n"
             "Does this answer sound like someone who was there — or someone describing what being there is supposed to sound like?\n"
@@ -530,11 +536,8 @@ async def _call_scoring(
             "Low (0-4): plausible but hollow. Reads like a description of the work, not a memory of doing it.\n"
             "Mid (5-6): at least one grounding signal — a real result, a real friction point, a real constraint.\n"
             "High (7-10): the story has texture. Something was hard or imperfect or specific to their situation. "
-            "You believe this person was actually there.\n"
-            f"{'FRESHER: a real outcome from a student project or internship counts. A failure they learned from = 6+. No org texture expected.' if candidate_band == 'fresher' else ''}"
-            f"{'MID: expect at least one friction point or specific outcome. Clean perfect narrative = 4 max.' if candidate_band == 'mid' else ''}"
-            f"{'EXPERIENCED: expect organisational texture and real constraints. Smooth polished story with no friction = 4 max.' if candidate_band == 'experienced' else ''}"
-            f"{'SENIOR: expect reflection or judgment under uncertainty. A perfect linear story with no tradeoff = 3 max.' if candidate_band == 'senior' else ''}\n\n"
+            "You believe this person was actually there. Expect at least one friction point or specific "
+            "outcome — a clean, perfect narrative with no friction caps at 4.\n\n"
         )
         return ctx
 
@@ -561,8 +564,7 @@ async def _call_scoring(
             store=True,
             metadata={
                 "call_type": "eval_scoring",
-                "band": candidate_band,
-                "topic_importance": topic_importance,
+                "level": level,
                 "org_id": org_id or "",
             },
         ),
@@ -593,7 +595,6 @@ async def _call_signal_classification(
     llm_model: str,
     org_id: str,
     active_topic: str,
-    topic_importance: str,
     topic_tag: str,
     active_stage: str = "definition",
 ) -> tuple[str | None, str | None, str | None, dict]:
@@ -624,7 +625,7 @@ async def _call_signal_classification(
             "signal MUST be exactly one of the response-shape or stage signal names below. NEVER null.\n"
             "cross_cutting_signal is OPTIONAL -- use null if none clearly applies. Never put a\n"
             "response-shape or stage signal name in cross_cutting_signal.\n"
-            f"Topic: {active_topic or 'general'} | Tag: {topic_tag} | Importance: {topic_importance}\n\n"
+            f"Topic: {active_topic or 'general'} | Tag: {topic_tag}\n\n"
             + _build_response_shape_gate_block()
             + "\n\n"
             + _build_stage_signal_prompt_block(active_stage)
@@ -649,7 +650,6 @@ async def _call_signal_classification(
             store=True,
             metadata={
                 "call_type": "eval_signal",
-                "topic_importance": topic_importance,
                 "org_id": org_id or "",
             },
         ),
@@ -700,11 +700,10 @@ async def evaluate_answer(
     llm_model: str,
     org_id: Optional[str] = None,
     is_warmup: bool = False,
-    candidate_band: str = "mid",
     active_topic: str = "",
-    topic_importance: str = "HIGH",
+    level: int = 2,
     topic_tag: str = "RESUME_TOPIC",
-    topic_probe_focus: list | None = None,
+    topic_probe_focus: str | None = None,
     job_title: str = "",
     active_stage: str = "definition",
 ) -> dict:
@@ -766,7 +765,6 @@ async def evaluate_answer(
         llm_model=llm_model,
         org_id=org_id or "",
         active_topic=active_topic,
-        topic_importance=topic_importance,
         topic_tag=topic_tag,
     )
 
@@ -776,8 +774,8 @@ async def evaluate_answer(
             await asyncio.gather(
                 _call_scoring(
                     **_common_kwargs,
+                    level=level,
                     topic_follow_up_count=topic_follow_up_count,
-                    candidate_band=candidate_band,
                     topic_probe_focus=topic_probe_focus,
                     job_title=job_title,
                 ),

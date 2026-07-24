@@ -7,7 +7,7 @@ Architecture:
   - Pydantic models  : typed I/O contracts at every stage boundary
   - OOP              : BriefRepository (DB), BriefPipeline (orchestrator)
   - LangGraph        : 4-node pipeline
-        fetch_data → classify_band → generate_llm_brief → persist_brief
+        fetch_data → set_level → generate_llm_brief → persist_brief
   - DSA              : deduplication via ordered set (dict-as-ordered-set pattern)
 
 This script is ONLY called for real candidates who booked a slot.
@@ -44,7 +44,6 @@ _repo_root = Path(__file__).resolve().parents[1]
 if str(_repo_root) not in sys.path:
     sys.path.insert(0, str(_repo_root))
 
-from interview.band_classifier import classify_band
 from interview.interview_brief import InterviewBrief
 from billing.billing import record_manual_usage, flush_billing, BillingRepository
 
@@ -76,7 +75,7 @@ class ApplicationRow(BaseModel):
     orgId: Optional[str] = None
     llmInterviewBrief: Optional[str] = None
     interviewType: Optional[str] = None
-    questionBand: Optional[str] = None
+    level: Optional[int] = None
 
     @model_validator(mode="after")
     def _resolve_job_title(self) -> "ApplicationRow":
@@ -101,12 +100,11 @@ class ApplicationRow(BaseModel):
         return self.interviewType if self.interviewType == "conversational" else "tech"
 
     @property
-    def admin_question_band(self) -> str:
-        """Admin-selected band for tech interviews. Mandatory at JD upload time;
-        'mid' is only a defensive fallback for rows created before this field
-        existed. Not used for conversational interviews."""
-        band = str(self.questionBand or "").strip().lower()
-        return band if band in ("fresher", "mid", "senior") else "mid"
+    def admin_level(self) -> int:
+        """Admin-selected level (1-4), for BOTH tech and conversational
+        interviews. Mandatory at JD creation time; 2 is only a defensive
+        fallback for rows created before this field existed."""
+        return int(self.level) if self.level in (1, 2, 3, 4) else 2
 
     @property
     def resume_json(self) -> dict:
@@ -137,7 +135,7 @@ class BriefWorkerResult(BaseModel):
     success: bool
     applicationId: str
     elapsed_sec: float = 0.0
-    band: Optional[str] = None
+    level: Optional[int] = None
     anchor: Optional[str] = None
     topics: int = 0
     error: Optional[str] = None
@@ -151,9 +149,8 @@ class BriefWorkerState(TypedDict):
     application_id: str
     # fetch_data output
     row: Optional[ApplicationRow]
-    # classify_band output
-    band_seed: str
-    total_years: float
+    # set_level output
+    level: int
     # generate_llm_brief output
     brief: Optional[InterviewBrief]
     # timing
@@ -187,7 +184,7 @@ class BriefRepository:
         d."aiGeneratedInterviewQuestions"           AS "interviewQuestions",
         d."organizationId"                          AS "orgId",
         d."interviewType",
-        d."questionBand",
+        d."level",
         o."llmInterviewBrief"
     FROM "Application" a
     JOIN "Job" d ON a."jobId" = d.id
@@ -238,7 +235,7 @@ class BriefPipeline:
     """Builds and runs the 4-node LangGraph brief-generation pipeline.
 
     Graph topology:
-        fetch_data → classify_band → generate_llm_brief → persist_brief → END
+        fetch_data → set_level → generate_llm_brief → persist_brief → END
 
     Each node is a pure function that receives the full state dict and returns
     a partial update. LangGraph merges the partial updates into the state
@@ -273,32 +270,24 @@ class BriefPipeline:
         )
         return {"row": row, "t_fetch_done": time.perf_counter()}
 
-    def _node_classify_band(self, state: BriefWorkerState) -> dict:
-        """Node 2: Determine the interview band.
+    def _node_set_level(self, state: BriefWorkerState) -> dict:
+        """Node 2: Read the admin-selected level from the Job row.
 
-        Tech interviews use the admin-selected questionBand from the Job row
-        (mandatory at JD upload time) -- never the resume. Conversational
-        interviews keep the resume-derived classify_band() as before."""
+        Level is fixed and admin-selected at JD creation time, for BOTH tech
+        and conversational interviews -- never inferred from the resume."""
         if state.get("error"):
             return {}
         row: ApplicationRow = state["row"]
-        if row.interview_type == "tech":
-            band_seed = row.admin_question_band
-            logger.info("[NODE:classify_band] tech interview -- admin band=%s", band_seed)
-            return {"band_seed": band_seed, "total_years": 0.0}
-        band_seed, total_years, seniority = classify_band(row.resume_json)
-        logger.info(
-            "[NODE:classify_band] band=%s | total_years=%.1f | seniority=%s",
-            band_seed, total_years, seniority or "unknown",
-        )
-        return {"band_seed": band_seed, "total_years": total_years}
+        level = row.admin_level
+        logger.info("[NODE:set_level] admin level=%s", level)
+        return {"level": level}
 
     async def _node_generate_llm_brief(self, state: BriefWorkerState) -> dict:
         """Node 3: The LLM call — generate_interview_brief (~40s)."""
         if state.get("error"):
             return {}
         row: ApplicationRow = state["row"]
-        band_seed: str = state["band_seed"]
+        level: int = state["level"]
         llm_model = row.llm_model
         logger.info(
             "[NODE:generate_llm_brief] started | model=%s | candidate=%s | role=%s | interview_type=%s",
@@ -317,7 +306,7 @@ class BriefPipeline:
         brief = await _generate_interview_brief(
             candidate_name=row.fullName,
             job_title=row.job_title,
-            candidate_band=band_seed,
+            level=level,
             resume_json=row.resume_json,
             jd_data=row.jd_data,
             custom_questions=row.custom_questions,
@@ -350,9 +339,9 @@ class BriefPipeline:
             )
         elapsed = round(time.perf_counter() - t0, 1)
         logger.info(
-            "[NODE:generate_llm_brief] done | elapsed=%.1fs | band=%s | anchor=%r | topics=%d",
+            "[NODE:generate_llm_brief] done | elapsed=%.1fs | level=%s | anchor=%r | topics=%d",
             elapsed,
-            brief.candidate_band,
+            brief.level,
             brief.anchor_topic.title,
             len(brief.topic_pool),
         )
@@ -386,7 +375,7 @@ class BriefPipeline:
     def _build_graph(self) -> Any:
         """Build the sequential 4-node LangGraph.
 
-        fetch_data → classify_band → generate_llm_brief → persist_brief → END
+        fetch_data → set_level → generate_llm_brief → persist_brief → END
 
         Sequential (not parallel) because each node depends on the output
         of the previous one.
@@ -394,13 +383,13 @@ class BriefPipeline:
         g: StateGraph = StateGraph(BriefWorkerState)
 
         g.add_node("fetch_data",          self._node_fetch_data)
-        g.add_node("classify_band",       self._node_classify_band)
+        g.add_node("set_level",           self._node_set_level)
         g.add_node("generate_llm_brief",  self._node_generate_llm_brief)
         g.add_node("persist_brief",       self._node_persist_brief)
 
         g.add_edge(START,                "fetch_data")
-        g.add_edge("fetch_data",         "classify_band")
-        g.add_edge("classify_band",      "generate_llm_brief")
+        g.add_edge("fetch_data",         "set_level")
+        g.add_edge("set_level",          "generate_llm_brief")
         g.add_edge("generate_llm_brief", "persist_brief")
         g.add_edge("persist_brief",      END)
 
@@ -412,8 +401,7 @@ class BriefPipeline:
         initial: BriefWorkerState = {
             "application_id": application_id,
             "row": None,
-            "band_seed": "mid",
-            "total_years": 0.0,
+            "level": 2,
             "brief": None,
             "t_start": t_start,
             "t_fetch_done": 0.0,
@@ -447,7 +435,7 @@ class BriefPipeline:
             success=True,
             applicationId=application_id,
             elapsed_sec=elapsed,
-            band=brief.candidate_band,
+            level=brief.level,
             anchor=brief.anchor_topic.title,
             topics=len(brief.topic_pool),
         )
@@ -560,8 +548,8 @@ def main() -> None:
     # Output minimal JSON so the Node.js worker can log confirmation
     print(result.model_dump_json())
     logger.info(
-        "[DONE] applicationId=%s | elapsed=%.1fs | band=%s | anchor=%r | topics=%d",
-        result.applicationId, result.elapsed_sec, result.band, result.anchor, result.topics,
+        "[DONE] applicationId=%s | elapsed=%.1fs | level=%s | anchor=%r | topics=%d",
+        result.applicationId, result.elapsed_sec, result.level, result.anchor, result.topics,
     )
 
 

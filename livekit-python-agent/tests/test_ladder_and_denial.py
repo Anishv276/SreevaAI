@@ -34,13 +34,13 @@ import collections
 # PROBLEM 1: ladder lock -- no MOVE_ON until the ladder is exhausted
 # ---------------------------------------------------------------------------
 def test_ladder_starts_at_definition_and_is_incomplete_initially():
-    ts = TopicState("Python", "CRITICAL", band="mid")
+    ts = TopicState("Python", level=2)
     assert ts.current_rung_name() == "definition"
     assert not ts.is_ladder_complete()
 
 
 def test_ladder_must_cover_all_four_rungs_before_completion():
-    ts = TopicState("Python", "CRITICAL", band="mid")
+    ts = TopicState("Python", level=2)
     # Strong answers each turn -- ladder advances one rung per turn, never skips,
     # and only advances into "scenario" once the conceptual gate clears (all
     # answers here are strong, so it clears immediately).
@@ -63,7 +63,7 @@ def test_topic_cannot_saturate_and_exit_before_ladder_complete():
     # leave the topic while the ladder still has unasked rungs -- this is the
     # actual bug behind "6 different sub-domains in one interview, none
     # completed as a ladder": saturation used to be the ONLY gate on MOVE_ON.
-    ts = TopicState("Python", "CRITICAL", band="fresher")  # low threshold band
+    ts = TopicState("Python", level=1)  # low threshold level
     ts.add_contribution(weighted=10.0, signal="definition_correct", turn=1)
     ts.add_contribution(weighted=10.0, signal="mechanism_correct", turn=2)
     assert ts.is_saturated  # saturation alone says "done" after 2 strong turns
@@ -74,7 +74,7 @@ def test_topic_cannot_saturate_and_exit_before_ladder_complete():
 # PROBLEM 2: denial steps DOWN, never up; 2 consecutive denials close the skill
 # ---------------------------------------------------------------------------
 def test_denial_steps_ladder_down_not_up():
-    ts = TopicState("NLP Embeddings", "HIGH", band="mid")
+    ts = TopicState("NLP Embeddings", level=2)
     # Advance to 'difference' first via 2 strong answers.
     ts.add_contribution(weighted=8.0, signal="definition_correct", turn=1)
     ts.add_contribution(weighted=8.0, signal="mechanism_correct", turn=2)
@@ -85,7 +85,7 @@ def test_denial_steps_ladder_down_not_up():
 
 
 def test_two_consecutive_denials_close_the_skill():
-    ts = TopicState("Vector DB nearest-neighbor search", "MEDIUM", band="mid")
+    ts = TopicState("Vector DB nearest-neighbor search", level=2)
     ts.add_contribution(weighted=0.0, signal="definition_absent", turn=1)
     assert not ts.should_exit_on_denials()
     assert not ts.closed_on_denials
@@ -102,7 +102,7 @@ def test_cross_cutting_pure_denial_also_counts_toward_the_denial_cap():
     # signal in the *_absent tier and cross-cutting pure_denial both belong to
     # the SAME denial tier (TopicState._DENIAL_SIGNALS), so either should
     # count toward the 2-strike cap.
-    ts = TopicState("Vector DB nearest-neighbor search", "MEDIUM", band="mid")
+    ts = TopicState("Vector DB nearest-neighbor search", level=2)
     ts.add_contribution(weighted=0.0, signal="pure_denial", turn=1)
     ts.add_contribution(weighted=0.0, signal="mechanism_absent", turn=2)
     assert ts.should_exit_on_denials()
@@ -113,14 +113,14 @@ def test_single_denial_does_not_close_the_skill():
     # Regression guard: PROBLEM 2 says the ticket's five separate denial points
     # (4:18, 5:57, 6:21, 7:56, 10:17) were each followed by a HARDER question --
     # a single denial must step down and stay on the SAME skill, not force exit.
-    ts = TopicState("Transformer attention", "HIGH", band="mid")
+    ts = TopicState("Transformer attention", level=2)
     ts.add_contribution(weighted=0.0, signal="definition_absent", turn=1)
     assert not ts.is_ladder_complete()
     assert not ts.closed_on_denials
 
 
 def test_denial_rung_never_goes_below_definition():
-    ts = TopicState("Python", "CRITICAL", band="mid")
+    ts = TopicState("Python", level=2)
     ts.add_contribution(weighted=0.0, signal="definition_absent", turn=1)
     assert ts.current_rung_name() == "definition"  # floor, not negative
 
@@ -131,7 +131,7 @@ def test_active_wrongness_signal_also_steps_ladder_down():
     # any non-denial signal for LADDER purposes (they still advance the rung),
     # even though they score worse than *_absent (Part D.3) and hold the
     # sub-concept rotation like a gap signal (Part C.2).
-    ts = TopicState("Python", "CRITICAL", band="mid")
+    ts = TopicState("Python", level=2)
     ts.add_contribution(weighted=2.0, signal="definition_confused", turn=1)
     assert ts.current_rung_name() == "mechanism"  # advanced, not denial-tier
 
@@ -141,7 +141,7 @@ def test_full_transcript_style_sequence_stays_on_one_skill_until_ladder_or_denia
     matched skill: strong open, then a run of denials, asserting the system
     never silently escalates and closes the skill within the 2-denial cap
     instead of drifting to unrelated sub-domains."""
-    ts = TopicState("NLP Embeddings", "HIGH", band="mid")
+    ts = TopicState("NLP Embeddings", level=2)
     # Turn 1: reasonable definition-level answer.
     ts.add_contribution(weighted=6.0, signal="definition_correct", turn=1)
     assert ts.current_rung_name() == "mechanism"

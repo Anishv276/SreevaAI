@@ -193,7 +193,7 @@ def build_debug_pdf(
             ss["Small"]))
         story.append(Paragraph(f"<b>Agent Pacing Decision:</b> {_esc(qr.get('action'))}", ss["Small"]))
         story.append(Paragraph(f"<b>Signal Reason:</b> {_esc(qr.get('signal_reason') or '—')}", ss["Small"]))
-        story.append(Paragraph(f"<b>Band:</b> {_esc(qr.get('band'))} | <b>Topic Follow-ups:</b> {qr.get('topic_follow_ups', 0)}", ss["Small"]))
+        story.append(Paragraph(f"<b>Level:</b> {_esc(qr.get('level'))} | <b>Topic Follow-ups:</b> {qr.get('topic_follow_ups', 0)}", ss["Small"]))
         story.append(Paragraph(f"<b>Response Latency:</b> {qr.get('response_latency_sec', 'n/a')}s", ss["Small"]))
 
         directive = qr.get("directive_text")

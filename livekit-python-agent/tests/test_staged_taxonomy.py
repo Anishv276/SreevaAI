@@ -219,7 +219,7 @@ def test_cleared_signals_direct_a_real_question_at_the_next_rung(cleared_signal)
     silent, stalled turn -- nothing else in the pipeline generates a
     question independently of this directive)."""
     out = get_probe_context(
-        signal=cleared_signal, signal_reason=None, band="mid",
+        signal=cleared_signal, signal_reason=None, level=2,
         topic_follow_ups=1, topic_denied=False, prev_answer="a correct answer",
         ladder_rung="mechanism",
     )
@@ -230,7 +230,7 @@ def test_cleared_signals_direct_a_real_question_at_the_next_rung(cleared_signal)
 
 def test_gap_signal_does_not_short_circuit():
     out = get_probe_context(
-        signal="mechanism_shallow", signal_reason="it just makes things faster", band="mid",
+        signal="mechanism_shallow", signal_reason="it just makes things faster", level=2,
         topic_follow_ups=1, topic_denied=False, prev_answer="it just makes things faster",
         ladder_rung="mechanism",
     )
@@ -240,7 +240,7 @@ def test_gap_signal_does_not_short_circuit():
 
 def test_cross_cutting_signal_note_included_alongside_stage_signal():
     out = get_probe_context(
-        signal="definition_partial", signal_reason=None, band="mid",
+        signal="definition_partial", signal_reason=None, level=2,
         topic_follow_ups=1, topic_denied=False, prev_answer="um, it's kind of like...",
         ladder_rung="definition", cross_cutting_signal="verbal_disfluency",
     )
@@ -250,7 +250,7 @@ def test_cross_cutting_signal_note_included_alongside_stage_signal():
 
 def test_denial_tier_stage_signal_triggers_step_down_override():
     out = get_probe_context(
-        signal="distinction_absent", signal_reason=None, band="mid",
+        signal="distinction_absent", signal_reason=None, level=2,
         topic_follow_ups=2, topic_denied=False, prev_answer="I don't know.",
         ladder_rung="difference",
     )
@@ -260,7 +260,7 @@ def test_denial_tier_stage_signal_triggers_step_down_override():
 
 def test_active_wrongness_signal_gets_misconception_surface_directive():
     out = get_probe_context(
-        signal="distinction_reversed", signal_reason="a set preserves insertion order", band="mid",
+        signal="distinction_reversed", signal_reason="a set preserves insertion order", level=2,
         topic_follow_ups=2, topic_denied=False,
         prev_answer="A set preserves insertion order and allows duplicates, a list doesn't.",
         ladder_rung="difference",
@@ -279,7 +279,7 @@ def test_gap_signal_directive_stays_on_the_same_concept_not_a_new_subtopic():
     out = get_probe_context(
         signal="mechanism_shallow",
         signal_reason="calling run() directly doesn't start a new thread",
-        band="mid",
+        level=2,
         topic_follow_ups=1, topic_denied=False,
         prev_answer="You call start() and that runs the thread, run() just runs it I guess.",
         prev_question="What's the difference between calling start() and calling run() on a Thread?",

@@ -122,7 +122,7 @@ function CreateJobForm() {
             aiInterviewerName: (job as any).aiInterviewerName || "Ishitha",
             interviewMode: (job as any).interviewMode || "ats",
             interviewType: (job as any).interviewType || "tech",
-            questionBand: (job as any).questionBand || "",
+            level: (job as any).level || 2,
           }));
         } catch (err) {
           console.error("Failed to load job:", err);
@@ -142,7 +142,7 @@ function CreateJobForm() {
           aiGeneratedInterviewQuestions: [],
           resumeScreeningThreshold: 60, resumeScreeningCriteria: {},
           aiInterviewerVoiceId: fallbackVoiceId, allowedVoiceIds: fallbackAllowedVoices,
-          aiInterviewerName: "Ishitha", jdExtractedDetails: null, interviewMode: "ats", interviewType: "tech", questionBand: "",
+          aiInterviewerName: "Ishitha", jdExtractedDetails: null, interviewMode: "ats", interviewType: "tech", level: 2,
         });
         setIsAnalyzing(false);
         setAnalysisError(null);
@@ -226,8 +226,8 @@ function CreateJobForm() {
       return;
     }
     const resolvedInterviewType = currentFormData.interviewType || classifyInterviewType(currentFormData.jobRole) || "tech";
-    if (resolvedInterviewType !== "conversational" && !currentFormData.questionBand) {
-      toast.error("Please select a Questioning Level (Fresher / Mid / Senior).");
+    if (!currentFormData.level) {
+      toast.error("Please select a Questioning Level (1-4).");
       return;
     }
     const pendingJdUpload = Boolean(currentFormData.jdFile) || (typeof currentFormData.jdPreviewUrl === "string" && currentFormData.jdPreviewUrl.startsWith("blob:"));
@@ -256,7 +256,7 @@ function CreateJobForm() {
       aiInterviewerName: currentFormData.aiInterviewerName || "Ishitha",
       interviewMode: currentFormData.interviewMode || "ats",
       interviewType: resolvedInterviewType,
-      questionBand: resolvedInterviewType === "conversational" ? undefined : currentFormData.questionBand,
+      level: currentFormData.level,
     };
     try {
       let savedId: string | null = null;

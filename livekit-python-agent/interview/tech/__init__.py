@@ -45,7 +45,6 @@ from interview.tech.report import (
     generate_interview_summary,
 )
 from interview.tech.phases import build_greeting_text, build_interview_directive
-from interview.tech.band import classify_band, CandidateBand, BandClassifier
 
 __all__ = [
     "evaluate_answer",
@@ -79,7 +78,4 @@ __all__ = [
     "generate_interview_summary",
     "build_greeting_text",
     "build_interview_directive",
-    "classify_band",
-    "CandidateBand",
-    "BandClassifier",
 ]

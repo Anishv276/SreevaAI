@@ -34,7 +34,7 @@ def _build_custom_questions_block(custom_questions: list[str] | None) -> str:
 # ---------------------------------------------------------------------------
 def build_interview_directive(
     *,
-    band: str,
+    level: int,
     resume_brief: _BriefType,
     jd_skills: list[str] | None = None,
     custom_questions: list[str] | None = None,
@@ -44,7 +44,7 @@ def build_interview_directive(
     Build the single system prompt for the full 20-minute skill-only interview.
     Priority order:
       1. Anchor skill -- open here with a cold-reasoning question (fundamentals/mechanics)
-      2. Remaining common skills (resume + JD overlap) -- depth per band
+      2. Remaining common skills (resume + JD overlap) -- depth per level
       3. JD-required skills (not on resume) -- neutral exposure/reasoning probe
       4. Expert role-knowledge topics
       5. Custom recruiter questions (mandatory, woven in anytime)
@@ -66,22 +66,27 @@ def build_interview_directive(
         anchor_name = "the strongest common skill for this role"
         _brief_strategy_note = ""
     _first_q_rule = {
-        "fresher": (
+        1: (
             f"FIRST QUESTION RULE: start with a FUNDAMENTALS-level question on {anchor_name} -- a basic "
             f"distinction or definition, testing real understanding not memorization.\n"
             f"Do not ask about tradeoffs, scale, or architecture yet."
         ),
-        "mid": (
+        2: (
             f"FIRST QUESTION RULE: start with a CORE_MECHANICS question on {anchor_name} -- how it actually "
             f"works under the hood, not just what it's called.\n"
             f"Do NOT ask a pure definition question -- assume fundamentals are already solid."
         ),
-        "senior": (
+        3: (
+            f"FIRST QUESTION RULE: start with an APPLIED question on {anchor_name} involving a genuine "
+            f"tradeoff or constraint -- not a definition, not pure mechanics.\n"
+            f"Do NOT ask a pure definition question -- push for the 'why' behind their choice."
+        ),
+        4: (
             f"FIRST QUESTION RULE: start with a PERFORMANCE or ROBUSTNESS question on {anchor_name} -- a "
             f"concrete, numbers-bearing scenario requiring real triage or tradeoff judgment.\n"
             f"Do NOT start with basics or mechanics -- go straight to a scenario with no single correct answer."
         ),
-    }.get(band, "FIRST QUESTION RULE: start with a fundamentals or core-mechanics question testing real understanding.")
+    }.get(level, "FIRST QUESTION RULE: start with a fundamentals or core-mechanics question testing real understanding.")
     opening = (
         f"{_brief_strategy_note}"
         f"Your ANALYST BRIEF (above) contains the exact OPENING ANGLE for this session.\n"
@@ -103,19 +108,23 @@ def build_interview_directive(
     # (richer: per-skill probe_focus, source, why_relevant). Fall back to
     # resume_brief.skills + jd_skills when brief is not provided.
     _skill_probe_style = {
-        "fresher": (
+        1: (
             "  -> Ask fundamentals and simple applied questions. 'What's the difference between X and Y?'\n"
             "  -> Accept partial answers -- they're learning. Get one clear reasoning example, then move on.\n"
         ),
-        "mid": (
+        2: (
             "  -> Ask mechanics + one-constraint applied questions. 'What would you check first if X was slow?'\n"
             "  -> If they give a textbook answer with no reasoning, push: 'What's the tradeoff there?'\n"
         ),
-        "senior": (
+        3: (
+            "  -> Ask applied questions with a genuine tradeoff. 'Why this approach over the alternative?'\n"
+            "  -> A confident-but-shallow answer is a signal to probe deeper, not a pass.\n"
+        ),
+        4: (
             "  -> Probe tradeoffs and systemic judgment. 'What breaks about that approach at scale?'\n"
             "  -> Surface-level or textbook answers are a red flag -- invert their assumption and press harder.\n"
         ),
-    }.get(band, "  -> Ask a cold-reasoning question grounded in the skill itself, never 'do you know X?'\n")
+    }.get(level, "  -> Ask a cold-reasoning question grounded in the skill itself, never 'do you know X?'\n")
     if interview_brief is not None:
         _brief_skills = [t for t in interview_brief.topic_pool if t.topic_type in ("skill", "role_topic")]
         if _brief_skills:
@@ -127,7 +136,7 @@ def build_interview_directive(
                     _src_label = "[JD REQUIRED — not on resume, ask cold-reasoning, accept no exposure]"
                 else:  # ROLE_TOPIC
                     _src_label = "[ROLE DEPTH — expert knowledge check, ask concept/approach]"
-                _focus = ", ".join(_st.probe_focus[:2]) if _st.probe_focus else ""
+                _focus = _st.probe_focus or ""
                 _line = f"  - {_st.title}  {_src_label}"
                 if _st.full_description:
                     _line += f"\n      CONTEXT: {_st.full_description}"
@@ -167,31 +176,37 @@ def build_interview_directive(
             )
         else:
             skills_block = ""
-    # Band-aware follow-up pacing note. Coverage itself (which skills, in what
+    # Level-aware follow-up pacing note. Coverage itself (which skills, in what
     # order) comes from interview_brief.topic_pool and interview_strategy --
-    # both already role-specific, so it isn't re-derived generically here per band.
+    # both already role-specific, so it isn't re-derived generically here per level.
     _pacing_note = {
-        "fresher": "  -> BREADTH FIRST -- 2-3 follow-ups per skill. Move on when you have signal. Accept incomplete answers, they're learning.\n",
-        "mid":     "  -> BALANCED -- 3-4 follow-ups per skill. Move on once reasoning (not just recall) is demonstrated.\n",
-        "senior":  "  -> DEPTH ONLY -- 4-6 follow-ups on critical skills. Breadth is secondary. Press on every tradeoff claim.\n",
-    }.get(band, "  -> 3-4 follow-ups per skill. Move on when you have clear signal.\n")
+        1: "  -> BREADTH FIRST -- 2-3 follow-ups per skill. Move on when you have signal. Accept incomplete answers, they're learning.\n",
+        2: "  -> BALANCED -- 3-4 follow-ups per skill. Move on once reasoning (not just recall) is demonstrated.\n",
+        3: "  -> APPLIED DEPTH -- 3-5 follow-ups per skill. Push once on the 'why' before moving on.\n",
+        4: "  -> DEPTH ONLY -- 4-6 follow-ups on critical skills. Breadth is secondary. Press on every tradeoff claim.\n",
+    }.get(level, "  -> 3-4 follow-ups per skill. Move on when you have clear signal.\n")
     _dry_run_questions = {
-        "fresher": (
+        1: (
             "  'What's a concept in this stack that's easy to get wrong at first -- and why?'\n"
             "  'If two approaches to the same basic problem both work, how would you pick between them?'\n"
             "  'What's something in this area that sounds simple but trips people up early on?'"
         ),
-        "mid": (
+        2: (
             "  'Where do people commonly cut corners with this that comes back to bite them later?'\n"
             "  'If you had to explain the biggest gotcha in this area to a newer engineer, what would it be?'\n"
             "  'What's a case where the textbook answer and the practical answer for this actually differ?'"
         ),
-        "senior": (
+        3: (
+            "  'What's a tradeoff in this area where reasonable engineers disagree?'\n"
+            "  'When would you deliberately NOT use the textbook-recommended approach here?'\n"
+            "  'What's a constraint that would change your approach to this entirely?'"
+        ),
+        4: (
             "  'Where do you think most engineers get this kind of tradeoff wrong?'\n"
             "  'What's a widely-accepted best practice in this area you'd actually push back on?'\n"
             "  'If you had to pick the single hardest thing to get right at scale here, what would it be?'"
         ),
-    }.get(band, (
+    }.get(level, (
         "  'What's a concept in this area that's genuinely tricky to explain to someone else?'\n"
         "  'Where do you think most engineers get this kind of tradeoff wrong?'"
     ))
@@ -211,7 +226,7 @@ def build_interview_directive(
         f"  -> Start with the anchor skill. Follow what they say -- a claim, a tradeoff, a gap in reasoning.\n"
         f"{_pacing_note}"
         f"  -> Do NOT wrap up or say goodbye until the system signals you to.\n\n"
-        f"IF TOPICS RUN DRY -- keep going with adaptive, skill-focused questions (pick what fits for {band.upper()}):\n"
+        f"IF TOPICS RUN DRY -- keep going with adaptive, skill-focused questions (pick what fits for LEVEL {level}):\n"
         f"{_dry_run_questions}\n"
         f"There is always something to ask. Never close early. Never fall back to asking about projects or work."
     )

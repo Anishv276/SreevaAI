@@ -450,58 +450,58 @@ Never ask a generic "tell me more".""",
 
 
 # ---------------------------------------------------------------------------
-# Band overlays -- per-signal, per-band.
-# Adjusts the depth and stakes of the probe based on seniority.
+# Level overlays -- per-signal, per-level (1=fresher-equiv .. 4=senior-equiv).
+# Adjusts the depth and stakes of the probe based on question level.
 # ---------------------------------------------------------------------------
-_BAND_OVERLAYS: dict[str, dict[str, str]] = {
+_LEVEL_OVERLAYS: dict[str, dict[int, str]] = {
 
     "definition_partial": {
-        "fresher":     "Accept a rough approximation — ask for just the one missing word or property, keep it gentle.",
-        "mid":         "Ask for the specific missing element directly.",
-        "experienced": "Expect near-complete precision — push on the exact missing qualifier.",
-        "senior":      "A partial definition at this level is notable — push for the precise missing distinction.",
+        1: "Accept a rough approximation — ask for just the one missing word or property, keep it gentle.",
+        2: "Ask for the specific missing element directly.",
+        3: "Expect near-complete precision — push on the exact missing qualifier.",
+        4: "A partial definition at this level is notable — push for the precise missing distinction.",
     },
     "definition_confused": {
-        "fresher":     "Surface the mix-up gently with a very concrete example — don't make it feel like a test failure.",
-        "mid":         "Surface the contradiction with a concrete case.",
-        "experienced": "A confused definition at this level is a real flag — surface it clearly via a concrete case.",
-        "senior":      "Surface it via a case with real stakes — this level of confusion is significant here.",
+        1: "Surface the mix-up gently with a very concrete example — don't make it feel like a test failure.",
+        2: "Surface the contradiction with a concrete case.",
+        3: "A confused definition at this level is a real flag — surface it clearly via a concrete case.",
+        4: "Surface it via a case with real stakes — this level of confusion is significant here.",
     },
     "mechanism_shallow": {
-        "fresher":     "Ask HOW it works step by step for one concrete input — don't push for edge cases yet.",
-        "mid":         "Ask them to trace one concrete input through the mechanism.",
-        "experienced": "Expect a real internal trace — push for the step they're skipping.",
-        "senior":      "Expect fluency with the internals — a shallow answer here is a real gap.",
+        1: "Ask HOW it works step by step for one concrete input — don't push for edge cases yet.",
+        2: "Ask them to trace one concrete input through the mechanism.",
+        3: "Expect a real internal trace — push for the step they're skipping.",
+        4: "Expect fluency with the internals — a shallow answer here is a real gap.",
     },
     "mechanism_incorrect": {
-        "fresher":     "Surface it gently via a concrete case — a mechanism mix-up is common at this level.",
-        "mid":         "Surface the wrong claim via a concrete case that would behave differently if it were true.",
-        "experienced": "A wrong mechanism claim at this level is a real flag — surface it clearly.",
-        "senior":      "This level of mechanism error is significant — surface it via a case with real consequences.",
+        1: "Surface it gently via a concrete case — a mechanism mix-up is common at this level.",
+        2: "Surface the wrong claim via a concrete case that would behave differently if it were true.",
+        3: "A wrong mechanism claim at this level is a real flag — surface it clearly.",
+        4: "This level of mechanism error is significant — surface it via a case with real consequences.",
     },
     "distinction_one_sided": {
-        "fresher":     "Accept the one correct side — ask for just a simple word or two about the other.",
-        "mid":         "Ask what changes on the other side directly.",
-        "experienced": "Expect a real completed contrast — push for the missing half precisely.",
-        "senior":      "A half-completed distinction at this level is notable — push for full precision.",
+        1: "Accept the one correct side — ask for just a simple word or two about the other.",
+        2: "Ask what changes on the other side directly.",
+        3: "Expect a real completed contrast — push for the missing half precisely.",
+        4: "A half-completed distinction at this level is notable — push for full precision.",
     },
     "distinction_reversed": {
-        "fresher":     "Surface the swap very gently with a simple concrete case — this is a common early mix-up.",
-        "mid":         "Surface the swap via a concrete case.",
-        "experienced": "A reversed distinction at this level is a real flag — surface it clearly.",
-        "senior":      "This level of confusion is significant — surface it via a case with real stakes.",
+        1: "Surface the swap very gently with a simple concrete case — this is a common early mix-up.",
+        2: "Surface the swap via a concrete case.",
+        3: "A reversed distinction at this level is a real flag — surface it clearly.",
+        4: "This level of confusion is significant — surface it via a case with real stakes.",
     },
     "application_generic": {
-        "fresher":     "A generic-but-plausible checklist is fine — gently connect it to the mechanism.",
-        "mid":         "Push to connect the generic checklist item to the specific mechanism.",
-        "experienced": "Expect the check to already be mechanism-specific — push on what's missing.",
-        "senior":      "A generic checklist at this level is a real gap — push hard for mechanism-specific reasoning.",
+        1: "A generic-but-plausible checklist is fine — gently connect it to the mechanism.",
+        2: "Push to connect the generic checklist item to the specific mechanism.",
+        3: "Expect the check to already be mechanism-specific — push on what's missing.",
+        4: "A generic checklist at this level is a real gap — push hard for mechanism-specific reasoning.",
     },
     "reasoning_unjustified": {
-        "fresher":     "Accept a reasonable guess — ask gently what made them think of that first.",
-        "mid":         "Ask for the reasoning behind the first move directly.",
-        "experienced": "Expect real triage logic — push for the reasoning, not just the action.",
-        "senior":      "Expect systemic judgment behind the first move — an unjustified action here is a real gap.",
+        1: "Accept a reasonable guess — ask gently what made them think of that first.",
+        2: "Ask for the reasoning behind the first move directly.",
+        3: "Expect real triage logic — push for the reasoning, not just the action.",
+        4: "Expect systemic judgment behind the first move — an unjustified action here is a real gap.",
     },
 }
 
@@ -683,7 +683,7 @@ final message you produce must contain nothing except what Ishitha would actuall
 
 # ---------------------------------------------------------------------------
 # Core skill question generator -- TECH INTERVIEWS ONLY.
-# Generates a structured 6-item question set for a given skill × band.
+# Generates a structured 6-item question set for a given skill × level.
 #
 # NOT used for real-time follow-up (that is QUESTION_GENERATION_SYSTEM above).
 # This is an OFFLINE / pre-interview call: for each priority skill extracted
@@ -700,7 +700,7 @@ capability — not project history, not resume claims, not "tell me about a time
 The candidate should not be able to prep for these by rehearsing their resume; they must
 reason in the moment.
 
-INPUT: SKILL = "{skill}"  |  BAND = "{band}"  (fresher / mid / experienced / senior)
+INPUT: SKILL = "{skill}"  |  LEVEL = {level}  (1=fresher-equiv / 2=mid-equiv / 3=experienced-equiv / 4=senior-equiv)
 
 Generate exactly SIX items, each testing a different layer of real understanding of {skill}.
 Do not ask about the candidate's past projects, teams, or resume in ANY of the six — every
@@ -729,14 +729,16 @@ question must be answerable purely from knowing {skill} itself, cold.
    partial failure, malformed input, resource exhaustion — whichever is most native to this
    skill). Ask how they'd detect or prevent it, not just "what could go wrong."
 
-5. APPLIED (band-scaled)
-   - fresher: a small, self-contained task solvable with fundamentals alone. No systems
+5. APPLIED (level-scaled)
+   - level 1: a small, self-contained task solvable with fundamentals alone. No systems
      context assumed.
-   - mid: a task embedded in a realistic single-service/single-project context with one
+   - level 2: a task embedded in a realistic single-service/single-project context with one
      real constraint (time, data size, an existing system to integrate with).
-   - experienced/senior: a task requiring a tradeoff decision at a systems or architectural
-     level — multiple valid approaches, no single correct answer, the point is HOW they
-     reason about the tradeoff.
+   - level 3: a tradeoff decision at a systems level — multiple valid approaches, no single
+     correct answer, the point is HOW they reason about the tradeoff.
+   - level 4: an advanced architecture-level tradeoff, going deeper than level 3 — expect
+     reasoning about edge cases and failure modes across multiple interacting components,
+     not just a single service's tradeoff.
    Do not restate the definition of {skill} for context — assume they already have it.
 
 6. PROBE_VARIANT
@@ -785,7 +787,7 @@ You are choosing the NEXT question for ONE interview topic, testing actual under
 its tagged concepts — not project history, not resume claims. The candidate must reason in the
 moment; nothing here should be prep-able by rehearsing a resume.
 
-INPUT: TOPIC = "{topic}"  |  TAGGED CONCEPTS = {concepts}  |  BAND = "{band}"
+INPUT: TOPIC = "{topic}"  |  TAGGED CONCEPTS = {concepts}  |  LEVEL = {level}
 
 QUESTIONS ASKED SO FAR IN THIS TOPIC (type, targeted concept, how it went):
 {questions_so_far}
@@ -1039,7 +1041,7 @@ def get_probe_context(
     *,
     signal: str | None,
     signal_reason: str | None,
-    band: str,
+    level: int,
     topic_follow_ups: int,
     topic_denied: bool,
     prev_answer: str,
@@ -1179,9 +1181,9 @@ def get_probe_context(
     lines.append(f"VOICE: {probe['voice_note']}")
     lines.append(get_reaction_hint(signal, prev_answer))
 
-    _band_note = _BAND_OVERLAYS.get(signal or "", {}).get(band)
-    if _band_note:
-        lines.append(f"BAND ({band}): {_band_note}")
+    _level_note = _LEVEL_OVERLAYS.get(signal or "", {}).get(level)
+    if _level_note:
+        lines.append(f"LEVEL ({level}): {_level_note}")
 
     if cross_cutting_signal and cross_cutting_signal in _CROSS_CUTTING_NOTES:
         lines.append(f"CROSS-CUTTING SIGNAL: {cross_cutting_signal}")

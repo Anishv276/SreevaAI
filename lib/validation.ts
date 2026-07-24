@@ -22,14 +22,14 @@ const jobFieldsSchema = z.object({
   resumeScreeningCriteria: z.union([z.string(), z.record(z.string(), z.any())]).optional(),
   interviewMode: z.enum(["ats", "interview-only"]).optional(),
   interviewType: z.enum(["tech", "conversational"]).optional().default("tech"),
-  questionBand: z.enum(["fresher", "mid", "senior"]).optional(),
+  level: z.number().int().min(1).max(4).optional(),
 });
 export const createJobSchema = jobFieldsSchema.superRefine((data, ctx) => {
-  if (data.interviewType !== "conversational" && !data.questionBand) {
+  if (!data.level) {
     ctx.addIssue({
       code: "custom",
-      path: ["questionBand"],
-      message: "Questioning Level (Fresher / Mid / Senior) is required for tech interviews.",
+      path: ["level"],
+      message: "Questioning Level (1-4) is required.",
     });
   }
 });

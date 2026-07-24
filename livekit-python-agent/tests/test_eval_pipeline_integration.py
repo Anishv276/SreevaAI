@@ -45,7 +45,7 @@ BASE_PAYLOAD = {
     "answer": "some answer",
     "question": "some question",
     "llm_model": "gpt-4.1-mini",
-    "band": "mid",
+    "level": 2,
     "topic_tag": "RESUME_TOPIC",
 }
 
@@ -107,7 +107,7 @@ async def test_ladder_floor_blocks_move_on_even_when_saturated(monkeypatch):
     ts = None
     actions = []
     for turn in range(1, 3):  # 2 strong turns -- fresher/CRITICAL saturates by turn 2
-        payload = dict(BASE_PAYLOAD, turn=turn, band="fresher",
+        payload = dict(BASE_PAYLOAD, turn=turn, level=1,
                        active_topic="Python", active_topic_state=ts)
         result = await eval_mod.run_eval_and_build_directive(payload, client=None)
         actions.append(result["action"])

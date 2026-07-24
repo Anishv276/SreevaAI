@@ -452,7 +452,7 @@ class BriefExtractionState(TypedDict):
     jd_data: dict
     candidate_name: str
     job_title: str
-    band: str
+    level: int
     custom_questions: list[str]
     # per-extractor outputs
     resume_skills: list[ExtractedSkill]
@@ -511,7 +511,7 @@ def _node_build_llm_input(state: BriefExtractionState) -> dict:
     lines.append(
         f"CANDIDATE: {state['candidate_name']}  |  "
         f"ROLE: {state['job_title']}  |  "
-        f"BAND: {state['band'].upper()}  |  "
+        f"LEVEL: {state['level']}  |  "
         f"RESUME: {'AVAILABLE' if has_resume else 'NOT AVAILABLE'}"
     )
     if not has_resume:
@@ -606,7 +606,7 @@ async def run_extraction(
     jd_data: dict,
     candidate_name: str,
     job_title: str,
-    band: str,
+    level: int,
     custom_questions: list[str],
 ) -> str:
     """
@@ -618,7 +618,7 @@ async def run_extraction(
         "jd_data": jd_data,
         "candidate_name": candidate_name,
         "job_title": job_title,
-        "band": band,
+        "level": level,
         "custom_questions": custom_questions or [],
         "resume_skills": [],
         "jd_must": [],

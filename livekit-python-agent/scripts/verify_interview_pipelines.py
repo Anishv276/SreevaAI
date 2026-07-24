@@ -272,7 +272,6 @@ async def run_pipeline(
 
     if is_sales:
         from interview.conversational.brief import generate_interview_brief
-        from interview.conversational.band import classify_band
         from interview.conversational.scoring import evaluate_answer
         from interview.conversational.probe import get_probe_context, QUESTION_GENERATION_SYSTEM
         from interview.conversational.prompts import build_evaluation_layer_prompt, build_voice_layer_prompt, build_system_prompt
@@ -280,7 +279,6 @@ async def run_pipeline(
         from interview.conversational.report import generate_interview_report, generate_interview_summary
     else:
         from interview.tech.brief import generate_interview_brief
-        from interview.tech.band import classify_band
         from interview.tech.scoring import evaluate_answer
         from interview.tech.probe import get_probe_context, QUESTION_GENERATION_SYSTEM
         from interview.tech.prompts import build_evaluation_layer_prompt, build_voice_layer_prompt, build_system_prompt
@@ -296,17 +294,17 @@ async def run_pipeline(
     def _hr(title: str) -> None:
         print(f"\n{'='*90}\n{title}\n{'='*90}")
 
-    # -- Step 1: band + brief --------------------------------------------------
-    _hr(f"[{which.upper()}] STEP 1 -- Band classification + Brief generation")
-    band, total_years, seniority = classify_band(resume_json)
-    print(f"band={band} total_years={total_years} seniority={seniority!r}")
+    # -- Step 1: level + brief --------------------------------------------------
+    _hr(f"[{which.upper()}] STEP 1 -- Brief generation")
+    level = 2  # admin-selected level -- fixed for this verify script, never inferred
+    print(f"level={level}")
 
     _brief_usages: list[dict] = []
     t0 = time.perf_counter()
     brief = await generate_interview_brief(
         candidate_name=candidate_name,
         job_title=job_title,
-        candidate_band=band,
+        level=level,
         resume_json=resume_json,
         jd_data=jd_data,
         custom_questions=CUSTOM_QUESTIONS,
@@ -321,7 +319,7 @@ async def run_pipeline(
         print(f"  - [{t.tag:12s}] {t.title}  (probe: {', '.join(t.probe_focus)})")
     print(f"interview_strategy: {brief.interview_strategy}")
     print(f"red_flags: {brief.red_flags}")
-    log["band"] = band
+    log["level"] = level
     log["brief"] = json.loads(brief.model_dump_json())
 
     # -- Step 2: build the evaluation-layer + voice-layer system prompt -------
@@ -331,7 +329,7 @@ async def run_pipeline(
     )
     evaluation_layer_prompt = build_evaluation_layer_prompt(
         candidate_name=candidate_name, job_title=job_title,
-        candidate_band=band, interview_brief=brief,
+        interview_brief=brief, level=level,
     )
     system_prompt = build_system_prompt(
         voice_layer_prompt=voice_layer_prompt, evaluation_layer_prompt=evaluation_layer_prompt,
@@ -380,7 +378,7 @@ async def run_pipeline(
             "job_title": job_title,
             "remaining_seconds": 900.0,
             "candidate_name": candidate_name,
-            "band": band,
+            "level": level,
             "time_limit_mins": 20,
             "topic_tag": active_topic_item.tag,
             "topic_probe_focus": active_topic_item.probe_focus,
@@ -421,7 +419,7 @@ async def run_pipeline(
             )
         else:
             probe_context = get_probe_context(
-                signal=signal, signal_reason=signal_reason, band=band,
+                signal=signal, signal_reason=signal_reason, level=level,
                 topic_follow_ups=eval_result["saturation"]["follow_up_turns"],
                 topic_denied=False, prev_answer=answer,
                 signals_history=(active_topic_state or {}).get("signals_fired", []),

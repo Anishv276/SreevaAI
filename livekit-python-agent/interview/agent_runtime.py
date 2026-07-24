@@ -21,7 +21,6 @@ from interview.tech.brief import (
     TopicItem,
     generate_interview_brief,
 )
-from interview.tech.band import classify_band
 from interview.agent_runtime_utils import token_limit_kwarg
 from interview.agent_providers import (
     build_elevenlabs_tts,
@@ -736,7 +735,7 @@ def _build_probe_directive(
     *,
     signal: Optional[str],
     signal_reason: Optional[str],
-    band: str,
+    level: int,
     active_topic: str,
     topic_item: Optional[Any],
     prev_question: str,
@@ -761,11 +760,6 @@ def _build_probe_directive(
 
     Eliminates the middle directive LLM call, collapsing 3 calls/turn → 2.
 
-    probe_rotation_index: rotates the mandatory sub-concept across probe turns so
-    consecutive follow-ups on the same topic hit DIFFERENT sub-concepts from the
-    topic's probe_focus list — never asking about the same sub-concept twice on
-    one topic when other sub-concepts are still un-probed.
-
     ladder_rung: fixed question-type rung ("definition"/"mechanism"/
     "difference"/"scenario") from TopicState.current_rung_name() -- forwarded
     verbatim into get_probe_context() so the next question never escalates past
@@ -785,39 +779,18 @@ def _build_probe_directive(
     else:
         from interview.tech.probe import get_probe_context
 
-    # Determine the mandatory sub-concept for THIS turn by rotating through the
-    # probe_focus list. This forces "chunking" then "embeddings" then "retrieval"
-    # instead of every turn defaulting to the first item.
-    _focus_list: list[str] = list(topic_item.probe_focus) if (topic_item and topic_item.probe_focus) else []
-    _mandatory_subconcept: str = ""
-    _remaining_subconcepts: list[str] = []
-    if _focus_list:
-        _idx = max(0, probe_rotation_index) % len(_focus_list)
-        _mandatory_subconcept = _focus_list[_idx]
-        _remaining_subconcepts = [f for i, f in enumerate(_focus_list) if i != _idx]
+    # probe_focus is now one descriptive paragraph per topic (not a rotating
+    # list of sub-concepts) -- pass it straight through as probing guidance.
+    _focus_text: str = (topic_item.probe_focus or "") if topic_item else ""
 
-    # Topic brief block -- highlight the MANDATORY sub-concept for this turn so
-    # the LLM doesn't keep asking about the first angle every time.
     if topic_item is not None:
         parts = [f"TOPIC: {topic_item.title}"]
         if topic_item.full_description:
             parts.append(f"WHAT THIS IS: {topic_item.full_description}")
         if topic_item.tech_stack:
             parts.append(f"TECH STACK: {', '.join(topic_item.tech_stack)}")
-        if _focus_list:
-            parts.append(f"PROBE FOCUS (all sub-concepts for this topic): {', '.join(_focus_list)}")
-        if _mandatory_subconcept:
-            parts.append(
-                f"MANDATORY SUB-CONCEPT FOR THIS TURN: {_mandatory_subconcept}\n"
-                f"  Your question this turn MUST be about '{_mandatory_subconcept}' — NOT about "
-                f"any other sub-concept of this topic. This rotates each probe turn so you cover "
-                f"the whole topic instead of asking about the same thing repeatedly."
-            )
-        if _remaining_subconcepts:
-            parts.append(
-                f"OTHER SUB-CONCEPTS (do NOT probe these this turn — they are covered in later turns): "
-                f"{', '.join(_remaining_subconcepts)}"
-            )
+        if _focus_text:
+            parts.append(f"WHAT TO PROBE FOR: {_focus_text}")
         if topic_item.probe_avoid:
             parts.append(f"SKIP: {', '.join(topic_item.probe_avoid)}")
         _topic_ctx = "\n".join(parts)
@@ -835,7 +808,7 @@ def _build_probe_directive(
     _probe_ctx = get_probe_context(
         signal=signal,
         signal_reason=signal_reason,
-        band=band,
+        level=level,
         topic_follow_ups=topic_follow_ups,
         topic_denied=topic_denied,
         prev_answer=prev_answer,
@@ -916,17 +889,6 @@ def _build_probe_directive(
             "Grounded in what they just told you. Never 'Can you' or 'Could you'. Never 'Great!' or 'Awesome!'.",
             "",
         ]
-        if _mandatory_subconcept:
-            parts_out += [
-                f"CRITICAL SUB-CONCEPT LOCK: This turn's question MUST be about '{_mandatory_subconcept}' — "
-                f"not about any other sub-concept of '{topic_item.title if topic_item else active_topic}'. ",
-                f"If you previously probed '{_mandatory_subconcept}' already, dig deeper INTO IT — ask for a "
-                f"CONCRETE EXAMPLE of it, or ask them to CONTRAST it with a closely related concept — never "
-                f"pivot to an unrelated sub-concept just because this one didn't land yet. Only a genuinely "
-                f"new sub-concept is allowed once this one is either answered well or has failed twice in a row.",
-                f"Do NOT ask a generic overview question about the topic. Do NOT ask about a different sub-concept.",
-                "",
-            ]
     parts_out += [""]
 
     directive = "\n".join(parts_out)
@@ -945,7 +907,7 @@ async def _generate_move_on_directive(
     new_topic: str,
     new_topic_title: str,
     source: str,
-    band: str,
+    level: int,
     memory_block: str,
     cross_ref_rule: str,
     client: Any,
@@ -982,7 +944,7 @@ async def _generate_move_on_directive(
         if topic_item.tech_stack:
             parts.append(f"TECH STACK: {', '.join(topic_item.tech_stack)}")
         if topic_item.probe_focus:
-            parts.append(f"PROBE FOCUS (build the opening question around ONE of these): {', '.join(topic_item.probe_focus)}")
+            parts.append(f"PROBE FOCUS (build the opening question around this): {topic_item.probe_focus}")
         if topic_item.probe_avoid:
             parts.append(f"PROBE AVOID: {', '.join(topic_item.probe_avoid)}")
         _brief_context = "\n".join(parts)
@@ -1014,17 +976,18 @@ async def _generate_move_on_directive(
     #                Candidate has no known experience here. Ask a concept/approach question.
     #                NEVER ask "what was your experience with X" -- they may have none.
     _topic_type_hint = (topic_item.topic_type if topic_item else "") or ""
-    _probe_focus_str = "; ".join(topic_item.probe_focus[:3]) if (topic_item and topic_item.probe_focus) else ""
+    _probe_focus_str = (topic_item.probe_focus or "") if topic_item else ""
 
     if is_skill_only:
         # Skill-only tech interview: every topic is a skill/concept, never a project or
         # work-history item. Questions must be answerable cold -- never referencing the
         # candidate's resume, projects, or "a time when you used X".
-        _band_skill = {
-            "fresher": "Open with a fundamentals-level distinction question -- basic but not trivial.",
-            "mid":     "Open with a mechanics or performance-triage question -- how it works, what to check first.",
-            "senior":  "Open with a tradeoff or systemic-scenario question -- no single correct answer.",
-        }.get(band, "Open with a cold-reasoning question testing real understanding.")
+        _level_skill = {
+            1: "Open with a fundamentals-level distinction question -- basic but not trivial.",
+            2: "Open with a mechanics or performance-triage question -- how it works, what to check first.",
+            3: "Open with an applied tradeoff question grounded in a realistic constraint.",
+            4: "Open with a tradeoff or systemic-scenario question -- no single correct answer.",
+        }.get(level, "Open with a cold-reasoning question testing real understanding.")
         _skill_source_note = {
             "RESUME_TOPIC": "On resume AND required by the JD -- a common skill for this role.",
             "JD_TOPIC": "Required by the JD, not claimed on resume -- ask cold-reasoning anyway; accept no exposure gracefully.",
@@ -1042,7 +1005,7 @@ async def _generate_move_on_directive(
             f"a concrete distinction, mechanism, or scenario.\n"
             f"  TECH STACK: {', '.join(topic_item.tech_stack) if (topic_item and topic_item.tech_stack) else '(none)'}\n"
             f"  PROBE FOCUS (MANDATORY angle): {_probe_focus_str or 'a fundamentals or mechanics angle for this skill'}\n\n"
-            f"DEPTH TARGET ({band.upper()}): {_band_skill}\n"
+            f"DEPTH TARGET (LEVEL {level}): {_level_skill}\n"
             f"FORBIDDEN: 'tell me about a project where', 'your resume', 'a time when you', 'have you used', "
             f"any company/project name, any 'what did you build/own' framing."
         )
@@ -1056,12 +1019,12 @@ async def _generate_move_on_directive(
             "work":    "a role or job they held",
             "skill":   "a skill they listed on their resume",
         }.get(_topic_type_hint, "something from their resume")
-        _band_depth = {
-            "fresher":    "Surface-level is fine — a concrete detail, not a scaling or architecture answer.",
-            "mid":        "Push for what was specifically their own call, not team language.",
-            "experienced":"Skip setup. Go straight to a tradeoff, design decision, or what broke.",
-            "senior":     "Probe strategic judgment — what it changed, what the stakes were, what they'd do differently.",
-        }.get(band, "Ask at a depth appropriate to their level.")
+        _level_depth = {
+            1: "Surface-level is fine — a concrete detail, not a scaling or architecture answer.",
+            2: "Push for what was specifically their own call, not team language.",
+            3: "Skip setup. Go straight to a tradeoff, design decision, or what broke.",
+            4: "Probe strategic judgment — what it changed, what the stakes were, what they'd do differently.",
+        }.get(level, "Ask at a depth appropriate to their level.")
         _angle_guide = (
             f"SOURCE: RESUME_TOPIC — {_type_context}.\n"
             f"{_standalone_note}"
@@ -1075,17 +1038,17 @@ async def _generate_move_on_directive(
             f"— use a specific tool/technology by name if it sharpens the question.\n"
             f"  PROBE FOCUS (MANDATORY angle — the question must dig into ONE of these, not generic ownership): "
             f"{_probe_focus_str or 'a specific decision or mechanism from the description'}\n\n"
-            f"DEPTH TARGET ({band.upper()}): {_band_depth}\n"
+            f"DEPTH TARGET (LEVEL {level}): {_level_depth}\n"
             f"FORBIDDEN: 'do you have experience', 'why did you work there', 'what drew you to X', "
             f"'tell me about your background', 'what did you build/own/do' with no specific angle attached."
         )
     elif source in ("JD_TOPIC", "jd_skill"):
-        _band_jd = {
-            "fresher":    "Ask gently — they may be new to this. Check for any exposure, even self-taught or exploratory.",
-            "mid":        "Ask about real usage in a project — not theory, not self-description.",
-            "experienced":"Ask about production depth — constraints, tradeoffs, real consequences.",
-            "senior":     "Ask about strategic calls — where they've had to make judgment calls around it.",
-        }.get(band, "Ask about their exposure neutrally — the role needs it, they haven't claimed it.")
+        _level_jd = {
+            1: "Ask gently — they may be new to this. Check for any exposure, even self-taught or exploratory.",
+            2: "Ask about real usage in a project — not theory, not self-description.",
+            3: "Ask about production depth — constraints, tradeoffs, real consequences.",
+            4: "Ask about strategic calls — where they've had to make judgment calls around it.",
+        }.get(level, "Ask about their exposure neutrally — the role needs it, they haven't claimed it.")
         _angle_guide = (
             f"SOURCE: JD_TOPIC — this is required by the job description.\n"
             f"The candidate has NOT claimed this on their resume. We do not know if they've used it.\n"
@@ -1098,18 +1061,18 @@ async def _generate_move_on_directive(
             f"  TECH STACK: {', '.join(topic_item.tech_stack) if (topic_item and topic_item.tech_stack) else '(none)'} "
             f"— name the specific tool/technology rather than speaking generically.\n"
             f"  PROBE FOCUS (MANDATORY angle): {_probe_focus_str or 'their exposure or approach to this'}\n\n"
-            f"DEPTH TARGET ({band.upper()}): {_band_jd}\n"
+            f"DEPTH TARGET (LEVEL {level}): {_level_jd}\n"
             f"FORBIDDEN: 'you listed', 'on your resume', 'walk me through your experience with' (assumes experience), "
             f"grilling them if they say they haven't used it."
         )
     elif source in ("ROLE_TOPIC", "role_topic"):
         _role_desc = (topic_item.full_description if topic_item else "") or ""
-        _band_role = {
-            "fresher":    "Ask about the concept — do they understand what it means and why it matters?",
-            "mid":        "Ask about any real exposure or how they'd approach it if given the problem.",
-            "experienced":"Ask about a concrete decision or tradeoff in this space — real stakes, not theory.",
-            "senior":     "Ask about systemic or organizational thinking — how does it play out at team/org scale?",
-        }.get(band, "Ask how they think about or would approach this — they may have zero prior experience.")
+        _level_role = {
+            1: "Ask about the concept — do they understand what it means and why it matters?",
+            2: "Ask about any real exposure or how they'd approach it if given the problem.",
+            3: "Ask about a concrete decision or tradeoff in this space — real stakes, not theory.",
+            4: "Ask about systemic or organizational thinking — how does it play out at team/org scale?",
+        }.get(level, "Ask how they think about or would approach this — they may have zero prior experience.")
         _angle_guide = (
             f"SOURCE: ROLE_TOPIC — this comes from expert domain knowledge of the role.\n"
             f"It is NOT on the candidate's resume and NOT in the job description. "
@@ -1122,7 +1085,7 @@ async def _generate_move_on_directive(
             f"  TECH STACK: {', '.join(topic_item.tech_stack) if (topic_item and topic_item.tech_stack) else '(none)'}\n"
             f"  PROBE FOCUS (MANDATORY angle): "
             f"{_probe_focus_str or 'their understanding, reasoning, how they would approach it'}\n\n"
-            f"DEPTH TARGET ({band.upper()}): {_band_role}\n"
+            f"DEPTH TARGET (LEVEL {level}): {_level_role}\n"
             f"FORBIDDEN: 'what was your experience with X' (assumes experience), 'why did you work with X', "
             f"'what do you know about X?' (generic), framing it as if it's on their resume."
         )
@@ -1219,7 +1182,7 @@ async def _generate_move_on_directive(
         "Output plain text only. No markdown. No code blocks."
     )
     _user = (
-        f"BAND: {band.upper()}\n"
+        f"LEVEL: {level}\n"
         f"LEAVING TOPIC: {old_topic_title}\n"
         f"NEW TOPIC: {new_topic_title}\n"
         f"NEW TOPIC FULL CONTEXT: {new_topic}\n"
@@ -1245,7 +1208,7 @@ async def _generate_move_on_directive(
                 stream=True,
                 stream_options={"include_usage": True},
                 store=True,
-                metadata={"call_type": "move_on_directive", "band": band, "source": source},
+                metadata={"call_type": "move_on_directive", "level": level, "source": source},
             )
             async for chunk in stream:
                 if chunk.choices and chunk.choices[0].delta.content:
@@ -1803,7 +1766,7 @@ class InterviewContext(BaseModel):
     jobId: Optional[str] = None
     jobTitle: str
     interviewType: Optional[str] = "tech"
-    questionBand: Optional[str] = None
+    level: Optional[int] = None
     language: str
     orgId: Optional[str] = None
     orgName: Optional[str] = None
@@ -2151,18 +2114,11 @@ async def entrypoint(ctx: JobContext):
     # ── BRIEF: slot confirmation flow loads from DB; test flow always generates live ──
     _brief_openai_client: AsyncOpenAI = _SHARED_OPENAI_CLIENT
 
-    # Band seed passed to generate_interview_brief. Tech interviews use the
-    # admin-selected questionBand from the Job row (mandatory at JD upload
-    # time, fixed per job -- never recomputed per candidate). Conversational
-    # interviews keep the resume-derived classify_band() as before.
-    if interview_type == "tech":
-        _band_seed = (ctx_data.questionBand or "").strip().lower()
-        if _band_seed not in ("fresher", "mid", "senior"):
-            _band_seed = "mid"
-        logger.info("[BAND] tech interview -- admin band=%s", _band_seed)
-    else:
-        _band_seed, _, _ = classify_band(structured_resume)
-        logger.info("[BAND] seed=%s", _band_seed)
+    # Level seed passed to generate_interview_brief. Admin-selected on the Job
+    # row at JD creation time (fixed per job, never recomputed per candidate),
+    # for BOTH tech and conversational interviews -- never inferred from resume.
+    _level_seed = int(ctx_data.level) if ctx_data.level in (1, 2, 3, 4) else 2
+    logger.info("[LEVEL] admin level=%s", _level_seed)
 
     _stored_brief_raw = ctx_data.interviewBrief if not _is_test_session else None
     _stored_brief_dict: dict | None = (
@@ -2179,8 +2135,8 @@ async def entrypoint(ctx: JobContext):
         )
         _interview_brief: InterviewBrief = InterviewBrief.model_validate(_stored_brief_dict)
         logger.info(
-            "[BRIEF] ✓ Loaded from DB | band=%s | anchor=%r | topics=%d",
-            _interview_brief.candidate_band,
+            "[BRIEF] ✓ Loaded from DB | level=%s | anchor=%r | topics=%d",
+            _interview_brief.level,
             _interview_brief.anchor_topic.title,
             len(_interview_brief.topic_pool),
         )
@@ -2200,7 +2156,7 @@ async def entrypoint(ctx: JobContext):
         _interview_brief = await generate_interview_brief(
             candidate_name=candidate_first_name or candidate_name,
             job_title=job_title,
-            candidate_band=_band_seed,
+            level=_level_seed,
             resume_json=structured_resume if isinstance(structured_resume, dict) else {},
             jd_data=extracted_details or {},
             custom_questions=_interview_questions or [],
@@ -2208,9 +2164,9 @@ async def entrypoint(ctx: JobContext):
             llm_model=str(ctx_data.llmInterviewBrief).strip(),
             usage_sink=_brief_llm_usages.append,
         )
-    # Use the LLM's band assessment -- more accurate than mechanical inference
-    candidate_band = _interview_brief.candidate_band
-    logger.info("[FLOW] Band=%s | candidate=%s | role=%s", candidate_band, candidate_name, job_title)
+    # Level is fixed and admin-selected -- the brief always echoes back _level_seed.
+    candidate_level = _interview_brief.level
+    logger.info("[FLOW] Level=%s | candidate=%s | role=%s", candidate_level, candidate_name, job_title)
     # Convenience views directly from InterviewBrief -- no wrapper objects needed.
     # Tech interviews are skill-only: topic_type is never "project"/"work" there,
     # only conversational briefs still produce those topic types.
@@ -2237,8 +2193,8 @@ async def entrypoint(ctx: JobContext):
         *(_jd_nice or []),
     ]))
     logger.info(
-        "[BRIEF] ✓ Generated | band=%s | anchor=%r | topics=%d",
-        _interview_brief.candidate_band,
+        "[BRIEF] ✓ Generated | level=%s | anchor=%r | topics=%d",
+        _interview_brief.level,
         _interview_brief.anchor_topic.title,
         len(_interview_brief.topic_pool),
     )
@@ -2249,11 +2205,11 @@ async def entrypoint(ctx: JobContext):
         logger.info(
             "[BRIEF] topic[%d] %-10s %r  probe=%s",
             _i, _t.topic_type, _t.title,
-            ",".join(_t.probe_focus[:3]) or "-",
+            _t.probe_focus or "-",
         )
     # Compact text block for eval layer prompt
     interview_directive_cached = build_interview_directive(
-        band=candidate_band,
+        level=candidate_level,
         resume_brief=None,
         jd_skills=_jd_skills or [],
         custom_questions=_interview_questions or None,
@@ -2266,14 +2222,15 @@ async def entrypoint(ctx: JobContext):
     _jd_must      = ", ".join([str(s) for s in (_jd_skills or [])][:6]) or "none"
     _jd_nice_str  = ", ".join([str(s) for s in (_jd_nice or [])][:4]) or "none"
     _coverage_str = ", ".join(base_coverage_items[:8]) or "auto"
-    _band         = candidate_band or "unknown"
-    _band_note = {
-        "fresher": "probe HOW they think  real decisions, specifics, learning signals",
-        "mid": "probe individual ownership, measurable impact, decision trade-offs",
-        "experienced": "probe end-to-end ownership, architecture depth, scale constraints",
-    }.get(_band, "probe ownership, depth, and specifics")
+    _level        = candidate_level or 2
+    _level_note = {
+        1: "probe HOW they think  real decisions, specifics, learning signals",
+        2: "probe individual ownership, measurable impact, decision trade-offs",
+        3: "probe end-to-end ownership, architecture depth, scale constraints",
+        4: "probe strategic/systemic judgment, org-level impact, high-stakes tradeoffs",
+    }.get(_level, "probe ownership, depth, and specifics")
     _fetch_summary_block = (
-        f"CANDIDATE: {candidate_name or 'unknown'} | ROLE: {job_title} | BAND: {_band} | TIME: {time_limit_mins}m\n"
+        f"CANDIDATE: {candidate_name or 'unknown'} | ROLE: {job_title} | LEVEL: {_level} | TIME: {time_limit_mins}m\n"
         f"\n"
         f"FETCH SUMMARY:\n"
         f"  Resume: {'fetched' if structured_resume else 'MISSING'} | JD: {'fetched' if extracted_details else 'MISSING'} | Custom Q: {len(_interview_questions) if _interview_questions else 0}\n"
@@ -2290,7 +2247,7 @@ async def entrypoint(ctx: JobContext):
             f"  Skills: {_skills_str}\n"
             f"\n"
             f"INTERVIEW PLAN: 20 min, skill-only. Open with: '{_anchor_title}'. "
-            f"Band={_band}: {_band_note}. "
+            f"Level={_level}: {_level_note}. "
             f"Must cover: common resume/JD skills, JD-required skills, expert role topics -- no project/work references."
         )
     else:
@@ -2304,7 +2261,7 @@ async def entrypoint(ctx: JobContext):
             f"\n"
             f"INTERVIEW PLAN: 20 min covering resume ownership, JD skills, situational, behavioural. "
             f"Open with: '{_anchor_title}'. "
-            f"Band={_band}: {_band_note}. "
+            f"Level={_level}: {_level_note}. "
             f"Must cover: resume projects, work history, JD must-have skills, at least 1 situational, at least 1 behavioural."
         )
     logger.info("[INTERVIEW_CONTEXT]\n%s", _context_block)
@@ -2318,8 +2275,8 @@ async def entrypoint(ctx: JobContext):
     evaluation_layer_prompt = build_evaluation_layer_prompt(
         candidate_name=candidate_first_name or candidate_name,
         job_title=job_title,
-        candidate_band=candidate_band,
         interview_brief=_interview_brief,
+        level=candidate_level,
     )
     system_prompt = build_system_prompt(
         voice_layer_prompt=voice_layer_prompt,
@@ -2336,7 +2293,7 @@ async def entrypoint(ctx: JobContext):
     logger.info("[FLOW] System prompt ready  greeting  interview")
     logger.debug("[SYSTEM_PROMPT] Full system prompt:\n%s", system_prompt)
     logger.debug("[INTERVIEW_DIRECTIVE] Content:\n%s", interview_directive_cached)
-    ctx.proc.userdata["candidate_band"] = candidate_band
+    ctx.proc.userdata["level"] = candidate_level
     def _build_flux_session_keyterms() -> list[str]:
         """Build one static Flux keyterm list for this interview session."""
         raw_topics = [
@@ -3143,8 +3100,8 @@ async def entrypoint(ctx: JobContext):
     def _build_proctoring_data(exit_reason: str) -> dict:
         """Single builder for proctoring_data dict  eliminates duplicate construction."""
         data: dict = {
-            "role_category": candidate_band,
-            "candidate_band": candidate_band,
+            "role_category": candidate_level,
+            "level": candidate_level,
             "total_turns": turn_count,
             "exit_reason": exit_reason,
             "events": proctoring_events,
@@ -3522,12 +3479,12 @@ async def entrypoint(ctx: JobContext):
                             if len(_txt) >= 24 and not _greeting_skip.search(_txt):
                                 resolved_question = _txt
                                 break
-                    # Resolve active TopicItem from brief -- gives eval accurate probe_focus,
-                    # tag, and importance instead of deriving from raw string heuristics.
+                    # Resolve active TopicItem from brief -- gives eval accurate probe_focus
+                    # and tag instead of deriving from raw string heuristics.
                     _scoring_topic_full = _active_topic or ""
                     _scoring_topic = _scoring_topic_full.split(" - ")[0].strip() if _scoring_topic_full else None
                     _scoring_topic_key = _normalize_topic_key(_scoring_topic or "")
-                    # Look up the matching TopicItem so importance comes from the brief
+                    # Look up the matching TopicItem so probe_focus/tag come from the brief
                     _active_brief_item = next(
                         (t for t in _interview_brief.topic_pool
                          if _topic_short_key_for_ordering(t.title) == _topic_short_key(_scoring_topic_full)),
@@ -3561,12 +3518,12 @@ async def entrypoint(ctx: JobContext):
                         "anchor_item": _anchor_title,
                         # Brief-derived topic metadata for accurate scoring calibration
                         "topic_tag": _active_brief_item.tag if _active_brief_item else "RESUME_TOPIC",
-                        "topic_probe_focus": _active_brief_item.probe_focus if _active_brief_item else [],
+                        "topic_probe_focus": _active_brief_item.probe_focus if _active_brief_item else "",
                         "topic_why_relevant": _active_brief_item.why_relevant if _active_brief_item else "",
 
                         "job_title": job_title,
                         "remaining_seconds": _remaining_total_seconds_now(),
-                        "band": candidate_band,
+                        "level": candidate_level,
                         "ai_question_this_turn": (_last_interviewer_question or "").strip(),
                     }
                 # -- INLINE EVAL -----------------------------------------------
@@ -3873,7 +3830,7 @@ async def entrypoint(ctx: JobContext):
                                 new_topic=_next_topic,
                                 new_topic_title=_topic_short_title(_next_topic),
                                 source=_pre_next_src,
-                                band=candidate_band,
+                                level=candidate_level,
                                 memory_block="",
                                 cross_ref_rule=_pre_cross_ref,
                                 client=_eval_openai_client,
@@ -3989,7 +3946,7 @@ async def entrypoint(ctx: JobContext):
                             new_topic=_active_topic or "",
                             new_topic_title=_new_topic_title,
                             source=_src,
-                            band=candidate_band,
+                            level=candidate_level,
                             memory_block="",
                             cross_ref_rule=_cross_ref_rule,
                             client=_eval_openai_client,
@@ -4119,7 +4076,7 @@ async def entrypoint(ctx: JobContext):
                     _directive = _build_probe_directive(
                         signal=_eval_signal,
                         signal_reason=_eval_signal_reason,
-                        band=(payload.get("band") or candidate_band or "mid").lower(),
+                        level=int(payload.get("level") or candidate_level or 2),
                         active_topic=_active_topic or "",
                         topic_item=_probe_brief_item,
                         prev_question=_prev_q,
@@ -4867,8 +4824,8 @@ async def entrypoint(ctx: JobContext):
         ready_event.set()
     if ready_event.is_set() and not disconnect_event.is_set():
         logger.info(
-            "[FLOW] Session started  candidate=%s role=%s band=%s tts=%s llm=%s boot=%dms",
-            candidate_name, job_title, candidate_band,
+            "[FLOW] Session started  candidate=%s role=%s level=%s tts=%s llm=%s boot=%dms",
+            candidate_name, job_title, candidate_level,
             org_tts_provider, interview_llm_model,
             int((time.perf_counter() - entry_started_at) * 1000),
         )
