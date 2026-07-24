@@ -1556,6 +1556,15 @@ class InterviewAgent(Agent):
                         )
                     else:
                         logger.info("[VALIDATOR] regeneration passed on retry")
+        if full_text == "NO_FOLLOW_UP_NEEDED":
+            # The sentinel means "the candidate's last answer already closed
+            # the gap -- do not ask a follow-up," not literal text to speak.
+            # Yielding raw_chunks here was sending the sentinel straight to
+            # TTS, so the agent said "NO_FOLLOW_UP_NEEDED" out loud. Yield
+            # nothing: this turn is silent, matching a real interviewer just
+            # moving on without a spoken filler.
+            logger.info("[LLM_GATE] NO_FOLLOW_UP_NEEDED -- suppressing turn, nothing will be spoken")
+            return
         for chunk in raw_chunks:
             yield chunk
     async def tts_node(self, text, model_settings):

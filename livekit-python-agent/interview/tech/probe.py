@@ -1132,16 +1132,24 @@ def get_probe_context(
         ]
         return "\n".join(lines)
 
-    # Cleared tier -- concept_cleared (Part C.2): no follow-up needed, the
-    # ladder/sub-concept rotation advances. Short-circuits before SIGNAL_PROBES
-    # since these 4 signals intentionally have no probe directive of their own.
+    # Cleared tier -- concept_cleared (Part C.2): the candidate cleared the
+    # concept the last question targeted. This does NOT mean the turn goes
+    # silent -- by the time this directive is built, TopicState has already
+    # advanced ladder_rung to the NEXT stage (or the sub-concept rotation to
+    # the next sub-concept), and this turn's job is to ask THAT real
+    # question now. NO_FOLLOW_UP_NEEDED is reserved for genuinely no-question
+    # turns (see llm_node in agent_runtime.py, which suppresses TTS output
+    # entirely on that sentinel) -- emitting it here left the interview
+    # silent every time a concept cleared, since nothing else in the
+    # pipeline generates a spoken question independently of this directive.
     if signal in _CLEARED_SIGNALS:
         lines += [
             f"SIGNAL: {signal}",
-            "WHAT: Candidate cleared this concept -- no gap to probe.",
-            "GOAL: Do not ask another question on the SAME concept. Output exactly",
-            "      NO_FOLLOW_UP_NEEDED and nothing else -- the sub-concept rotation",
-            "      or ladder rung will advance to the next target automatically.",
+            "WHAT: Candidate cleared this concept -- no gap to probe on it further.",
+            "GOAL: Briefly acknowledge, then ask a NEW question at the rung specified below --",
+            "      this is a fresh question on the next target, not a follow-up on what was",
+            "      just answered. This turn MUST produce a real spoken question.",
+            _rung_line,
         ]
         return "\n".join(lines)
 

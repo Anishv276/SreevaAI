@@ -6,10 +6,15 @@ covered by test_ladder_and_denial.py / test_conceptual_gate_and_rotation.py:
     fixed stage order, scenario last and exactly once, never 1st/2nd, phrasing
     rules (word count, '?' count, compound-ask, no filler in question text).
 
-  Part B: probe.py's get_probe_context() correctly short-circuits on the
-    "cleared" tier (definition_correct/mechanism_correct/distinction_clear/
-    application_grounded) with NO_FOLLOW_UP_NEEDED guidance, and surfaces a
-    cross-cutting signal note alongside a stage signal.
+  Part B: probe.py's get_probe_context() correctly handles the "cleared"
+    tier (definition_correct/mechanism_correct/distinction_clear/
+    application_grounded) by directing a real NEW question at the next
+    ladder rung -- NOT the NO_FOLLOW_UP_NEEDED sentinel, which would leave
+    the turn silent (see llm_node in agent_runtime.py, which now suppresses
+    TTS entirely whenever the LLM actually outputs that sentinel; regression
+    from a real interview session where the agent was heard saying the
+    literal string "NO_FOLLOW_UP_NEEDED" aloud on every cleared concept).
+    Also covers the cross-cutting signal note alongside a stage signal.
 
   Part D: evaluate_answer()'s score calibration -- distinction_reversed scores
     below distinction_absent (D.3), self_correction_recovery boosts sat
@@ -200,19 +205,27 @@ def test_repeated_opener_on_consecutive_questions_fails():
 
 
 # ---------------------------------------------------------------------------
-# Part B: get_probe_context's "cleared" tier short-circuit + cross-cutting note
+# Part B: get_probe_context's "cleared" tier + cross-cutting note
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("cleared_signal", [
     "definition_correct", "mechanism_correct", "distinction_clear", "application_grounded",
 ])
-def test_cleared_signals_short_circuit_to_no_follow_up(cleared_signal):
+def test_cleared_signals_direct_a_real_question_at_the_next_rung(cleared_signal):
+    """A cleared concept must never leave the turn silent -- by the time this
+    directive is built the caller has already advanced ladder_rung to the
+    NEXT stage, so this turn's job is to ask that real question now, not
+    emit the NO_FOLLOW_UP_NEEDED sentinel (which used to be spoken aloud
+    verbatim, and even after that TTS bug was fixed would just produce a
+    silent, stalled turn -- nothing else in the pipeline generates a
+    question independently of this directive)."""
     out = get_probe_context(
         signal=cleared_signal, signal_reason=None, band="mid",
         topic_follow_ups=1, topic_denied=False, prev_answer="a correct answer",
-        ladder_rung="definition",
+        ladder_rung="mechanism",
     )
-    assert "NO_FOLLOW_UP_NEEDED" in out
+    assert "NO_FOLLOW_UP_NEEDED" not in out
     assert cleared_signal in out
+    assert "MECHANISM" in out  # the next rung's real guidance must be present
 
 
 def test_gap_signal_does_not_short_circuit():

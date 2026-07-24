@@ -206,28 +206,35 @@ class TopicState:
         # candidate who has already shown they lack the fundamentals.
         self.scenario_gate_blocked: bool = False
 
-    # Weak-exit checkpoints per importance: (turn3_floor, turn5_floor).
-    # Uniform 50% floor at turn 3: after 3 probes, if the candidate hasn't reached
-    # half the threshold, they're not going to. Cap at 5 probes per topic (turn5_floor
-    # = 1.0 forces MOVE_ON at turn 5 regardless of progress).
-    _WEAK_EXIT_BY_IMPORTANCE: dict[str, tuple[float, float]] = {
-        "CRITICAL": (0.50, 1.00),
-        "HIGH":     (0.50, 1.00),
-        "MEDIUM":   (0.50, 1.00),
-        "LOW":      (0.50, 1.00),
-    }
+    # Weak-exit checkpoints, replicating the pre-ladder architecture's
+    # 3-tier saturation-percentage rule (uniform across importance, per the
+    # user's explicit spec -- the old per-importance progress_check_pct
+    # matrix is NOT being restored, only the checkpoint SHAPE):
+    #   turn 3: sat < 50% of threshold  -> MOVE_ON now.
+    #           sat >= 50%              -> one more probe (turn 4).
+    #   turn 4: sat < 80% of threshold  -> one more probe (turn 5, final).
+    #           sat >= 80%              -> candidate has clearly shown
+    #           competence, exit now rather than mechanically forcing a 5th
+    #           question just to fill the slot.
+    #   turn 5: always MOVE_ON regardless of sat -- hard cap, one final
+    #           question was already spent getting here.
+    # IMPORTANT: each check must fire ONLY at its own exact turn, not "any
+    # turn >= N" -- otherwise a later turn would keep re-evaluating an
+    # earlier (wrong) bar instead of deferring to its own rule.
+    _WEAK_EXIT_TURN3_PCT: float = 0.50
+    _WEAK_EXIT_TURN4_PCT: float = 0.80
 
     def is_weak_candidate_exit(self) -> bool:
         if self.saturation_threshold <= 0:
             return False
+        if self.follow_up_turns < 3:
+            return False
         sat_pct = self.saturation_score / self.saturation_threshold
-        turn3_floor, turn5_floor = self._WEAK_EXIT_BY_IMPORTANCE.get(
-            self.importance, self._WEAK_EXIT_BY_IMPORTANCE["HIGH"]
-        )
-        return (
-            (self.follow_up_turns >= 3 and sat_pct < turn3_floor) or
-            (self.follow_up_turns >= 5 and sat_pct < turn5_floor)
-        )
+        if self.follow_up_turns == 3:
+            return sat_pct < self._WEAK_EXIT_TURN3_PCT
+        if self.follow_up_turns == 4:
+            return sat_pct >= self._WEAK_EXIT_TURN4_PCT
+        return True  # follow_up_turns >= 5: hard cap, always exit
 
     def is_dry_topic(self) -> bool:
         # Two CONSECUTIVE answers with score 0 -> candidate is stuck, move on.
@@ -835,7 +842,16 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         logger.info("[DECISION] MOVE_ON reason=dry_topic (two consecutive zero scores) turn=%d", p.turn)
     elif _weak_exit:
         action = "MOVE_ON"
-        logger.info("[DECISION] MOVE_ON reason=weak_exit turn=%d", p.turn)
+        _sat_pct_now = (sat_score / sat_threshold) if sat_threshold > 0 else 0.0
+        _weak_exit_reason = (
+            "saturation_checkpoint_high" if _sat_pct_now >= 0.80
+            else "saturation_checkpoint_low"
+        )
+        logger.info(
+            "[DECISION] MOVE_ON reason=%s (turn=%d sat=%.0f%%)",
+            _weak_exit_reason, current_topic_state.follow_up_turns if current_topic_state else p.turn,
+            _sat_pct_now * 100,
+        )
     elif is_saturated:
         action = "MOVE_ON"
         logger.info("[DECISION] MOVE_ON reason=saturated turn=%d", p.turn)
