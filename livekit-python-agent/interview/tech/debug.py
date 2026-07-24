@@ -91,7 +91,7 @@ def build_debug_pdf(
             str(i),
             Paragraph(_esc(getattr(t, "title", "")), ss["Small"]),
             _esc(getattr(t, "topic_type", "")),
-            Paragraph(_esc(", ".join(getattr(t, "probe_focus", []) or [])), ss["Small"]),
+            Paragraph(_esc(getattr(t, "probe_focus", "") or ""), ss["Small"]),
             Paragraph(_esc(", ".join(getattr(t, "probe_avoid", []) or [])), ss["Small"]),
         ])
     pool_table = Table(pool_rows, colWidths=[0.3 * inch, 1.8 * inch, 0.8 * inch, 1.8 * inch, 1.8 * inch])

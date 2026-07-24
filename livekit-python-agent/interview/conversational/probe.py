@@ -534,11 +534,13 @@ def get_probe_context(
     declined_facts: str = "(none yet)",
     ladder_rung: str = "",
     cross_cutting_signal: str | None = None,
+    topic_score_history: list[float] | None = None,
 ) -> str:
     """
     Returns the probe context block injected into the directive. Sales-module
     mirror of interview.tech.probe.get_probe_context — identical mechanics,
-    sales signal set.
+    sales signal set. topic_score_history accepted for call-site parity with
+    the tech module but not yet rendered here.
 
     ladder_rung / cross_cutting_signal: accepted for call-site signature
     symmetry with the tech module (agent_runtime._build_probe_directive calls

@@ -25,13 +25,23 @@ def _report_uncaught(exc_type, exc_value, exc_tb) -> None:
 
 sys.excepthook = _report_uncaught
 
+# LiveKit's own dev-mode default is 0 idle processes (no pre-warmed spare) -- a
+# spare means a second full STT/TTS/VAD model load competing for memory/CPU with
+# the live job, which is what pushed init past the timeout on this machine. Only
+# force a warm spare when LIVEKIT_IDLE_PROCESSES is set (e.g. in prod, where
+# zero-latency job pickup matters); otherwise let the SDK's own dev/prod default apply.
+_idle_processes_env = os.getenv("LIVEKIT_IDLE_PROCESSES")
+_worker_kwargs: dict = {}
+if _idle_processes_env:
+    _worker_kwargs["num_idle_processes"] = int(_idle_processes_env)
+
 if __name__ == "__main__":
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=_entrypoint_guarded,
             prewarm_fnc=prewarm,
             agent_name=AGENT_NAME,
-            num_idle_processes=max(1, int(os.getenv("LIVEKIT_IDLE_PROCESSES", "1"))),
+            **_worker_kwargs,
             # LiveKit defaults to JobExecutorType.THREAD on Windows (dodges a
             # BrokenPipeError some Python/Windows combos hit spawning processes),
             # but prewarm() runs on that thread, not the process's real main thread --
@@ -42,5 +52,11 @@ if __name__ == "__main__":
             # reintroduces the BrokenPipeError on a given Windows/Python combo, the
             # existing lazy VAD retry in agent_runtime.py's entrypoint still covers it.
             job_executor_type=JobExecutorType.PROCESS,
+            # Default init timeout (10s) is too tight for STT/TTS/VAD prewarm on a
+            # loaded dev machine -- observed successful inits take ~8-9s alone, and
+            # spare-process spawns compete with the live job's memory/CPU, pushing
+            # some over the edge (harmless: proc_pool retries automatically, but the
+            # WARNING/ERROR log noise makes real failures harder to spot).
+            initialize_process_timeout=int(os.getenv("LIVEKIT_INIT_TIMEOUT", "30")),
         )
     )

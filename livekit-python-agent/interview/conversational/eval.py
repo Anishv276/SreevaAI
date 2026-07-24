@@ -53,21 +53,30 @@ class TopicState:
 
         self.last_score = None
         self.consecutive_zero_scores = 0
-
+        self.consecutive_denials = 0
+        self.closed_on_denials = False
         self.clarification_request_count = 0
         self.probe_rotation_index = 0
+
+    _WEAK_EXIT_TURN3_PCT: float = 0.50
+    _HARD_CAP_TURNS: int = 5
 
     def is_weak_candidate_exit(self) -> bool:
         if self.saturation_threshold <= 0:
             return False
+        if self.follow_up_turns < 3:
+            return False
         sat_pct = self.saturation_score / self.saturation_threshold
-        return (
-            (self.follow_up_turns >= 3 and sat_pct < 0.50) or
-            (self.follow_up_turns >= 5 and sat_pct < 1.00)
-        )
+        if self.follow_up_turns == 3:
+            return sat_pct < self._WEAK_EXIT_TURN3_PCT
+        return self.follow_up_turns >= self._HARD_CAP_TURNS
 
     def is_dry_topic(self) -> bool:
         return self.consecutive_zero_scores >= 2
+
+    def should_exit_on_denials(self) -> bool:
+        """Single pure_denial signal -> close the topic."""
+        return self.consecutive_denials >= 1
 
     _NON_FOLLOWUP_SIGNALS = frozenset({
         "clarification_request",
@@ -101,6 +110,14 @@ class TopicState:
         if turn is not None:
             self.updated_turn = turn
 
+        # pure_denial streak: single occurrence -> close topic
+        if signal in ["pure_denial"]:
+            self.consecutive_denials += 1
+            if self.consecutive_denials >= 1:
+                self.closed_on_denials = True
+        else:
+            self.consecutive_denials = 0
+
     def to_dict(self) -> dict:
         return {
             "topic_name":          self.topic_name,
@@ -115,6 +132,8 @@ class TopicState:
             "last_score":          self.last_score,
             "clarification_request_count": self.clarification_request_count,
             "consecutive_zero_scores": self.consecutive_zero_scores,
+            "consecutive_denials": self.consecutive_denials,
+            "closed_on_denials":   self.closed_on_denials,
             "probe_rotation_index": self.probe_rotation_index,
         }
 
@@ -133,6 +152,8 @@ class TopicState:
         obj.last_score          = float(d.get("last_score")) if d.get("last_score") is not None else None
         obj.clarification_request_count = int(d.get("clarification_request_count", 0) or 0)
         obj.consecutive_zero_scores = int(d.get("consecutive_zero_scores", 0) or 0)
+        obj.consecutive_denials = int(d.get("consecutive_denials", 0) or 0)
+        obj.closed_on_denials   = bool(d.get("closed_on_denials", False))
         obj.probe_rotation_index = int(d.get("probe_rotation_index", 0) or 0)
         if "saturation_threshold" in d:
             obj.saturation_threshold = float(d["saturation_threshold"])
@@ -253,7 +274,6 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
                 llm_model=p.llm_model,
                 level=p.level,
                 active_topic=p.active_topic or "",
-                topic_tag=p.topic_tag,
                 topic_probe_focus=p.topic_probe_focus,
                 job_title=p.job_title,
                 signals_already_fired=current_topic_state.signals_fired if current_topic_state else [],
@@ -317,6 +337,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     is_saturated = current_topic_state.is_saturated if current_topic_state else False
     _weak_exit = current_topic_state is not None and current_topic_state.is_weak_candidate_exit()
     _dry_topic = current_topic_state is not None and current_topic_state.is_dry_topic()
+    _denial_exit = current_topic_state is not None and current_topic_state.should_exit_on_denials()
 
     sat_score = current_topic_state.saturation_score if current_topic_state else 0.0
     sat_threshold = current_topic_state.saturation_threshold if current_topic_state else 0.0
@@ -329,7 +350,10 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         logger.info("[SAT:sales] %.0f%% done | score=%.1f need %.1f more", pct_done, sat_score, remaining)
 
     _escalate_to_move_on = False
-    if _forced_response_signal and current_topic_state:
+    if _denial_exit:
+        action = "MOVE_ON"
+        logger.info("[DECISION:sales] MOVE_ON reason=topic_floor_reached (pure_denial) turn=%d", p.turn)
+    elif _forced_response_signal and current_topic_state:
         if action == "REPHRASE" and current_topic_state.clarification_request_count >= 2:
             action = "MOVE_ON"
             _escalate_to_move_on = True
@@ -343,12 +367,17 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         logger.info("[DECISION:sales] MOVE_ON reason=dry_topic (two consecutive zero scores) turn=%d", p.turn)
     elif _weak_exit:
         action = "MOVE_ON"
-        logger.info("[DECISION:sales] MOVE_ON reason=weak_exit turn=%d", p.turn)
+        logger.info(
+            "[DECISION:sales] MOVE_ON reason=weak_exit (turn=%d sat=%.0f%%)",
+            current_topic_state.follow_up_turns if current_topic_state else p.turn,
+            (sat_score / sat_threshold * 100) if sat_threshold > 0 else 0,
+        )
     elif is_saturated:
         action = "MOVE_ON"
         logger.info("[DECISION:sales] MOVE_ON reason=saturated turn=%d", p.turn)
     else:
         action = "PROBE"
+
 
     if action == "PROBE":
         pct_sat = 100 * min(1.0, sat_score / sat_threshold) if sat_threshold > 0 else 0

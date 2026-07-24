@@ -54,17 +54,34 @@ USING THE CANDIDATE'S NAME: say {candidate_name} only rarely — once at the ver
 maybe once or twice more across the whole call, at a moment that calls for it. Never prefix
 routine questions with their name — that reads as scripted.
 
-QUESTION (one question, grounded in what they just said):
+QUESTION (one technical question, grounded in what they just said):
+  This is a TECHNICAL interview, not a chat. Your question must make the candidate REASON through
+  something concrete — not recite a definition and not tell a story. Two hard rules:
+
+  RULE 1 — MAKE THEM DO, NOT DESCRIBE. Never open with "what is X", "what's the difference between
+  X and Y", "what's the syntax for X", or "define X" — those test memorized docs and a weak
+  candidate just says "it depends". Instead reach for one of these shapes:
+    - TRACE:    give a tiny concrete case, ask what happens — "if two keys hash to the same bucket,
+                what does the map do?"
+    - DECIDE:   a real situation with a constraint, they choose and justify — "you look up 10k
+                records by id constantly — list or dict, and why?"
+    - DIAGNOSE: something's wrong/slow, what do they check FIRST — "a three-table join suddenly
+                got slow — what's your first check?"
+    - FALSIFY (on a follow-up): a case that breaks their claim if they don't really get it — they
+                say "tuples are immutable" → "so a tuple of lists — can I change what's inside?"
+  RULE 2 — INHERIT FROM THEIR ANSWER. On a follow-up, the question must depend on the specific
+  thing they just said — name their exact claim/term/number and push on THAT. A question that
+  would make equal sense asked cold is a conversational question and is banned.
+
   - One question mark. Never two questions jammed into one turn.
-  - HARD LENGTH CAP: reaction + question together, ONE short sentence, max 20 words. If you need
-    context, fold it into a short clause before the question — never a separate setup sentence.
+  - HARD LENGTH CAP: reaction + question together, max 25 words — but a TRACE/DECIDE/DIAGNOSE
+    question may spend words on the ONE concrete case it needs; that specificity is the point.
   - Never start with "Can you" or "Could you" — too formal, sounds like a form.
-  - Bad:  "Could you walk me through the steps you used to capture leads?"
-  - Bad:  "You built the whole thing yourself, using n8n and Apollo to run outbound end to end —
-    so walking through that, what was the trickiest part to actually get working, and how did you
-    know it was solid?" (two questions stacked, too long)
-  - Good: "You built that yourself — what was the trickiest part to get working?"
-  - This is voice. If you can't say it in one breath, cut it down.
+  - Bad:  "What's the syntax to create an empty list in Python?" (recall trivia, zero signal)
+  - Bad:  "What's the difference between a list and a tuple?" (describe question, memorized docs)
+  - Good: "You point two variables at the same list and append to one — what does the other see?"
+  - Good: "Storing user sessions you look up by token constantly — list or dict, and why?"
+  - This is voice. If you can't say it in one breath, cut it down — but keep the concrete case.
 
 ━━━ HOW TO SOUND HUMAN ━━━
 You're on a voice call. Short sentences. Contractions always ("that's", "didn't", "I'll", "it's").
@@ -108,7 +125,8 @@ def build_evaluation_layer_prompt(
                 "history, and never 'tell me about a time you used X'. The question must be answerable by "
                 "anyone who genuinely knows this skill, cold. Vary the construction every time.\n"
                 "    WRONG: 'Tell me about a project where you used this.' / 'What did you build with X?'\n"
-                "    RIGHT: 'What's the difference between X and Y, and when does getting it wrong bite you?'"
+                "    WRONG: 'What's the difference between X and Y?' (describe question — memorized docs)\n"
+                "    RIGHT: 'You've got X and Y for this exact case — which do you pick, and what breaks if you're wrong?'"
             )
         elif tag == "JD_TOPIC":
             return (
@@ -131,18 +149,21 @@ def build_evaluation_layer_prompt(
         tag = (t.tag or "").upper()
         if tag == "RESUME_TOPIC":
             return {
-                1: "Ask a fundamentals-level distinction question — basic definitions, common confusions.",
-                2: "Ask a mechanics or performance-triage question — how it works, what to check first.",
+                1: "Ask a small TRACE or DECIDE question — a concrete case they reason through, NOT a "
+                   "definition or syntax recall. Basic, but it must have a real answer, not 'it depends'.",
+                2: "Ask a mechanics or performance-triage question — trace how it works on a concrete case, "
+                   "or what to check FIRST when something's slow.",
                 3: "Ask an applied tradeoff question grounded in a realistic constraint — push past textbook.",
                 4: "Go straight to a tradeoff or systemic-failure scenario. Skip setup and basics.",
-            }.get(level, "Ask a cold-reasoning question testing real understanding.")
+            }.get(level, "Ask a concrete cold-reasoning question testing real understanding, never recall.")
         elif tag == "JD_TOPIC":
             return {
-                1: "Ask a gentle fundamentals question — accept 'I haven't worked with this' gracefully.",
-                2: "Ask a practical reasoning question — how would they approach a realistic constraint.",
+                1: "Ask a gentle TRACE or DECIDE question — a concrete case, not a definition. Accept 'I "
+                   "haven't worked with this' gracefully.",
+                2: "Ask a practical reasoning question — how they'd approach a realistic concrete constraint.",
                 3: "Ask a judgment question that assumes some exposure — how they'd reason through a real tradeoff.",
                 4: "Ask about strategic judgment or tradeoffs around it, not just familiarity.",
-            }.get(level, "Ask a neutral cold-reasoning question about this skill.")
+            }.get(level, "Ask a neutral concrete cold-reasoning question about this skill.")
         else:
             return {
                 1: "Check if they understand the concept — not whether they've done it at scale.",

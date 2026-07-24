@@ -307,7 +307,6 @@ class BriefPipeline:
             candidate_name=row.fullName,
             job_title=row.job_title,
             level=level,
-            resume_json=row.resume_json,
             jd_data=row.jd_data,
             custom_questions=row.custom_questions,
             openai_client=self._openai,

@@ -8,18 +8,14 @@ fact-level dedup (DECLINED_FACTS) so a declined number/name isn't re-asked in
 different words, and generative (non-menu) angle/scenario construction with a
 global RECENT_QUESTION_PATTERNS collision check baked into the system prompt.
 
-Part B staged signal taxonomy: signal names match three types --
-  RESPONSE-SHAPE signals (orthogonal to the staged taxonomy, describe the
-    SHAPE of the reply): clarification_request, rephrase_request, off_topic
-  STAGE signals (16 total, 4 per question stage -- exactly one fires per
-    turn, matching whichever stage/rung the question just answered targeted):
-    definition_{correct,partial,confused,absent}
-    mechanism_{correct,shallow,incorrect,absent}
-    distinction_{clear,one_sided,reversed,absent}
-    application_{grounded,generic}, reasoning_unjustified, application_absent
-  CROSS-CUTTING signals (at most one, alongside a stage signal, never instead
-    of it): verbal_disfluency, buzzword_without_substance,
-    self_correction_recovery, internal_contradiction, pure_denial
+Universal signal taxonomy (matches interview/tech/scoring.py) -- one signal
+fires per turn, no staged/rung concept:
+  RESPONSE-SHAPE signals (checked first, describe the SHAPE of the reply):
+    clarification_request, rephrase_request, off_topic
+  CONTENT signals (8, level-calibrated, applied regardless of what layer the
+    question targeted): depth_mastered, depth_clear, depth_applied,
+    depth_shallow, depth_misconception, depth_generic, pure_denial,
+    recovery_attempted
 """
 from __future__ import annotations
 
@@ -46,10 +42,12 @@ from interview.agent_runtime_helpers import _strip_leaked_meta
 
 SIGNAL_PROBES: dict[str, dict] = {
 
-    # Each entry's "directive" is the verbatim "Improved Prompt" text from
-    # Docs/new.md for that signal -- production text, not a paraphrase of it.
-    # question_type/voice_note are kept only for the reaction-hint plumbing
-    # in get_reaction_hint()/get_probe_context() below.
+    # Keyed on the UNIVERSAL 8-signal taxonomy from interview/tech/scoring.py
+    # (depth_mastered/clear/applied/shallow/misconception/generic, pure_denial,
+    # recovery_attempted) plus the 3 response-shape signals. This taxonomy has
+    # no staged/rung concept (no definition/mechanism/distinction/application
+    # split) -- one signal fires per turn regardless of what layer the question
+    # targeted.
 
     "clarification_request": {
         "question_type": "CLARIFICATION REPHRASE",
@@ -118,76 +116,15 @@ interview forward; a third identical redirect starts to feel like an interrogati
 produces new information.""",
     },
 
-    # ---- STAGE 1: DEFINITION SIGNALS ----
+    # ---- UNIVERSAL CONTENT SIGNALS (from scoring.py CONTENT_SIGNAL_DEFINITIONS) ----
 
-    "definition_partial": {
-        "question_type": "DEFINITION COMPLETION",
-        "voice_note":    "Warm and encouraging — they're close, not wrong.",
-        "directive": """\
-The candidate got PART of the definition right but is missing a key element or hedging heavily
-without a confident landing. This is a real, if incomplete, attempt — not a gap to re-explain
-from scratch and not a wrong claim to correct.
-
-Ask for the ONE missing piece directly, grounded in what they already said: name the part of
-their answer that's solid, then ask what's true about the piece they left vague or skipped.
-Never ask them to "define it again" — that repeats the exact framing that only got you a
-partial answer the first time.
-
-If this is the first probe on this concept: point at the specific gap ("you said X — what
-about Y, does that fit the same idea or not?"). If the concept has already been probed once and
-is still partial, pivot to asking for a concrete example instead of another definitional angle —
-a real example forces the missing precision to surface on its own.
-
-One question. Warm and encouraging tone — they're close, not wrong; this should feel like
-completing a thought, not being quizzed again.""",
-    },
-
-    "definition_confused": {
-        "question_type": "MISCONCEPTION SURFACE",
-        "voice_note":    "Curious and non-confrontational — you're surfacing the mix-up, not scolding it.",
-        "directive": """\
-The candidate stated the definition ACTIVELY WRONG — swapped it with a different concept's
-definition, or asserted a property that's the opposite of true. This is worse than a gap: it's
-a real misconception, and the next question should surface it without lecturing.
-
-Do NOT correct them or state the right answer. Instead, ask a question that would only make
-sense if their stated (wrong) property were true, so answering it forces them to confront the
-contradiction themselves — e.g. if they said a structure "keeps things in sorted order," ask
-what would happen if you inserted items in reverse order; if their claim were true nothing
-special would happen, which surfaces the gap through their own reasoning rather than your
-correction.
-
-Never say "that's not quite right" or "actually..." — let the follow-up question do the
-correcting work. One question. Curious and non-confrontational tone — you're surfacing the
-mix-up, not scolding it.""",
-    },
-
-    "definition_absent": {
-        "question_type": "ACKNOWLEDGEMENT + STEP-DOWN",
-        "voice_note":    "Warm and low-pressure — a knowledge gap here is normal.",
-        "directive": """\
-The candidate gave essentially nothing on this definition — a flat denial or non-answer. This is
-the denial tier: accept it cleanly and step DOWN to something easier on the SAME concept, never
-pivot to a harder or unrelated angle.
-
-One short acknowledgement, then ask the smallest, most concrete adjacent question you can find —
-something they might recognize even if they can't produce the formal definition (e.g. "have you
-seen this used anywhere, even without knowing the formal name for it?"). Give them an easy out.
-
-Never re-ask the exact same definitional question. Never make them feel punished for not
-knowing. If this is the second consecutive denial-tier answer on this topic, do not probe
-further — the topic is being closed out (topic_floor_reached), not escalated.""",
-    },
-
-    # ---- STAGE 2: MECHANISM SIGNALS ----
-
-    "mechanism_shallow": {
+    "depth_shallow": {
         "question_type": "MECHANISM DEEP-DIVE / OPEN THE BOX",
         "voice_note":    "Curious and open tone, not skeptical — you're testing depth, not accusing them of lying.",
         "directive": """\
-The candidate named the mechanism or restated its effect ("it makes lookups fast") but gave no
-internal steps, no data flow, no real trace of HOW it works. Confident label, hollow internals —
-don't ask them to restate the label again, ask them to open the box.
+The candidate named the right label or restated the effect ("it makes lookups fast") but gave no
+internal steps, no data flow, no real trace of HOW or WHY it works. Confident label, hollow
+internals — don't ask them to restate the label again, ask them to open the box.
 
 Prefer asking them to walk through what happens STEP BY STEP for one concrete input, over an
 open "how does it work" question — "how does it work" invites the same restated-label
@@ -203,234 +140,126 @@ internally." One question. Curious and open tone — you're testing depth, not a
 lying.""",
     },
 
-    "mechanism_incorrect": {
+    "depth_misconception": {
         "question_type": "MISCONCEPTION SURFACE",
         "voice_note":    "Curious and non-confrontational — you're surfacing the mix-up, not scolding it.",
         "directive": """\
-The candidate described an internal mechanism that is ACTIVELY WRONG — a specific, confidently
-stated false claim about how it works, not just vague or hollow. This is worse than a shallow
-non-answer: it's a real misconception about the internals.
+The candidate stated something ACTIVELY WRONG — a specific, confidently stated false claim about
+how it works, or a swapped/inverted property. This is worse than a hollow non-answer: it reveals
+a real misconception, not just a gap, and the next question should surface it without lecturing.
 
-Do NOT correct them directly. Ask a question that only makes sense if their stated (wrong)
-mechanism were true, so answering it surfaces the contradiction through their own reasoning —
-e.g. if they described it as a linear scan, ask what they'd expect to happen to lookup time as
-the data set gets 100x larger; if their claim were true the answer would be very different from
-what actually happens, and working through that gap is more instructive than being told.
+Do NOT correct them or state the right answer. Instead, ask a question that would only make
+sense if their stated (wrong) claim were true, so answering it forces them to confront the
+contradiction themselves — e.g. if they said a structure "keeps things in sorted order," ask
+what would happen if you inserted items in reverse order; if their claim were true nothing
+special would happen, which surfaces the gap through their own reasoning rather than your
+correction.
 
-Never say "that's not right" — let the follow-up do the correcting work. One question. Curious
-and non-confrontational tone.""",
+Never say "that's not quite right" or "actually..." — let the follow-up question do the
+correcting work. One question. Curious and non-confrontational tone — you're surfacing the
+mix-up, not scolding it.""",
     },
 
-    "mechanism_absent": {
-        "question_type": "ACKNOWLEDGEMENT + STEP-DOWN",
-        "voice_note":    "Warm and low-pressure — a knowledge gap here is normal.",
-        "directive": """\
-The candidate gave essentially nothing about how it works internally — a flat denial or
-non-answer. Denial tier: accept cleanly and step DOWN to something easier on the SAME concept.
-
-One short acknowledgement, then ask about the smallest observable EFFECT of the mechanism rather
-than the mechanism itself (e.g. "forget the internals — have you noticed it behaves differently
-under X versus Y?") — collapsing from "how" to "what did you notice" gives them something small
-to confirm rather than having to generate mechanism content from nothing.
-
-Never re-open the same "how does it work" framing that just failed. If this is the second
-consecutive denial-tier answer on this topic, do not probe further — the topic is being closed
-out, not escalated.""",
-    },
-
-    # ---- STAGE 3: DIFFERENCE SIGNALS ----
-
-    "distinction_one_sided": {
-        "question_type": "COMPARATIVE COMPLETION",
-        "voice_note":    "Encouraging, matter-of-fact tone — half the comparison landed, finish it.",
-        "directive": """\
-The candidate correctly described ONE side of the comparison but was vague or silent on the
-other — the contrast itself never completed. Don't re-ask for "the difference" in general;
-name the side they already got right and ask directly what changes on the OTHER side.
-
-Anchor the question in their own correct half: "okay, so [concept A] does X — what does
-[concept B] do differently, then?" This is more targeted than a fresh "what's the difference"
-because it uses their own correct answer as the anchor point instead of asking them to
-regenerate the whole comparison.
-
-If this is a repeat probe on the same comparison, ask for a concrete case where picking the
-wrong one of the two would actually cause a problem — a scenario-shaped nudge often surfaces
-the missing half better than another direct definitional ask.
-
-One question. Encouraging, matter-of-fact tone.""",
-    },
-
-    "distinction_reversed": {
-        "question_type": "MISCONCEPTION SURFACE (HIGH PRIORITY)",
-        "voice_note":    "Curious and non-confrontational, but this is a real misconception — don't understate it internally.",
-        "directive": """\
-The candidate swapped the two concepts' properties — attributed concept A's real trait to
-concept B or vice versa, confidently. This is ACTIVE CONFUSION about both concepts at once, not
-just a gap, and it is scored worse than a non-attempt (Part D.3) — but the QUESTION itself
-should stay curious, not corrective; the scoring severity and the tone are separate things.
-
-Do NOT state the correction. Construct a question that only makes sense if their swapped
-version were true, so they hit the contradiction themselves — e.g. if they said "B allows
-duplicates, A doesn't" when it's actually the reverse, ask what would happen if you tried to
-insert the same value twice into A specifically; if their claim were true nothing would stop it,
-and testing that against what they actually know tends to surface the swap.
-
-Never say "you have that backwards" — let the follow-up question do the work. One question.
-Curious and non-confrontational tone, even though this is a serious signal internally.""",
-    },
-
-    "distinction_absent": {
-        "question_type": "ACKNOWLEDGEMENT + STEP-DOWN",
-        "voice_note":    "Warm and low-pressure — a knowledge gap here is normal.",
-        "directive": """\
-The candidate gave essentially nothing on the comparison — a flat denial or non-answer. Denial
-tier: accept cleanly and step DOWN to something easier on the SAME pair of concepts.
-
-One short acknowledgement, then ask about just ONE of the two concepts in isolation (drop the
-comparison framing entirely for this turn) — "let's just take [concept A] on its own — what do
-you know about that one?" A comparison is harder than either concept alone; retreating to one
-side gives them a smaller, more answerable target.
-
-Never re-ask "what's the difference" again immediately. If this is the second consecutive
-denial-tier answer on this topic, do not probe further — the topic is being closed out.""",
-    },
-
-    # ---- STAGE 4: SCENARIO SIGNALS (gated -- only reached after the
-    # conceptual average clears CONCEPTUAL_GATE_THRESHOLD_PCT) ----
-
-    "application_generic": {
-        "question_type": "SCENARIO SPECIFICITY PUSH",
+    "depth_generic": {
+        "question_type": "SPECIFICITY PUSH",
         "voice_note":    "Conversational and real-world tone.",
         "directive": """\
-The candidate gave a plausible-sounding but GENERIC response to the scenario — a checklist that
-could apply to almost any failure, not tied to the specific mechanism this topic is actually
-about. Push them to connect the generic checklist item back to the mechanism.
+The candidate gave a plausible-sounding but GENERIC answer — a checklist or best-practice recital
+that could apply to almost any situation, not tied to anything specific about THIS question.
+Push them to connect the generic item back to the actual mechanism or scenario.
 
-Ask what SPECIFICALLY about this mechanism would make that first check meaningful — e.g. if
-they said "I'd check the logs," ask what exact thing in the logs would tell them it's this
-mechanism's fault versus something else entirely. This forces the generic answer to either
-sharpen into something grounded or reveal that it wasn't really connected to the mechanism at
-all.
+Ask what SPECIFICALLY about this case would make that first thing they mentioned meaningful —
+e.g. if they said "I'd check the logs," ask what exact thing in the logs would tell them it's
+this cause versus something else entirely. This forces the generic answer to either sharpen into
+something grounded or reveal that it wasn't really connected to the specifics at all.
 
-Build the follow-up out of a specific noun from their own answer or from the scenario itself,
-never a generic "how would you debug this further." One question. Conversational and real-world
-in tone.""",
+Build the follow-up out of a specific noun from their own answer or from the question itself,
+never a generic "can you elaborate." One question. Conversational and real-world in tone.""",
     },
 
-    "reasoning_unjustified": {
-        "question_type": "TRIAGE RATIONALE",
-        "voice_note":    "Genuinely curious tone — you're testing judgment, not catching them in a mistake.",
-        "directive": """\
-The candidate named a plausible action for the scenario ("I'd just restart it") but gave NO
-reasoning for why that's the right first move — a bare assertion with no triage logic behind
-it. Ask directly why that would be the first thing to check or do, not the tenth.
-
-Frame it as genuine curiosity about their triage instinct, not a challenge: "what makes that
-the first thing you'd reach for, over [a plausible alternative first check]?" Naming a concrete
-alternative sharpens the question — an open "why" invites a rehearsed non-answer, a specific
-alternative forces a real comparison.
-
-One question. Genuinely curious tone — you're testing whether there's real judgment behind the
-action, not catching them in a mistake; a reasonable-sounding first guess is a fine starting
-point, you're looking for the reasoning underneath it.""",
-    },
-
-    "application_absent": {
+    "pure_denial": {
         "question_type": "ACKNOWLEDGEMENT + STEP-DOWN",
         "voice_note":    "Warm and low-pressure — a knowledge gap here is normal.",
         "directive": """\
-The candidate gave essentially nothing for the scenario — a flat denial or non-answer. Denial
-tier: accept cleanly and step DOWN — since scenario is the last rung, stepping down means
-dropping the scenario framing entirely and asking about the underlying mechanism directly
-instead, on the same concept.
+The candidate gave essentially nothing — a flat denial or non-answer ("I don't know," "not
+sure"). This is the denial tier: accept it cleanly and step DOWN to something easier on the SAME
+concept, never pivot to a harder or unrelated angle.
 
-One short acknowledgement, then ask the smallest concrete question about the mechanism itself
-("no worries — forget the scenario for a second, what's the one thing you'd check about how
-this works at all?"). Never re-open the same scenario framing that just failed.
+One short acknowledgement, then ask the smallest, most concrete adjacent question you can find —
+something they might recognize even without the formal mechanism (e.g. "have you seen this used
+anywhere, even without knowing exactly how it works?"). Give them an easy out.
 
-If this is the second consecutive denial-tier answer on this topic, do not probe further — the
-topic is being closed out.""",
+Never re-ask the exact same question. Never make them feel punished for not knowing. This is the
+last probe on this concept in this topic — a single denial closes the topic out
+(topic_floor_reached), it is not escalated further.""",
     },
 
-    # ---- CROSS-CUTTING SIGNALS (fire alongside a stage signal) ----
-
-    "buzzword_without_substance": {
-        "question_type": "SUBSTANCE VERIFICATION",
-        "voice_note":    "Specific and grounded, not skeptical.",
+    "depth_clear": {
+        "question_type": "PRECISION PUSH",
+        "voice_note":    "Encouraging, matter-of-fact tone — most of it landed, sharpen the remaining edge.",
         "directive": """\
-The candidate dropped technical-sounding terms with no real content behind them for THIS
-question's concept — jargon used as a shield rather than as shorthand for real understanding.
+The candidate showed real understanding on at least two dimensions (mechanism + tradeoff, or
+mechanism + application) but is missing one layer, or the tradeoff/failure-mode angle is thin.
+This is a strong partial — don't re-ask the whole thing, target the ONE missing layer.
 
-Ask for the single smallest concrete detail that only someone with real understanding could
-produce — not "what does that term mean" (invites another definition), but something that
-requires having actually reasoned about the concept: a specific case where it applies, a
-specific number, or a specific step. A real understanding can generate one of these on demand;
-buzzword-only familiarity cannot.
+Name the part that's solid and ask specifically about the layer they didn't cover — if they gave
+mechanism + tradeoff but no failure case, ask what breaks or degrades under a specific condition.
+If they gave mechanism only, ask for the tradeoff against a named alternative.
 
-One question, tied to the specific term they used. Specific and grounded tone, not skeptical —
-you're verifying substance, not calling out a bluff.""",
+One question, anchored in what they already got right. Encouraging, matter-of-fact tone — this
+should feel like finishing a strong answer, not being quizzed again.""",
     },
 
-    "internal_contradiction": {
-        "question_type": "CONTRADICTION RESOLUTION (NEUTRAL)",
-        "voice_note":    "Neutral and curious, never accusatory.",
+    "depth_applied": {
+        "question_type": "DEPTH CONFIRMATION",
+        "voice_note":    "Genuinely impressed, curious for the edge.",
         "directive": """\
-The candidate said two things in the same answer that directly conflict, and never resolved
-which one they meant — distinct from self_correction_recovery, where they caught and fixed it
-themselves. Ask them to resolve it, neutrally.
+The candidate connected their answer to a real, concrete situation with a specific constraint and
+outcome — the gold-standard signal. There may be no real gap here; only probe further if there is
+a natural edge left uncovered (what they'd do differently, a failure mode they didn't mention, or
+the limit of when their approach stops working).
 
-Name both things they said, in their own words, and ask which one is actually true — "you
-mentioned both X and Y just now — which of those is actually the case?" Never imply they
-contradicted themselves as a criticism; people genuinely think out loud and land on a real
-answer when asked to pick.
+If there's nothing further worth asking, prefer NO_FOLLOW_UP_NEEDED over manufacturing a
+question — do not force depth that isn't there just because a signal fired.
 
-One question. Neutral and curious tone, never accusatory — the goal is resolution, not calling
-out the inconsistency.""",
+One question if you ask at all, targeting the specific edge of what they already described.""",
     },
 
-}
+    "depth_mastered": {
+        "question_type": "DEPTH CONFIRMATION",
+        "voice_note":    "Genuinely impressed, curious for the edge.",
+        "directive": """\
+The candidate demonstrated genuine mastery: mechanism, tradeoff, and judgment all present. This
+is close to a complete answer — only probe further if there's a real edge case or alternative
+approach worth testing their judgment against; do not manufacture a gap that isn't there.
 
-# ---------------------------------------------------------------------------
-# "Cleared" tier -- definition_correct / mechanism_correct / distinction_clear /
-# application_grounded. These four are NOT in SIGNAL_PROBES: a cleared concept
-# means the ladder/sub-concept rotation should ADVANCE (concept_cleared, Part
-# C.2), not receive another probe on the same thing. get_probe_context()
-# checks for membership in this set BEFORE falling back to SIGNAL_PROBES/
-# _DEFAULT_PROBE and returns NO_FOLLOW_UP_NEEDED guidance directly.
-# ---------------------------------------------------------------------------
-_CLEARED_SIGNALS: frozenset[str] = frozenset({
-    "definition_correct", "mechanism_correct", "distinction_clear", "application_grounded",
-})
+If there's nothing further worth asking, prefer NO_FOLLOW_UP_NEEDED over forcing a question.
 
-# ---------------------------------------------------------------------------
-# Cross-cutting signal notes -- appended to the directive alongside whichever
-# stage signal fired (Part B: at most one cross-cutting signal per turn).
-# verbal_disfluency and buzzword_without_substance are content-neutral by
-# themselves (see Part D.1's scoring calibration -- the note here is about
-# framing, not scoring); pure_denial is handled upstream by the denial-tier
-# override in get_probe_context() and never reaches this block.
-# ---------------------------------------------------------------------------
-_CROSS_CUTTING_NOTES: dict[str, str] = {
-    "verbal_disfluency": (
-        "  Delivery was rambly/hedging/filler-heavy, but that's HOW they said it, not WHAT --\n"
-        "  do not treat this as evidence of a gap. Frame your reaction and follow-up around the\n"
-        "  substance of their answer, not its delivery. Never comment on the rambling itself."
-    ),
-    "self_correction_recovery": (
-        "  Candidate caught and corrected their own mistake mid-answer -- a GOOD sign, not a\n"
-        "  fumble. Acknowledge the corrected version warmly (briefly, don't over-praise it) and\n"
-        "  build your follow-up on the corrected claim, not the initial slip."
-    ),
-    "buzzword_without_substance": (
-        "  Already reflected in the stage signal's directive above if it's the primary signal;\n"
-        "  if it's riding alongside a different stage signal, keep the follow-up anchored to a\n"
-        "  concrete detail-check rather than another open 'what does that mean' question."
-    ),
+One question if you ask at all — push on the edge of their judgment (a case where their stated
+approach would NOT be the right call), not a repeat of what they already covered.""",
+    },
+
+    "recovery_attempted": {
+        "question_type": "BUILD ON THE CORRECTION",
+        "voice_note":    "Warm, brief acknowledgement of the catch, then build on the corrected claim.",
+        "directive": """\
+The candidate caught and corrected their own mistake mid-answer — a GOOD sign, not a fumble.
+Acknowledge the corrected version warmly but briefly (don't over-praise it), and build your
+follow-up on the corrected claim as if that's what they'd said from the start.
+
+Never reference the initial slip or imply there was a stumble. Treat the corrected answer using
+ordinary signal logic for its content (if it's still thin, probe deeper on the corrected claim; if
+it's solid, push the next layer).
+
+One question, grounded in the corrected version only.""",
+    },
+
 }
 
 # Fallback probe when signal is null or unrecognised (mostly: eval call timed out,
-# errored, or returned unparseable JSON -- a real G0/G1-G7 classification almost
-# never resolves to null, since the content gates are instructed to always pick one).
+# errored, or returned unparseable JSON -- the universal signal classifier's
+# fallback rule always picks depth_shallow, so this default should rarely fire
+# except on an actual scoring-call exception).
 _DEFAULT_PROBE = {
     "question_type": "OPEN PULL",
     "voice_note":    "Curious and specific. Don't ask them to 'tell you more' — find the one thing worth digging into.",
@@ -455,53 +284,29 @@ Never ask a generic "tell me more".""",
 # ---------------------------------------------------------------------------
 _LEVEL_OVERLAYS: dict[str, dict[int, str]] = {
 
-    "definition_partial": {
-        1: "Accept a rough approximation — ask for just the one missing word or property, keep it gentle.",
-        2: "Ask for the specific missing element directly.",
-        3: "Expect near-complete precision — push on the exact missing qualifier.",
-        4: "A partial definition at this level is notable — push for the precise missing distinction.",
-    },
-    "definition_confused": {
-        1: "Surface the mix-up gently with a very concrete example — don't make it feel like a test failure.",
-        2: "Surface the contradiction with a concrete case.",
-        3: "A confused definition at this level is a real flag — surface it clearly via a concrete case.",
-        4: "Surface it via a case with real stakes — this level of confusion is significant here.",
-    },
-    "mechanism_shallow": {
+    "depth_shallow": {
         1: "Ask HOW it works step by step for one concrete input — don't push for edge cases yet.",
         2: "Ask them to trace one concrete input through the mechanism.",
         3: "Expect a real internal trace — push for the step they're skipping.",
         4: "Expect fluency with the internals — a shallow answer here is a real gap.",
     },
-    "mechanism_incorrect": {
-        1: "Surface it gently via a concrete case — a mechanism mix-up is common at this level.",
+    "depth_misconception": {
+        1: "Surface it gently via a concrete case — a mix-up like this is common at this level.",
         2: "Surface the wrong claim via a concrete case that would behave differently if it were true.",
-        3: "A wrong mechanism claim at this level is a real flag — surface it clearly.",
-        4: "This level of mechanism error is significant — surface it via a case with real consequences.",
+        3: "A wrong claim at this level is a real flag — surface it clearly.",
+        4: "This level of error is significant — surface it via a case with real consequences.",
     },
-    "distinction_one_sided": {
-        1: "Accept the one correct side — ask for just a simple word or two about the other.",
-        2: "Ask what changes on the other side directly.",
-        3: "Expect a real completed contrast — push for the missing half precisely.",
-        4: "A half-completed distinction at this level is notable — push for full precision.",
+    "depth_generic": {
+        1: "A generic-but-plausible answer is fine — gently connect it to the specific mechanism.",
+        2: "Push to connect the generic answer to the specific mechanism or scenario.",
+        3: "Expect the answer to already be specific — push on what's missing.",
+        4: "A generic answer at this level is a real gap — push hard for specific, applied reasoning.",
     },
-    "distinction_reversed": {
-        1: "Surface the swap very gently with a simple concrete case — this is a common early mix-up.",
-        2: "Surface the swap via a concrete case.",
-        3: "A reversed distinction at this level is a real flag — surface it clearly.",
-        4: "This level of confusion is significant — surface it via a case with real stakes.",
-    },
-    "application_generic": {
-        1: "A generic-but-plausible checklist is fine — gently connect it to the mechanism.",
-        2: "Push to connect the generic checklist item to the specific mechanism.",
-        3: "Expect the check to already be mechanism-specific — push on what's missing.",
-        4: "A generic checklist at this level is a real gap — push hard for mechanism-specific reasoning.",
-    },
-    "reasoning_unjustified": {
-        1: "Accept a reasonable guess — ask gently what made them think of that first.",
-        2: "Ask for the reasoning behind the first move directly.",
-        3: "Expect real triage logic — push for the reasoning, not just the action.",
-        4: "Expect systemic judgment behind the first move — an unjustified action here is a real gap.",
+    "depth_clear": {
+        1: "Accept a near-complete answer — ask for just the one missing word or property, keep it gentle.",
+        2: "Ask for the specific missing layer directly.",
+        3: "Expect near-complete precision — push on the exact missing qualifier or tradeoff.",
+        4: "A merely-clear answer at this level is notable — push for the precise missing distinction.",
     },
 }
 
@@ -515,53 +320,37 @@ _LEVEL_OVERLAYS: dict[str, dict[int, str]] = {
 # naturally turn to turn instead of defaulting to "Mm".
 # ---------------------------------------------------------------------------
 _SIGNAL_REACTIONS: dict[str, dict] = {
-    "definition_partial": {
-        "tone": "encouraging — they're close, help them land it",
-        "openers": ["Right, close —", "Okay, almost —", "Good start —"],
-    },
-    "definition_confused": {
-        "tone": "curious, non-confrontational — surfacing a mix-up, not correcting",
-        "openers": ["Interesting —", "Okay, let's check that —", "Hm, let's see —"],
-    },
-    "definition_absent": {
-        "tone": "warm and reassuring — make it safe that they don't know",
-        "openers": ["No worries —", "That's alright —", "Fair enough —"],
-    },
-    "mechanism_shallow": {
+    "depth_shallow": {
         "tone": "lightly impressed then probing — acknowledge the claim, then open the box",
         "openers": ["Okay, so —", "Right, and —", "Got it, so —"],
     },
-    "mechanism_incorrect": {
+    "depth_misconception": {
         "tone": "curious, non-confrontational — surfacing a mix-up, not correcting",
         "openers": ["Interesting —", "Okay, let's check that —", "Hm, let's see —"],
     },
-    "mechanism_absent": {
-        "tone": "warm and reassuring — make it safe that they ran out",
-        "openers": ["No worries —", "That's alright —", "Fair enough —"],
-    },
-    "distinction_one_sided": {
-        "tone": "encouraging, matter-of-fact — half landed, finish it",
-        "openers": ["Right, and —", "Okay, so on the other side —", "Got that half —"],
-    },
-    "distinction_reversed": {
-        "tone": "curious, non-confrontational — surfacing a mix-up, not correcting",
-        "openers": ["Interesting —", "Okay, let's check that —", "Hm, let's see —"],
-    },
-    "distinction_absent": {
-        "tone": "warm and reassuring — make it safe that they don't know",
-        "openers": ["No worries —", "That's alright —", "Fair enough —"],
-    },
-    "application_generic": {
+    "depth_generic": {
         "tone": "engaged and conversational — you followed the flow, now push for specifics",
         "openers": ["Right, that tracks —", "Okay, I follow —", "Makes sense —"],
     },
-    "reasoning_unjustified": {
-        "tone": "genuinely curious about the reasoning",
-        "openers": ["Interesting choice —", "Okay, and —", "Fair enough, but —"],
-    },
-    "application_absent": {
+    "pure_denial": {
         "tone": "warm and reassuring — make it safe that they don't know",
         "openers": ["No worries —", "That's alright —", "Fair enough —"],
+    },
+    "depth_clear": {
+        "tone": "encouraging, matter-of-fact — most of it landed, sharpen the rest",
+        "openers": ["Right, and —", "Okay, close —", "Good start —"],
+    },
+    "depth_applied": {
+        "tone": "genuinely impressed, curious for the edge",
+        "openers": ["Nice, and —", "Okay, real scenario —", "Good, so —"],
+    },
+    "depth_mastered": {
+        "tone": "genuinely impressed, curious for the edge",
+        "openers": ["Nice, and —", "Okay, real scenario —", "Good, so —"],
+    },
+    "recovery_attempted": {
+        "tone": "warm, brief acknowledgement of the catch, then build on the corrected claim",
+        "openers": ["Right, and —", "Okay, so —", "Got it —"],
     },
 }
 
@@ -633,6 +422,37 @@ a genuinely different construction that still satisfies the same goal and questi
 
 YOUR JOB THIS TURN: ask ONE follow-up question based on what the candidate just said.
 
+━━━ THIS IS A TECHNICAL INTERVIEW, NOT A CHAT ━━━
+You are a senior engineer probing for the exact limit of what this person actually understands —
+the way a real interviewer keeps pushing one thread until they hit either real understanding or
+the point where the candidate's knowledge runs out. That floor is the signal. Two rules make a
+question feel technical instead of conversational:
+
+1. INHERIT FROM THEIR ANSWER. Your question must DEPEND on the specific thing they just said —
+   it should be impossible to ask without having heard their answer. A question that would make
+   equal sense asked cold, before they spoke, is a conversational question and is BANNED. Quote
+   or name the specific claim/term/number they used and push directly on THAT.
+
+2. MAKE THEM DO, NOT DESCRIBE. Prefer a question that forces them to work something out over one
+   that asks them to explain a concept. A "describe" question ("what's the difference between X
+   and Y") is answerable from memorized docs. A "do" question forces real understanding to
+   surface. Reach for these shapes, tied to what they said:
+     - TRACE: "walk me through what happens for THIS input: <concrete case>"
+     - OUTPUT: "so what does <their exact snippet/query/call> actually return / do?"
+     - FALSIFY (the key move): give one concrete case that BREAKS their stated claim if they
+       don't really understand it — "ok — so what about <edge case>?" If their claim was right,
+       they handle it; if it was memorized, it cracks. e.g. they said "tuples are immutable" →
+       "so a tuple of lists — can I change what's inside it?"
+     - ESCALATE: if they nailed it, add a real constraint that makes it harder — a scale number,
+       a failure mode, a concurrent access — "and at 100M rows, does that still hold?"
+     - GROUND: if they were generic, force one specific — "which exact line in the logs tells you
+       it's THIS and not GC pressure?"
+   The PROBE DIRECTIVE below tells you which of these the fired signal calls for — follow it, but
+   always anchor the concrete case to their actual words, never a generic textbook example.
+
+Do NOT re-ask a plain definition, do NOT ask "can you explain more about X", do NOT open a fresh
+unrelated concept while their last answer still has an untested claim in it.
+
 EVIDENCE-SUFFICIENCY CHECK FIRST: if the candidate's last answer already closed the gap the
 PROBE DIRECTIVE describes (a later clause already supplied the missing detail), output exactly
 NO_FOLLOW_UP_NEEDED and nothing else. Do not force a question just because the signal fired.
@@ -649,10 +469,11 @@ OPEN WITH A REACTION THAT FITS WHAT THEY SAID:
   banned in any tone.
 
 THEN ASK ONE QUESTION — HARD LENGTH CAP:
-- Reaction + question together: TWO sentences maximum AND under 25 words total, no exceptions.
-  Two long run-on sentences still fail this — count words, not just sentence-stops. If your draft
-  runs longer, cut setup and context first — the candidate already lived what happened, they
-  don't need it re-explained back to them before the question lands.
+- Reaction + question together: TWO sentences maximum AND under 30 words total. The ONLY thing
+  that may use those extra words is a concrete case in a TRACE/OUTPUT/FALSIFY question (the actual
+  input, snippet, or edge case they have to reason about) — that specificity is the point of the
+  question, don't cut it. Everything else stays tight; cut setup and re-explanation first.
+  Two long run-on sentences still fail this — count words, not just sentence-stops.
 - Never restate role context, company context, or "why this matters for the role" before asking
   — that's a scripted-form habit, not how a real interviewer talks. Assume the candidate already
   has that context; just ask.
@@ -1009,32 +830,29 @@ def validate_topic_question_set(questions: list[dict]) -> list[str]:
     return violations
 
 
-_LADDER_RUNG_GUIDANCE: dict[str, str] = {
-    "definition": (
-        "Ask a DEFINITION question: what the concept IS, or a basic distinction between "
-        "two commonly confused terms -- testing real understanding, not memorization. "
-        "Do not ask about mechanism internals, comparisons, or a scenario at this rung."
-    ),
-    "mechanism": (
-        "Ask a MECHANISM question: how it actually works under the "
-        "hood, not just what it's called. Do not ask a pure definition question -- assume "
-        "the definition rung is already covered."
-    ),
-    "difference": (
-        "Ask a DIFFERENCE question: contrast this concept with a closely "
-        "related one (X vs Y) and what actually changes the choice between them. Do not "
-        "ask a numbers-bearing or failure scenario at this rung -- that's the LAST rung, "
-        "gated separately."
-    ),
-    "scenario": (
-        "Ask a SCENARIO question: a concrete, numbers-bearing or debugging-style scenario "
-        "where something is slow, broken, or degraded -- ask what they'd check or do FIRST. "
-        "This rung is GATED: it is only reached once the candidate's conceptual answers "
-        "(definition/mechanism/difference) have already cleared the threshold, so if "
-        "you were handed this rung, treat it as earned -- go straight to the applied "
-        "scenario, don't re-check fundamentals first."
-    ),
-}
+def _render_score_trend(topic_score_history: list[float] | None) -> str | None:
+    """Turns the topic's overall-score history into one descriptive trend line
+    so the question-generation LLM knows the candidate's trajectory on this
+    topic, not just the single signal from the most recent turn -- e.g. a
+    generic-sounding answer after two strong ones is a stumble, not a gap.
+    Purely arithmetic on scores already computed; no new judgment call, no
+    inference about the candidate. Needs >= 2 points to say anything useful."""
+    hist = [float(s) for s in (topic_score_history or []) if s is not None]
+    if len(hist) < 2:
+        return None
+    _path = " → ".join(f"{s:.1f}" for s in hist)
+    _delta = hist[-1] - hist[-2]
+    if _delta <= -2.5:
+        _read = "sharp drop — candidate was doing well, don't treat this as a knowledge gap on the whole topic, just this specific angle"
+    elif _delta >= 2.5:
+        _read = "recovering — candidate found their footing, don't keep treating them as weak on this topic"
+    elif hist[-1] >= 7.0 and min(hist) >= 6.0:
+        _read = "consistently strong — safe to push for more precision/depth"
+    elif hist[-1] <= 4.0 and max(hist) <= 4.5:
+        _read = "consistently weak — this is a real gap, not a one-off stumble"
+    else:
+        _read = "flat/mixed — no strong trend either way"
+    return f"{_path} ({_read})"
 
 
 def get_probe_context(
@@ -1052,6 +870,7 @@ def get_probe_context(
     declined_facts: str = "(none yet)",
     ladder_rung: str = "",
     cross_cutting_signal: str | None = None,
+    topic_score_history: list[float] | None = None,
 ) -> str:
     """
     Returns the probe context block injected into the directive.
@@ -1072,19 +891,10 @@ def get_probe_context(
       explicitly been unable to produce). Both default to "(none yet)" so existing
       call sites that don't pass them keep working unchanged.
 
-    ladder_rung: the fixed question-type rung (definition/mechanism/difference/
-      scenario) the caller's TopicState says the NEXT question on this topic must
-      target (see TopicState.current_rung_name() in eval.py). This is a hard
-      constraint -- it always steps DOWN after a denial-tier signal and steps UP
-      otherwise (never past "difference" into "scenario" unless the conceptual-
-      average gate clears -- see TopicState.can_enter_scenario()), so the
-      question never escalates right after the candidate couldn't answer, and a
-      scenario/debugging-style question is never the 1st or 2nd question asked
-      on a topic. Empty string when the caller has no ladder state.
-
-    cross_cutting_signal: Part B's optional cross-cutting signal (verbal_disfluency/
-      buzzword_without_substance/self_correction_recovery/internal_contradiction/
-      pure_denial) fired ALONGSIDE the primary stage signal, if any.
+    topic_score_history: this topic's overall scores across turns so far
+      (oldest first, including the current turn). Rendered as one trend line
+      so a single bad turn after two strong ones reads as a stumble, not a
+      fresh knowledge gap. Optional -- omitted entirely if fewer than 2 points.
     """
     lines: list[str] = []
     _signals_history = signals_history or []
@@ -1095,29 +905,12 @@ def get_probe_context(
         and _signals_history[-2] == signal
     )
 
-    _rung_line = ""
-    if ladder_rung:
-        _rung_guidance = _LADDER_RUNG_GUIDANCE.get(ladder_rung, "")
-        _rung_line = (
-            f"\nDIFFICULTY RUNG (HARD CONSTRAINT): {ladder_rung.upper()}\n"
-            f"  {_rung_guidance}\n"
-            f"  This rung is fixed by the interview's ladder tracker, not a suggestion --\n"
-            f"  do not ask a harder or easier question than this rung specifies."
-        )
-
-    # Denial-tier override -- always highest priority. Part B replaces the old
-    # raw-text substring sniff with the actual signal name whenever one is
-    # available (a "*_absent" stage signal, or the cross-cutting pure_denial) --
-    # topic_denied (from eval.py's TopicState) and a crude text fallback remain
-    # as a safety net for callers that haven't threaded a signal through yet.
-    _is_denial_signal = bool(signal) and signal.endswith("_absent")
-    _is_denial_cross_cutting = cross_cutting_signal == "pure_denial"
     _prev_lower = prev_answer.lower()
     _is_denial_text_fallback = any(p in _prev_lower for p in (
         "i forgot", "i don't remember", "i dont remember",
         "i don't know", "i dont know", "not sure", "can't remember", "cant remember",
     ))
-    if topic_denied or _is_denial_signal or _is_denial_cross_cutting or _is_denial_text_fallback:
+    if topic_denied or _is_denial_text_fallback:
         lines += [
             f"SIGNAL: {signal or 'candidate_denial'}",
             "WHAT: Candidate said they don't know, forgot, or can't explain this.",
@@ -1130,28 +923,6 @@ def get_probe_context(
             "  - Give them an easy out — find the related, SIMPLER thing they might know.",
             "VOICE: Warm and low-pressure. 'No worries — what part of this did you actually touch?'",
             "SKIP: Never re-ask the same thing. Never make them feel punished for not knowing.",
-            _rung_line,
-        ]
-        return "\n".join(lines)
-
-    # Cleared tier -- concept_cleared (Part C.2): the candidate cleared the
-    # concept the last question targeted. This does NOT mean the turn goes
-    # silent -- by the time this directive is built, TopicState has already
-    # advanced ladder_rung to the NEXT stage (or the sub-concept rotation to
-    # the next sub-concept), and this turn's job is to ask THAT real
-    # question now. NO_FOLLOW_UP_NEEDED is reserved for genuinely no-question
-    # turns (see llm_node in agent_runtime.py, which suppresses TTS output
-    # entirely on that sentinel) -- emitting it here left the interview
-    # silent every time a concept cleared, since nothing else in the
-    # pipeline generates a spoken question independently of this directive.
-    if signal in _CLEARED_SIGNALS:
-        lines += [
-            f"SIGNAL: {signal}",
-            "WHAT: Candidate cleared this concept -- no gap to probe on it further.",
-            "GOAL: Briefly acknowledge, then ask a NEW question at the rung specified below --",
-            "      this is a fresh question on the next target, not a follow-up on what was",
-            "      just answered. This turn MUST produce a real spoken question.",
-            _rung_line,
         ]
         return "\n".join(lines)
 
@@ -1185,12 +956,7 @@ def get_probe_context(
     if _level_note:
         lines.append(f"LEVEL ({level}): {_level_note}")
 
-    if cross_cutting_signal and cross_cutting_signal in _CROSS_CUTTING_NOTES:
-        lines.append(f"CROSS-CUTTING SIGNAL: {cross_cutting_signal}")
-        lines.append(_CROSS_CUTTING_NOTES[cross_cutting_signal])
 
-    if _rung_line:
-        lines.append(_rung_line)
 
     if topic_follow_ups <= 1:
         lines += [
@@ -1220,6 +986,11 @@ def get_probe_context(
             f"      or an edge case they hit",
             f"  This is a fresh general question, not a follow-up.",
         ]
+
+    _trend = _render_score_trend(topic_score_history)
+    if _trend:
+        lines.append("")
+        lines.append(f"SCORE TREND ON THIS TOPIC: {_trend}")
 
     lines.append("")
     lines.append("RECENT_QUESTION_PATTERNS:")

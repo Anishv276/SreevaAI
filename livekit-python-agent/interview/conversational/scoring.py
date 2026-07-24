@@ -420,7 +420,6 @@ async def _call_scoring(
     org_id: str,
     level: int,
     active_topic: str,
-    topic_tag: str,
     topic_probe_focus: str | None,
     job_title: str,
 ) -> tuple[dict, dict]:
@@ -448,15 +447,11 @@ async def _call_scoring(
             "  depth/specificity, do NOT set answers_question=false.\n"
             "  If answers_question = false, you MUST set clarity=0, depth=0, specificity=0, grounding=0.\n\n"
             "STEP 2 — Score normally (only if answers_question = true).\n\n"
-            f"Role: {job_title or 'not specified'} | Topic: {active_topic or 'general'} | Tag: {topic_tag}\n"
+            f"Role: {job_title or 'not specified'} | Topic: {active_topic or 'general'}\n"
         )
         if topic_probe_focus:
             ctx += f"Probe focus: {topic_probe_focus}\n"
         ctx += (
-            "Tag context: RESUME_TOPIC = they claimed this experience, hold them to it. "
-            "JD_TOPIC = they may be new to it, credit honest partial exposure. "
-            "ROLE_TOPIC = judgment/approach check, one grounded answer is enough.\n\n"
-
             "This is voice-transcribed speech — score the meaning, not the grammar.\n\n"
             "BEFORE YOU SCORE: Read the answer as a real sales leader would.\n"
             "Ask yourself: does this person sound like they've actually carried a bag and closed real "
@@ -538,8 +533,8 @@ async def _call_scoring(
             store=True,
             metadata={
                 "call_type": "eval_scoring_sales",
-                "level": level,
-                "org_id": org_id or "",
+                "level": str(level),
+                "org_id": str(org_id or ""),
             },
         ),
         timeout=8.0,
@@ -569,7 +564,6 @@ async def _call_signal_classification(
     llm_model: str,
     org_id: str,
     active_topic: str,
-    topic_tag: str,
     signals_already_fired: list | None,
 ) -> tuple[str | None, str | None, dict]:
     """
@@ -615,7 +609,7 @@ async def _call_signal_classification(
             "MUST end with valid JSON on its own line:\n"
             '{"signal": "<signal_name>", "signal_reason": "<3-12 word exact quote from their answer>"}\n\n'
             "signal MUST be exactly one of the 12 valid signal names listed below. NEVER null.\n"
-            f"Topic: {active_topic or 'general'} | Tag: {topic_tag}\n"
+            f"Topic: {active_topic or 'general'}\n"
             + ban_block
             + special_note
             + "\n"
@@ -641,7 +635,8 @@ async def _call_signal_classification(
             store=True,
             metadata={
                 "call_type": "eval_signal_sales",
-                "org_id": org_id or "",
+                "level": str(level),
+                "org_id": str(org_id or ""),
             },
         ),
         timeout=6.0,
@@ -687,7 +682,6 @@ async def evaluate_answer(
     is_warmup: bool = False,
     level: int = 2,
     active_topic: str = "",
-    topic_tag: str = "RESUME_TOPIC",
     topic_probe_focus: str | None = None,
     job_title: str = "",
     signals_already_fired: list | None = None,
@@ -729,7 +723,6 @@ async def evaluate_answer(
         llm_model=llm_model,
         org_id=org_id or "",
         active_topic=active_topic,
-        topic_tag=topic_tag,
     )
 
     try:

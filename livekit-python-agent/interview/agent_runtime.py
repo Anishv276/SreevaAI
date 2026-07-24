@@ -673,7 +673,7 @@ def render_declined_facts(declined_facts_log: list[str]) -> str:
 # ordinary PROBE turns (the free-form spoken-question path) before anything
 # reaches TTS.
 # ---------------------------------------------------------------------------
-def validate_spoken_question(text: str, *, max_words: int = 25) -> list[str]:
+def validate_spoken_question(text: str, *, max_words: int = 30) -> list[str]:
     """Returns a list of violation reasons (empty list = passes). Pure/sync so
     it's trivially unit-testable without any LLM or audio dependency."""
     violations: list[str] = []
@@ -724,10 +724,10 @@ def validate_spoken_question(text: str, *, max_words: int = 25) -> list[str]:
 _STRICT_REGEN_SUFFIX = (
     "\n\n[REGENERATION -- YOUR LAST OUTPUT VIOLATED THE HARD LENGTH/FORMAT CAP]\n"
     "Your previous attempt broke one of these HARD rules: (1) reaction+question together "
-    "must be <= 25 words total, (2) EXACTLY ONE '?' in the entire output, (3) never stack a "
+    "must be <= 30 words total, (2) EXACTLY ONE '?' in the entire output, (3) never stack a "
     "second question after the first with 'and'/'or'. Rewrite as ONE short reaction beat plus "
-    "ONE single question, well under 25 words, with exactly one '?'. Cut all setup/context -- "
-    "ask the sharpest single thing directly."
+    "ONE single question, under 30 words, with exactly one '?'. Keep any concrete case/input the "
+    "question needs, but cut all other setup/context -- ask the sharpest single thing directly."
 )
 
 
@@ -748,10 +748,10 @@ def _build_probe_directive(
     signals_history: list[str] | None = None,
     probe_rotation_index: int = 0,
     interview_type: str = "tech",
-    ladder_rung: str = "",
     recent_question_patterns: str = "(none yet)",
     declined_facts: str = "(none yet)",
     cross_cutting_signal: Optional[str] = None,
+    topic_score_history: Optional[list] = None,
 ) -> str:
     """
     Builds the probe directive synchronously — no LLM call.
@@ -759,13 +759,6 @@ def _build_probe_directive(
     The interview LLM (Ishitha) reads this and generates her own question.
 
     Eliminates the middle directive LLM call, collapsing 3 calls/turn → 2.
-
-    ladder_rung: fixed question-type rung ("definition"/"mechanism"/
-    "difference"/"scenario") from TopicState.current_rung_name() -- forwarded
-    verbatim into get_probe_context() so the next question never escalates past
-    what the ladder allows, steps down after a denial-tier signal instead of up,
-    and never reaches "scenario" (the gated rung) unless the candidate's
-    conceptual average has cleared TopicState.CONCEPTUAL_GATE_THRESHOLD_PCT.
 
     cross_cutting_signal: Part B's optional cross-cutting signal (verbal_disfluency/
     buzzword_without_substance/self_correction_recovery/internal_contradiction/
@@ -817,8 +810,8 @@ def _build_probe_directive(
         prev_question=prev_question,
         recent_question_patterns=recent_question_patterns,
         declined_facts=declined_facts,
-        ladder_rung=ladder_rung,
         cross_cutting_signal=cross_cutting_signal,
+        topic_score_history=topic_score_history,
     )
 
     # Filler guidance -- classify prev answer intent so Ishitha's reaction is connected.
@@ -983,11 +976,13 @@ async def _generate_move_on_directive(
         # work-history item. Questions must be answerable cold -- never referencing the
         # candidate's resume, projects, or "a time when you used X".
         _level_skill = {
-            1: "Open with a fundamentals-level distinction question -- basic but not trivial.",
-            2: "Open with a mechanics or performance-triage question -- how it works, what to check first.",
-            3: "Open with an applied tradeoff question grounded in a realistic constraint.",
-            4: "Open with a tradeoff or systemic-scenario question -- no single correct answer.",
-        }.get(level, "Open with a cold-reasoning question testing real understanding.")
+            1: "Open with a small TRACE or DECIDE question -- a concrete case they must reason through, "
+               "not a syntax/definition recall. Basic but it must have a real answer, not 'it depends'.",
+            2: "Open with a mechanics or performance-triage question -- trace how it works on a concrete "
+               "case, or what to check FIRST when something is slow.",
+            3: "Open with an applied tradeoff question grounded in a realistic constraint -- a real choice to justify.",
+            4: "Open with a tradeoff or systemic-scenario question -- no single correct answer, force reasoning.",
+        }.get(level, "Open with a concrete cold-reasoning question testing real understanding, never recall.")
         _skill_source_note = {
             "RESUME_TOPIC": "On resume AND required by the JD -- a common skill for this role.",
             "JD_TOPIC": "Required by the JD, not claimed on resume -- ask cold-reasoning anyway; accept no exposure gracefully.",
@@ -1160,6 +1155,28 @@ async def _generate_move_on_directive(
         "Your directive must ensure Ishitha's first question gives the candidate enough context to answer. "
         "A question with no context — 'What was your biggest challenge?' — is unanswerable without knowing what it refers to.\n\n"
 
+        "━━━ THIS IS A TECHNICAL INTERVIEW — MAKE THE OPENER TECHNICAL, NOT A QUIZ ━━━\n"
+        "The opening question sets the level of the whole topic. A weak opener produces weak answers and "
+        "you learn nothing. Steer Ishitha's OPENING ANGLE toward a question that makes the candidate REASON, "
+        "not one that has a one-word recall answer. Two rules:\n"
+        "  1. NO trivia / syntax / definition openers. Banned opener shapes: 'what's the syntax for X', "
+        "     'what is X', 'what's the difference between X and Y', 'define X'. These test memorized docs, not "
+        "     understanding, and a weak candidate just says 'it depends'. A real interviewer never opens a topic "
+        "     by asking someone to recite syntax.\n"
+        "  2. OPEN WITH A 'DO', NOT A 'DESCRIBE'. The opener should force the candidate to work something out. "
+        "     Good opener shapes (pick the one that fits the skill + level):\n"
+        "       - TRACE: give one small concrete input/case and ask what happens — 'if you append to a list "
+        "         that another variable also points to, what does that other variable see?'\n"
+        "       - DECIDE: a realistic situation with a real constraint where they must choose and justify — "
+        "         'you're storing 10k user records you look up by id constantly — list or dict, and why?'\n"
+        "       - DIAGNOSE: something is wrong/slow, what do they check FIRST (not a checklist).\n"
+        "     The candidate's actual answer will then drive the follow-ups; the opener just has to create a real "
+        "     claim to probe, not a yes/no or a recited fact.\n"
+        "  3. ONE concept, spoken in under 30 words, ONE question mark. Do NOT stack a paragraph of NLP/theory "
+        "     setup before the question (the giant multi-clause 'could you explain X, and Y, and how Z' opener is "
+        "     banned — it's unanswerable by voice and signals nothing). If the skill needs context, give ONE "
+        "     short clause, then ask ONE concrete thing.\n\n"
+
         + _open_examples +
 
         "━━━ DIRECTIVE STRUCTURE ━━━\n"
@@ -1208,7 +1225,7 @@ async def _generate_move_on_directive(
                 stream=True,
                 stream_options={"include_usage": True},
                 store=True,
-                metadata={"call_type": "move_on_directive", "level": level, "source": source},
+                metadata={"call_type": "move_on_directive", "level": str(level), "source": str(source)},
             )
             async for chunk in stream:
                 if chunk.choices and chunk.choices[0].delta.content:
@@ -2157,7 +2174,6 @@ async def entrypoint(ctx: JobContext):
             candidate_name=candidate_first_name or candidate_name,
             job_title=job_title,
             level=_level_seed,
-            resume_json=structured_resume if isinstance(structured_resume, dict) else {},
             jd_data=extracted_details or {},
             custom_questions=_interview_questions or [],
             openai_client=_brief_openai_client,
@@ -4068,11 +4084,6 @@ async def entrypoint(ctx: JobContext):
                     _signals_history_this_topic = list(
                         (_new_topic_state_dict or {}).get("signals_fired", []) or []
                     )
-                    # Ladder rung names must match TopicState.LADDER in interview/tech/eval.py
-                    # exactly -- ladder_rung there is an index into that same tuple.
-                    _LADDER_NAMES = ("definition", "mechanism", "difference", "scenario")
-                    _ladder_rung_idx = max(0, min(int((_new_topic_state_dict or {}).get("ladder_rung", 0) or 0), len(_LADDER_NAMES) - 1))
-                    _ladder_rung_this_turn = _LADDER_NAMES[_ladder_rung_idx]
                     _directive = _build_probe_directive(
                         signal=_eval_signal,
                         signal_reason=_eval_signal_reason,
@@ -4089,10 +4100,12 @@ async def entrypoint(ctx: JobContext):
                         signals_history=_signals_history_this_topic,
                         probe_rotation_index=_rotation_idx,
                         interview_type=interview_type,
-                        ladder_rung=_ladder_rung_this_turn,
                         recent_question_patterns=render_recent_question_patterns(_recent_question_patterns),
                         declined_facts=render_declined_facts(_declined_facts_log),
                         cross_cutting_signal=_eval_cross_cutting,
+                        topic_score_history=list(_topic_score_histories.get(
+                            re.sub(r"[^a-z0-9]+", " ", (_active_topic or "").lower()).strip(), []
+                        )),
                     )
                     if _teach_back_used:
                         # PROBLEM 3 hard cap: the no-jargon teach-back construction may

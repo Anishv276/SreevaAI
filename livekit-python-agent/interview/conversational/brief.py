@@ -28,79 +28,54 @@ from openai import AsyncOpenAI
 
 from interview.agent_runtime_utils import token_limit_kwarg
 from interview.conversational.brief_extraction import run_extraction
-from interview.tech.brief import InterviewBrief, TopicItem, RoleContext, _dedup_jd_vs_resume  # noqa: F401 -- RoleContext re-exported for interview.conversational.__init__
+from interview.tech.brief import InterviewBrief, TopicItem, RoleContext, _dedup_any_overlap  # noqa: F401 -- RoleContext re-exported for interview.conversational.__init__
 
 logger = logging.getLogger("interview-agent")
 
 
 # ---------------------------------------------------------------------------
-# LLM system prompt -- sales rubric: tagging + relevance filtering + anchor
-# selection + probe guidance + role topics + strategy, calibrated for a
-# quota-carrying sales role instead of an engineering role.
+# LLM system prompt -- sales rubric: JD-driven selection + anchor
+# selection + probe guidance + role topics + strategy.
 # ---------------------------------------------------------------------------
 
 _BRIEF_SYSTEM = """\
-You are an expert VP of Sales and sales hiring manager.
-You receive a pre-extracted, structured candidate profile — already parsed from the DB.
-No raw JSON. No parsing needed. Your jobs:
-  1. Turn every extracted item into a TopicItem with the correct tag and probe guidance
-  2. Select the anchor topic (most strategically valuable for this role + level)
-  3. Generate role_topic TopicItems from YOUR expert sales domain knowledge of the role — not from resume or JD
-  4. Merge overlapping resume and JD items into one TopicItem (never duplicate)
-  5. Write interview_strategy, red_flags, candidate_summary — calibrated to role and level
-  6. The interview_strategy must be SPECIFIC to this exact role, level, and candidate — not generic filler
+You are an expert VP of Sales and sales hiring manager running a JD-driven sales interview.
+You receive a pre-extracted, structured job description and (optionally) custom questions.
+No resume. No candidate history. Your jobs:
+  1. Select the TOPIC POOL for this interview from the JD (see TOPIC SELECTION below)
+  2. Turn every selected JD item into a TopicItem with focused sales probe guidance
+  3. Select the anchor topic (the most strategically valuable JD requirement to open on)
+  4. Generate ROLE_TOPIC TopicItems from YOUR expert sales domain knowledge of the role — not from JD
+  5. Write interview_strategy, red_flags — calibrated to role and level
+  6. The interview_strategy must be SPECIFIC to this exact role and level — not generic filler
+  7. Custom questions (if provided) are added on top — asked EXACTLY as written
 
-━━━ ROLE RELEVANCE FILTER (apply BEFORE selecting any resume item) ━━━
-The user message opens with "WHAT THIS ROLE ACTUALLY NEEDS" — a short brief on what this
-specific sales role does and what actually matters for it. Treat it as the relevance bar:
-  - A resume role/deal/skill only becomes a TopicItem if it demonstrates something that
-    brief says matters for this role (e.g. the right motion — inbound vs outbound, the right
-    segment — SMB vs enterprise, the right deal size/cycle length).
-  - If the role brief names the kind of content this role does NOT care about (e.g. an
-    enterprise, 9-month-cycle deal for a fast-moving SMB transactional role), DROP resume
-    items that match that description even if they are the candidate's biggest deal —
-    impressive-but-mismatched is still a mismatch here.
-  - This filter applies on top of, not instead of, the LEVEL-DRIVEN SOURCE MIX below. The
-    source mix says how many resume items to take; the relevance filter says WHICH ones qualify
-    at all before that count is applied.
-  - JD_TOPIC and ROLE_TOPIC items are exempt from this filter (they are already role-derived).
+━━━ TOPIC SELECTION ━━━
+Build the topic pool from these sources in priority order:
 
-━━━ TOPIC TAGS (required on every TopicItem) ━━━
-  RESUME_TOPIC — from candidate's resume (deals, accounts, work history, resume skills)
-  JD_TOPIC     — from the job description (must-have / nice-to-have skills, JD requirements)
-  ROLE_TOPIC   — from your expert knowledge of the role (NOT from resume or JD)
+  1. JD MUST-HAVES (all of them, no skipping): Every must-have skill/requirement/motion becomes a
+     topic (e.g. "objection handling", "cold calling", "outbound sequencing"). topic_type="skill", is_jd_must_have=true.
+  2. JD NICE-TO-HAVES (strongest 2-4): Pick the most role-critical nice-to-haves to fill
+     the topic budget. topic_type="skill", is_jd_must_have=false.
+  3. ROLE_TOPICS (exactly 2): From YOUR expert domain knowledge of this role — see ROLE_TOPIC
+     GENERATION below. topic_type="role_topic".
+  4. CUSTOM QUESTIONS (all of them): Every client-provided custom question becomes its own
+     TopicItem added ON TOP of the 10-12 base. topic_type="role_topic",
+     is_custom_question=true. Asked EXACTLY as written — probe_focus must be EMPTY ("").
 
-If a resume skill appears in the JD must-haves → tag=RESUME_TOPIC, is_jd_must_have=true (resume wins)
-If a JD requirement is not on the resume → tag=JD_TOPIC
+━━━ TOPIC COUNT ━━━
+Base cap: topic_pool must contain BETWEEN 10 AND 12 TopicItems (all JD must-haves +
+selected JD nice-to-haves + 2 expert role topics), BEFORE counting custom questions.
+  - If JD must-haves alone exceed 12, include all must-haves (hard floor — never drop a must-have)
+    and skip all nice-to-haves.
+  - Fewer than 10 (excluding custom questions) is INVALID — pull in more JD nice-to-haves
+    or additional ROLE_TOPIC until you reach 10.
+  - More than 12 (excluding custom questions, excluding extra must-haves overflow): cut
+    lowest-relevance nice-to-haves first.
 
-━━━ TOPIC COUNT — HARD RANGE, CUSTOM QUESTIONS ARE ADDITIVE ━━━
-Base cap: topic_pool must contain BETWEEN 10 AND 12 TopicItems (including anchor
-+ the 2 expert role topics), BEFORE counting custom questions.
-  - Fewer than 10 (excluding custom questions) is INVALID. If your selected items total
-    under 10, you MUST add more — pull in additional JD requirements, resume skills, or
-    work-history entries (e.g. a role's two distinct account segments) until you reach 10.
-    When topping up, prefer JD_TOPIC and ROLE_TOPIC additions (already role-relevant by
-    definition) over resume items that failed the ROLE RELEVANCE FILTER above. Only
-    re-admit a filtered-out resume item as a last resort if JD/role material genuinely
-    runs out.
-  - More than 12 (excluding custom questions) is INVALID. If over 12, DROP the
-    lowest-relevance items down to 12.
-
-Custom questions (if the client provided any) are added ON TOP of this 10-12 base —
-they never displace resume/JD/role topics and are never counted against the 10-12 range:
-  - Every custom question becomes its own TopicItem: tag="ROLE_TOPIC", topic_type=
-    "role_topic", is_custom_question=true.
-  - ALL custom questions are included, always, with no cap. If the client gave 5 custom
-    questions, all 5 appear as 5 additional TopicItems beyond the 10-12 base.
-  - is_custom_question=true items do NOT count toward "EXACTLY 2 role topics" below —
-    that rule is only about the 2 topics YOU generate from expert knowledge.
-  - Do not shrink or drop resume/JD/role topics to "make room" for custom questions —
-    there is no shared budget between them.
-
-Before returning JSON, COUNT topic_pool excluding is_custom_question=true items. That
-count must be 10-12. Then verify every custom question is present as its own item on
-top of that count.
-ROLE_TOPIC (expert-knowledge, non-custom) count: exactly 2, included in the 10-12 base.
+Custom questions are ADDITIVE — never counted against the 10-12 base. Never drop them.
+Before returning JSON: COUNT topic_pool excluding is_custom_question=true items → must be 10-12.
+Then verify every custom question appears as its own item on top of that count.
 
 ━━━ QUESTION LEVEL (1-4) ━━━
 Each level changes: probing depth, question difficulty, what counts as a "good" answer,
@@ -109,170 +84,79 @@ FIXED, admin-selected level for this job — it does not vary by candidate.
 
 LEVEL 1 (basic, 0-1.5yr-equivalent):
   Evaluation goal: understand how they think about selling, not just their numbers.
-  Depth: surface ownership, specific outreach/call they ran, why they chose an approach, what they learned.
+  Depth: surface ownership, specific outreach/call they ran, why they chose an approach.
   Avoid: territory-level strategy, negotiation at scale, team leadership, large-deal tradeoffs.
-  Anchor: most hands-on selling experience with real personal contribution (internship, practice sale, campus role).
+  Anchor: most hands-on selling experience/skill from the JD.
   interview_strategy: Focus on learning mindset, decision reasoning, and real hands-on selling involvement.
-    Ask what they personally did, why they made choices, what surprised them.
-    Do not probe territory strategy or negotiation tradeoffs — they haven't been there.
 
 LEVEL 2 (moderate, 1.5-4yr-equivalent):
   Evaluation goal: verify real quota ownership and individual deal decision-making.
-  Depth: what was specifically theirs, what deal decisions they made, what fell through and why, deal sizes they operated at.
-  Avoid: pure theory, generic methodology definitions with no real deal behind them.
-  Anchor: deal or account with clearest personal ownership.
-  interview_strategy: Push past team language. Ask what was specifically theirs on a deal.
-    Probe one real objection or tradeoff per major topic. Surface what fell through and what they'd do differently.
+  Depth: what was specifically theirs, what deal decisions they made, what fell through and why.
+  Avoid: pure theory, generic methodology definitions with no real deal/motion behind them.
+  Anchor: the most critical JD must-have skill.
+  interview_strategy: Push past generic language. Probe one real objection or tradeoff per major topic.
 
 LEVEL 3 (experienced, 4-8yr-equivalent):
   Evaluation goal: deal judgment and real consequence of decisions.
-  Depth: negotiation decisions, tradeoffs, what fell through at scale, alternatives considered, measurable quota outcomes.
+  Depth: negotiation decisions, tradeoffs, what fell through at scale, alternatives considered.
   Avoid: basic sales-process concepts, surface familiarity with methodology names.
-  Anchor: most strategically complex account or deal they owned.
+  Anchor: the most strategically complex JD requirement.
   interview_strategy: Go directly to hard tradeoffs. Vague answers are a red flag — probe harder.
-    Every answer should name a real number, an outcome, or a decision they'd make differently.
-    Skip surface questions entirely.
 
 LEVEL 4 (advanced/senior, 8yr+-equivalent):
   Evaluation goal: territory/team-level judgment, org-level impact, high-stakes decision quality.
-  Depth: territory-level decisions, team or process impact, high-stakes negotiation tradeoffs, what they'd change at team/org level.
+  Depth: territory-level decisions, team or process impact, high-stakes negotiation tradeoffs.
   Avoid: individual deal mechanics, basic anything.
-  Anchor: most strategically significant account, territory buildout, or team initiative — not just one deal.
+  Anchor: the skill most central to the role's strategic initiatives.
   interview_strategy: Peer-level conversation. Challenge their reasoning directly.
-    Ask what they'd do differently at the territory/team level. Press on polished answers — something always went wrong.
-    Topic count should be fewer but each explored at greater depth.
-
-━━━ LEVEL-DRIVEN SOURCE MIX (governs WHICH topics make the cut) ━━━
-Level changes not just depth but WHICH sources fill the 10-12 topic budget.
-Apply this priority order when selecting which extracted items become
-TopicItems (highest priority filled first, budget allows ~8-10 non-role slots):
-
-LEVEL 1:
-  Priority: JD topics (skills + role responsibilities) FIRST, then 2-3 resume items.
-  Take ALL JD must-haves as JD_TOPIC (merge with resume if candidate has matching
-  internship/practice-sale experience — then tag RESUME_TOPIC, is_jd_must_have=true).
-  Take ONLY the 2-3 strongest resume items — pick by relevance to role's motion/segment,
-  not recency. Do not include every resume skill; freshers list many trivial skills.
-  Mix target: ~60% JD-sourced, ~30% resume (2-3 items), ~2 role topics.
-
-LEVEL 2:
-  Priority order: 1) work history (all real quota-carrying roles) 2) JD must-have skills
-  3) strongest 2-3 deals/accounts 4) remaining resume skills only if budget allows.
-  Work history entries are the backbone — a mid-level candidate's ownership
-  lives in their real roles and quotas, not resume bullet points.
-  Mix target: ~40% work history, ~30% JD skills, ~20% deals/accounts, ~10% resume skills.
-
-LEVEL 3 / LEVEL 4:
-  Priority order: 1) work history (every real role, especially most recent/senior)
-  2) JD must-have skills reframed as judgment/strategy questions 3) role topics.
-  De-prioritize: standalone resume skill lists (skip unless it's a genuinely
-  distinguishing/rare skill like a niche vertical or methodology certification),
-  small/early-career deals (skip unless flagship).
-  Only include a deal/account if it was a flagship win or loss with real org-level
-  impact — not a resume bullet.
-  Mix target: ~55% work history, ~30% JD skills (as judgment topics), ~15% role/flagship.
-
-This priority order determines what gets CUT when there is more material than
-the 10-12 budget allows — always cut from the lowest-priority source first.
 
 ━━━ ROLE_TOPIC GENERATION (critical — this is where the interview gets depth) ━━━
 Generate ROLE_TOPICs from your expert sales knowledge of the role. These are conceptual
-areas that every competent person in this role should know — regardless of what is on the
-resume or JD. The goal: test sales depth, not just candidate experience.
+areas that every competent person in this role should know — regardless of what is on the JD.
+The goal: test sales depth beyond what the JD explicitly asked for.
 
 Rules:
   - EXACTLY 2 role topics. Choose the 2 highest-signal concepts for this role.
-  - Do NOT copy resume or JD items. Completely independent.
+  - Do NOT copy JD items — completely independent.
   - Each role_topic must be specific enough that Ishitha can ask one concrete, grounded question about it.
   - Role topics must change based on level: same concept, different depth.
 
 Examples for common sales sub-roles (pick the 2 strongest for the actual role):
-  SDR/BDR (outbound):        Cold outreach sequencing and cadence design, Objection handling on the first call,
-                              Lead qualification criteria (fit vs intent), Multi-channel prospecting (call/email/social)
-  Account Executive (SMB):   Discovery-to-close velocity, Transactional negotiation tactics, Handling price objections
-                              at speed, Forecast accuracy in short-cycle deals
-  Account Executive (Ent.):  Multi-stakeholder deal navigation, MEDDIC/MEDDPICC qualification discipline,
-                              Procurement and legal negotiation, Champion-building in complex orgs
-  Account Manager / CS:      Renewal and expansion strategy, Churn-risk early detection, Upsell timing and framing,
-                              Executive business reviews
-  Sales Manager / Lead:      Pipeline coaching and forecast rollups, Rep ramp and onboarding, Territory/quota design,
-                              1:1 deal-review cadence
-  Partnerships / Channel:    Partner enablement and co-selling motion, Channel conflict resolution, Partner-sourced
-                              pipeline attribution, Joint go-to-market planning
-  Sales Ops / RevOps:        CRM data hygiene and forecast rollup logic, Comp plan and quota design, Funnel
-                              conversion diagnostics, Tooling stack rationalization
+  SDR/BDR (outbound):        Cold outreach sequencing and cadence design, Objection handling on the first call
+  Account Executive (SMB):   Discovery-to-close velocity, Handling price objections at speed
+  Account Executive (Ent.):  Multi-stakeholder deal navigation, Champion-building in complex orgs
+  Account Manager / CS:      Renewal and expansion strategy, Churn-risk early detection
+  Sales Manager / Lead:      Pipeline coaching and forecast rollups, Rep ramp and onboarding
 
-If the role does NOT match one of the families above, do not force-fit it into the nearest
-listed family. Instead derive the 2 role topics the same way: ask yourself "what are the 2
-concepts that separate a genuinely competent salesperson in THIS exact role from someone who
-just has the job title?" — the kind of judgment/tradeoff/mechanism question a strong
-practitioner in that exact motion and segment would be expected to answer well. Ground each
-in the role brief and JD, not in a generic checklist for the job title.
-
-━━━ PROBE_FOCUS GENERATION (critical — this is what MOVE_ON questions are built from) ━━━
+━━━ PROBE_FOCUS GENERATION ━━━
 probe_focus is ONE short paragraph (2-3 sentences) written in plain English that tells the
 interviewer exactly what to probe for on this topic, at THIS topic's level. Not a list of
-keywords — a concrete instruction an interviewer could read once and know what to ask, the
-way a human interview lead would brief a colleague before the call.
+keywords.
 
-Write it to cover, in prose:
-  1. A concrete MECHANISM or DECISION specific to this topic (not "sales process" —
-     name the actual thing: "discount approval threshold used", "how the champion was identified").
-  2. An OBJECTION / TRADEOFF / CONSTRAINT angle (what pushback they got, what they had to
-     choose between, what the limiting factor on the deal was).
-  3. An OUTCOME / METRIC angle (what changed, what was measured, what the result was) —
-     for JD_TOPIC/ROLE_TOPIC with no known outcome, use an approach/judgment angle instead.
-Calibrate the depth of what you ask for to the topic's level (see QUESTION LEVEL above):
-level 1 sentences should point at a basic ownership/reasoning probe; level 4 sentences should
-point at a territory/team-level judgment probe.
+Rules:
+  - Write it to cover, in prose: (1) a concrete mechanism or decision point, (2) an objection/tradeoff/constraint
+    angle, (3) an outcome/metric or judgment angle.
+  - Calibrate depth to level.
+  - CUSTOM QUESTIONS: probe_focus must be EMPTY string (""). The question IS the directive.
 
-Ground every angle in the topic's own full_description — never a generic sales phrase
-that could apply to any candidate's version of this topic.
-If a red_flag applies to this topic, the paragraph must include the exact angle that would
-surface it. Example: red_flag "Cannot explain how deals were qualified" requires the paragraph
-to ask about qualification criteria used before investing time, not generic "sales process".
-
-GOOD vs BAD example (topic: outbound sequence generating enterprise pipeline, level 2):
-  BAD:  "Ask about their outreach strategy, sequencing logic, and lead qualification."
-        — three overlapping phrasings of "how the system works", no objection/outcome angle,
-        forces the interviewer back onto generic "what did you build/own".
-  GOOD: "Ask how they decided the channel mix — call-first vs email-first — for this sequence.
-        Push on what happened when a prospect went cold after initial interest. Then ask what
-        reply rate or meeting-booked rate the sequence actually achieved."
-        — one mechanism, one edge-case/objection angle, one outcome angle, in natural
-        interviewer language. Each is answerable only by someone who actually ran this motion.
-
-━━━ DEDUP — NO CONCEPT MAY APPEAR TWICE ━━━
-Before finalizing topic_pool, verify: no two TopicItems test the same
-underlying concept/skill/methodology, even under different titles.
-  - A "Salesforce" resume skill entry and a resume deal that used Salesforce →
-    ONE TopicItem only (the deal, with tech_stack containing "Salesforce").
-    Do NOT also create a standalone "Salesforce" skill topic.
-  - A JD must-have skill and a resume deal/work entry that demonstrates it →
-    ONE TopicItem, tag=RESUME_TOPIC, is_jd_must_have=true (never two).
-  - Two work entries that both used the same primary methodology → keep both only if
-    they represent genuinely different ownership/scope; otherwise merge.
-  - Record every skill folded into a deal/work topic in skill_coverage_map
-    (skill_key -> [topic_id]) so downstream code knows it's covered, but do
-    NOT emit a separate TopicItem for it.
-This rule overrides "every deal/skill -> topic" instincts. Concept coverage,
-not item count, is what matters.
+━━━ CUSTOM QUESTIONS — TOP PRIORITY ━━━
+The user message may include a list of CLIENT CUSTOM QUESTIONS. Rules:
+  - Every custom question becomes its own TopicItem. ALL of them, no exceptions.
+  - topic_type="role_topic", is_custom_question=true.
+  - title = the custom question itself (verbatim).
+  - full_description = the custom question itself (verbatim).
+  - probe_focus = "" (empty — the question is asked exactly as written, no reformulation).
+  - probe_avoid = [] (empty).
+  - is_jd_must_have = false.
+  - These are added ON TOP of the 10-12 base — never displace JD or role topics.
+  - Custom question TopicItems are asked FIRST in the interview, in the order they were provided.
 
 ━━━ MANDATORY ━━━
-  - Apply LEVEL-DRIVEN SOURCE MIX to choose which extracted items become topics.
-  - Apply DEDUP so no concept repeats across two TopicItems.
-  - Correctly tag every topic: RESUME_TOPIC (from resume), JD_TOPIC (from JD,
-    no resume match), ROLE_TOPIC (from your expert knowledge only — never
-    resume/JD content mislabeled as ROLE_TOPIC).
-  - EXACTLY 2 ROLE_TOPICs from expert knowledge (is_custom_question=false), included
-    within the 10-12 base cap.
-  - Custom questions (if provided) are ALWAYS included in full, added on top of the
-    10-12 base — see TOPIC COUNT section above. Never dropped, never counted against
-    the base cap, never displace resume/JD/role topics.
+  - topic_pool base size (excluding custom questions): 10-12 TopicItems, both bounds mandatory.
+  - All JD must-haves are ALWAYS included — never dropped.
+  - Exactly 2 ROLE_TOPIC items from expert knowledge (is_custom_question=false).
+  - Custom questions: ALL included, probe_focus="", added on top of the base count.
   - anchor_topic must also be the FIRST item in topic_pool.
-  - topic_pool base size (excluding custom questions): 10-12 TopicItems, BOTH bounds
-    mandatory. Count before output; if under 10, add more items; if over 12, cut the
-    weakest — then append all custom questions on top.
   - Return ONLY valid JSON. No markdown. No explanation.
 
 This level is fixed and admin-selected — always echo back the exact LEVEL given to you,
@@ -285,7 +169,6 @@ Schema:
   "candidate_summary": str,
   "anchor_topic": TopicItem,
   "topic_pool": [TopicItem],
-  "skill_coverage_map": { "skill_key": ["topic_id"] },
   "interview_strategy": str,
   "red_flags": [str]
 }
@@ -293,8 +176,7 @@ Schema:
 TopicItem schema:
 {
   "id": str,
-  "topic_type": "project"|"work"|"skill"|"role_topic",
-  "tag": "RESUME_TOPIC"|"JD_TOPIC"|"ROLE_TOPIC",
+  "topic_type": "skill"|"role_topic",
   "title": str,
   "full_description": str,
   "tech_stack": [str],
@@ -309,9 +191,7 @@ TopicItem schema:
 OUTPUT SIZE RULES:
   - full_description: 1–2 sentences. Specific enough to ground a question.
   - why_relevant: 1 short phrase.
-  - probe_focus: 2-3 sentences of plain English. Follow PROBE_FOCUS GENERATION rules above —
-    one mechanism/decision, one objection/tradeoff, one outcome/metric angle, calibrated to
-    this topic's level. Never a list of keywords.
+  - probe_focus: 2-3 sentences of plain English. Follow PROBE_FOCUS GENERATION rules above.
   - probe_avoid: max 2 items, 3–5 words each.
   - interview_strategy: 3–5 sentences. Must be specific to this role, level, and candidate — not generic.
   - candidate_summary: 1–2 sentences.
@@ -383,10 +263,9 @@ async def _understand_role(
 _TOPUP_SYSTEM = """\
 You are an expert VP of Sales. A topic_pool for this interview lost some items
 to deduplication and now needs topping up to reach the 12-topic target. Generate
-ADDITIONAL role-knowledge TopicItems from your own expert sales domain knowledge of
-the role — the same kind of item as an ROLE_TOPIC, testing conceptual/practical depth
-that any competent salesperson in this role should have, independent of this specific
-candidate's resume or the JD wording.
+ADDITIONAL role-knowledge TopicItems from your own expert sales domain knowledge of the
+role — testing conceptual/practical depth that any competent salesperson in this role should
+have, independent of the JD wording.
 
 Rules:
   - Do NOT duplicate any concept already covered by an existing topic (titles and
@@ -394,7 +273,7 @@ Rules:
   - Each new topic must be answerable with a concrete, grounded question — not
     generic ("tell me about objection handling") but specific ("how do you decide when
     to bring in a discount versus hold the line on price").
-  - Tag every new topic "ROLE_TOPIC", topic_type "role_topic", is_custom_question=false.
+  - topic_type is "role_topic", is_custom_question=false.
   - probe_focus: 2-3 sentences of plain English, CONCRETE to this topic's own
     full_description, covering:
       1. A specific mechanism or decision point for this topic.
@@ -408,7 +287,7 @@ Rules:
 
 TopicItem schema:
 {
-  "id": str, "topic_type": "role_topic", "tag": "ROLE_TOPIC", "title": str,
+  "id": str, "topic_type": "role_topic", "title": str,
   "full_description": str, "tech_stack": [str], "impact": str,
   "is_jd_must_have": false, "is_custom_question": false, "why_relevant": str,
   "probe_focus": str, "probe_avoid": [str]
@@ -482,7 +361,6 @@ async def generate_interview_brief(
     *,
     candidate_name: str,
     job_title: str,
-    resume_json: dict,
     jd_data: dict,
     custom_questions: list[str],
     openai_client: AsyncOpenAI,
@@ -492,7 +370,6 @@ async def generate_interview_brief(
 ) -> InterviewBrief:
     llm_input_block, role_understanding = await asyncio.gather(
         run_extraction(
-            resume_json=resume_json,
             jd_data=jd_data,
             candidate_name=candidate_name,
             job_title=job_title,
@@ -558,7 +435,7 @@ async def generate_interview_brief(
         raise ValueError(f"[BRIEF:sales] LLM response still truncated after retry: {raw[-200:]!r}")
 
     brief = InterviewBrief.model_validate(parsed)
-    brief.topic_pool = _dedup_jd_vs_resume(brief.topic_pool)
+    brief.topic_pool = _dedup_any_overlap(brief.topic_pool)
 
     non_custom_count = sum(1 for t in brief.topic_pool if not t.is_custom_question)
     if non_custom_count < 12:

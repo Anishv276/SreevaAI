@@ -443,19 +443,18 @@ class JDExtractor:
         return must, nice, raw.get_requirements()
 
 
+
 # ---------------------------------------------------------------------------
 # LangGraph state
 # ---------------------------------------------------------------------------
 
 class BriefExtractionState(TypedDict):
-    resume_json: dict
     jd_data: dict
     candidate_name: str
     job_title: str
     level: int
     custom_questions: list[str]
     # per-extractor outputs
-    resume_skills: list[ExtractedSkill]
     jd_must: list[ExtractedJDItem]
     jd_nice: list[ExtractedJDItem]
     jd_requirements: list[str]
@@ -466,25 +465,6 @@ class BriefExtractionState(TypedDict):
 # ---------------------------------------------------------------------------
 # LangGraph nodes
 # ---------------------------------------------------------------------------
-
-def _node_extract_resume(state: BriefExtractionState) -> dict:
-    resume_json = state["resume_json"]
-    top_keys = list(resume_json.keys()) if isinstance(resume_json, dict) else type(resume_json).__name__
-    logger.info("[EXTRACT] resume_json top-level keys: %s", top_keys)
-    raw = RawResumeJSON.model_validate(resume_json)
-    logger.info(
-        "[EXTRACT] resume parsed → work_history_raw=%d projects_raw=%d",
-        len(raw.work_history), len(raw.projects),
-    )
-    skills = ResumeExtractor().extract(raw)
-    logger.info("[EXTRACT] resume → skills=%d (incl. project/work tech-stacks)", len(skills))
-    if not skills:
-        logger.warning(
-            "[EXTRACT] resume extracted NOTHING — skills type=%s, work_history=%r, projects=%r",
-            type(raw.skills).__name__, raw.work_history[:1], raw.projects[:1],
-        )
-    return {"resume_skills": skills}
-
 
 def _node_extract_jd(state: BriefExtractionState) -> dict:
     raw = RawJDJSON.model_validate(state["jd_data"])
@@ -498,41 +478,16 @@ def _node_extract_jd(state: BriefExtractionState) -> dict:
 
 def _node_build_llm_input(state: BriefExtractionState) -> dict:
     """
-    Formats all extracted skills into a clean labelled text block.
-    Everything is passed as-is — no dedup across resume/JD, no filtering, no
-    sorting. The LLM receives the raw truth and decides what to do with it.
-
-    Skill-only by design: tech interviews never reference a candidate's
-    projects or work history, so only skill/tool/library names (tagged with
-    where they came from) are sent here — never project or work narratives.
+    Formats JD skills + custom questions into a clean labelled text block.
+    Resume is not used — topic selection is driven by JD and role expertise.
     """
     lines: list[str] = []
-    has_resume = bool(state["resume_skills"])
     lines.append(
         f"CANDIDATE: {state['candidate_name']}  |  "
         f"ROLE: {state['job_title']}  |  "
-        f"LEVEL: {state['level']}  |  "
-        f"RESUME: {'AVAILABLE' if has_resume else 'NOT AVAILABLE'}"
+        f"LEVEL: {state['level']}"
     )
-    if not has_resume:
-        lines.append(
-            "⚠ RESUME DATA MISSING: Do NOT invent or assume any skills for this candidate. "
-            "topic_pool must contain ONLY JD_TOPICs (from JD must-haves) and ROLE_TOPICs "
-            "(from your expert domain knowledge). No RESUME_TOPICs allowed. "
-            "anchor_topic must be a JD_TOPIC or ROLE_TOPIC."
-        )
     lines.append("")
-
-    # --- Skills from resume (skill list + project/work tech-stacks) ---
-    skills = state["resume_skills"]
-    if skills:
-        lines.append("=== SKILLS FROM RESUME (incl. project/work tech-stacks) ===")
-        for s in skills:
-            entry = f"• {s.name}  [{s.source_strength}]"
-            if s.context:
-                entry += f"  — {s.context}"
-            lines.append(entry)
-        lines.append("")
 
     # --- JD must-haves ---
     jd_must = state["jd_must"]
@@ -568,7 +523,7 @@ def _node_build_llm_input(state: BriefExtractionState) -> dict:
     # --- Custom questions ---
     custom = state.get("custom_questions") or []
     if custom:
-        lines.append("=== CLIENT CUSTOM QUESTIONS (must appear in topic_pool) ===")
+        lines.append("=== CLIENT CUSTOM QUESTIONS (top priority — asked exactly as written) ===")
         for i, q in enumerate(custom, 1):
             lines.append(f"{i}. {q}")
         lines.append("")
@@ -579,18 +534,15 @@ def _node_build_llm_input(state: BriefExtractionState) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Graph -- parallel extract → build_llm_input (no merge node)
+# Graph -- extract_jd → build_llm_input
 # ---------------------------------------------------------------------------
 
 def _build_graph() -> Any:
     g = StateGraph(BriefExtractionState)
-    g.add_node("extract_resume", _node_extract_resume)
     g.add_node("extract_jd", _node_extract_jd)
     g.add_node("build_llm_input", _node_build_llm_input)
 
-    g.add_edge(START, "extract_resume")   # parallel fan-out
-    g.add_edge(START, "extract_jd")       # parallel fan-out
-    g.add_edge("extract_resume", "build_llm_input")  # fan-in: both feed build_llm_input
+    g.add_edge(START, "extract_jd")
     g.add_edge("extract_jd", "build_llm_input")
     g.add_edge("build_llm_input", END)
 
@@ -602,7 +554,6 @@ _EXTRACTION_GRAPH = _build_graph()
 
 async def run_extraction(
     *,
-    resume_json: dict,
     jd_data: dict,
     candidate_name: str,
     job_title: str,
@@ -612,15 +563,14 @@ async def run_extraction(
     """
     Runs the extraction graph. Returns llm_input_block — the clean text
     block to pass directly to the LLM for InterviewBrief generation.
+    No resume parsing. Topics are driven by JD + role expertise only.
     """
     initial: BriefExtractionState = {
-        "resume_json": resume_json,
         "jd_data": jd_data,
         "candidate_name": candidate_name,
         "job_title": job_title,
         "level": level,
         "custom_questions": custom_questions or [],
-        "resume_skills": [],
         "jd_must": [],
         "jd_nice": [],
         "jd_requirements": [],

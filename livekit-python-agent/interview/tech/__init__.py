@@ -7,9 +7,8 @@ brief generation, eval pipeline, and report pipeline for technical roles.
 from interview.tech.scoring import (
     evaluate_answer,
     RESPONSE_SIGNALS,
-    STAGE_SIGNAL_DEFINITIONS,
-    CROSS_CUTTING_SIGNAL_DEFINITIONS,
-    FLOW_CONTROL_SIGNALS,
+    CONTENT_SIGNAL_DEFINITIONS,
+    ALL_SIGNALS,
 )
 from interview.tech.probe import (
     SIGNAL_PROBES,
@@ -49,9 +48,8 @@ from interview.tech.phases import build_greeting_text, build_interview_directive
 __all__ = [
     "evaluate_answer",
     "RESPONSE_SIGNALS",
-    "STAGE_SIGNAL_DEFINITIONS",
-    "CROSS_CUTTING_SIGNAL_DEFINITIONS",
-    "FLOW_CONTROL_SIGNALS",
+    "CONTENT_SIGNAL_DEFINITIONS",
+    "ALL_SIGNALS",
     "SIGNAL_PROBES",
     "QUESTION_GENERATION_SYSTEM",
     "CORE_SKILL_QUESTION_SYSTEM",
