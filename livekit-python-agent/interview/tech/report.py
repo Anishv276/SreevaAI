@@ -163,6 +163,9 @@ class IntegrityEngine:
         "connection_lost":   -12.0,
         "answer_integrity":  0.0,
         "session_fingerprint": -20.0,
+        "gaze_deviation":      -10.0,   # per event; high-severity events carry their own weight via severity multiplier
+        "robotic_speech":      -12.0,   # background linguistic analyzer flagged AI-read/teleprompter speech
+        "trap_question":       -20.0,   # candidate failed to catch a planted false premise (see trap_question.py)
     }
 
     _NEG_KEYS: frozenset[str] = frozenset(_NEG)

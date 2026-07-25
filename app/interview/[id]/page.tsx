@@ -297,6 +297,23 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         }, 1000);
         return () => clearInterval(interval);
     }, [scheduledAt, slotCountdownSecs]);
+    // DataChannel real-time proctoring broadcast helper
+    const publishProctoringDataChannel = useCallback((eventType: string, severity: string = "medium", reason?: string) => {
+        try {
+            const room = lkRoomRef.current;
+            if (!room || !room.localParticipant) return;
+            const payload = JSON.stringify({
+                type: "proctoring_event",
+                eventType,
+                severity,
+                reason,
+                timestamp: Date.now(),
+            });
+            const encoder = new TextEncoder();
+            void room.localParticipant.publishData(encoder.encode(payload), { reliable: true }).catch(() => { });
+        } catch { }
+    }, []);
+
     //  Face violation handler 
     const handleFaceViolation = useCallback((
         eventType: string,
@@ -327,6 +344,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 }],
             }),
         }).catch(() => { });
+        publishProctoringDataChannel(eventType, severity ?? "medium", reason);
     }, [
         id,
         interviewToken,
@@ -366,7 +384,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 }],
             }),
         }).catch(() => { });
-    }, [id, interviewToken, isCameraDisabledEnabled, isMicrophoneDisabledEnabled]);
+        publishProctoringDataChannel(eventType, severity, reason);
+    }, [id, interviewToken, isCameraDisabledEnabled, isMicrophoneDisabledEnabled, publishProctoringDataChannel]);
     //  Connection violation handler 
     const handleConnectionViolation = useCallback((
         eventType: string,
@@ -396,7 +415,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 }],
             }),
         }).catch(() => { });
-    }, [id, interviewToken, isConnectionLostEnabled]);
+        publishProctoringDataChannel(eventType, severity, reason);
+    }, [id, interviewToken, isConnectionLostEnabled, publishProctoringDataChannel]);
     const submitSupportRequest = useCallback(async () => {
         const normalizedName = supportForm.name.trim();
         const normalizedEmail = supportForm.email.trim().toLowerCase();
@@ -905,6 +925,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         }]
                     })
                 }).catch(() => { });
+                publishProctoringDataChannel(kind, severity, reason);
             }, 1500);
         };
         // Fullscreen exit fires immediately (no grace window -- leaving fullscreen is a
@@ -935,6 +956,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     }]
                 })
             }).catch(() => { });
+            publishProctoringDataChannel("fullscreen_exit", "high", "Fullscreen Exited");
             setFocusSignalCounts(prev => ({ ...prev, fullscreen_exit: prev.fullscreen_exit + 1 }));
             if (SHOW_TAB_FULLSCREEN_ALERTS) {
                 setFocusViolationElapsed(fsElapsedLabel ?? null);
