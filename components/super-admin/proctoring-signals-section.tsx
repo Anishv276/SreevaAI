@@ -84,6 +84,12 @@ const SIGNAL_ROWS: SignalRow[] = [
     group: "Session Fingerprint",
     description: "Browser or device fingerprint changes mid-session, detecting VPN usage, device swaps, VM environments, or IP/timezone jumps.",
   },
+  {
+    key: "live_integrity_monitoring",
+    label: "Live Integrity Monitoring",
+    group: "Content Analysis",
+    description: "Runs a background check on each answer for AI-read/teleprompter speech. When enough suspicion builds up during the call, the interviewer asks a live trap question referencing something the candidate actually said.",
+  },
 ];
 export function ProctoringSignalsSection({
   signals,

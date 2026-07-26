@@ -350,6 +350,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             "action": "PROBE", "signal": "depth_shallow",
             "signal_reason": f"eval recovery — scoring call raised {type(ex).__name__} ({str(ex)[:120]})",
             "reason": "eval recovery",
+            "is_eval_recovery": True,
         }
 
 
@@ -365,8 +366,8 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     forced_action = bool(raw.get("forced_action"))
     _forced_response_signal = forced_action and action in ("MOVE_ON", "REPHRASE", "REDIRECT", "ACCEPT_REPHRASE")
 
-    signal: str | None = raw.get("signal")
-    signal_reason: str | None = raw.get("signal_reason")
+    signal: str | None = str(raw["signal"]) if raw.get("signal") is not None else None
+    signal_reason: str | None = str(raw["signal_reason"]) if raw.get("signal_reason") is not None else None
 
     depth_signal = "DEEP" if _weighted >= 7.0 else "SPECIFIC" if _weighted >= 5.0 else "SURFACE"
 
@@ -476,7 +477,22 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         "weak_exit":               _weak_exit,
         "dry_topic":               _dry_topic,
         "topic_follow_ups":        _follow_up_count,
+        # Set only when this turn's "signal" is NOT a real classification but a
+        # hardcoded fallback from an LLM call failure/timeout (see except Exception
+        # above and scoring.py's own except). Without this flag, an eval outage is
+        # indistinguishable from a genuine depth_shallow classification in every
+        # log line, the DB record, and any downstream signal-frequency analysis --
+        # which silently inflates the depth_shallow count whenever the eval LLM
+        # is slow/erroring, mimicking a real classification bias.
+        "is_eval_recovery":        bool(raw.get("is_eval_recovery")),
     }
+
+    if quality_record["is_eval_recovery"]:
+        logger.warning(
+            "[EVAL_FALLBACK] turn=%d | signal=%s is a RECOVERY DEFAULT, not a real "
+            "classification -- eval LLM call failed/timed out this turn",
+            p.turn, signal,
+        )
 
     logger.info("[RESULT] turn=%d action=%s quality=%.2f/%s signal=%s sat=%.1f/%.1f",
                 p.turn, action, _weighted, depth_signal,

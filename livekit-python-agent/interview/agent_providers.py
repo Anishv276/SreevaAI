@@ -44,15 +44,19 @@ _PROVIDER_DEFAULTS: dict[str, Any] = {
     "sarvam_output_bitrate":   "128k",
     "sarvam_output_codec":     "mp3",
     # min_buffer_size = chars before Sarvam starts processing (not frames/bytes).
-    # Raised from the doc-minimum of 30 -- at 30, Sarvam frequently started generating
-    # audio for a ~4-6 word fragment on its own, giving each fragment its own prosody/
-    # tone and producing disjointed word-by-word delivery ("hello" in one tone, then
-    # the rest of the sentence). 80 keeps chunks closer to a full clause so prosody
-    # carries across the sentence, at a small cost to time-to-first-audio.
-    "sarvam_min_buffer":       80,
+    # The plugin sends text to Sarvam WORD BY WORD over the WS (see word_stream in
+    # livekit-plugins-sarvam tts.py send_task) -- these two values are the ONLY
+    # server-side control over how many of those words get grouped into one
+    # synthesis/prosody unit. Too low = Sarvam cuts a chunk after a ~4-6 word
+    # fragment, giving each fragment its own prosody arc and producing the
+    # disjointed "word... [gap] ...word" delivery. Raised to the plugin's own max
+    # (200/500) so a full turn (already pushed as a single push_text() call, see
+    # tts_node's Sarvam branch in agent_runtime.py) is chunked as few times as
+    # possible server-side, minimizing prosody-reset boundaries within one turn.
+    "sarvam_min_buffer":       200,
     # max_chunk_length = chars per chunk. Raised alongside min_buffer_size so Sarvam
     # isn't forced to cut a clause short right after crossing the new buffer floor.
-    "sarvam_max_chunk":        220,
+    "sarvam_max_chunk":        500,
     "sarvam_v2_pitch":         0.0,
     "sarvam_v2_loudness":      1.0,
     # Changed from 0.80. bulbul:v3 only, range 0.01-2.0, plugin default 0.6.

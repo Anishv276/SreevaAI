@@ -10,7 +10,8 @@ export type ProctoringEventType =
   | "multiple_faces"
   | "identity_mismatch"
   | "latency_mismatch"
-  | "session_fingerprint";
+  | "session_fingerprint"
+  | "gaze_deviation";
 export interface ProctoringEvent {
   eventType: string;
   severity?: ProctoringSeverity;
@@ -43,6 +44,8 @@ const EVENT_ALIASES: Record<string, ProctoringEventType> = {
   latencyMismatch: "latency_mismatch",
   session_fingerprint: "session_fingerprint",
   sessionFingerprint: "session_fingerprint",
+  gaze_deviation: "gaze_deviation",
+  gazeDeviation: "gaze_deviation",
 };
 export const PROCTORING_SEVERITY_BY_TYPE: Record<ProctoringEventType, ProctoringSeverity> = {
   camera_disabled: "high",
@@ -56,6 +59,7 @@ export const PROCTORING_SEVERITY_BY_TYPE: Record<ProctoringEventType, Proctoring
   identity_mismatch: "high",
   latency_mismatch: "medium",
   session_fingerprint: "high",
+  gaze_deviation: "medium",
 };
 export const PROCTORING_EVENT_ORDER: ProctoringEventType[] = [
   "camera_disabled",
@@ -69,6 +73,7 @@ export const PROCTORING_EVENT_ORDER: ProctoringEventType[] = [
   "identity_mismatch",
   "latency_mismatch",
   "session_fingerprint",
+  "gaze_deviation",
 ];
 export function normalizeProctoringEvent(event: ProctoringEvent): ProctoringEvent {
   const rawType = String(event.eventType || "").trim();

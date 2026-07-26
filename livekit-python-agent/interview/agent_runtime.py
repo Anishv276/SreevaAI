@@ -21,6 +21,7 @@ from interview.tech.brief import (
 )
 from interview.tech.question_bank_adapter import build_brief_from_question_bank
 from interview.agent_runtime_utils import token_limit_kwarg
+from interview.live_trap_score import LiveTrapScore
 from interview.agent_providers import (
     build_elevenlabs_tts,
     build_llm,
@@ -33,6 +34,7 @@ from interview.agent_persistence import (
     mark_interview_started,
     persist_answer_scores,
     persist_latency_signals,
+    persist_trap_event,
     persist_session_fingerprint,
     persist_transcript,
     update_interview_status,
@@ -1440,6 +1442,51 @@ class InterviewAgent(Agent):
         # the same session.say() path as the regular inactivity nudges, instead of
         # duplicating TTS/state-tracking logic here.
         self._speak_nudge: Any = None
+        # ── Live Trap Score ──────────────────────────────────────────────────
+        # Completely separate from the post-interview IntegrityEngine in report.py.
+        # Uses a strike-pattern system: single accidental events are absorbed;
+        # only repeated/sustained violations add to this score. Counts UP from 0;
+        # when score >= TRAP_THRESHOLD (100) a trap question should fire. The score
+        # stays PINNED at threshold (does not auto-reset) until agent.consume_trap()
+        # is called, which only happens once a trap question is actually generated
+        # and about to be asked -- so a failed generation or a turn where no trap
+        # check ran (e.g. MOVE_ON/WRAP_UP) never silently wastes the strike.
+        self._live_trap_score: LiveTrapScore = LiveTrapScore()
+        # Set to a dict when a trap question has been asked and we're waiting on
+        # the candidate's answer to it: {"question", "false_premise", "resume_directive"}.
+        # Cleared once classified -- see the pending_trap_question handling at the top
+        # of _process_user_conversation_item, and trap_question.classify_trap_answer.
+        self.pending_trap_question: Optional[dict] = None
+        # Whether the current pending trap question has already been rephrased once
+        # (tracked separately from pending_trap_question so it's an explicit agent
+        # field, not a mutation of the dict that's also stored under that name).
+        self.trap_rephrased_once: bool = False
+    # ── Live Trap Score API ─────────────────────────────────────────────────
+    def handle_proctoring_event(self, event_type: str, severity: str = "medium") -> bool:
+        """
+        Called whenever a proctoring event is received (DataChannel or API).
+        Returns True if this event just pushed the score to/past the trap
+        threshold. The score stays PINNED at the threshold (does not reset)
+        until consume_trap() is called -- only do that once a trap question
+        has actually been generated and is about to be asked, otherwise a
+        failed generation or a non-PROBE turn would silently waste the strike.
+        """
+        result = self._live_trap_score.record_event(
+            event_type=event_type,
+            severity=severity,
+        )
+        return result.trap_triggered
+
+    def consume_trap(self) -> None:
+        """Call only once a trap question has actually been generated and is
+        about to be asked -- resets the live score so the cycle can repeat."""
+        self._live_trap_score.consume_trap()
+
+    @property
+    def live_trap_score(self) -> int:
+        """Current live suspicion score (0 = clean, >=100 = trap should fire)."""
+        return self._live_trap_score.score
+
     def set_session_end_event(self, event: asyncio.Event) -> None:
         self._session_end_event = event
     def set_room(self, room) -> None:
@@ -1955,6 +2002,9 @@ class _EvalSignalToggles(BaseModel):
     # Plan-gated behavioral signals
     latency_mismatch: bool = False
     answer_integrity: bool = False
+    # Gates BOTH the background linguistic/teleprompter analyzer AND the
+    # live-trap-score question feature as a single unit -- off means neither runs.
+    live_integrity_monitoring: bool = False
     # Plan-gated environmental signals (Python awareness mirrors frontend gating)
     tab_switch: bool = False
     fullscreen_exit: bool = False
@@ -3033,6 +3083,11 @@ async def entrypoint(ctx: JobContext):
     _question_pending_timestamp: bool = False
     _answer_received_at: float = 0.0
     _candidate_started_speaking_at: float = 0.0  # true reaction-time endpoint (VAD speech-start, not EOT)
+    # Rolling filler-ratio baseline for THIS candidate, used by the linguistic
+    # analyzer to compare an answer against the candidate's own norm instead of
+    # a fixed bar. Filled from each turn's heuristics after eval, capped small
+    # since only the candidate's typical range matters, not full history.
+    _filler_ratio_history: collections.deque = collections.deque(maxlen=6)
     _custom_q_reminder_fired: bool = False
     _covered_topic_keys = CoveredTopics()  # single source of truth — normalized lowercase keys
     _asked_questions_log: collections.deque = collections.deque(maxlen=6)  # EC-3: deque(maxlen) makes append atomic — no pop() race
@@ -3378,7 +3433,8 @@ async def entrypoint(ctx: JobContext):
                 )
                 return
             payload = json.loads(raw_data.decode("utf-8"))
-            if payload.get("type") == "interview_finished":
+            p_type = payload.get("type")
+            if p_type == "interview_finished":
                 logger.info("Candidate marked interview as finished")
                 interview_marked_finished = True
                 interview_finished_event.set()
@@ -3396,6 +3452,20 @@ async def entrypoint(ctx: JobContext):
             # multiple_faces, camera_disabled, microphone_disabled) are stored
             # directly to the DB via /api/interview/proctoring by the frontend.
             # The agent is NOT involved in processing these signals.
+            elif p_type == "proctoring_event" or payload.get("eventType"):
+                event_type = payload.get("eventType")
+                severity = payload.get("severity", "medium")
+                if event_type and evaluation_signal_toggles.get("live_integrity_monitoring"):
+                    trap_fired = agent.handle_proctoring_event(event_type, severity)
+                    logger.info(
+                        "[PROCTORING_SIGNAL] Received real-time signal=%s severity=%s | current_live_score=%d",
+                        event_type, severity, agent.live_trap_score,
+                    )
+                    if trap_fired:
+                        logger.warning(
+                            "[TRAP_ACTIVATED] Live trap score reached %d -- next turn will ask a trap question.",
+                            agent.live_trap_score,
+                        )
         except Exception as e:
             logger.debug(f"Ignored malformed data packet: {e}")
             return
@@ -3487,6 +3557,59 @@ async def entrypoint(ctx: JobContext):
                 )
             _last_applied_eval_turn = max(_last_applied_eval_turn, result_turn)
         return True
+    async def _try_inject_trap_question(
+        directive: str,
+        turn_snapshot: int,
+        transcript_lines_snap: list[str],
+        *,
+        topic_lock_msg: str = "",
+        was_move_on: bool = False,
+    ) -> tuple[str, str, bool]:
+        """If live_integrity_monitoring is on and the score has hit threshold,
+        replace `directive` with a generated trap question and stash the
+        original directive (+ topic_lock_msg, for a MOVE_ON) on
+        agent.pending_trap_question so the turn after the trap resolves can
+        resume exactly what was already decided here -- see consume_trap()'s
+        docstring in live_trap_score.py for why the score only resets on
+        success. Returns (directive, topic_lock_msg, trap_generated).
+        """
+        if not (evaluation_signal_toggles.get("live_integrity_monitoring") and agent.live_trap_score >= 100):
+            return directive, topic_lock_msg, False
+        from interview.trap_question import generate_trap_question
+        trap_result = await generate_trap_question(
+            transcript_lines=transcript_lines_snap,
+            resume=structured_resume,
+            jd_skills=_jd_skills,
+        )
+        if not trap_result:
+            logger.warning(
+                "[TRAP_QUESTION] Generation failed at score=%d -- score stays pinned, will retry on the next eligible turn.",
+                agent.live_trap_score,
+            )
+            return directive, topic_lock_msg, False
+        agent.pending_trap_question = {
+            "question": trap_result.question,
+            "false_premise": trap_result.false_premise,
+            "resume_directive": directive,
+            "resume_topic_lock": topic_lock_msg,
+            "was_move_on": was_move_on,
+        }
+        agent.trap_rephrased_once = False
+        trap_directive = (
+            f"[TRAP QUESTION — ASK THIS INSTEAD OF THE ABOVE (score={agent.live_trap_score})]\n"
+            f'"{trap_result.question}"\n'
+            "Ask ONLY this question next, in place of any other planned question. Light "
+            "rephrasing for natural delivery is fine, but keep the false premise intact. "
+            "If the candidate pushes back and says that's not what they said, acknowledge "
+            "it and rephrase the question once to confirm what they actually meant -- then "
+            "wait for their answer. Do not ask any other question this turn.\n"
+        )
+        logger.warning(
+            "[TRAP_ACTIVATED] Live trap score reached %d at turn %d -- asking trap question instead.",
+            agent.live_trap_score, turn_snapshot,
+        )
+        agent.consume_trap()
+        return trap_directive, "", True
     async def _process_user_conversation_item(
         content: str,
         role: str,
@@ -3580,6 +3703,91 @@ async def entrypoint(ctx: JobContext):
                 persist_transcript(app_id, lines_snap_eval, session_start_time, partial=True),
                 f"transcript_save_turn_{turn_snapshot}",
             )
+            # This turn is the candidate's answer to a trap question asked last turn.
+            # If they just asked to repeat/rephrase, re-ask once (don't classify yet,
+            # don't clear pending_trap_question). Otherwise classify inline, persist the
+            # result, inject the bridge-back directive, and skip normal probe/eval for
+            # this turn entirely (the real answer already got evaluated in the earlier
+            # turn where the trap fired -- see the live_trap_score check further below).
+            if is_final_eot and agent.pending_trap_question:
+                _trap_pending = agent.pending_trap_question
+                _repeat_re = re.compile(
+                    r"\b(repeat|rephrase|say (that |it )?again|come again|what was that|didn'?t (catch|hear|understand))\b",
+                    re.IGNORECASE,
+                )
+                if _repeat_re.search(answer_snap) and not agent.trap_rephrased_once:
+                    agent.trap_rephrased_once = True
+                    _directive = (
+                        "[TRAP QUESTION — CANDIDATE ASKED YOU TO REPEAT/REPHRASE]\n"
+                        f'Original question: "{_trap_pending.get("question", "")}"\n'
+                        "Rephrase this same question once, keeping the same false premise intact, "
+                        "then wait for their actual answer. Do not ask anything else this turn.\n"
+                    )
+                    remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT", "[TRAP QUESTION"))
+                    chat_ctx.add_message(role="system", content=_directive)
+                    logger.info("[TRAP_QUESTION] Turn %d: candidate asked to repeat, rephrasing once.", turn_snapshot)
+                    return
+                agent.pending_trap_question = None
+                agent.trap_rephrased_once = False
+                from interview.trap_question import classify_trap_answer
+                result = await classify_trap_answer(
+                    false_premise=_trap_pending.get("false_premise", ""),
+                    candidate_answer=answer_snap,
+                )
+                logger.warning(
+                    "[TRAP_QUESTION] Turn %d classified: caught=%s reason=%s",
+                    turn_snapshot, result.caught_the_trap, result.reason,
+                )
+                spawn_background_task(
+                    persist_trap_event(app_id, {
+                        # Only "trap_question" (failed) counts against the integrity
+                        # score in report.py's IntegrityEngine -- a caught trap is
+                        # recorded for transparency but shouldn't be penalized.
+                        "eventType": "trap_question" if not result.caught_the_trap else "trap_question_passed",
+                        "turn": turn_snapshot,
+                        "question": _trap_pending.get("question", ""),
+                        "false_premise": _trap_pending.get("false_premise", ""),
+                        "candidate_answer": answer_snap,
+                        "caught_the_trap": result.caught_the_trap,
+                        "reason": result.reason,
+                    }),
+                    f"trap_event_persist_{turn_snapshot}",
+                )
+                # Resume exactly what the eval had already queued up before the trap
+                # interrupted -- reusing the same PROBE-vs-MOVE_ON phrasing distinction
+                # the rest of the codebase already uses (see _classify_candidate_intent's
+                # for_move_on hint text above), instead of one generic bridge-back line.
+                _resume_directive = _trap_pending.get("resume_directive", "")
+                _resume_topic_lock = _trap_pending.get("resume_topic_lock", "")
+                _was_move_on = bool(_trap_pending.get("was_move_on"))
+                if _resume_directive and _was_move_on:
+                    _bridge_directive = (
+                        "[TRAP QUESTION RESOLVED — PROCEED TO THE NEW TOPIC]\n"
+                        "Briefly acknowledge the candidate's answer to the check-in question, then transition "
+                        "into the new topic below as originally planned -- e.g. \"alright, let's move on to...\" "
+                        "or \"switching gears, let's talk about...\". This is a fresh topic, not a return to the "
+                        "previous one.\n\n" + _resume_directive
+                    )
+                    if _resume_topic_lock:
+                        remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT", "[TRAP QUESTION"))
+                        chat_ctx.add_message(role="system", content=_bridge_directive)
+                        chat_ctx.add_message(role="system", content=_resume_topic_lock)
+                        return
+                elif _resume_directive:
+                    _bridge_directive = (
+                        "[TRAP QUESTION RESOLVED — RETURN TO PREVIOUS DISCUSSION]\n"
+                        "Briefly acknowledge the candidate's answer to the check-in question, then explicitly "
+                        "bridge back with something like \"coming back to what we were discussing...\" and ask "
+                        "the question below -- do NOT treat this as a new topic.\n\n" + _resume_directive
+                    )
+                else:
+                    _bridge_directive = (
+                        "[TRAP QUESTION RESOLVED]\nBriefly acknowledge the candidate's answer, then continue "
+                        "the interview normally with your next question.\n"
+                    )
+                remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT", "[TRAP QUESTION"))
+                chat_ctx.add_message(role="system", content=_bridge_directive)
+                return
             # Inject structured recent Q&A context for callbacks and follow-up context.
             if bool(_last_interviewer_question) and turn_snapshot > 1:
                 # Limit the lookback to the current topic to prevent leaking previous topics
@@ -3621,6 +3829,99 @@ async def entrypoint(ctx: JobContext):
             if not is_final_eot:
                 logger.info("[EVAL_GUARD] turn=%d skipped eval -- not EOT (is_final_eot=%s, content=%r)", turn_snapshot, is_final_eot, (content or "")[:40])
                 return
+
+            # --- Background Async Linguistic Teleprompter Analyzer ---
+            # Gated by the super-admin "live_integrity_monitoring" toggle -- off means
+            # this never runs, so no linguistic events and no trap questions can fire.
+            if (
+                evaluation_signal_toggles.get("live_integrity_monitoring")
+                and warmup_complete and content.strip() and len(content.strip().split()) >= 15
+            ):
+                _ling_turn = turn_snapshot
+                _ling_answer = content.strip()
+                _ling_question = _last_interviewer_question or ""
+                # Same reaction-time calculation used by the main evaluator below --
+                # question TTS finished -> candidate started speaking (VAD speech-start),
+                # falling back to EOT receipt time if speech-start never fired.
+                _ling_latency_end = (
+                    _candidate_started_speaking_at
+                    if _candidate_started_speaking_at > _question_asked_at
+                    else _answer_received_at
+                )
+                _ling_latency: Optional[float] = (
+                    round(_ling_latency_end - _question_asked_at, 3)
+                    if _question_asked_at > 0 and _ling_latency_end > _question_asked_at
+                    else None
+                )
+                # Candidate's own filler-ratio baseline from prior turns (excludes this
+                # one) -- None until they have at least one prior scored turn.
+                _ling_baseline: Optional[float] = (
+                    round(sum(_filler_ratio_history) / len(_filler_ratio_history), 3)
+                    if _filler_ratio_history else None
+                )
+
+                async def _run_ling_eval_bg(
+                    t_snap=_ling_turn,
+                    a_snap=_ling_answer,
+                    q_snap=_ling_question,
+                    latency_snap=_ling_latency,
+                    baseline_snap=_ling_baseline,
+                ) -> None:
+                    try:
+                        from interview.linguistic_analyzer import LinguisticAnalyzer
+                        analyzer = LinguisticAnalyzer(_SHARED_OPENAI_CLIENT)
+                        res = await analyzer.analyze_async(
+                            candidate_text=a_snap,
+                            question_text=q_snap,
+                            response_latency_sec=latency_snap,
+                            baseline_filler_ratio=baseline_snap,
+                        )
+                        # Feed this turn's own filler ratio into the rolling baseline
+                        # for future turns, regardless of whether it was suspicious.
+                        _filler_ratio_history.append(
+                            LinguisticAnalyzer.extract_heuristics(a_snap)["filler_ratio"]
+                        )
+                        if res.is_suspicious:
+                            logger.warning(
+                                "[LINGUISTIC_ANALYZER] Turn %d flagged teleprompter speech: score=%d confidence=%s signals=%s reason=%s",
+                                t_snap, res.score, res.confidence, res.signals, res.reason,
+                            )
+                            trap_fired = agent.handle_proctoring_event(
+                                event_type="robotic_speech",
+                                severity="medium",
+                            )
+                            spawn_background_task(
+                                log_test_event(
+                                    app_id,
+                                    "linguistic_teleprompter_flagged",
+                                    f"Turn {t_snap} Teleprompter Speech (score={res.score}): {res.reason}",
+                                    data={
+                                        "score": res.score,
+                                        "signals": res.signals,
+                                        "reason": res.reason,
+                                        "live_trap_score": agent.live_trap_score,
+                                    },
+                                ),
+                                f"test_event_ling_flag_{t_snap}",
+                            )
+                            if trap_fired:
+                                logger.warning(
+                                    "[TRAP_ACTIVATED] Live trap score reached %d via linguistic analysis.",
+                                    agent.live_trap_score,
+                                )
+                        else:
+                            logger.debug(
+                                "[LINGUISTIC_ANALYZER] Turn %d clean: score=%d",
+                                t_snap, res.score,
+                            )
+                    except Exception as _ling_err:
+                        logger.debug("[LINGUISTIC_ANALYZER] Error evaluating turn %d: %s", t_snap, _ling_err)
+
+                spawn_background_task(
+                    _run_ling_eval_bg(),
+                    f"linguistic_eval_turn_{turn_snapshot}",
+                )
+
 
             # Eval runs after interview has started (warmup complete + directive injected).
             # This allows the first interview question to be evaluated immediately after delivery.
@@ -4252,9 +4553,7 @@ async def entrypoint(ctx: JobContext):
                             "Ask about what they built, decided, or what broke. NEVER ask 'do you have "
                             "experience with X' or 'why did you work there' -- they did.\n"
                         )
-                    remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
-                    chat_ctx.add_message(role="system", content=_directive)
-                    chat_ctx.add_message(role="system", content=(
+                    _topic_lock_msg = (
                         "[TOPIC_LOCK - CRITICAL INSTRUCTION]\n"
                         "PREVIOUS TOPIC IS CLOSED. DO NOT REFERENCE IT.\n"
                         f"NEW ACTIVE TOPIC: {_new_topic_title}\n"
@@ -4265,14 +4564,25 @@ async def entrypoint(ctx: JobContext):
                         "and the FULL CONTEXT. Do NOT copy any wording from the directive -- create your own. "
                         "Do NOT say 'Tell me about X -- what did you work on there?' -- be more specific. "
                         "Do not mention tools, projects, or details from the previous topic."
-                    ))
+                    )
+                    _directive, _topic_lock_msg, _trap_generated = await _try_inject_trap_question(
+                        _directive, turn_snapshot, lines_snap_eval,
+                        topic_lock_msg=_topic_lock_msg, was_move_on=True,
+                    )
+                    remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
+                    chat_ctx.add_message(role="system", content=_directive)
+                    if _topic_lock_msg:
+                        chat_ctx.add_message(role="system", content=_topic_lock_msg)
                     # One-shot guard: tell the next eval cycle to skip itself so
-                    # the queued MOVE_ON opener can be spoken first, before any
-                    # PROBE directive overwrites it.
+                    # the queued MOVE_ON opener (or trap question) can be spoken first,
+                    # before any PROBE directive overwrites it.
                     agent._move_on_opener_pending = True
                     _qr["directive_text"] = _directive  # ponytail: debug report needs the literal injected text
-                    logger.info("[AGENT] turn=%d | MOVE_ON directive injected (LLM) | new_topic=%r", turn_snapshot, _active_topic)
-                    logger.info("[MOVE_ON_DIRECTIVE] turn=%d:\n%s", turn_snapshot, _directive)
+                    if _trap_generated:
+                        logger.info("[AGENT] turn=%d | MOVE_ON deferred -- trap question injected instead", turn_snapshot)
+                    else:
+                        logger.info("[AGENT] turn=%d | MOVE_ON directive injected (LLM) | new_topic=%r", turn_snapshot, _active_topic)
+                        logger.info("[MOVE_ON_DIRECTIVE] turn=%d:\n%s", turn_snapshot, _directive)
                 else:
                     # -- PROBE -- LLM-jobn directive using TopicItem brief context --
                     _prev_q = (payload.get("question") or "").strip()
@@ -4335,6 +4645,9 @@ async def entrypoint(ctx: JobContext):
                             "suggests it, pivot instead to a failure-case, mechanism-collapse, or "
                             "applied-scenario question that tests the same gap.\n"
                         )
+                    _directive, _, _trap_generated = await _try_inject_trap_question(
+                        _directive, turn_snapshot, lines_snap_eval,
+                    )
                     remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
                     chat_ctx.add_message(role="system", content=_directive)
                     _qr["directive_text"] = _directive  # ponytail: debug report needs the literal injected text

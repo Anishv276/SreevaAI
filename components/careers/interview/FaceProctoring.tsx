@@ -12,7 +12,38 @@ const COOLDOWNS: Record<string, number> = {
   face_absence: 10_000,
   multiple_faces: 8_000,
   identity_mismatch: 60_000,
+  gaze_deviation: 8_000,
 };
+
+// ─── Gaze Tracking Constants ───────────────────────────────────────────────
+// MediaPipe FaceLandmarker 478-point iris indices (requires minFaceDetectionConfidence
+// >= 0.5 and the model to return full landmarks including iris refinement).
+const IRIS_R = 468; // right iris center
+const IRIS_L = 473; // left iris center
+const EYE_R_OUTER = 33;  // right eye outer corner
+const EYE_R_INNER = 133; // right eye inner corner (nose side)
+const EYE_L_INNER = 362; // left eye inner corner (nose side)
+const EYE_L_OUTER = 263; // left eye outer corner
+const EYE_R_TOP = 159;   // right upper eyelid
+const EYE_R_BOT = 145;   // right lower eyelid
+const EYE_L_TOP = 386;   // left upper eyelid
+const EYE_L_BOT = 374;   // left lower eyelid
+
+// Number of frames used to build the per-candidate neutral gaze baseline.
+// At 250ms/frame this is ~3.75 seconds of normal camera-facing behaviour.
+const GAZE_CALIBRATION_FRAMES = 15;
+
+// How many standard tolerance units the iris must deviate from neutral to
+// count as an off-gaze frame. Tuned from research across varying webcam
+// setups; values below ~0.14 produce too many false positives on subtle
+// natural head movement.
+const GAZE_H_TOLERANCE = 0.18; // horizontal: ±18 % of eye width from neutral
+const GAZE_V_TOLERANCE = 0.20; // vertical:   ±20 % of eye height from neutral
+
+// Number of consecutive off-gaze frames before we promote to a violation.
+const GAZE_MINOR_FRAMES  = 2;  // ~0.5 s  → low severity, probe only
+const GAZE_MEDIUM_FRAMES = 6;  // ~1.5 s  → medium severity
+const GAZE_HIGH_FRAMES   = 12; // ~3.0 s  → sustained look-away, high severity
 interface FaceProctoringProps {
   isActive: boolean;
   referenceSnapshotUrl: string | null;
@@ -44,6 +75,18 @@ export function FaceProctoring({
   const refCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const lastIdentityCheck = useRef(0);
   const identityCheckCount = useRef(0);
+
+  // ─── Gaze tracking state ────────────────────────────────────────────────
+  // Calibration accumulator — filled during the first GAZE_CALIBRATION_FRAMES
+  // frames then never written again.
+  const gazeCalibSamples = useRef<{ h: number; v: number }[]>([]);
+  // Per-person neutral midpoint, set once calibration is complete.
+  const gazeNeutral = useRef<{ h: number; v: number } | null>(null);
+  // Rolling count of consecutive off-gaze frames (reset when gaze returns).
+  const gazeOffFrames = useRef(0);
+  // Direction label of the current off-gaze streak for logging.
+  const gazeDir = useRef<string>("");
+
   useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
   const canFire = useCallback((type: string): boolean => {
     const last = lastFiredRef.current[type] ?? 0;
@@ -210,6 +253,106 @@ export function FaceProctoring({
         );
       }
     }
+
+    // ─── 4. Gaze Deviation Tracking ────────────────────────────────────────
+    // We only need the iris centres and the four eye corners — all values are
+    // already normalised to [0,1] by MediaPipe so ratios cancel out perfectly
+    // without any pixel-space conversion.
+    const lm = landmarks;
+
+    // Helper: clamp a ratio to avoid divide-by-zero when landmarks overlap.
+    const safeDivide = (num: number, den: number) =>
+      Math.abs(den) < 1e-6 ? 0.5 : num / den;
+
+    // ── RIGHT EYE ──
+    const rIris  = lm[IRIS_R];
+    const rOuter = lm[EYE_R_OUTER];
+    const rInner = lm[EYE_R_INNER];
+    const rTop   = lm[EYE_R_TOP];
+    const rBot   = lm[EYE_R_BOT];
+    // Mirror: webcam is horizontally flipped, so "outer" in pixel space is
+    // actually toward the nose — swap inner/outer for ratio to read L→R naturally.
+    const rH = safeDivide(rIris.x - rOuter.x, rInner.x - rOuter.x);
+    const rV = safeDivide(rIris.y - rTop.y,   rBot.y   - rTop.y);
+
+    // ── LEFT EYE ──
+    const lIris  = lm[IRIS_L];
+    const lOuter = lm[EYE_L_OUTER];
+    const lInner = lm[EYE_L_INNER];
+    const lTop   = lm[EYE_L_TOP];
+    const lBot   = lm[EYE_L_BOT];
+    const lH = safeDivide(lIris.x - lInner.x, lOuter.x - lInner.x);
+    const lV = safeDivide(lIris.y - lTop.y,   lBot.y   - lTop.y);
+
+    // Average both eyes — averaging eliminates single-eye detection noise.
+    const avgH = (rH + lH) / 2;
+    const avgV = (rV + lV) / 2;
+
+    // ── CALIBRATION (first GAZE_CALIBRATION_FRAMES frames) ──
+    if (gazeCalibSamples.current.length < GAZE_CALIBRATION_FRAMES) {
+      gazeCalibSamples.current.push({ h: avgH, v: avgV });
+      if (gazeCalibSamples.current.length === GAZE_CALIBRATION_FRAMES) {
+        // Compute median of collected samples (robust against outlier blinks).
+        const hs = [...gazeCalibSamples.current.map(s => s.h)].sort((a, b) => a - b);
+        const vs = [...gazeCalibSamples.current.map(s => s.v)].sort((a, b) => a - b);
+        const mid = Math.floor(GAZE_CALIBRATION_FRAMES / 2);
+        gazeNeutral.current = { h: hs[mid], v: vs[mid] };
+      }
+      // Skip violation logic until calibration is complete.
+    } else if (gazeNeutral.current) {
+      const { h: nh, v: nv } = gazeNeutral.current;
+      const hDev = avgH - nh; // positive = looking left, negative = right
+      const vDev = avgV - nv; // positive = looking down, negative = up
+
+      const isOffH = Math.abs(hDev) > GAZE_H_TOLERANCE;
+      const isOffV = Math.abs(vDev) > GAZE_V_TOLERANCE;
+      const isOff  = isOffH || isOffV;
+
+      if (isOff) {
+        gazeOffFrames.current += 1;
+
+        // Build a human-readable direction label for the violation reason.
+        const hLabel = hDev > 0 ? "left" : "right";
+        const vLabel = vDev > 0 ? "down" : "up";
+        const dirLabel = isOffH && isOffV
+          ? `${vLabel}-${hLabel}`
+          : isOffH ? hLabel : vLabel;
+        gazeDir.current = dirLabel;
+
+        const frames = gazeOffFrames.current;
+
+        if (frames === GAZE_HIGH_FRAMES) {
+          // Sustained 3-second look-away — high severity.
+          fire(
+            "gaze_deviation",
+            `Candidate sustained gaze ${gazeDir.current} for ~3 seconds — possible off-screen reference`,
+            "high",
+            now,
+          );
+        } else if (frames === GAZE_MEDIUM_FRAMES) {
+          // 1.5-second deviation — medium severity probe.
+          fire(
+            "gaze_deviation",
+            `Candidate eyes directed ${gazeDir.current} for ~1.5 seconds`,
+            "medium",
+            now,
+          );
+        } else if (frames === GAZE_MINOR_FRAMES) {
+          // 0.5-second micro-deviation — low severity, logged for pattern scoring.
+          fire(
+            "gaze_deviation",
+            `Brief gaze shift ${gazeDir.current} detected`,
+            "low",
+            now,
+          );
+        }
+      } else {
+        // Gaze returned to neutral zone — reset streak counter.
+        gazeOffFrames.current = 0;
+        gazeDir.current = "";
+      }
+    }
+    // ─── End Gaze Tracking ─────────────────────────────────────────────────
   }, [verifyIdentity, fire, referenceSnapshotUrl]);
   useEffect(() => {
     if (!isActive) return;

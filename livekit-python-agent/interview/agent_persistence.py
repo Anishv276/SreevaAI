@@ -553,6 +553,45 @@ async def persist_latency_signals(app_id: str, answer_scores: list[dict]) -> Non
     except Exception as e:
         logger.error("[LATENCY] Failed to persist latency_mismatch event for %s: %s", app_id, e)
 
+async def persist_trap_event(app_id: str, trap_event: dict) -> None:
+    """Append a trap-question record to proctoringEvents.
+
+    Shape:
+      {"eventType": "trap_question", "severity": "medium", "timestamp": <now_ms>,
+       "turn": 7, "question": "...", "candidate_answer": "...",
+       "caught_the_trap": bool, "reason": "..."}
+    """
+    if not app_id or not DATABASE_URL or is_demo_app_id(app_id):
+        return
+    event = {"eventType": "trap_question", "severity": "medium",
+              "timestamp": int(time.time() * 1000), **trap_event}
+    try:
+        pool = await DatabasePool.get()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                'SELECT "proctoringEvents" FROM "Interview" WHERE "applicationId" = $1 LIMIT 1',
+                app_id,
+            )
+            existing: list = []
+            if row and row["proctoringEvents"]:
+                raw = row["proctoringEvents"]
+                existing = raw if isinstance(raw, list) else (
+                    json.loads(raw) if isinstance(raw, str) else []
+                )
+            merged = existing + [event]
+            await conn.execute(
+                """UPDATE "Interview" SET "proctoringEvents" = $1, "interviewUpdatedAt" = NOW()
+                   WHERE "applicationId" = $2""",
+                json.dumps(merged),
+                app_id,
+            )
+        logger.info(
+            "[TRAP] Appended trap_question event (turn=%s caught=%s) for %s",
+            trap_event.get("turn"), trap_event.get("caught_the_trap"), app_id,
+        )
+    except Exception as e:
+        logger.error("[TRAP] Failed to persist trap_question event for %s: %s", app_id, e)
+
 async def persist_session_fingerprint(app_id: str) -> None:
     """Compare all ip_registered events in integritySignals and emit a
     session_fingerprint violation if the browser fingerprint changed mid-session

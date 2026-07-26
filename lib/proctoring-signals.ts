@@ -10,7 +10,9 @@ export type ManagedProctoringSignal =
   | "identity_mismatch"
   | "latency_mismatch"
   | "answer_integrity"
-  | "session_fingerprint";
+  | "session_fingerprint"
+  | "gaze_deviation"
+  | "live_integrity_monitoring";
 export type ProctoringSignalToggles = Record<ManagedProctoringSignal, boolean>;
 export const MANAGED_PROCTORING_SIGNALS: ManagedProctoringSignal[] = [
   "tab_switch",
@@ -25,6 +27,8 @@ export const MANAGED_PROCTORING_SIGNALS: ManagedProctoringSignal[] = [
   "latency_mismatch",
   "answer_integrity",
   "session_fingerprint",
+  "gaze_deviation",
+  "live_integrity_monitoring",
 ];
 function createSignalMap(value: boolean): ProctoringSignalToggles {
   return Object.fromEntries(MANAGED_PROCTORING_SIGNALS.map((signal) => [signal, value])) as ProctoringSignalToggles;
@@ -42,6 +46,9 @@ export const DEFAULT_PROCTORING_SIGNALS: ProctoringSignalToggles = {
   latency_mismatch: true,
   answer_integrity: true,
   session_fingerprint: true,
+  gaze_deviation: true,
+  // Off by default everywhere -- super-admin opt-in only, see GROWTH/SCALE below.
+  live_integrity_monitoring: false,
 };
 // BASIC / STARTER plan: nothing enabled until plan upgrade.
 export const BASIC_PLAN_SIGNALS: ProctoringSignalToggles = createSignalMap(false);
@@ -57,6 +64,7 @@ export const GROWTH_PLAN_SIGNALS: ProctoringSignalToggles = {
   latency_mismatch: true,
   answer_integrity: true,
   session_fingerprint: false,
+  gaze_deviation: true,
 };
 // SCALE / ENTERPRISE adds the heavier vision checks on top of GROWTH.
 export const SCALE_PLAN_SIGNALS: ProctoringSignalToggles = {
@@ -65,6 +73,7 @@ export const SCALE_PLAN_SIGNALS: ProctoringSignalToggles = {
   multiple_faces: true,
   identity_mismatch: true,
   session_fingerprint: true,
+  gaze_deviation: true,
 };
 export function getProctoringSignalsForPlan(planId: string): ProctoringSignalToggles {
   const pid = planId.toUpperCase();
@@ -99,6 +108,8 @@ export function normalizeProctoringSignals(raw: unknown): ProctoringSignalToggle
     latency_mismatch: toBoolean(source.latency_mismatch, DEFAULT_PROCTORING_SIGNALS.latency_mismatch),
     answer_integrity: toBoolean(source.answer_integrity, DEFAULT_PROCTORING_SIGNALS.answer_integrity),
     session_fingerprint: toBoolean(source.session_fingerprint, DEFAULT_PROCTORING_SIGNALS.session_fingerprint),
+    gaze_deviation: toBoolean(source.gaze_deviation, DEFAULT_PROCTORING_SIGNALS.gaze_deviation),
+    live_integrity_monitoring: toBoolean(source.live_integrity_monitoring, DEFAULT_PROCTORING_SIGNALS.live_integrity_monitoring),
   };
   return normalized;
 }
