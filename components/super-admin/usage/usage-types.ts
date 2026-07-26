@@ -2,7 +2,7 @@
 // See app/api/super-admin/orgs/[id]/usage/route.ts and .../usage/events/route.ts.
 
 export type SectionKey = "jdExtraction" | "resumeExtraction" | "resumeReport" | "interview" | "finalReport";
-export type InterviewSubKey = "tts" | "stt" | "generation" | "eval" | "brief";
+export type InterviewSubKey = "tts" | "stt" | "generation" | "eval";
 
 export type UsageSection = {
   key: SectionKey;
@@ -99,8 +99,7 @@ export type EventsSectionSlug =
   | "interview-tts"
   | "interview-stt"
   | "interview-generation"
-  | "interview-eval"
-  | "interview-brief";
+  | "interview-eval";
 
 // One row per interview entity, every sub-feature's calls/cost side by side.
 // See app/api/super-admin/orgs/[id]/usage/events/route.ts's "interview-all" section.
@@ -111,7 +110,6 @@ export type InterviewEventRow = {
   candidateName: string | null;
   evalRuns: number; evalCostUsd: number;
   generationRuns: number; generationCostUsd: number;
-  briefRuns: number; briefCostUsd: number;
   ttsCharacters: number; ttsCostUsd: number;
   sttAudioSeconds: number; sttCostUsd: number;
   totalCostUsd: number;

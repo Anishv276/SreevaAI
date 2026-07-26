@@ -16,7 +16,7 @@ const LLM_PIPELINE_FIELDS = [
   { key: "llmResumeReport",      label: "Resume Report",        hint: "Generates initial screening scorecard" },
   { key: "llmInterviewLive",     label: "Interview Live Agent", hint: "Brain of the live AI interviewer" },
   { key: "llmInterviewEval",     label: "Interview Evaluator",  hint: "Scores answers in real-time" },
-  { key: "llmInterviewBrief",    label: "Interview Brief",      hint: "Pre-computes interview strategy" },
+  { key: "llmQuestionBank",      label: "Question Bank",        hint: "Generates the interview question bank at JD-creation time" },
   { key: "llmInterviewReport",   label: "Interview Report",     hint: "Generates final scorecard after interview" },
 ] as const;
 
@@ -25,7 +25,7 @@ type OrgSummary = {
   sttModel: string; ttsProvider: string; ttsModel: string; ttsSpeed: number;
   allowedVoiceIds: string[];
   llmResumeExtraction: string; llmJdExtraction: string; llmResumeReport: string;
-  llmInterviewLive: string; llmInterviewEval: string; llmInterviewBrief: string; llmInterviewReport: string;
+  llmInterviewLive: string; llmInterviewEval: string; llmQuestionBank: string; llmInterviewReport: string;
 };
 type OrgConfig = OrgSummary;
 

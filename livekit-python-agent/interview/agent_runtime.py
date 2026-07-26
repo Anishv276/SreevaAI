@@ -17,7 +17,6 @@ from interview.tech.phases import (
     build_interview_directive,
 )
 from interview.tech.brief import (
-    InterviewBrief,
     TopicItem,
 )
 from interview.tech.question_bank_adapter import build_brief_from_question_bank
@@ -1289,7 +1288,7 @@ async def _generate_move_on_directive(
                 stream=True,
                 stream_options={"include_usage": True},
                 store=True,
-                metadata={"call_type": "move_on_directive", "level": str(level), "source": str(source)},
+                metadata={"call_type": "move_on_directive", "level": level, "source": source},
             )
             async for chunk in stream:
                 if chunk.choices and chunk.choices[0].delta.content:
@@ -2010,16 +2009,13 @@ class InterviewContext(BaseModel):
     ttsSpeed: Optional[float] = None
     llmInterviewLive: Optional[str] = None
     llmInterviewEval: Optional[str] = None
-    llmInterviewBrief: Optional[str] = None
     llmInterviewReport: Optional[str] = None
     resumeData: Any = None
     extractedDetails: Any = None
     screeningCriteria: Any = None
-    interviewQuestions: Any = None
     proctoringSignals: Any = None
     interviewStatus: Optional[str] = None
-    interviewBrief: Any = None  # Pre-generated JSON (slot flow) or None (test/fallback flow) -- conversational interviews only
-    questionBankSnapshot: Any = None  # Frozen Job.questionBank JSON -- tech interviews only
+    questionBankSnapshot: Any = None  # Frozen Job.questionBank / DemoTemplate.questionBankSnapshot JSON -- every interview type, incl. test and demo sessions
     questionBankVersionUsed: Optional[int] = None
     @field_validator("fullName", "jobTitle", "language", mode="before")
     @classmethod
@@ -2189,14 +2185,6 @@ async def entrypoint(ctx: JobContext):
     if not extracted_details:
         extracted_details = _coerce_jsonish(ctx_data.screeningCriteria or "{}")
     structured_resume = _coerce_jsonish(ctx_data.resumeData or "{}")
-    _raw_interview_questions = ctx_data.interviewQuestions
-    _interview_questions: list = []
-    if _raw_interview_questions:
-        try:
-            _parsed = json.loads(_raw_interview_questions) if isinstance(_raw_interview_questions, str) else _raw_interview_questions
-            _interview_questions = _parsed if isinstance(_parsed, list) else []
-        except Exception:
-            _interview_questions = []
     # Extract basic context info early for logging
     candidate_name = ctx_data.fullName
     candidate_first_name = first_name_from_full_name(candidate_name)
@@ -2206,8 +2194,11 @@ async def entrypoint(ctx: JobContext):
     # any unrecognized or missing value.
     interview_type = ctx_data.interviewType if ctx_data.interviewType == "conversational" else "tech"
     logger.info(f"[INTERVIEW] interview_type={interview_type} job_title={job_title!r}")
+    # No interview type calls generate_interview_brief() anymore -- every
+    # InterviewBrief is built synchronously from the stored, frozen question
+    # bank snapshot (see build_brief_from_question_bank() below). Only the
+    # delivery-style modules (phases/prompts) still differ by type.
     if interview_type == "conversational":
-        from interview.conversational.brief import generate_interview_brief
         from interview.conversational.phases import build_greeting_text, build_interview_directive
         from interview.conversational.prompts import (
             build_voice_layer_prompt,
@@ -2215,10 +2206,6 @@ async def entrypoint(ctx: JobContext):
             build_system_prompt,
         )
     else:
-        # Tech interviews no longer call generate_interview_brief() at all --
-        # the InterviewBrief is built synchronously from the stored, frozen
-        # question bank snapshot (see build_brief_from_question_bank() below).
-        # generate_interview_brief is left unimported here on purpose.
         from interview.tech.phases import build_greeting_text, build_interview_directive
         from interview.tech.prompts import (
             build_voice_layer_prompt,
@@ -2273,28 +2260,27 @@ async def entrypoint(ctx: JobContext):
         )
         return must, nice
     _jd_skills, _jd_nice = _extract_jd_skill_lists(extracted_details) if extracted_details else ([], [])
-    logger.info(
-        "[STARTUP] Fetched  resume=%s jd=%s custom_q=%d | candidate=%s | role=%s",
-        "YES" if structured_resume else "NO",
-        "YES" if extracted_details else "NO",
-        len(_interview_questions) if _interview_questions else 0,
-        candidate_name, job_title,
-    )
-    if _jd_skills or _jd_nice:
-        logger.info("[STARTUP] JD keys  must_have=%s nice_to_have=%s", _jd_skills[:6], _jd_nice[:4])
-    if _interview_questions:
-        logger.info("[STARTUP] Custom questions: %d loaded", len(_interview_questions))
-        for i, q in enumerate(_interview_questions, 1):
-            logger.info("[STARTUP]   Q%d: %s", i, str(q)[:100])
-    else:
-        logger.info("[STARTUP] Custom questions: NONE configured")
+    _stored_bank_raw = ctx_data.questionBankSnapshot
+    _stored_bank_dict: dict | None = _coerce_jsonish(_stored_bank_raw) if _stored_bank_raw else None
+    _interview_questions: list[str] = []
+    if _stored_bank_dict:
+        _raw_custom = _stored_bank_dict.get("customQuestions") or _stored_bank_dict.get("custom_questions")
+        if isinstance(_raw_custom, list):
+            for _item in _raw_custom:
+                _q_text = str(_item.get("question") if isinstance(_item, dict) else _item).strip()
+                if _q_text and _q_text not in _interview_questions:
+                    _interview_questions.append(_q_text)
+        if isinstance(_stored_bank_dict.get("questions"), list):
+            for _q_item in _stored_bank_dict["questions"]:
+                if isinstance(_q_item, dict) and (_q_item.get("source") == "custom" or _q_item.get("is_custom") or _q_item.get("isCustom")):
+                    _q_text = str(_q_item.get("question") or _q_item.get("title") or "").strip()
+                    if _q_text and _q_text not in _interview_questions:
+                        _interview_questions.append(_q_text)
     _custom_questions: list[CustomQuestion] = [
         CustomQuestion(raw=str(_raw_q).strip(), normalized=_normalize_custom_question_text(_raw_q))
         for _raw_q in _interview_questions
         if _normalize_custom_question_text(_raw_q)
     ]
-    if not _custom_questions:
-        logger.info("[FLOW] Custom questions  none configured")
     time_limit_mins = FIXED_INTERVIEW_DURATION_MINUTES
     if _is_demo_session:
         _demo_kill_switch_secs = dispatch_metadata.get("killSwitchSecs")
@@ -2327,10 +2313,10 @@ async def entrypoint(ctx: JobContext):
     ctx.add_shutdown_callback(_log_shutdown)
     # All AI model config comes directly from the org DB row (set via Super Admin → AI Models).
     # All values come from org DB (set via Super Admin → AI Models). Schema defaults ensure non-null.
-    org_tts_provider: str = str(ctx_data.ttsProvider).strip().upper()
-    org_tts_model: str   = str(ctx_data.ttsModel).strip()
+    org_tts_provider: str = (ctx_data.ttsProvider or "").strip().upper()
+    org_tts_model: str   = (ctx_data.ttsModel or "").strip()
     org_tts_speed: float | None = ctx_data.ttsSpeed
-    voice_id: str        = str(ctx_data.voiceId or "").strip()
+    voice_id: str        = (ctx_data.voiceId or "").strip()
     # Cartesia was removed. Any orphaned CARTESIA row (or a missing voice) falls
     # back to Sarvam priya so the interview never crashes on a stale provider.
     if org_tts_provider == "CARTESIA" or not voice_id:
@@ -2345,91 +2331,40 @@ async def entrypoint(ctx: JobContext):
     interview_llm_temperature: float = INTERVIEW_TEMPERATURE
     analysis_model: str              = str(ctx_data.llmInterviewEval).strip()
     _eval_llm_usages_accumulated: list[dict] = []
-    _brief_llm_usages: list[dict] = []
     _llmgen_llm_usages: list[dict] = []
-    # ── BRIEF: slot confirmation flow loads from DB; test flow always generates live ──
-    _brief_openai_client: AsyncOpenAI = _SHARED_OPENAI_CLIENT
 
-    # Level seed passed to generate_interview_brief. Admin-selected on the Job
-    # row at JD creation time (fixed per job, never recomputed per candidate),
-    # for BOTH tech and conversational interviews -- never inferred from resume.
+    # Level seed. Admin-selected on the Job row at JD creation time (fixed
+    # per job, never recomputed per candidate), for BOTH tech and
+    # conversational interviews -- never inferred from resume.
     _level_seed = int(ctx_data.level) if ctx_data.level in (1, 2, 3, 4) else 2
     logger.info("[LEVEL] admin level=%s", _level_seed)
 
-    if interview_type == "tech":
-        # Tech interviews: no brief LLM call, ever -- InterviewBrief is built
-        # synchronously (pure data transform, no LLM) from the question bank
-        # snapshot frozen onto this Interview row at session start. A missing
-        # snapshot is a hard failure, not a silent fallback to live brief
-        # generation -- that fallback would partially resurrect the exact
-        # brief system this replaces.
-        _stored_bank_raw = ctx_data.questionBankSnapshot
-        _stored_bank_dict: dict | None = _coerce_jsonish(_stored_bank_raw) if _stored_bank_raw else None
-        if not _stored_bank_dict:
-            raise RuntimeError(
-                f"No question_bank snapshot found for tech interview (application context "
-                f"missing jdQuestionBankSnapshot) -- candidate={candidate_first_name or candidate_name!r} "
-                f"role={job_title!r}. Session cannot start."
-            )
-        logger.info(
-            "[QUESTION_BANK] Building brief from stored snapshot | candidate=%s role=%s version=%s",
-            candidate_first_name or candidate_name, job_title, ctx_data.questionBankVersionUsed,
+    # Question-bank-driven brief: same flow for every interview -- tech, conversational,
+    # test sessions, and demo sessions alike. All are generated ahead of time (the
+    # Create Job wizard for real jobs, the demo template wizard for demos), then
+    # passed in as questionBankSnapshot. No LLM brief call, ever; a missing snapshot
+    # is a hard failure rather than a silent fallback to live generation.
+    if not _stored_bank_dict:
+        raise RuntimeError(
+            f"No question_bank snapshot found for this interview (application context "
+            f"missing jdQuestionBankSnapshot) -- candidate={candidate_first_name or candidate_name!r} "
+            f"role={job_title!r}. Session cannot start."
         )
-        _interview_brief: InterviewBrief = build_brief_from_question_bank(
-            _stored_bank_dict,
-            level=_level_seed,
-            must_have_skills=_jd_skills,
-        )
-        logger.info(
-            "[QUESTION_BANK] ✓ Built | level=%s | anchor=%r | topics=%d",
-            _interview_brief.level,
-            _interview_brief.anchor_topic.title,
-            len(_interview_brief.topic_pool),
-        )
-    else:
-        _stored_brief_raw = ctx_data.interviewBrief if not _is_test_session else None
-        _stored_brief_dict: dict | None = (
-            _coerce_jsonish(_stored_brief_raw)
-            if _stored_brief_raw
-            else None
-        )
-        if _stored_brief_dict:
-            # SLOT FLOW: brief was pre-generated by the background worker at slot booking.
-            # Instant load — no LLM call, no latency.
-            logger.info(
-                "[BRIEF] Loading pre-generated brief from DB | candidate=%s role=%s",
-                candidate_first_name or candidate_name, job_title,
-            )
-            _interview_brief = InterviewBrief.model_validate(_stored_brief_dict)
-            logger.info(
-                "[BRIEF] ✓ Loaded from DB | level=%s | anchor=%r | topics=%d",
-                _interview_brief.level,
-                _interview_brief.anchor_topic.title,
-                len(_interview_brief.topic_pool),
-            )
-        else:
-            # TEST FLOW (isTest=True) or fallback if worker hasn't finished yet:
-            # Always generate the brief live via LLM — same as before.
-            if _is_test_session:
-                logger.info(
-                    "[BRIEF] TEST SESSION — generating brief live (never from DB) | candidate=%s role=%s",
-                    candidate_first_name or candidate_name, job_title,
-                )
-            else:
-                logger.info(
-                    "[BRIEF] No pre-generated brief in DB — falling back to live generation | candidate=%s role=%s",
-                    candidate_first_name or candidate_name, job_title,
-                )
-            _interview_brief = await generate_interview_brief(
-                candidate_name=candidate_first_name or candidate_name,
-                job_title=job_title,
-                level=_level_seed,
-                jd_data=extracted_details or {},
-                custom_questions=_interview_questions or [],
-                openai_client=_brief_openai_client,
-                llm_model=str(ctx_data.llmInterviewBrief).strip(),
-                usage_sink=_brief_llm_usages.append,
-            )
+    logger.info(
+        "[QUESTION_BANK] Building brief from stored snapshot | candidate=%s role=%s version=%s",
+        candidate_first_name or candidate_name, job_title, ctx_data.questionBankVersionUsed,
+    )
+    _interview_brief = build_brief_from_question_bank(
+        _stored_bank_dict,
+        level=_level_seed,
+        must_have_skills=_jd_skills,
+    )
+    logger.info(
+        "[QUESTION_BANK] ✓ Built | level=%s | anchor=%r | topics=%d",
+        _interview_brief.level,
+        _interview_brief.anchor_topic.title,
+        len(_interview_brief.topic_pool),
+    )
     # Level is fixed and admin-selected -- the brief always echoes back _level_seed.
     candidate_level = _interview_brief.level
     logger.info("[FLOW] Level=%s | candidate=%s | role=%s", candidate_level, candidate_name, job_title)
@@ -2459,17 +2394,17 @@ async def entrypoint(ctx: JobContext):
         *(_jd_nice or []),
     ]))
     logger.info(
-        "[BRIEF] ✓ Generated | level=%s | anchor=%r | topics=%d",
+        "[QUESTION_BANK] Loaded from snapshot | level=%s | anchor=%r | topics=%d",
         _interview_brief.level,
         _interview_brief.anchor_topic.title,
         len(_interview_brief.topic_pool),
     )
-    logger.info("[BRIEF] strategy: %s", _interview_brief.interview_strategy[:120])
+    logger.info("[QUESTION_BANK] strategy: %s", _interview_brief.interview_strategy[:120])
     if _interview_brief.red_flags:
         logger.info("[BRIEF] red_flags: %s", " | ".join(_interview_brief.red_flags))
     for _i, _t in enumerate(_interview_brief.topic_pool):
         logger.info(
-            "[BRIEF] topic[%d] %-10s %r  probe=%s",
+            "[QUESTION_BANK] topic[%d] %-10s %r  probe=%s",
             _i, _t.topic_type, _t.title,
             _t.probe_focus or "-",
         )
@@ -5610,7 +5545,6 @@ async def entrypoint(ctx: JobContext):
                 "topicRecords": list(_topic_records),
                 "usage": {
                     "evalUsages": list(_eval_llm_usages_accumulated),
-                    "briefUsages": list(_brief_llm_usages),
                     "llmgenUsages": list(_llmgen_llm_usages),
                 },
                 "billing": {

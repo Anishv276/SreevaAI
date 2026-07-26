@@ -14,7 +14,7 @@ const sumLlm = (bucket: any) => arr(bucket?.llm).reduce((s: number, m: any) => s
 /**
  * GET /api/super-admin/orgs/interview-history?orgId=
  * Per-interview cost from the UsageEvent ledger (interview:{applicationId} row,
- * isTest=false). llmCostUsd = eval+brief+llmGeneration+report LLM; ttsCostUsd /
+ * isTest=false). llmCostUsd = eval+llmGeneration+report LLM; ttsCostUsd /
  * sttCostUsd from usage.tts/stt. Response shape unchanged from the blob version.
  */
 export async function GET(request: Request) {
@@ -80,7 +80,7 @@ export async function GET(request: Request) {
         const usage = (usageByApp.get(row.applicationId) as Record<string, any>) || null;
         const hasBillingSnapshot = usage !== null;
         const llmCostUsd = hasBillingSnapshot
-          ? round(sumLlm(usage.eval) + sumLlm(usage.brief) + sumLlm(usage.llmGeneration) + sumLlm(usage.report))
+          ? round(sumLlm(usage.eval) + sumLlm(usage.llmGeneration) + sumLlm(usage.report))
           : null;
         const ttsCostUsd = hasBillingSnapshot ? round(n(usage.tts?.costUsd)) : null;
         const sttCostUsd = hasBillingSnapshot ? round(n(usage.stt?.costUsd)) : null;

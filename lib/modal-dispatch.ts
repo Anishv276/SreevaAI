@@ -2,7 +2,7 @@
  * lib/modal-dispatch.ts
  * ======================
  * Dispatch layer between BullMQ (still running on the t3.medium for capacity
- * queueing/logging) and the Modal-hosted extraction/scoring/report/brief
+ * queueing/logging) and the Modal-hosted extraction/scoring/report
  * functions. A dispatch job's entire body is: try to acquire the org's
  * concurrency slot, call the Modal endpoint if got one, or re-delay itself a few
  * seconds if the org is at capacity -- mirroring lib/org-concurrency.ts's
@@ -55,11 +55,8 @@ async function recordBillingWithRetry(opts: Parameters<typeof recordOrgBillingUs
 
 const MODAL_ENDPOINTS = {
   resumeExtraction: process.env.MODAL_EXTRACT_RESUME_URL || "",
-  jdExtraction: process.env.MODAL_EXTRACT_JD_URL || "",
   resumeAndScore: process.env.MODAL_EXTRACT_RESUME_AND_SCORE_URL || "",
-  briefGeneration: process.env.MODAL_GENERATE_BRIEF_URL || "",
   interviewReport: process.env.MODAL_GENERATE_REPORT_URL || "",
-  demoBriefGeneration: process.env.MODAL_GENERATE_DEMO_BRIEF_URL || "",
 };
 
 const MODAL_API_KEY = process.env.EXTRACT_SERVICE_API_KEY || "";
@@ -423,146 +420,6 @@ export async function processResumeFileExtractViaModal(job: Job, token: string |
     key,
     fileName,
   };
-}
-
-/** jd-extraction-modal job body, same pattern, lower default concurrency. */
-export async function processJdExtractionViaModal(job: Job, token: string | undefined): Promise<any> {
-  const { buffer: fileBuffer, fileName, text, kind, orgId, orgOpenAIModel } = job.data || {};
-  console.log(`[MODAL-DISPATCH] Job ${job.id} picked up (jd-extraction, kind=${kind})`);
-
-  const outcome = await withModalOrgSlot(
-    "jdExtraction",
-    orgId,
-    MODAL_ORG_CONCURRENCY.jdExtraction,
-    async () => {
-      console.log(`[MODAL-DISPATCH] Slot acquired for org=${orgId}, calling JD extraction`);
-      const form = new FormData();
-      if (kind === "text") {
-        form.append("file", new Blob([Buffer.from(String(text || ""), "utf8")]), `jd_text_${job.id}.txt`);
-      } else {
-        const buf = Buffer.isBuffer(fileBuffer) ? fileBuffer : Buffer.from(fileBuffer?.data ?? fileBuffer);
-        form.append("file", new Blob([new Uint8Array(buf)]), fileName || "jd.pdf");
-      }
-      form.append("model", orgOpenAIModel);
-      const result = await callModalFormEndpoint(MODAL_ENDPOINTS.jdExtraction, form, 140_000);
-      console.log(`[MODAL-DISPATCH] JD extraction done, job=${job.id}`);
-
-      if (orgId && result?.usage) {
-        // Bill JD extraction HERE (worker) and mark the job billed so the status
-        // poller (app/api/extract/status/[jobId]) sees the flag and skips its own
-        // billing — previously BOTH billed, double-charging the org blob. Retries
-        // a few times before falling back to the poller's own retry-on-next-poll.
-        const billed = await recordBillingWithRetry({
-          orgId,
-          feature: "jdExtraction",
-          usage: {
-            model: result.usage.model,
-            inputTokens: result.usage.inputTokens || 0,
-            outputTokens: result.usage.outputTokens || 0,
-            cachedInputTokens: result.usage.cachedInputTokens || 0,
-            eventId: `jd-extraction:${job.id}`,
-            context: {
-              // No real Job record exists yet at JD-extraction time (jobs/route.ts
-              // mints its own id later, unrelated to this queue job) -- the BullMQ
-              // queue id is only used as the UsageEvent entity key, never shown as
-              // a real Job id. jobTitle (from the extracted JD) is what's displayed.
-              jobId: `extraction:${job.id}`,
-              jobTitle: result?.data?.job_title ?? null,
-              label: fileName ?? null,
-              eventId: `jd-extraction:${job.id}`,
-            },
-          },
-        }, "jdExtraction");
-        if (billed) {
-          try {
-            await job.updateData({ ...(job.data as Record<string, unknown>), usageBilled: true, usageBilledAt: new Date().toISOString() });
-          } catch {
-            // Redis unavailable — status poller's own billing (guarded by the same
-            // flag) will bill exactly once instead. Not fatal.
-          }
-        }
-      } else if (orgId) {
-        // Modal returned no usage field -- this JD extraction is unbilled.
-        // Most likely cause: the deployed Modal app is stale (predates usage
-        // tracking) -- redeploy via `modal deploy modal_app/extract_and_score.py`.
-        console.error(`[MODAL-DISPATCH] jdExtraction billing SKIPPED for job=${job.id}: Modal response had no usage field. Result keys: ${Object.keys(result || {}).join(", ")}`);
-      }
-      return result;
-    },
-  );
-
-  if (outcome.queued === true) {
-    console.log(`[MODAL-DISPATCH] Org=${orgId} at capacity (${MODAL_ORG_CONCURRENCY.jdExtraction}), re-queueing job=${job.id} in ${RETRY_DELAY_MS}ms`);
-    await job.moveToDelayed(Date.now() + RETRY_DELAY_MS, token);
-    throw new DelayedError();
-  }
-  const result = (outcome as { queued: false; result: any }).result;
-  if (result?.error) throw new Error(result.error);
-  return { text: result?.text || "", data: result?.data || {}, usage: result?.usage || {} };
-}
-
-/**
- * brief-generation-modal job body. job.data: { applicationId, orgId }.
- * Modal function fetches everything else (resume/JD/model config) directly via
- * its own asyncpg connection -- confirmed working in modal_app/generate_brief.py.
- */
-export async function processBriefGenerationViaModal(job: Job, token: string | undefined): Promise<any> {
-  const { applicationId, orgId } = job.data || {};
-  if (!applicationId) throw new Error("Missing applicationId in brief-generation-modal job");
-  console.log(`[MODAL-DISPATCH] Job ${job.id} picked up for ${applicationId} (brief-generation)`);
-
-  const outcome = await withModalOrgSlot(
-    "briefGeneration",
-    orgId,
-    MODAL_ORG_CONCURRENCY.briefGeneration,
-    async () => {
-      console.log(`[MODAL-DISPATCH] Slot acquired for org=${orgId}, generating brief for ${applicationId}`);
-      // fetch timeout > Modal fn timeout (180s) so Modal fails cleanly instead of racing our AbortError.
-      const result = await callModalJsonEndpoint(MODAL_ENDPOINTS.briefGeneration, { applicationId }, 200_000);
-      console.log(`[MODAL-DISPATCH] Brief generation done for ${applicationId}`);
-      return result;
-    },
-  );
-
-  if (outcome.queued === true) {
-    console.log(`[MODAL-DISPATCH] Org=${orgId} at capacity (${MODAL_ORG_CONCURRENCY.briefGeneration}), re-queueing ${applicationId} in ${RETRY_DELAY_MS}ms`);
-    await job.moveToDelayed(Date.now() + RETRY_DELAY_MS, token);
-    throw new DelayedError();
-  }
-  return (outcome as { queued: false; result: any }).result;
-}
-
-/**
- * demo-brief-generation job body. job.data: { roleTitle, jdText, mode, orgId }.
- * Unlike briefGeneration, the Modal function is stateless (JD text in, JSON
- * out) -- no DB access on the Modal side. The caller (worker.ts) persists the
- * returned JSON to DemoTemplate.briefJson.
- */
-export async function processDemoBriefGenerationViaModal(
-  { roleTitle, jdText, mode, orgId }: { roleTitle: string; jdText: string; mode: string; orgId?: string },
-  job: Job,
-  token: string | undefined,
-): Promise<any> {
-  console.log(`[MODAL-DISPATCH] Job ${job.id} picked up (demo-brief-generation) roleTitle=${roleTitle}`);
-
-  const outcome = await withModalOrgSlot(
-    "demoBriefGeneration",
-    orgId,
-    MODAL_ORG_CONCURRENCY.demoBriefGeneration,
-    async () => {
-      console.log(`[MODAL-DISPATCH] Slot acquired, generating demo brief for roleTitle=${roleTitle}`);
-      const result = await callModalJsonEndpoint(MODAL_ENDPOINTS.demoBriefGeneration, { roleTitle, jdText, mode }, 60_000);
-      console.log(`[MODAL-DISPATCH] Demo brief generation done for roleTitle=${roleTitle}`);
-      return result;
-    },
-  );
-
-  if (outcome.queued === true) {
-    console.log(`[MODAL-DISPATCH] At capacity, re-queueing demo brief job ${job.id} in ${RETRY_DELAY_MS}ms`);
-    await job.moveToDelayed(Date.now() + RETRY_DELAY_MS, token);
-    throw new DelayedError();
-  }
-  return (outcome as { queued: false; result: any }).result;
 }
 
 /**

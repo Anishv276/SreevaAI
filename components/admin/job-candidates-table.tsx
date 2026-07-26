@@ -555,7 +555,7 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
 
                 {/* Bulk actions inline */}
                 <div className="flex items-center gap-1 shrink-0 border-l border-gray-200 pl-4">
-                    <span className={cn("text-[12px] font-semibold mr-1 transition-colors hidden xl:block", selectedCount > 0 ? "text-blue-700" : "text-gray-400")}>
+                    <span className={cn("text-[12px] font-semibold mr-1 transition-colors hidden xl:block min-w-[90px] shrink-0", selectedCount > 0 ? "text-blue-700" : "text-gray-400")}>
                         {selectedCount > 0 ? `${selectedCount} selected` : "Select for bulk:"}
                     </span>
                     <button onClick={() => handleBulkStatus("shortlist")} disabled={selectedCount === 0 || isBulkLoading}
@@ -603,7 +603,7 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
             {/* ── Table — flat screenshot style ── */}
             <div className="overflow-x-auto flex-1 flex flex-col min-h-0">
                 <div className="relative w-full overflow-auto flex-1">
-                    <Table>
+                    <Table className="table-fixed min-w-[1040px]">
                         <TableHeader className="bg-gray-50/80 sticky top-0 z-10">
                             <TableRow className="border-b border-gray-100 hover:bg-transparent">
                                 {isSelectionMode && (
@@ -613,16 +613,16 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
                                         </button>
                                     </TableHead>
                                 )}
-                                <TableHead className="px-6 py-4 text-[12px] font-black uppercase tracking-widest text-gray-400">CANDIDATE</TableHead>
-                                <TableHead className="px-4 py-4 min-w-[160px] w-[160px] text-[12px] font-black uppercase tracking-widest text-gray-400">
+                                <TableHead className="px-6 py-4 text-[12px] font-black uppercase tracking-widest text-gray-400 min-w-[220px]">CANDIDATE</TableHead>
+                                <TableHead className="px-4 py-4 min-w-[170px] w-[170px] text-[12px] font-black uppercase tracking-widest text-gray-400">
                                     <div className="flex items-center gap-1 cursor-pointer hover:text-gray-600 transition-colors">
                                         RESUME SCORE <ChevronDown className="h-3.5 w-3.5" />
                                     </div>
                                 </TableHead>
-                                <TableHead className="px-4 py-4 text-[12px] font-black uppercase tracking-widest text-gray-400">RESUME STATUS</TableHead>
-                                <TableHead className="px-4 py-4 text-[12px] font-black uppercase tracking-widest text-gray-400">INTERVIEW</TableHead>
-                                <TableHead className="px-4 py-4 text-[12px] font-black uppercase tracking-widest text-gray-400 text-center">REPORTS</TableHead>
-                                <TableHead className="px-4 py-4 text-[12px] font-black uppercase tracking-widest text-gray-400 text-right">ACTIONS</TableHead>
+                                <TableHead className="px-4 py-4 min-w-[150px] w-[150px] text-[12px] font-black uppercase tracking-widest text-gray-400">RESUME STATUS</TableHead>
+                                <TableHead className="px-4 py-4 min-w-[160px] w-[160px] text-[12px] font-black uppercase tracking-widest text-gray-400">INTERVIEW</TableHead>
+                                <TableHead className="px-4 py-4 min-w-[220px] w-[220px] text-[12px] font-black uppercase tracking-widest text-gray-400 text-center">REPORTS</TableHead>
+                                <TableHead className="px-4 py-4 min-w-[80px] w-[80px] text-[12px] font-black uppercase tracking-widest text-gray-400 text-right">ACTIONS</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody className="[&_tr:last-child]:border-0">
@@ -681,7 +681,7 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
                                                 </TableCell>
                                             )}
                                             {/* Candidate Column */}
-                                            <TableCell className="px-6 py-0.5">
+                                            <TableCell className="px-6 py-0.5 min-w-[220px]">
                                                 <div className="flex items-center gap-4">
                                                     <div className="h-5 w-5 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center text-[12px] font-black text-gray-500 shrink-0 uppercase">
                                                         {displayName.charAt(0)}
@@ -689,7 +689,7 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
                                                     <div>
                                                         <div className="flex items-center gap-1">
                                                             <p className="text-[14px] font-bold text-gray-900 leading-tight">{displayName}</p>
-                                                            {score >= 80 && <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-violet-100 text-violet-700">Top Match</span>}
+                                                            {score >= 80 && <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-violet-100 text-violet-700 shrink-0">Top Match</span>}
                                                         </div>
                                                         <p className="text-[12px] text-gray-500 mt-0.5 truncate max-w-[200px]">{displayEmail}</p>
                                                     </div>
@@ -697,21 +697,21 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
                                             </TableCell>
                                             
                                             {/* ATS Score Column */}
-                                            <TableCell className="px-4 py-0.5" onClick={(e) => e.stopPropagation()}>
+                                            <TableCell className="px-4 py-0.5 min-w-[170px] w-[170px]" onClick={(e) => e.stopPropagation()}>
                                                 {isExtracting ? (
                                                     <div className="flex items-center gap-1.5">
-                                                        <Loader2 className="h-8 w-8 animate-spin text-violet-500" />
+                                                        <Loader2 className="h-8 w-8 animate-spin text-violet-500 shrink-0" />
                                                         <div>
-                                                            <p className="text-[13px] font-bold text-gray-900 leading-tight">Extracting...</p>
-                                                            <p className="text-[11px] text-gray-400 font-semibold">Parsing Resume</p>
+                                                            <p className="text-[13px] font-bold text-gray-900 leading-tight whitespace-nowrap">Extracting...</p>
+                                                            <p className="text-[11px] text-gray-400 font-semibold whitespace-nowrap">Parsing Resume</p>
                                                         </div>
                                                     </div>
                                                 ) : isFailed ? (
                                                     <div className="flex items-center gap-1.5">
-                                                        <XCircle className="h-8 w-8 text-rose-500" />
+                                                        <XCircle className="h-8 w-8 text-rose-500 shrink-0" />
                                                         <div>
-                                                            <p className="text-[13px] font-bold text-rose-600 leading-tight">Failed</p>
-                                                            <p className="text-[11px] text-rose-400 font-semibold">Error processing</p>
+                                                            <p className="text-[13px] font-bold text-rose-600 leading-tight whitespace-nowrap">Failed</p>
+                                                            <p className="text-[11px] text-rose-400 font-semibold whitespace-nowrap">Error processing</p>
                                                         </div>
                                                     </div>
                                                 ) : (
@@ -720,7 +720,7 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
                                             </TableCell>
                                             
                                             {/* Status Column */}
-                                            <TableCell className="px-4 py-0.5" onClick={(e) => e.stopPropagation()}>
+                                            <TableCell className="px-4 py-0.5 min-w-[150px] w-[150px]" onClick={(e) => e.stopPropagation()}>
                                                 <div className="flex items-center gap-1">
                                                     <span className={cn(
                                                         "inline-flex items-center px-3 py-0.5 rounded-full text-[12px] font-bold",
@@ -751,7 +751,7 @@ export function JobCandidatesTable({ jobId, refreshKey }: { jobId: string, refre
                                             </TableCell>
                                             
                                             {/* Interview Column */}
-                                            <TableCell className="px-4 py-0.5" onClick={(e) => e.stopPropagation()}>
+                                            <TableCell className="px-4 py-0.5 min-w-[160px] w-[160px]" onClick={(e) => e.stopPropagation()}>
                                                 <div className="flex flex-col gap-0.5">
                                                     <div className="flex items-center gap-1">
                                                         <div className={cn("h-2 w-2 rounded-full shrink-0",

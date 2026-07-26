@@ -213,6 +213,47 @@ TECH_QUESTION_BANK = {
     "skippedCodeSnippetReason": None,
 }
 
+# Sales interviews no longer generate a brief live either -- production reads
+# a stored, admin-generated Job.questionBank snapshot for every interview type
+# now (see interview.tech.question_bank_adapter.build_brief_from_question_bank(),
+# which agent_runtime.py calls unconditionally). This fixture mirrors
+# SALES_JD_DATA's criteria so the sales verification run below exercises the
+# same adapter production actually uses, not the retired generate_interview_brief()
+# LLM pipeline.
+SALES_QUESTION_BANK = {
+    "version": 1,
+    "level": 2,
+    "questions": [
+        {
+            "id": "verify-s1", "skill": "Enterprise sales cycle", "subtopic": "Deal Cycle Management",
+            "question_type": "conceptual",
+            "question": "Walk me through how you managed a 6-9 month enterprise deal cycle end to end.",
+        },
+        {
+            "id": "verify-s2", "skill": "MEDDIC qualification", "subtopic": "Deal Qualification",
+            "question_type": "conceptual",
+            "question": "How do you use MEDDIC to decide whether a deal is worth pursuing?",
+        },
+        {
+            "id": "verify-s3", "skill": "Multi-stakeholder navigation", "subtopic": "Buying Committees",
+            "question_type": "conceptual",
+            "question": "Tell me about navigating a deal with a VP/C-level buying committee.",
+        },
+        {
+            "id": "verify-s4", "skill": "Salesforce", "subtopic": "Pipeline Management",
+            "question_type": "conceptual",
+            "question": "How do you keep your Salesforce pipeline forecast accurate?",
+        },
+        {
+            "id": "verify-s5", "skill": "Negotiation", "subtopic": "Contract Negotiation",
+            "question_type": "conceptual",
+            "question": "Describe a contract negotiation where you had to hold your ground on price.",
+        },
+    ],
+    "skippedQuerySnippetReason": None,
+    "skippedCodeSnippetReason": None,
+}
+
 
 # ---------------------------------------------------------------------------
 # Candidate simulator -- a second LLM plays the candidate so answers are
@@ -312,15 +353,14 @@ async def run_pipeline(
     resume_json = SALES_RESUME_JSON if is_sales else TECH_RESUME_JSON
     candidate_name = resume_json["name"]
 
+    from interview.tech.question_bank_adapter import build_brief_from_question_bank
     if is_sales:
-        from interview.conversational.brief import generate_interview_brief
         from interview.conversational.scoring import evaluate_answer
         from interview.conversational.probe import get_probe_context, QUESTION_GENERATION_SYSTEM
         from interview.conversational.prompts import build_evaluation_layer_prompt, build_voice_layer_prompt, build_system_prompt
         from interview.conversational.eval import run_eval_and_build_directive
         from interview.conversational.report import generate_interview_report, generate_interview_summary
     else:
-        from interview.tech.question_bank_adapter import build_brief_from_question_bank
         from interview.tech.scoring import evaluate_answer
         from interview.tech.probe import get_probe_context, QUESTION_GENERATION_SYSTEM
         from interview.tech.prompts import build_evaluation_layer_prompt, build_voice_layer_prompt, build_system_prompt
@@ -341,27 +381,15 @@ async def run_pipeline(
     # admin-selected level -- passed in via --level, never inferred from candidate/JD
     print(f"level={level}")
 
-    _brief_usages: list[dict] = []
     t0 = time.perf_counter()
-    if is_sales:
-        brief = await generate_interview_brief(
-            candidate_name=candidate_name,
-            job_title=job_title,
-            level=level,
-            jd_data=jd_data,
-            custom_questions=CUSTOM_QUESTIONS,
-            openai_client=client,
-            llm_model=INTERVIEW_LLM_MODEL,
-            usage_sink=_brief_usages.append,
-        )
-    else:
-        # Tech: no LLM call, matches production exactly -- pure transform from
-        # a stored question bank (TECH_QUESTION_BANK fixture here).
-        tech_criteria: list[dict[str, Any]] = TECH_JD_DATA["criteria"]
-        must_have_skills = [c["name"] for c in tech_criteria if c.get("priority") == "critical"]
-        brief = build_brief_from_question_bank(
-            TECH_QUESTION_BANK, level=level, must_have_skills=must_have_skills,
-        )
+    # No LLM call for either pipeline -- matches production exactly -- pure
+    # transform from a stored question bank fixture.
+    jd_criteria: list[dict[str, Any]] = jd_data["criteria"]  # type: ignore[assignment]
+    must_have_skills = [c["name"] for c in jd_criteria if c.get("priority") == "critical"]
+    question_bank = SALES_QUESTION_BANK if is_sales else TECH_QUESTION_BANK
+    brief = build_brief_from_question_bank(
+        question_bank, level=level, must_have_skills=must_have_skills,
+    )
     print(f"brief generated in {time.perf_counter() - t0:.1f}s")
     print(f"anchor_topic: {brief.anchor_topic.title}  [{brief.anchor_topic.tag}]")
     print(f"topic_pool ({len(brief.topic_pool)} topics):")

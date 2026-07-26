@@ -50,7 +50,7 @@ interface OrgDetail {
     ttsModel?: string;
     llmInterviewLive?: string;
     llmInterviewEval?: string;
-    llmInterviewBrief?: string;
+    llmQuestionBank?: string;
     llmInterviewReport?: string;
     llmResumeExtraction?: string;
     llmJdExtraction?: string;
@@ -96,10 +96,10 @@ function getConfiguredModel(org: OrgDetail | null, sectionKey: string): string |
     if (!org) return null;
     const map: Record<string, keyof OrgDetail> = {
         interview:              "llmInterviewLive",
-        interviewBrief:         "llmInterviewBrief",
         interviewLLMGeneration: "llmInterviewLive",
         resumeExtraction:       "llmResumeExtraction",
         jdExtraction:           "llmJdExtraction",
+        questionBank:           "llmQuestionBank",
         resumeReport:           "llmResumeReport",
         interviewReport:        "llmInterviewReport",
     };
@@ -156,7 +156,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
             out[key] = { runs: s.runs, costUsd: s.costUsd, byModel: {} };
         }
         const sub = (k: string) => usageOverview.interview.subSections.find((x) => x.key === k);
-        const evalSub = sub("eval"), briefSub = sub("brief"), genSub = sub("generation");
+        const evalSub = sub("eval"), genSub = sub("generation");
         const ttsSub = sub("tts"), sttSub = sub("stt");
         out.interview = {
             ...out.interview,
@@ -167,7 +167,6 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                 usageOverview.interview.byModel.filter((m) => m.kind === "tts").map((m) => [`${m.provider}:${m.model}`, m])
             ),
         };
-        out.interviewBrief = { runs: briefSub?.calls, costUsd: briefSub?.costUsd, inputTokens: briefSub?.units.inputTokens, outputTokens: briefSub?.units.outputTokens, byModel: {} };
         out.interviewLLMGeneration = { runs: genSub?.calls, costUsd: genSub?.costUsd, inputTokens: genSub?.units.inputTokens, outputTokens: genSub?.units.outputTokens, byModel: {} };
         for (const m of usageOverview.interview.byModel) {
             if (m.kind !== "llm") continue;
@@ -580,10 +579,10 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                             {[
                                                 { label: "Resume Extraction", key: "resumeExtraction" },
                                                 { label: "JD Extraction", key: "jdExtraction" },
+                                                { label: "Question Bank", key: "questionBank" },
                                                 { label: "Interview Report", key: "interviewReport" },
                                                 { label: "Resume Report", key: "resumeReport" },
                                                 { label: "Interview (Live + Eval LLM)", key: "interview" },
-                                                { label: "Interview Brief", key: "interviewBrief" },
                                                 { label: "Interview LLM Generation", key: "interviewLLMGeneration" },
                                             ].map((row) => {
                                                 const billing = (billingAll[row.key] ?? {}) as BillingFeatureMetrics;
@@ -611,11 +610,10 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                 <h4 className="text-[12px] font-black uppercase tracking-[0.15em] text-gray-500 mb-4">Interview Overall Cost</h4>
                                 <div className="rounded-2xl border border-gray-100 bg-gradient-to-br from-violet-50/30 to-blue-50/30 p-6 shadow-sm">
                                     <div className="mt-6 border-t border-gray-200/50 pt-6 text-center">
-                                        <div className="text-[10px] font-black uppercase tracking-[0.15em] text-gray-500">Live Agent + Eval + Brief + Generation</div>
+                                        <div className="text-[10px] font-black uppercase tracking-[0.15em] text-gray-500">Live Agent + Eval + Generation</div>
                                         <div className="mt-2 text-4xl font-black text-violet-600">
                                             {fmt(
                                                 Number(billingAll["interview"]?.costUsd || 0)
-                                                + Number(billingAll["interviewBrief"]?.costUsd || 0)
                                                 + Number(billingAll["interviewLLMGeneration"]?.costUsd || 0)
                                             )}
                                         </div>
@@ -688,10 +686,10 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                 <span className="text-gray-900">
                                     {fmt([
                                         "interview",
-                                        "interviewBrief",
                                         "interviewLLMGeneration",
                                         "resumeExtraction",
                                         "jdExtraction",
+                                        "questionBank",
                                         "resumeReport",
                                         "interviewReport",
                                     ].reduce((sum, key) => {

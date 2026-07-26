@@ -62,10 +62,11 @@ export async function GET(
 
     // ---- Section totals ----
     const jdCost = agg.jdExtraction.costUsd;
+    const questionBankCost = agg.questionBank.costUsd;
     const resumeExtractionCost = agg.resumeExtraction.costUsd;
     const resumeReportCost = agg.resumeReport.costUsd;
     const resumeCost = resumeExtractionCost + resumeReportCost;
-    const interviewLlmCost = agg.eval.costUsd + agg.brief.costUsd + agg.llmGeneration.costUsd;
+    const interviewLlmCost = agg.eval.costUsd + agg.llmGeneration.costUsd;
     const interviewTtsCost = agg.interviewTts.costUsd;
     const interviewSttCost = agg.interviewStt.costUsd;
     const interviewCost = interviewLlmCost + interviewTtsCost + interviewSttCost;
@@ -78,6 +79,12 @@ export async function GET(
         costUsd: round(jdCost), runs: agg.jdExtraction.calls,
         primaryModel: primaryModel(agg.jdExtraction.byModel),
         ledgerCostUsd: round(jdCost), legacyCostUsd: 0,
+      },
+      {
+        key: "questionBank" as const, label: "Question Bank",
+        costUsd: round(questionBankCost), runs: agg.questionBank.calls,
+        primaryModel: primaryModel(agg.questionBank.byModel),
+        ledgerCostUsd: round(questionBankCost), legacyCostUsd: 0,
       },
       {
         key: "resumeExtraction" as const, label: "Resume Extraction",
@@ -135,13 +142,6 @@ export async function GET(
         primaryModel: primaryModel(agg.eval.byModel),
         units: { inputTokens: agg.eval.inputTokens, outputTokens: agg.eval.outputTokens },
       },
-      {
-        key: "brief" as const, label: "Brief",
-        costUsd: round(agg.brief.costUsd), ledgerCostUsd: round(agg.brief.costUsd), legacyCostUsd: 0,
-        calls: agg.brief.calls,
-        primaryModel: primaryModel(agg.brief.byModel),
-        units: { inputTokens: agg.brief.inputTokens, outputTokens: agg.brief.outputTokens },
-      },
     ];
 
     // ---- Per-model pie inside the interview section ----
@@ -153,7 +153,6 @@ export async function GET(
       }
     };
     pushModels(agg.eval, "llm");
-    pushModels(agg.brief, "llm");
     pushModels(agg.llmGeneration, "llm");
     pushModels(agg.interviewTts, "tts");
     pushModels(agg.interviewStt, "stt");
@@ -161,7 +160,7 @@ export async function GET(
 
     // ---- Bottom overview donut ----
     const overview = sections.map((s) => ({ key: s.key, label: s.label, costUsd: s.costUsd }));
-    const totalCostUsd = round(jdCost + resumeCost + interviewCost + reportCost);
+    const totalCostUsd = round(jdCost + questionBankCost + resumeCost + interviewCost + reportCost);
 
     // ---- Plan / subscription ----
     const synth = synthesizedPlanBilling(org.billingPlan);

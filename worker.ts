@@ -22,23 +22,21 @@ import {
 import { mergeRecordingState, normalizeRecordingState, parseJsonRecord } from "./lib/recording-state";
 import { logRedisError, logResumeUploadError, logJobError, logWorkerError, logLiveKitError } from "./lib/slack-error-logger";
 import { runWithOrgSlot } from "./lib/org-concurrency";
-import { getPythonExecutable } from "./lib/python-exec";
+
 import {
   processResumeScreeningViaModal,
   processResumeFileExtractViaModal,
-  processJdExtractionViaModal,
-  processBriefGenerationViaModal,
-  processDemoBriefGenerationViaModal,
   processInterviewReportViaModal,
 } from "./lib/modal-dispatch";
+import { extractJdStructure, extractTextFromPdf } from "./lib/jd-structure-extraction";
 
 // Per-org concurrency caps -- how many jobs of a given queue may run
 // simultaneously FOR THE SAME ORG, independent of the worker's own global
 // `concurrency`. See lib/org-concurrency.ts for why (BullMQ OSS has no native
 // per-key/group concurrency; that's a BullMQ Pro-only feature). Override via
 // env if a specific org/queue needs more headroom.
-// NOTE: resumeProcessing/jdExtraction/briefGeneration/interviewReport are no
-// longer used here -- those 4 job types moved fully to Modal (see
+// NOTE: resumeProcessing/jdExtraction/interviewReport are no
+// longer used here -- those job types moved fully to Modal (see
 // lib/modal-concurrency.ts's MODAL_ORG_CONCURRENCY for their caps). Kept only
 // for invitationDelivery, which still runs on this BullMQ worker.
 const ORG_CONCURRENCY = {
@@ -1568,17 +1566,68 @@ if (isQueueEnabled("jd-upload")) {
 if (isQueueEnabled("jd-extraction")) {
   const jdExtractionWorker = trackWorker("jd-extraction", new Worker(
     JD_EXTRACTION_QUEUE_NAME,
-    async (job, token) => {
+    async (job) => {
+      const { buffer: fileBuffer, fileName, text, kind, orgId, orgOpenAIModel } = job.data || {};
       console.log(`\n=================================================`);
-      console.log(`▶ [JD-EXTRACTION WORKER] PID=${process.pid} Job id="${job.id}" kind="${job.data?.kind}"`);
+      console.log(`▶ [JD-EXTRACTION WORKER] PID=${process.pid} Job id="${job.id}" kind="${kind}"`);
       console.log(`=================================================\n`);
-      return processJdExtractionViaModal(job, token);
+
+      const model = orgOpenAIModel || "gpt-4.1-mini";
+      let rawText = "";
+
+      if (kind === "text") {
+        rawText = String(text || "");
+        console.log(`[JD-EXTRACTION] kind=text length=${rawText.length}`);
+      } else if (kind === "file") {
+        console.log(`[JD-EXTRACTION] Parsing PDF: ${fileName}`);
+        const buf = Buffer.isBuffer(fileBuffer)
+          ? fileBuffer
+          : Buffer.from(fileBuffer?.data ?? fileBuffer);
+        rawText = await extractTextFromPdf(buf);
+        console.log(`[JD-EXTRACTION] PDF parsed, text length=${rawText.length}`);
+      } else {
+        throw new Error(`[JD-EXTRACTION] Unknown kind: "${kind}"`);
+      }
+
+      if (!rawText.trim()) {
+        throw new Error(`[JD-EXTRACTION] Empty text after parsing (kind=${kind}, file=${fileName})`);
+      }
+
+      console.log(`[JD-EXTRACTION] Calling LLM (model=${model}) for structured extraction…`);
+      const result = await extractJdStructure(rawText, model);
+      console.log(`[JD-EXTRACTION] ✓ Done. job_title="${result.data.job_title}" criteria=${result.data.criteria.length}`);
+
+      if (orgId) {
+        try {
+          await recordOrgBillingUsage({
+            orgId,
+            feature: "jdExtraction",
+            usage: {
+              model: result.usage.model,
+              inputTokens: result.usage.inputTokens,
+              outputTokens: result.usage.outputTokens,
+              cachedInputTokens: result.usage.cachedInputTokens,
+              eventId: `jd-extraction:${job.id}`,
+              context: {
+                jobId: `extraction:${job.id}`,
+                jobTitle: result.data.job_title ?? null,
+                label: fileName ?? null,
+                eventId: `jd-extraction:${job.id}`,
+              },
+            },
+          });
+        } catch (billingErr) {
+          console.warn(`[JD-EXTRACTION] Billing failed (non-fatal):`, billingErr);
+        }
+      }
+
+      return { text: result.text, data: result.data, usage: result.usage };
     },
     {
       connection: redisConnection,
       prefix: BULL_PREFIX,
-      concurrency: 70, // global cap -- Modal handles ~100 concurrent jobs; per-org cap enforced inside processJdExtractionViaModal (lib/modal-concurrency.ts)
-      lockDuration: 3 * 60 * 1000,  // 3 min — longer than the 120s Modal JD timeout, else a slow extract looks "stalled" and re-runs (double-billing)
+      concurrency: 20,
+      lockDuration: 3 * 60 * 1000,
       stalledInterval: 60 * 1000,
       maxStalledCount: 1,
       removeOnComplete: { count: 10 },
@@ -1615,68 +1664,6 @@ if (isQueueEnabled("jd-extraction")) {
         context: { jobId: job?.id },
       });
     }
-  });
-}
-
-/**
- * 📋 BRIEF GENERATION WORKER
- * Pre-generates the InterviewBrief for real candidates who book a slot.
- * Called from POST /api/schedule/[token] after scheduledAt is saved.
- * Runs generate_brief.py which: fetches resume + JD → LLM call → saves to DB.
- * Test interviews NEVER use this queue — they always generate live in agent_runtime.py.
- */
-if (isQueueEnabled("brief-generation")) {
-  const briefWorker = trackWorker("brief-generation", new Worker(
-    "brief-generation",
-    async (job, token) => {
-      const { applicationId } = job.data || {};
-      if (!applicationId) throw new Error("[BRIEF-WORKER] Missing applicationId in job data");
-
-      console.log(`\n=================================================`);
-      console.log(`▶ [BRIEF-WORKER] PID=${process.pid} Job id="${job.id}" applicationId="${applicationId}"`);
-      console.log(`=================================================\n`);
-
-      // Confirm Interview row still exists before spinning up Python
-      const interview = await prisma.interview.findUnique({
-        where: { applicationId },
-        select: {
-          id: true, isTestSession: true, interviewScheduledAt: true, aiInterviewBrief: true,
-          application: { select: { job: { select: { organizationId: true } } } },
-        },
-      });
-
-      if (!interview) {
-        console.warn(`[BRIEF-WORKER] Interview not found for ${applicationId} — skipping`);
-        return { skipped: true, reason: "interview_not_found" };
-      }
-      if (interview.isTestSession) {
-        // Safety guard: should never happen since test token route doesn't enqueue this,
-        // but guard explicitly so we never overwrite a test session's brief.
-        console.warn(`[BRIEF-WORKER] Skipping — isTestSession=true for ${applicationId}`);
-        return { skipped: true, reason: "is_test_session" };
-      }
-      if (interview.aiInterviewBrief) {
-        console.log(`[BRIEF-WORKER] Brief already exists for ${applicationId} — skipping re-generation`);
-        return { skipped: true, reason: "brief_already_exists" };
-      }
-
-      const orgId = interview.application?.job?.organizationId;
-      job.data.orgId = orgId; // processBriefGenerationViaModal reads job.data.orgId
-      return processBriefGenerationViaModal(job, token);
-    },
-    {
-      connection: createRedisConnection(),
-      prefix: BULL_PREFIX,
-      concurrency: 70, // global cap -- Modal handles ~100 concurrent jobs; per-org cap enforced inside processBriefGenerationViaModal (lib/modal-concurrency.ts)
-      lockDuration: 4 * 60 * 1000, // 4 min lock — longer than the 3-min timeout
-      removeOnComplete: { age: 60 },
-      removeOnFail: { age: 3600 },
-    }
-  ));
-
-  briefWorker.on("failed", (job, err) => {
-    console.error(`[BRIEF-WORKER] Job ${job?.id} failed for applicationId=${job?.data?.applicationId}: ${err.message}`);
-    // Non-fatal — agent_runtime.py will fall back to live generation
   });
 }
 
@@ -1733,147 +1720,140 @@ if (isQueueEnabled("interview-report")) {
 }
 
 /**
- * 🎯 DEMO BRIEF GENERATION WORKER
- * Waits for JD extraction → calls Modal (generate_demo_brief) → saves briefJson.
- * ALL prompt logic lives in livekit-python-agent/interview/demo/brief.py,
- * deployed as modal_app/generate_demo_brief.py. This worker has zero LLM
- * calls itself — it just orchestrates and persists.
+ * 📝 QUESTION GENERATION WORKER
+ * Single-call pipeline: reads jdExtractedDetails directly from the DB
+ * (no separate skill-extraction or subtopic-decomposition steps needed —
+ * jdExtractedDetails already contains structured criteria with priority tags,
+ * scoring hints, and keywords). Generates a smart, JD-aware question bank
+ * in one LLM call. The wizard polls GET /api/jobs/[id]/generate-questions/status
+ * which reads BullMQ job state directly.
  */
-if (isQueueEnabled("demo-brief-generation")) {
-  const demoBriefWorker = trackWorker("demo-brief-generation", new Worker(
-    "demo-brief-generation",
-    async (job, token) => {
-      const { templateId, jdExtractionJobId, mode, roleTitle, orgId } = job.data || {};
-      if (!templateId) throw new Error("[DEMO-BRIEF] Missing templateId in job data");
+if (isQueueEnabled("question-generation")) {
+  const questionGenerationWorker = trackWorker("question-generation", new Worker(
+    "question-generation",
+    async (job) => {
+      const { jobId } = job.data || {};
+      if (!jobId) throw new Error("[QUESTION-GEN] Missing jobId in job data");
 
-      console.log(`\n================================================`);
-      console.log(`▶ [DEMO-BRIEF] id="${job.id}" template="${templateId}" mode="${mode}"`);
-      console.log(`================================================\n`);
+      console.log(`\n=================================================`);
+      console.log(`▶ [QUESTION-GEN] PID=${process.pid} Job id="${job.id}" jobId="${jobId}"`);
+      console.log(`=================================================\n`);
 
-      // ── 1. Wait for JD extraction ─────────────────────────────────────
-      let jdText: string | null = null;
-      let jdUsage: { model?: string; inputTokens?: number; outputTokens?: number; cachedInputTokens?: number } | null = null;
-      if (jdExtractionJobId) {
-        const { Queue: BullQueue } = await import("bullmq");
-        const jdQueue = new BullQueue("jd-extraction", { connection: createRedisConnection(), prefix: BULL_PREFIX });
-        for (let i = 0; i < 30; i++) {
-          const jdJob = await jdQueue.getJob(jdExtractionJobId).catch(() => null);
-          if (!jdJob) { await new Promise(r => setTimeout(r, 3000)); continue; }
-          const state = await jdJob.getState();
-          if (state === "completed") {
-            jdText = jdJob.returnvalue?.text || "";
-            jdUsage = jdJob.returnvalue?.usage || null;
-            break;
-          }
-          if (state === "failed") throw new Error(`JD extraction job ${jdExtractionJobId} failed`);
-          await new Promise(r => setTimeout(r, 3000));
-        }
-        await jdQueue.close();
-      }
-      if (!jdText) throw new Error(`[DEMO-BRIEF] JD text not available for template ${templateId}`);
+      const { generateQuestions } = await import("./lib/question-bank/question-generation");
+      const { LLMCallError } = await import("./lib/openai-client");
 
-      // ── 2. Persist JD text ───────────────────────────────────────────
-      await (prisma as any).demoTemplate.update({ where: { id: templateId }, data: { jdText } });
+      const fail = async (message: string) => {
+        console.error(`[QUESTION-GEN] Failed: ${message}`);
+        await prisma.job.update({
+          where: { id: jobId },
+          data: { status: "FAILED", failureReason: message },
+        }).catch(() => { });
+      };
 
-      // ── 3. Spawn Python — all LLM/prompt logic lives in demo/brief.py ─
-      const { spawn } = await import("child_process");
-      const path = await import("path");
-      const scriptPath = path.resolve(
-        __dirname,
-        "livekit-python-agent/scripts/generate_demo_brief.py"
-      );
-      const jdB64 = Buffer.from(jdText, "utf8").toString("base64");
-      const rawResult: Record<string, any> = await new Promise((resolve, reject) => {
-        const py = spawn(
-          getPythonExecutable(),
-          [scriptPath, roleTitle || "", mode || "TECH", jdB64],
-          { env: { ...process.env }, timeout: 120_000 }
-        );
-        let stdout = "";
-        let stderr = "";
-        py.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
-        py.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
-        py.on("close", (code: number) => {
-          if (stderr) console.error("[DEMO-BRIEF] Python stderr:", stderr.slice(0, 500));
-          try {
-            const parsed = JSON.parse(stdout.trim());
-            if (parsed.error) return reject(new Error(`Python: ${parsed.error}`));
-            resolve(parsed);
-          } catch {
-            reject(new Error(`[DEMO-BRIEF] Invalid JSON from Python (exit ${code}): ${stdout.slice(0, 300)}`));
-          }
-        });
-        py.on("error", reject);
+      const dbJob = await prisma.job.findUnique({
+        where: { id: jobId },
+        select: {
+          organizationId: true,
+          title: true,
+          level: true,
+          interviewType: true,
+          jdExtractedDetails: true,
+          questionBankVersion: true,
+          organization: { select: { llmQuestionBank: true } },
+        },
       });
-      const { usage: briefUsage, ...briefJson } = rawResult;
+      if (!dbJob) throw new Error(`[QUESTION-GEN] Job ${jobId} not found`);
 
-      // ── 4. Persist brief + mark ready ───────────────────────────────
-      await (prisma as any).demoTemplate.update({
-        where: { id: templateId },
-        data: { briefJson, status: "ready" },
-      });
-      console.log(`[DEMO-BRIEF] ✓ Template ${templateId} ready (${briefJson.topic_pool?.length ?? 0} topics)`);
+      const level = dbJob.level ?? 2;
+      const interviewType = dbJob.interviewType === "conversational" ? "conversational" : "tech";
+      const model = dbJob.organization?.llmQuestionBank || "gpt-5.4-mini";
 
-      // ── 5. Price + persist template usage (JD extraction + brief LLM calls) ──
-      // One-time cost, shared by every DemoSession that reuses this template --
-      // never re-billed per session. Same pricing (billing.py's rate table) as
-      // every other feature, via priceLlmUsage -- no separate rate table here.
+      // Parse jdExtractedDetails — this is the structured JD data (criteria, scoring_hints,
+      // keywords etc.) already stored in DB from the JD extraction pipeline.
+      // No need to reconstruct raw text or re-extract skills — it's all here.
+      let jdExtractedDetails: unknown;
       try {
-        // "llm" (not "byModel") matches billing.py's _llm_entry/EntityLedger
-        // convention -- save_demo_session_usage and the /api/super-admin/
-        // billing/demo* read routes both key LLM entries as usage[sub].llm[].
-        // ("byModel" is reserved for TTS/STT audio entries, a different shape.)
-        const usageFragment: Record<string, { runs: number; llm: any[] }> = {};
-        if (jdUsage?.model) {
-          const entry = await priceLlmUsage({
-            model: jdUsage.model,
-            inputTokens: jdUsage.inputTokens,
-            outputTokens: jdUsage.outputTokens,
-            cachedInputTokens: jdUsage.cachedInputTokens,
-          });
-          usageFragment.jdExtraction = { runs: 1, llm: [entry] };
-        }
-        if (briefUsage?.model) {
-          const entry = await priceLlmUsage({
-            model: briefUsage.model,
-            inputTokens: briefUsage.inputTokens,
-            outputTokens: briefUsage.outputTokens,
-            cachedInputTokens: briefUsage.cachedInputTokens,
-          });
-          usageFragment.brief = { runs: 1, llm: [entry] };
-        }
-        if (Object.keys(usageFragment).length > 0) {
-          const costUsd = Object.values(usageFragment).reduce(
-            (sum, f) => sum + (f.llm?.[0]?.costUsd || 0), 0
-          );
-          await (prisma as any).demoTemplate.update({
-            where: { id: templateId },
-            data: { usageJson: usageFragment, usageCostUsd: costUsd },
-          });
-          console.log(`[DEMO-BRIEF] Usage recorded for template ${templateId}: $${costUsd.toFixed(6)}`);
-        }
-      } catch (e) {
-        // Billing must never block the demo from becoming usable.
-        console.error(`[DEMO-BRIEF] Usage pricing/persist failed for template ${templateId}:`, e);
+        jdExtractedDetails =
+          typeof dbJob.jdExtractedDetails === "string"
+            ? JSON.parse(dbJob.jdExtractedDetails)
+            : dbJob.jdExtractedDetails;
+      } catch {
+        await fail("jdExtractedDetails is not valid JSON — re-extract the JD before generating questions.");
+        return { ok: false };
       }
-      return { ok: true, templateId, topicCount: briefJson.topic_pool?.length ?? 0 };
+      if (!jdExtractedDetails || typeof jdExtractedDetails !== "object") {
+        await fail("No structured JD data found on this job — upload and extract a JD before generating questions.");
+        return { ok: false };
+      }
+
+      console.log(`[QUESTION-GEN] jobId=${jobId} Generating questions from JD structured data (single call)…`);
+
+      const { recordOrgBillingUsage } = await import("./lib/usage-metrics");
+
+      let validated;
+      try {
+        const numQuestions = Number(job.data?.numQuestions) || 12;
+        validated = await generateQuestions(jdExtractedDetails, level, model, interviewType, numQuestions);
+      } catch (err) {
+        await fail(err instanceof LLMCallError ? err.message : "Question generation failed");
+        return { ok: false };
+      }
+
+      const newVersion = dbJob.questionBankVersion + 1;
+      const numQuestions = Number(job.data?.numQuestions) || 5;
+      const slicedQuestions = validated.questions.slice(0, Math.min(numQuestions, validated.questions.length));
+
+      const questionBank = {
+        version: newVersion,
+        level,
+        generatedAt: new Date().toISOString(),
+        questions: slicedQuestions,
+      };
+
+      await prisma.job.update({
+        where: { id: jobId },
+        data: {
+          status: "GENERATED",
+          failureReason: null,
+          questionBank: questionBank as any,
+          questionBankVersion: newVersion,
+        },
+      });
+      console.log(`[QUESTION-GEN] jobId=${jobId} ✓ Question bank generated (${validated.questions.length} questions)`);
+
+      if (dbJob.organizationId) {
+        await recordOrgBillingUsage({
+          orgId: dbJob.organizationId,
+          feature: "questionBank",
+          usage: {
+            model,
+            ...validated.usage,
+            eventId: `question-bank:${jobId}`,
+            context: { jobId, jobTitle: dbJob.title },
+          },
+        }).catch((err) => {
+          console.error(`[QUESTION-GEN] jobId=${jobId} Failed to record questionBank billing usage:`, err);
+        });
+      }
+
+      return { ok: true, jobId, count: validated.questions.length };
     },
     {
       connection: createRedisConnection(),
       prefix: BULL_PREFIX,
-      concurrency: 5,
+      concurrency: 20,
       lockDuration: 5 * 60 * 1000,
       removeOnComplete: { age: 300 },
       removeOnFail: { age: 3600 },
     }
   ));
 
-  demoBriefWorker.on("failed", (job, err) => {
-    console.error(`[DEMO-BRIEF] Job ${job?.id} failed for template=${job?.data?.templateId}: ${err.message}`);
-    if (job?.data?.templateId) {
-      (prisma as any).demoTemplate.update({
-        where: { id: job.data.templateId },
-        data: { status: "failed" },
+  questionGenerationWorker.on("failed", (job, err) => {
+    console.error(`[QUESTION-GEN] Job ${job?.id} failed for jobId=${job?.data?.jobId}: ${err.message}`);
+    if (job?.data?.jobId) {
+      prisma.job.update({
+        where: { id: job.data.jobId },
+        data: { status: "FAILED", failureReason: err.message },
       }).catch(() => { });
     }
   });

@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
         llmResumeReport: true,
         llmInterviewLive: true,
         llmInterviewEval: true,
-        llmInterviewBrief: true,
+        llmQuestionBank: true,
         llmInterviewReport: true,
       },
       orderBy: { name: "asc" },
@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
       llmResumeReport: true,
       llmInterviewLive: true,
       llmInterviewEval: true,
-      llmInterviewBrief: true,
+      llmQuestionBank: true,
       llmInterviewReport: true,
     },
   });
@@ -85,7 +85,7 @@ export async function PATCH(req: NextRequest) {
   if (fields.ttsProvider && !["ELEVENLABS", "SARVAM"].includes(fields.ttsProvider)) errors.push(`Invalid ttsProvider: ${fields.ttsProvider}`);
   if (fields.ttsModel && !ALLOWED_TTS_IDS.has(fields.ttsModel)) errors.push(`Invalid ttsModel: ${fields.ttsModel}`);
   if (fields.ttsSpeed !== undefined && (typeof fields.ttsSpeed !== "number" || fields.ttsSpeed < 0.5 || fields.ttsSpeed > 2.0)) errors.push(`Invalid ttsSpeed: ${fields.ttsSpeed}`);
-  for (const llmField of ["llmResumeExtraction","llmJdExtraction","llmResumeReport","llmInterviewLive","llmInterviewEval","llmInterviewBrief","llmInterviewReport"] as const) {
+  for (const llmField of ["llmResumeExtraction","llmJdExtraction","llmResumeReport","llmInterviewLive","llmInterviewEval","llmQuestionBank","llmInterviewReport"] as const) {
     if (fields[llmField] && !ALLOWED_LLM_IDS.has(fields[llmField])) errors.push(`Invalid ${llmField}: ${fields[llmField]}`);
   }
   if (errors.length) return NextResponse.json({ error: errors.join("; ") }, { status: 400 });
@@ -95,7 +95,7 @@ export async function PATCH(req: NextRequest) {
   const allowedFields = [
     "sttModel","ttsProvider","ttsModel","ttsSpeed","allowedVoiceIds",
     "llmResumeExtraction","llmJdExtraction","llmResumeReport",
-    "llmInterviewLive","llmInterviewEval","llmInterviewBrief","llmInterviewReport",
+    "llmInterviewLive","llmInterviewEval","llmQuestionBank","llmInterviewReport",
   ];
   for (const f of allowedFields) {
     if (fields[f] !== undefined) updateData[f] = fields[f];
@@ -107,7 +107,7 @@ export async function PATCH(req: NextRequest) {
     select: {
       id: true, sttModel: true, ttsProvider: true, ttsModel: true, ttsSpeed: true, allowedVoiceIds: true,
       llmResumeExtraction: true, llmJdExtraction: true, llmResumeReport: true,
-      llmInterviewLive: true, llmInterviewEval: true, llmInterviewBrief: true, llmInterviewReport: true,
+      llmInterviewLive: true, llmInterviewEval: true, llmQuestionBank: true, llmInterviewReport: true,
     },
   });
   return NextResponse.json({ org: updated });

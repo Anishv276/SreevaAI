@@ -113,7 +113,6 @@ FROM (VALUES
   ('Interview', 'interviewTimezone'),
   ('Interview', 'isDeleted'),
   ('Interview', 'isTestSession'),
-  ('Interview', 'aiInterviewBrief'),
   -- SupportTicket
   ('SupportTicket', 'id'),
   ('SupportTicket', 'interviewId'),

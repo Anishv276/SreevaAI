@@ -108,122 +108,33 @@ def build_evaluation_layer_prompt(
     level: int = 2,
 ) -> str:
     _strategy = interview_brief.interview_strategy or ""
-    _summary  = interview_brief.candidate_summary or ""
     _flags    = interview_brief.red_flags or []
     _anchor   = interview_brief.anchor_topic
     _role_ctx = interview_brief.role_context
 
     _must_haves = ", ".join(_role_ctx.must_have_skills[:8]) if _role_ctx.must_have_skills else "see JD"
 
-    def _topic_source_contract(t) -> str:
-        tag = (t.tag or "").upper()
-        if tag == "RESUME_TOPIC":
-            return (
-                "SOURCE=COMMON_SKILL  ▸ On resume AND required by the JD.\n"
-                "    HOW TO ASK: a cold-reasoning question testing real understanding of this skill itself — "
-                "fundamentals, mechanics, performance, or robustness. NEVER ask about their project/resume/work "
-                "history, and never 'tell me about a time you used X'. The question must be answerable by "
-                "anyone who genuinely knows this skill, cold. Vary the construction every time.\n"
-                "    WRONG: 'Tell me about a project where you used this.' / 'What did you build with X?'\n"
-                "    WRONG: 'What's the difference between X and Y?' (describe question — memorized docs)\n"
-                "    RIGHT: 'You've got X and Y for this exact case — which do you pick, and what breaks if you're wrong?'"
-            )
-        elif tag == "JD_TOPIC":
-            return (
-                "SOURCE=JD_REQUIRED  ▸ Role needs this. Candidate has NOT claimed it on resume.\n"
-                "    HOW TO ASK: same cold-reasoning question as any skill — never assume prior exposure, but "
-                "never frame it as 'have you used this in a project' either. If they show no understanding, "
-                "accept it and move on.\n"
-                "    WRONG: 'Walk me through your experience with this.' (assumes project experience)\n"
-                "    RIGHT: 'How would you approach deciding between X and Y here?'"
-            )
-        else:  # ROLE_TOPIC
-            return (
-                "SOURCE=ROLE_DEPTH  ▸ Expert domain check. NOT on resume, NOT in JD.\n"
-                "    HOW TO ASK: ask about understanding or approach in the abstract. They may have zero exposure.\n"
-                "    WRONG: 'How have you used X in your work?' (assumes usage)\n"
-                "    RIGHT: 'How do you think about X in practice?' / 'How would you approach X?'"
-            )
-
-    def _level_depth_hint(t, level: int) -> str:
-        tag = (t.tag or "").upper()
-        if tag == "RESUME_TOPIC":
-            return {
-                1: "Ask a small TRACE or DECIDE question — a concrete case they reason through, NOT a "
-                   "definition or syntax recall. Basic, but it must have a real answer, not 'it depends'.",
-                2: "Ask a mechanics or performance-triage question — trace how it works on a concrete case, "
-                   "or what to check FIRST when something's slow.",
-                3: "Ask an applied tradeoff question grounded in a realistic constraint — push past textbook.",
-                4: "Go straight to a tradeoff or systemic-failure scenario. Skip setup and basics.",
-            }.get(level, "Ask a concrete cold-reasoning question testing real understanding, never recall.")
-        elif tag == "JD_TOPIC":
-            return {
-                1: "Ask a gentle TRACE or DECIDE question — a concrete case, not a definition. Accept 'I "
-                   "haven't worked with this' gracefully.",
-                2: "Ask a practical reasoning question — how they'd approach a realistic concrete constraint.",
-                3: "Ask a judgment question that assumes some exposure — how they'd reason through a real tradeoff.",
-                4: "Ask about strategic judgment or tradeoffs around it, not just familiarity.",
-            }.get(level, "Ask a neutral concrete cold-reasoning question about this skill.")
-        else:
-            return {
-                1: "Check if they understand the concept — not whether they've done it at scale.",
-                2: "Ask about their approach to a realistic scenario in this area.",
-                3: "Ask about a tradeoff decision they'd need to make applying this at a systems level.",
-                4: "Ask about systemic or architectural-level tradeoffs in this area.",
-            }.get(level, "Ask how they think about or approach this.")
-
     _topics_summary = "\n".join(
         f"  {i+1}. {t.title}\n"
-        f"     {_topic_source_contract(t)}\n"
-        f"     LEVEL HINT (LEVEL {level}): {_level_depth_hint(t, level)}\n"
         f"     CONTEXT: {t.full_description}\n"
         f"     {('TECH: ' + ', '.join(t.tech_stack)) + chr(10) + '     ' if t.tech_stack else ''}"
         f"     {('PROBE: ' + t.probe_focus) if t.probe_focus else ''}"
-        f"{'  |  ' if t.probe_focus and t.probe_avoid else ''}"
-        f"{('AVOID: ' + ', '.join(t.probe_avoid[:2])) if t.probe_avoid else ''}"
         for i, t in enumerate(interview_brief.topic_pool)
     )
 
     brief_block = f"""CANDIDATE: {candidate_name}
 ROLE: {job_title}  |  LEVEL: {level}
 
-ANALYST READ:
-{_summary}
-
 INTERVIEW STRATEGY:
 {_strategy}
 
-━━━ HOW TO GENERATE QUESTIONS — READ THIS BEFORE EVERY QUESTION ━━━
-Every topic below has a SOURCE tag. The source tag tells you what the candidate knows
-and exactly how to frame your question. Get this wrong and the question is wrong.
-
-  SOURCE=RESUME     → They DID this. It is on their resume. Ask about depth — what they
-                       built, what was their call, what broke. NEVER ask why they worked somewhere.
-                       NEVER ask 'do you have experience with X' — they do.
-
-  SOURCE=JD_REQUIRED → The role needs this. They have NOT claimed it on their resume.
-                       We don't know if they've used it. Ask neutrally about exposure.
-                       NEVER assume they know it. NEVER say 'on your resume'.
-                       If they say they haven't used it — accept it, move on.
-
-  SOURCE=ROLE_DEPTH  → Expert domain check. NOT on resume. NOT in JD.
-                       We have zero information about their experience here.
-                       Ask about understanding or approach, never about experience they may not have.
-                       NEVER ask 'what was your experience with X' or 'why did you work with X'.
-
-Your job: read the topic CONTEXT below, pick the right SOURCE framing, and generate
-a fresh question that sounds like it came from you listening to them — not from a template.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 ANCHOR TOPIC (open here):
   {_anchor.title}
-  {_topic_source_contract(_anchor)}
   CONTEXT: {_anchor.full_description}
   {('TECH: ' + ', '.join(_anchor.tech_stack)) if _anchor.tech_stack else ''}
-  Probe focus: {_anchor.probe_focus if _anchor.probe_focus else 'Probe for depth and genuine ownership of the topic.'}
-  Probe avoid: {', '.join(_anchor.probe_avoid[:2]) if _anchor.probe_avoid else 'none'}
+  Probe focus: {_anchor.probe_focus if _anchor.probe_focus else 'Probe for depth and genuine understanding of the topic.'}
 
-TOPIC POOL (work through in order — each has its own source framing above):
+QUESTION BANK TOPICS (work through in order):
 {_topics_summary}
 
 JD MUST-HAVES:
@@ -231,9 +142,8 @@ JD MUST-HAVES:
 
 RED FLAGS (watch for these — do not ignore):
 {chr(10).join('  ⚠ ' + f for f in _flags) if _flags else '  (none)'}"""
+
     # Level-specific evaluation posture -- what "good" looks like at each level.
-    # This is a fixed, admin-selected level for the job -- not derived from the
-    # candidate's resume/experience, and evaluation is purely skill/knowledge-based.
     level_eval = {
         1: (
             "This is a LEVEL 1 interview. Evaluate whether fundamentals are genuinely understood.\n"
@@ -261,12 +171,10 @@ RED FLAGS (watch for these — do not ignore):
         ),
     }.get(level, "Probe for genuine skill understanding, not memorized recitation.")
     return f"""━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ANALYST BRIEF -- READ THIS FIRST
+QUESTION BANK & EVALUATION PLAN
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-The section below is a pre-interview analyst read of {candidate_name} for the {job_title} role (LEVEL {level}).
-It was written specifically to give you a FORMED OPINION before the interview starts.
-Every question you generate should be grounded in this brief.
-Never ask a generic question when the brief gives you a specific angle.
+Interview plan for {candidate_name} for the {job_title} role (LEVEL {level}).
+All topics below are sourced directly from the curated Question Bank.
 {brief_block}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 LEVEL: {level}
@@ -281,8 +189,7 @@ DIRECTIVE SYSTEM
              Read the angle. Look at what the candidate just said. Generate your question from both.
              The question must sound like it came from listening to them, not from a checklist.
              Never copy what the directive says — use it as a lens, generate your own words.
-- MOVE_ON -> The directive tells you the new topic and its SOURCE tag.
-             Read the SOURCE tag from the TOPIC POOL above to know HOW to frame the question.
+- MOVE_ON -> The directive tells you the new topic.
              One short acknowledgement, then ask a fresh question you create from the topic context.
              NEVER copy any "Suggested opening question" from the directive — it is a hint, not a script.
              The question must come from you reading the topic description and the candidate's story.

@@ -44,7 +44,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 jobCreatedAt: true,
                 jobUpdatedAt: true,
                 applicationDeadline: true,
-                aiGeneratedInterviewQuestions: true,
+
                 jdFileName: true,
                 jdPreviewUrl: true,
                 organizationId: true,
@@ -55,10 +55,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 level: true,
                 status: true,
                 failureReason: true,
-                extractedSkills: true,
                 questionBank: true,
                 questionBankVersion: true,
-                mustHaveSkills: true,
                 organization: {
                     select: {
                         orgStatus: true,
@@ -88,20 +86,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             threshold: parsedCriteria.threshold,
             criteria: parsedCriteria.criteria,
         });
-        const interviewQuestions = (() => {
-            try {
-                const raw = job.aiGeneratedInterviewQuestions;
-                return raw ? JSON.parse(raw) : [];
-            } catch {
-                return [];
-            }
-        })();
         return NextResponse.json({
             ...job,
             organizationId: job.organizationId,
             screeningThreshold,
             screeningCriteria,
-            interviewQuestions,
             applicants: job._count?.applications || 0,
             aiScreening: {
                 enabled: true,
@@ -216,7 +205,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             };
             updateData.resumeScreeningCriteria = JSON.stringify(mergedCriteria);
         }
-        if (data.aiGeneratedInterviewQuestions !== undefined) updateData.aiGeneratedInterviewQuestions = data.aiGeneratedInterviewQuestions ? JSON.stringify(data.aiGeneratedInterviewQuestions) : undefined;
+
         Object.assign(
             updateData,
             normalizeJobAiConfig({
@@ -228,7 +217,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (data.interviewMode !== undefined) updateData.interviewMode = data.interviewMode;
         if (data.interviewType !== undefined) updateData.interviewType = data.interviewType;
         if (data.level !== undefined) updateData.level = data.level;
-        if (data.mustHaveSkills !== undefined) updateData.mustHaveSkills = data.mustHaveSkills;
         // No silent auto-regen: editing the level or JD after a question bank has
         // already been generated must NOT clear questionBank/status as a side
         // effect. Regeneration only ever happens via the explicit

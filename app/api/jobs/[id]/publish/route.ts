@@ -6,10 +6,10 @@ import { apiErrorResponse } from "@/lib/slack-error-logger";
 /**
  * POST /api/jobs/[id]/publish
  *
- * Page 3 "Next" action -- the sole state transition GENERATED -> PUBLISHED.
- * Accepts must-have skills and (for "ats" mode jobs) the resume screening
- * threshold. Kept as a dedicated route so the general PATCH handler never
- * has to special-case the state machine.
+ * Wizard "Publish" action -- the sole state transition GENERATED -> PUBLISHED.
+ * Accepts (for "ats" mode jobs) the resume screening threshold. Kept as a
+ * dedicated route so the general PATCH handler never has to special-case the
+ * state machine.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
     let jobId = "";
@@ -45,13 +45,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             );
         }
 
-        const mustHaveSkills = Array.isArray(body.mustHaveSkills)
-            ? body.mustHaveSkills.filter((s: unknown) => typeof s === "string" && s.trim()).map((s: string) => s.trim())
-            : [];
-
         const updateData: Record<string, unknown> = {
             status: "PUBLISHED",
-            mustHaveSkills,
         };
 
         // Resume threshold only meaningful in "ats" mode; ignored (never forced)

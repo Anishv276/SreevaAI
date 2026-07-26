@@ -10,7 +10,7 @@
  * The LiveKit agent receives metadata:
  *   { demoSessionId, templateId, mode, roleTitle, timeLimitMins: 5, isDemo: true }
  * and uses this to:
- *   - Load the correct brief (TECH or CONVERSATION)
+ *   - Build the interview brief from the pre-generated question bank (TECH or CONVERSATION)
  *   - Activate the 4.9-minute kill switch (294 seconds)
  *   - Write the transcript back to DemoSession on completion
  */
@@ -50,8 +50,8 @@ export async function POST(request: Request) {
         if (!template || !template.isActive || template.status !== "ready") {
             return NextResponse.json({ error: "Demo template not found or not ready" }, { status: 404 });
         }
-        if (!template.briefJson) {
-            return NextResponse.json({ error: "Demo template brief not yet generated" }, { status: 409 });
+        if (!template.questionBankSnapshot) {
+            return NextResponse.json({ error: "Demo template questions not yet generated" }, { status: 409 });
         }
 
         // --- Create the DemoSession ---
@@ -105,7 +105,7 @@ export async function POST(request: Request) {
                         demoSessionId: demoSession.id,
                         templateId,
                         mode: template.mode,            // "TECH" | "CONVERSATION"
-                        briefJson: template.briefJson,  // pre-generated brief — no LLM call at agent start
+                        questionBankJson: template.questionBankSnapshot,  // pre-generated question bank — no LLM call at agent start
                         // Standard interview fields (agent reads these)
                         candidateName: clientName.trim(),
                         roleLabel: template.roleTitle,

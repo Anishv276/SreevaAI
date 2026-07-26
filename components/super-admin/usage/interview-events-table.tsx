@@ -73,8 +73,6 @@ export function InterviewEventsTable({
             <th className="px-5 py-3.5 text-right text-[11px] font-semibold uppercase tracking-wider text-gray-400">Eval Cost</th>
             <th className="px-5 py-3.5 text-right text-[11px] font-semibold uppercase tracking-wider text-gray-400">Gen Runs</th>
             <th className="px-5 py-3.5 text-right text-[11px] font-semibold uppercase tracking-wider text-gray-400">Gen Cost</th>
-            <th className="px-5 py-3.5 text-right text-[11px] font-semibold uppercase tracking-wider text-gray-400">Brief Runs</th>
-            <th className="px-5 py-3.5 text-right text-[11px] font-semibold uppercase tracking-wider text-gray-400">Brief Cost</th>
             <th className="px-5 py-3.5 text-right text-[11px] font-semibold uppercase tracking-wider text-gray-400">TTS (chars)</th>
             <th className="px-5 py-3.5 text-right text-[11px] font-semibold uppercase tracking-wider text-gray-400">TTS Cost</th>
             <th className="px-5 py-3.5 text-right text-[11px] font-semibold uppercase tracking-wider text-gray-400">STT (s)</th>
@@ -101,8 +99,6 @@ export function InterviewEventsTable({
               <td className="px-5 py-3.5 text-right tabular-nums">{fmt(r.evalCostUsd)}</td>
               <td className="px-5 py-3.5 text-right tabular-nums">{r.generationRuns.toLocaleString()}</td>
               <td className="px-5 py-3.5 text-right tabular-nums">{fmt(r.generationCostUsd)}</td>
-              <td className="px-5 py-3.5 text-right tabular-nums">{r.briefRuns.toLocaleString()}</td>
-              <td className="px-5 py-3.5 text-right tabular-nums">{fmt(r.briefCostUsd)}</td>
               <td className="px-5 py-3.5 text-right tabular-nums text-gray-500">{r.ttsCharacters.toLocaleString()}</td>
               <td className="px-5 py-3.5 text-right tabular-nums">{fmt(r.ttsCostUsd)}</td>
               <td className="px-5 py-3.5 text-right tabular-nums text-gray-500">{Math.round(r.sttAudioSeconds).toLocaleString()}</td>

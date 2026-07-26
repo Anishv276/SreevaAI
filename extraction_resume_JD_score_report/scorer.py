@@ -494,8 +494,12 @@ def _match_criterion(
     """
     cname = criterion.get("name", "")
     ccategory = criterion.get("category", "skill")
-    cpriority = criterion.get("priority", "high")
     cweight = max(criterion.get("weight", 10), 1)
+    cpriority = criterion.get("priority", "high")
+    if cpriority == "must_have":
+        cpriority = "critical"
+    elif cpriority == "nice_to_have":
+        cpriority = "medium"
     cev_required = criterion.get("evidence_required", "any")
     norm_cname = _normalize(cname)
 

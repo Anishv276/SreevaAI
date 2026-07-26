@@ -30,9 +30,9 @@ export async function GET(
             where: { id },
             select: {
                 id: true,
-                llmResumeExtraction: true, llmJdExtraction: true,
+                llmResumeExtraction: true, llmJdExtraction: true, llmQuestionBank: true,
                 llmInterviewReport: true, llmResumeReport: true,
-                llmInterviewEval: true, llmInterviewLive: true, llmInterviewBrief: true,
+                llmInterviewEval: true, llmInterviewLive: true,
             }
         });
         if (!org) return NextResponse.json({ error: "Organization not found" }, { status: 404 });
@@ -64,7 +64,7 @@ export async function GET(
             resumeReport:          { runs: agg.resumeReport.calls, inputTokens: agg.resumeReport.inputTokens, outputTokens: agg.resumeReport.outputTokens, costUsd: agg.resumeReport.costUsd, model: primaryModel(agg.resumeReport.byModel) || org.llmResumeReport },
             interviewEvaluation:   { runs: agg.eval.calls, inputTokens: agg.eval.inputTokens, outputTokens: agg.eval.outputTokens, costUsd: agg.eval.costUsd, model: primaryModel(agg.eval.byModel) || org.llmInterviewEval },
             interviewLLMGeneration:{ runs: agg.llmGeneration.calls, inputTokens: agg.llmGeneration.inputTokens, outputTokens: agg.llmGeneration.outputTokens, costUsd: agg.llmGeneration.costUsd, model: primaryModel(agg.llmGeneration.byModel) || org.llmInterviewLive },
-            interviewBrief:        { runs: agg.brief.calls, inputTokens: agg.brief.inputTokens, outputTokens: agg.brief.outputTokens, costUsd: agg.brief.costUsd, model: primaryModel(agg.brief.byModel) || org.llmInterviewBrief },
+            questionBank:          { runs: agg.questionBank.calls, inputTokens: agg.questionBank.inputTokens, outputTokens: agg.questionBank.outputTokens, costUsd: agg.questionBank.costUsd, model: primaryModel(agg.questionBank.byModel) || org.llmQuestionBank },
             interview: {
                 runs: agg.eval.calls, inputTokens: agg.eval.inputTokens, outputTokens: agg.eval.outputTokens, costUsd: agg.eval.costUsd,
                 sessionDuration: interviews.reduce((s, r) => s + Number(r.interviewDuration || 0), 0),

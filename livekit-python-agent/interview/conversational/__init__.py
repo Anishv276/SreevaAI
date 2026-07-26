@@ -26,7 +26,6 @@ from interview.conversational.brief import (
     InterviewBrief,
     TopicItem,
     RoleContext,
-    generate_interview_brief,
 )
 from interview.conversational.brief_extraction import (
     RawSkillEntry,
@@ -66,7 +65,6 @@ __all__ = [
     "InterviewBrief",
     "TopicItem",
     "RoleContext",
-    "generate_interview_brief",
     "RawSkillEntry",
     "RawWorkEntry",
     "RawResumeJSON",

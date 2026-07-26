@@ -27,7 +27,7 @@ export function normalizeOrgAiConfig(fields: Record<string, unknown>): Record<st
         llmResumeReport:    String(fields.llmResumeReport    || DEFAULT_ORG_AI_CONFIG.llmResumeReport).trim(),
         llmInterviewLive:   String(fields.llmInterviewLive   || DEFAULT_ORG_AI_CONFIG.llmInterviewLive).trim(),
         llmInterviewEval:   String(fields.llmInterviewEval   || DEFAULT_ORG_AI_CONFIG.llmInterviewEval).trim(),
-        llmInterviewBrief:  String(fields.llmInterviewBrief  || DEFAULT_ORG_AI_CONFIG.llmInterviewBrief).trim(),
+        llmQuestionBank:    String(fields.llmQuestionBank    || DEFAULT_ORG_AI_CONFIG.llmQuestionBank).trim(),
         llmInterviewReport: String(fields.llmInterviewReport || DEFAULT_ORG_AI_CONFIG.llmInterviewReport).trim(),
     };
 }

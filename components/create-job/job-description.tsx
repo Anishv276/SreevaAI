@@ -1,7 +1,8 @@
 "use client";
 import { useState, useRef } from "react";
-import { Upload, Loader2, FileText, X, CheckCircle2, Eye, FlaskConical, MessageCircle, GraduationCap, Check } from "lucide-react";
+import { Upload, Loader2, FileText, X, CheckCircle2, Eye, FlaskConical, MessageCircle, GraduationCap, Check, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Slider } from "@/components/ui/slider";
 
 const QUESTION_LEVELS = [
     { value: 1, label: "1 - Basic" },
@@ -11,8 +12,8 @@ const QUESTION_LEVELS = [
 ] as const;
 
 const INTERVIEW_TYPES = [
-    { value: "tech", label: "Tech Interview", Icon: FlaskConical },
-    { value: "conversational", label: "Conversational Interview", Icon: MessageCircle },
+    { value: "tech", label: "Tech Interview", description: "Suggested for Engineering, Data & Product", Icon: FlaskConical },
+    { value: "conversational", label: "Conversational Interview", description: "Suggested for Sales, HR & Support", Icon: MessageCircle },
 ] as const;
 
 export function JobDescription({
@@ -53,7 +54,6 @@ export function JobDescription({
             ...prev,
             jdFileName: undefined,
             jdPreviewUrl: undefined,
-            aiGeneratedInterviewQuestions: [],
             jdExtractedDetails: null,
         }));
     };
@@ -106,19 +106,25 @@ export function JobDescription({
                                     type="button"
                                     onClick={() => updateFormData((prev: any) => ({ ...prev, interviewType: opt.value }))}
                                     className={cn(
-                                        "relative flex items-center gap-2 px-3 py-2.5 rounded-xl text-left text-xs font-medium transition-all",
+                                        "relative flex items-start gap-3 px-4 py-3.5 rounded-xl text-left transition-all",
                                         active ? "shadow-[0_0_0_1.5px_#7C3AED]" : "hover:shadow-[0_0_0_1px_#C4B5FD]"
                                     )}
                                     style={{
                                         border: active ? "1px solid #7C3AED" : "1px solid #E9E7FF",
                                         background: active ? "linear-gradient(135deg, rgba(139,92,246,0.06), rgba(59,130,246,0.04))" : "#FAFAFC",
-                                        color: active ? "#6D28D9" : "#374151",
                                     }}
                                 >
-                                    <opt.Icon className={cn("h-3.5 w-3.5 flex-shrink-0", active ? "text-[#7C3AED]" : "text-gray-400")} />
-                                    <span className="flex-1">{opt.label}</span>
+                                    <opt.Icon className={cn("h-4 w-4 flex-shrink-0 mt-0.5", active ? "text-[#7C3AED]" : "text-gray-400")} />
+                                    <div className="flex-1 flex flex-col gap-1">
+                                        <span className="text-sm font-medium" style={{ color: active ? "#6D28D9" : "#374151" }}>
+                                            {opt.label}
+                                        </span>
+                                        <span className="text-xs text-gray-500 leading-relaxed">
+                                            {opt.description}
+                                        </span>
+                                    </div>
                                     {active && (
-                                        <div className="h-4 w-4 rounded-full bg-[#7C3AED] flex items-center justify-center flex-shrink-0">
+                                        <div className="h-4 w-4 rounded-full bg-[#7C3AED] flex items-center justify-center flex-shrink-0 mt-0.5">
                                             <Check className="h-2.5 w-2.5 text-white" />
                                         </div>
                                     )}
@@ -157,6 +163,43 @@ export function JobDescription({
                                 </button>
                             );
                         })}
+                    </div>
+                </div>
+
+                {/* Number of Questions Slider */}
+                <div className="space-y-2 px-1 pt-3 pb-1">
+                    <div className="flex justify-between items-center">
+                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
+                            <Sparkles className="h-3.5 w-3.5 text-violet-500" /> Number of Questions
+                        </span>
+                        <span className="text-xs font-bold text-violet-700 bg-gradient-to-r from-violet-100 to-indigo-100 px-3 py-1 rounded-full border border-violet-200/80 shadow-xs flex items-center gap-1">
+                            <span className="h-1.5 w-1.5 rounded-full bg-violet-600 animate-pulse" />
+                            {formData.numQuestions || 12} Questions
+                        </span>
+                    </div>
+                    <div className="pt-1">
+                        <Slider
+                            min={12}
+                            max={20}
+                            step={1}
+                            value={[formData.numQuestions || 12]}
+                            onValueChange={([val]) => updateFormData((prev: any) => ({ ...prev, numQuestions: val }))}
+                        />
+                    </div>
+                    <div className="flex justify-between text-[11px] font-semibold text-gray-400 px-0.5">
+                        {[12, 14, 16, 18, 20].map((num) => (
+                            <button
+                                key={num}
+                                type="button"
+                                onClick={() => updateFormData((prev: any) => ({ ...prev, numQuestions: num }))}
+                                className={cn(
+                                    "transition-colors hover:text-violet-600 cursor-pointer",
+                                    (formData.numQuestions || 12) === num ? "text-violet-600 font-bold" : "text-gray-400"
+                                )}
+                            >
+                                {num} Qs
+                            </button>
+                        ))}
                     </div>
                 </div>
             </div>

@@ -432,21 +432,6 @@ QUESTION_GENERATION_SYSTEM = """\
 You are Ishitha, a sharp and warm AI interviewer conducting a SALES interview — not filling
 out a form.
 
-Before you write anything, read RECENT_QUESTION_PATTERNS below. Your new question's opener AND
-scaffold must both be different from every entry in that list — not just reworded, structurally
-different. A repeated scaffold is a repeated question even if the topic and vocabulary changed.
-
-RECENT_QUESTION_PATTERNS:
-{recent_question_patterns}
-
-DECLINED_FACTS (facts the candidate has explicitly been unable to produce this interview):
-{declined_facts}
-Before writing a question, check whether it targets anything on that list. If it's on the
-list, do not construct a question that resolves to asking for it again.
-
-If the scaffold your current PROBE DIRECTIVE suggests would collide with one already used,
-pick a genuinely different construction that still satisfies the same goal and question type.
-
 YOUR JOB THIS TURN: ask ONE follow-up question based on what the candidate just said.
 
 EVIDENCE-SUFFICIENCY CHECK FIRST: if the candidate's last answer already closed the gap the
@@ -583,12 +568,5 @@ def get_probe_context(
             f"  detail they've been dodging. Open a NEW angle on the topic entirely.",
             f"  This is a fresh general question, not a follow-up.",
         ]
-
-    lines.append("")
-    lines.append("RECENT_QUESTION_PATTERNS:")
-    lines.append(recent_question_patterns)
-    lines.append("")
-    lines.append("DECLINED_FACTS:")
-    lines.append(declined_facts)
 
     return "\n".join(lines)

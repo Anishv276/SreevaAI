@@ -1,9 +1,37 @@
 import { randomUUID } from "crypto";
-import { chatJSON, LLMCallError } from "@/lib/openai-client";
-import type { BankQuestion, BankQuestionType, SkillSubtopics } from "./types";
+import { chatJSON, LLMCallError, type ChatJSONResult } from "@/lib/openai-client";
+import type { BankQuestion, BankQuestionType } from "./types";
 
-export const MIN_QUESTIONS = 15;
-export const MAX_QUESTIONS = 20;
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export type JdExtractedDetails = {
+    job_title?: string | null;
+    role_level?: string | null;
+    experience?: {
+        min_years?: number | null;
+        max_years?: number | null;
+        preferred_background?: string | null;
+    } | null;
+    criteria?: Array<{
+        name: string;
+        category: string;
+        priority: string;
+        source_text?: string | null;
+    }> | null;
+    keywords?: string[] | null;
+    scoring_hints?: {
+        green_flags_to_reward?: string[] | null;
+    } | null;
+};
+
+export type ValidatedQuestionBank = {
+    questions: BankQuestion[];
+};
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const TARGET_QUESTIONS = 12;
+const MAX_RETRIES = 2;
 
 const LEVEL_LABELS: Record<number, string> = {
     1: "Easy",
@@ -12,315 +40,312 @@ const LEVEL_LABELS: Record<number, string> = {
     4: "Extreme",
 };
 
-const DIFFICULTY_DEFINITION = `Difficulty definition -- follow it exactly:
-  Level 1 (Easy): Definitional/recall. Tests basic familiarity only.
-  Level 2 (Moderate): Applied understanding. Tests practical grasp.
-  Level 3 (Difficult): Scenario/trade-off based reasoning.
-  Level 4 (Extreme): Deep expert-level reasoning, ambiguous/edge-case
-    scenarios, intended for senior/expert candidates.`;
+const DIFFICULTY_DEFINITION = `Difficulty levels — follow exactly:
+  Level 1 (Easy): Definitional/recall. Tests basic familiarity.
+  Level 2 (Moderate): Applied understanding. Tests practical, hands-on grasp.
+  Level 3 (Difficult): Scenario and trade-off based reasoning. Requires genuine depth.
+  Level 4 (Extreme): Deep expert-level reasoning, ambiguous/edge-case scenarios. Senior/expert only.`;
 
-const SNIPPET_DIFFICULTY_RUBRIC = `Snippet difficulty rubric -- the SAME level applies to snippet questions as
-every other question in this batch. Do not default to an easy or arbitrary
-snippet regardless of the selected level:
-  Level 1 (Easy): obvious, directly-traceable output. No tricks.
-  Level 2 (Moderate): requires tracing execution/query logic step by step,
-    but nothing hidden or subtle.
-  Level 3 (Difficult): contains a genuine subtlety -- a real bug, a scoping
-    quirk, a join that silently drops rows -- that requires real reasoning
-    to catch.
-  Level 4 (Extreme): a classic "gotcha" or edge case where the obvious
-    answer is wrong; expert-level reasoning required.`;
+const SNIPPET_DIFFICULTY_RUBRIC = `Snippet difficulty rubric (same level applies to snippet questions as all others):
+  Level 1: Obvious, directly-traceable output. No tricks.
+  Level 2: Requires tracing execution/query logic step by step — no hidden subtleties.
+  Level 3: Contains a genuine subtlety (a real bug, scoping quirk, a join that silently drops rows) requiring real reasoning.
+  Level 4: A classic "gotcha" or edge case where the obvious answer is wrong. Expert-level required.`;
 
-function buildSkillSubtopicMapText(map: SkillSubtopics[]): string {
-    return map.map((s) => `- ${s.skill}: ${s.subtopics.join(", ")}`).join("\n");
-}
+// ─── Prompt Builder ───────────────────────────────────────────────────────────
 
-function buildSystemPrompt(level: number, skillSubtopicMap: SkillSubtopics[]): string {
+function buildSystemPrompt(
+    jdExtractedDetails: JdExtractedDetails,
+    level: number,
+    interviewType: "tech" | "conversational"
+): string {
     const levelLabel = LEVEL_LABELS[level] ?? "Moderate";
-    return `You are generating interview questions for this job description at
-difficulty level ${level} (${levelLabel}).
 
+    // Build a structured representation of the JD for the LLM
+    const jobTitle = jdExtractedDetails.job_title?.trim() || "Unknown Role";
+    const roleLevel = jdExtractedDetails.role_level?.trim() || "";
+    const exp = jdExtractedDetails.experience;
+    const criteria = jdExtractedDetails.criteria || [];
+    const keywords = jdExtractedDetails.keywords || [];
+    const greenFlags = jdExtractedDetails.scoring_hints?.green_flags_to_reward || [];
+
+    const mustHaves = criteria.filter((c) => c.priority === "critical" || c.priority === "high");
+    const niceToHaves = criteria.filter((c) => c.priority !== "critical" && c.priority !== "high");
+
+    const mustHaveText = mustHaves.length
+        ? mustHaves.map((c) => `  - [${c.category}] ${c.name}${c.source_text ? ` ("${c.source_text}")` : ""}`).join("\n")
+        : "  (none specified)";
+
+    const niceToHaveText = niceToHaves.length
+        ? niceToHaves.map((c) => `  - [${c.category}] ${c.name}`).join("\n")
+        : "";
+
+    const greenFlagText = greenFlags.length
+        ? `What a GREAT candidate looks like for this role:\n${greenFlags.map((g) => `  - ${g}`).join("\n")}`
+        : "";
+
+    const keywordText = keywords.length ? `Key technologies/skills: ${keywords.join(", ")}` : "";
+
+    const expText = exp
+        ? [
+              exp.min_years != null ? `${exp.min_years}+ years experience` : "",
+              exp.preferred_background?.trim() || "",
+          ]
+              .filter(Boolean)
+              .join(", ")
+        : "";
+
+    const techSnippetRules = `
+SNIPPET QUESTIONS (snippet_code and snippet_query):
+- Include these ONLY when they genuinely fit the role's skill profile. Do NOT force them.
+- For snippet_code: use a programming language directly drawn from the JD's must-have skills.
+- For snippet_query: use SQL or another query language only if database/query skills are must-haves.
+- The "question" field for snippet types MUST be a descriptive INTENT string describing the concept being tested
+  (e.g. "Python code question testing mutable default argument gotcha" or
+  "SQL query testing understanding of LEFT JOIN null filtering").
+  NEVER put the actual code in the "question" field. The live agent generates the real code at interview time.
+- Set snippet, snippet_language, and expected_output to null for these types.
+  The live agent produces the actual code card at ask-time using the subtopic and candidate context.
+${SNIPPET_DIFFICULTY_RUBRIC}`;
+
+    const conversationalRules = `
+- Every question must be "conceptual" type. Do NOT generate snippet_code or snippet_query.
+- Favor situational, behavioral, and experience-based questions calibrated to difficulty ${level} (${levelLabel}).
+- Higher levels probe deeper judgment, ambiguity tolerance, and stakes — not technical depth.`;
+
+    return `You are a senior technical interviewer generating a high-quality, role-specific interview question bank.
+
+═══════════════════════════════
+ROLE BEING HIRED FOR
+═══════════════════════════════
+Job Title: ${jobTitle}${roleLevel ? `\nLevel: ${roleLevel}` : ""}${expText ? `\nExperience Expected: ${expText}` : ""}
+
+MUST-HAVE SKILLS & REQUIREMENTS:
+${mustHaveText}
+${niceToHaveText.trim() ? `\nNICE-TO-HAVE SKILLS:\n${niceToHaveText}` : ""}
+${keywordText ? `\n${keywordText}` : ""}
+${greenFlagText ? `\n${greenFlagText}` : ""}
+
+═══════════════════════════════
+DIFFICULTY
+═══════════════════════════════
+Target Level: ${level} (${levelLabel})
 ${DIFFICULTY_DEFINITION}
 
-Skill/subtopic map:
-${buildSkillSubtopicMapText(skillSubtopicMap)}
+═══════════════════════════════
+RULES FOR QUESTION GENERATION
+═══════════════════════════════
+1. Generate EXACTLY ${TARGET_QUESTIONS} questions total.
+2. PRIORITIZE must-have skills heavily — spend at least 70% of questions on must-have criteria.
+   Give each must-have skill at least 1 question. Nice-to-haves can get 0-1 questions max.
+3. Assign each question a "skill" (e.g. "Python", "System Design") and a "subtopic"
+   (e.g. "Memory Management", "CAP Theorem") — these are used for scoring and interview structure.
+   Subtopics must be specific and distinct sub-areas, NOT vague labels like "Basics" or "General".
+4. Questions must be ROLE-SPECIFIC and SCENARIO-BASED where the level allows.
+   Do NOT write generic textbook recall questions when the JD gives enough context for something sharper.
+   Example of BAD: "What is a deadlock?" 
+   Example of GOOD (for a Backend Engineer role): "You notice a transaction that holds a DB lock 
+   is waiting on a Redis lock, while another thread holds the Redis lock and waits for the DB — 
+   how would you detect and resolve this in production?"
+5. Every question must be answerable by voice in a live interview — no diagrams, no multi-part 
+   compound questions, max ~2 sentences.
+${interviewType === "tech" ? techSnippetRules : conversationalRules}
 
-Rules:
-- Generate BETWEEN ${MIN_QUESTIONS} AND ${MAX_QUESTIONS} questions total,
-  across ALL skills and subtopics combined -- this is a hard cap, not a
-  per-subtopic count. Never fewer than ${MIN_QUESTIONS}, never more than ${MAX_QUESTIONS}.
-- Distribute the questions across skills to give the broadest reasonable
-  coverage. Every skill should get at least 1 question if the skill count
-  allows it; do not spend them all on a single skill.
-- Not every subtopic will receive a question -- that is expected and fine.
-- WITHIN that total, include AT LEAST 1 question of type "snippet_code" and AT
-  LEAST 1 question of type "snippet_query":
-  - Both snippet questions MUST match difficulty level ${level} (${levelLabel})
-    using the exact same rubric as every other question in this batch:
-    ${SNIPPET_DIFFICULTY_RUBRIC}
-  - snippet_code: a short code snippet (roughly 5-15 lines) in a language
-    drawn from this JD's extracted skills, calibrated to the level above.
-    The candidate will see this snippet on screen and be asked, by voice,
-    what it outputs.
-  - snippet_query: same idea, but a short SQL (or other query-language)
-    snippet against a small implied schema, calibrated to the level above.
-  - For BOTH types, the "question" field must be a short natural verbal
-    prompt only (e.g. "Take a look at the snippet on your screen -- what
-    would this output?") -- it must NEVER contain the code itself. The code
-    goes only in the separate "snippet" field, matching how it will be
-    displayed to the candidate, never read aloud.
-  - Also return "snippet_language" and "expected_output" (the correct
-    output/result) for each snippet question -- expected_output is for
-    internal scoring only, never shown or spoken to the candidate.
-  - If, and only if, this JD's extracted skills contain no database/query-
-    language skill at all, the snippet_query requirement cannot be met --
-    in that case set the top-level "skipped_query_snippet_reason" field to
-    a short explanation instead of forcing an irrelevant query question.
-    Do not invent a database skill that isn't in this JD to satisfy the rule.
-  - If, and only if, this JD's extracted skills contain no programming-
-    language skill at all (rare -- e.g. a narrowly infra/ops-focused role),
-    the snippet_code requirement cannot be met -- set the top-level
-    "skipped_code_snippet_reason" field instead of forcing an irrelevant
-    code question. This should be uncommon; only use it when truly no
-    programming-language skill exists in this JD.
-- Every non-snippet question must be answerable by voice in a live
-  interview -- no multi-part compound questions, no diagrams, no questions
-  longer than ~2 sentences.
-- Return strict JSON only, between ${MIN_QUESTIONS} and ${MAX_QUESTIONS} items:
-  {"level": ${level}, "questions": [
-    {"skill": "...", "subtopic": "...", "question_type": "conceptual", "question": "..."},
-    {"skill": "...", "subtopic": "...", "question_type": "snippet_code",
-     "question": "Take a look at the snippet on your screen -- what would this output?",
-     "snippet": "...", "snippet_language": "python", "expected_output": "..."},
-    {"skill": "...", "subtopic": "...", "question_type": "snippet_query",
-     "question": "...", "snippet": "SELECT ...", "snippet_language": "sql",
-     "expected_output": "..."}
-    ... between ${MIN_QUESTIONS} and ${MAX_QUESTIONS} entries
-  ], "skipped_query_snippet_reason": null, "skipped_code_snippet_reason": null}`;
+═══════════════════════════════
+OUTPUT FORMAT
+═══════════════════════════════
+Return strict JSON only:
+{
+  "level": ${level},
+  "questions": [
+    {
+      "skill": "Python",
+      "subtopic": "Memory Management",
+      "question_type": "conceptual",
+      "question": "Your service is slowly leaking memory over 24 hours. Walk me through how you'd identify if it's a Python object reference cycle causing it."
+    },
+    {
+      "skill": "PostgreSQL",
+      "subtopic": "Query Optimization",
+      "question_type": "snippet_query",
+      "question": "SQL query testing understanding of why a multi-column index doesn't get used when the leading column is skipped in a WHERE clause."
+    }
+  ]
 }
+
+All ${TARGET_QUESTIONS} questions must be in the "questions" array.
+For conceptual questions, the "question" field is the scenario or concept to test.
+For snippet_code/snippet_query questions, the "question" field is the descriptive INTENT only — the live agent generates the actual code on the fly.`;
+}
+
+// ─── Validation Helpers ───────────────────────────────────────────────────────
 
 const VALID_TYPES: BankQuestionType[] = ["conceptual", "snippet_code", "snippet_query"];
 
-// Heuristics for "the question field must never contain code/SQL literally".
-// Note: plain keyword matches like /\bFROM\s/i are too broad -- "different
-// FROM a tuple" is ordinary English, not SQL leakage. Require actual
-// SQL/code shape (a SELECT...FROM pair, a function/def declaration, or
-// structural punctuation) before flagging.
+// Code/SQL must never appear literally in the spoken question field
 const CODE_LEAKAGE_PATTERNS = [
     /\n/, // multi-line
-    /\bSELECT\b[\s\S]*\bFROM\b/i, // real query shape, not a bare keyword
+    /\bSELECT\b[\s\S]*\bFROM\b/i, // real query shape
     /\bdef\s+\w+\(/,
     /\bfunction\s+\w+\(/,
     /[{};]/,
 ];
 
-// Heuristic compound-question check: multiple '?' or an " and " joining two
-// distinct clauses that both look like questions.
-function isCompoundOrTooLong(question: string): boolean {
-    const questionMarks = (question.match(/\?/g) || []).length;
-    if (questionMarks > 1) return true;
-    if (question.length > 320) return true;
-    return false;
-}
-
 function hasCodeLeakage(question: string): boolean {
     return CODE_LEAKAGE_PATTERNS.some((re) => re.test(question));
 }
 
-// LLMs reliably preserve the MEANING of a skill/subtopic string they were
-// given, but not always its exact casing/whitespace when echoing it back in
-// a later field -- normalize before comparing so a benign drift (e.g. "Data
-// Structures" vs "Data structures") doesn't burn a retry over a non-issue.
+function isCompoundOrTooLong(question: string): boolean {
+    const questionMarks = (question.match(/\?/g) || []).length;
+    if (questionMarks > 1) return true;
+    if (question.length > 350) return true;
+    return false;
+}
+
 function normalizeKey(s: string): string {
     return s.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-// Clear-cut level/complexity mismatches only -- true "is this genuinely
-// tricky" judgment is a model call, not a heuristic, so this only catches
-// obvious violations (a one-line snippet claimed as L4 "gotcha", or an L1
-// snippet that's clearly not directly-traceable), per spec: "treat an
-// obvious mismatch the same as any other malformed output."
-function snippetLevelMismatch(snippet: string, level: number): string | null {
-    const lineCount = snippet.split("\n").filter((l) => l.trim()).length;
-    if (level >= 3 && lineCount <= 2) {
-        return `Level ${level} snippet is only ${lineCount} line(s) -- too trivial to contain a genuine subtlety or edge case`;
-    }
-    if (level === 1) {
-        // Obvious "gotcha" markers that contradict "no tricks" at L1.
-        const gotchaMarkers = [/mutable default/i, /\bJOIN\b[\s\S]*\bJOIN\b/i, /race condition/i, /floating[- ]point/i];
-        if (gotchaMarkers.some((re) => re.test(snippet))) {
-            return `Level 1 snippet appears to contain a non-obvious gotcha, which contradicts the "no tricks" rule for this level`;
-        }
-    }
-    return null;
-}
+// ─── Validator ────────────────────────────────────────────────────────────────
 
-export type ValidatedQuestionBank = {
-    questions: BankQuestion[];
-    skippedQuerySnippetReason: string | null;
-    skippedCodeSnippetReason: string | null;
-};
-
-/**
- * Validates a raw Call C response against every spec rule. Throws
- * LLMCallError (retryable) on any violation.
- */
-export function validateQuestionBank(
-    raw: unknown,
-    skillSubtopicMap: SkillSubtopics[],
-    level: number
-): ValidatedQuestionBank {
+export function validateQuestionBank(raw: unknown): ValidatedQuestionBank {
     if (!raw || typeof raw !== "object" || !Array.isArray((raw as any).questions)) {
         throw new LLMCallError("Question generation response missing a 'questions' array");
     }
     const rawQuestions = (raw as any).questions;
-    if (rawQuestions.length < MIN_QUESTIONS || rawQuestions.length > MAX_QUESTIONS) {
+
+    if (rawQuestions.length < TARGET_QUESTIONS - 2 || rawQuestions.length > TARGET_QUESTIONS + 2) {
         throw new LLMCallError(
-            `Question generation returned ${rawQuestions.length} questions, expected between ${MIN_QUESTIONS} and ${MAX_QUESTIONS}`
+            `Question generation returned ${rawQuestions.length} questions, expected ~${TARGET_QUESTIONS} (±2)`
         );
     }
 
-    // Normalized skill key -> { canonical skill name, normalized subtopic key -> canonical subtopic name }.
-    const validSkillSubtopics = new Map<string, { canonicalSkill: string; subtopics: Map<string, string> }>();
-    for (const entry of skillSubtopicMap) {
-        const subtopics = new Map<string, string>();
-        for (const subtopic of entry.subtopics) {
-            subtopics.set(normalizeKey(subtopic), subtopic);
+    // Collect all unique skills from the response
+    const skillsInBank = new Set<string>();
+    rawQuestions.forEach((q: any) => {
+        if (typeof q?.skill === "string" && q.skill.trim()) {
+            skillsInBank.add(normalizeKey(q.skill.trim()));
         }
-        validSkillSubtopics.set(normalizeKey(entry.skill), { canonicalSkill: entry.skill, subtopics });
+    });
+
+    if (skillsInBank.size < 2) {
+        throw new LLMCallError(
+            `Question bank only covers ${skillsInBank.size} skill(s) — expected coverage of at least 2 distinct skills`
+        );
     }
 
-    const skippedQuerySnippetReason: string | null =
-        typeof (raw as any).skipped_query_snippet_reason === "string" && (raw as any).skipped_query_snippet_reason.trim()
-            ? (raw as any).skipped_query_snippet_reason.trim()
-            : null;
-    const skippedCodeSnippetReason: string | null =
-        typeof (raw as any).skipped_code_snippet_reason === "string" && (raw as any).skipped_code_snippet_reason.trim()
-            ? (raw as any).skipped_code_snippet_reason.trim()
-            : null;
-
     const questions: BankQuestion[] = [];
-    let sawSnippetCode = false;
-    let sawSnippetQuery = false;
 
     for (const q of rawQuestions) {
         if (!q || typeof q !== "object") {
             throw new LLMCallError("A question entry was not an object");
         }
-        const { skill, subtopic, question_type, question, snippet, snippet_language, expected_output } = q as Record<string, unknown>;
-        if (typeof skill !== "string" || typeof subtopic !== "string" || typeof question !== "string") {
-            throw new LLMCallError("A question entry is missing required string fields");
+        const { skill, subtopic, question_type, question } = q as Record<string, unknown>;
+
+        if (typeof skill !== "string" || !skill.trim()) {
+            throw new LLMCallError("A question entry is missing a valid 'skill' string");
+        }
+        if (typeof subtopic !== "string" || !subtopic.trim()) {
+            throw new LLMCallError("A question entry is missing a valid 'subtopic' string");
+        }
+        if (typeof question !== "string" || !question.trim()) {
+            throw new LLMCallError("A question entry is missing a valid 'question' string");
         }
         if (typeof question_type !== "string" || !VALID_TYPES.includes(question_type as BankQuestionType)) {
             throw new LLMCallError(`A question entry has invalid question_type "${question_type}"`);
         }
-        const skillEntry = validSkillSubtopics.get(normalizeKey(skill));
-        if (!skillEntry) {
-            throw new LLMCallError(`Question references unknown skill "${skill}"`);
-        }
-        const canonicalSubtopic = skillEntry.subtopics.get(normalizeKey(subtopic));
-        if (!canonicalSubtopic) {
-            throw new LLMCallError(`Question references unknown subtopic "${subtopic}" for skill "${skill}"`);
-        }
-        // Store using Call B's canonical casing, not whatever casing Call C
-        // happened to echo back -- keeps skill/subtopic values consistent
-        // across the whole bank regardless of per-question drift.
-        const canonicalSkill = skillEntry.canonicalSkill;
 
         const type = question_type as BankQuestionType;
-        if (type === "snippet_code" || type === "snippet_query") {
-            if (typeof snippet !== "string" || !snippet.trim()) {
-                throw new LLMCallError(`A ${type} question is missing its 'snippet' field`);
-            }
-            if (typeof snippet_language !== "string" || !snippet_language.trim()) {
-                throw new LLMCallError(`A ${type} question is missing its 'snippet_language' field`);
-            }
-            if (typeof expected_output !== "string" || !expected_output.trim()) {
-                throw new LLMCallError(`A ${type} question is missing its 'expected_output' field`);
-            }
-            const mismatch = snippetLevelMismatch(snippet, level);
-            if (mismatch) {
-                throw new LLMCallError(`${type} question fails level-${level} calibration: ${mismatch}`);
-            }
-            if (type === "snippet_code") sawSnippetCode = true;
-            if (type === "snippet_query") sawSnippetQuery = true;
-        }
 
         if (hasCodeLeakage(question)) {
-            throw new LLMCallError(`Question field contains literal code/SQL -- must be in 'snippet' only: "${question.slice(0, 80)}"`);
+            throw new LLMCallError(
+                `Question field contains literal code/SQL — put intent in 'question', actual code is generated live: "${question.slice(0, 80)}"`
+            );
         }
         if (isCompoundOrTooLong(question)) {
-            throw new LLMCallError(`Question is compound or too long for voice delivery: "${question.slice(0, 80)}"`);
+            throw new LLMCallError(
+                `Question is compound or too long for voice delivery: "${question.slice(0, 80)}"`
+            );
         }
 
         questions.push({
             id: randomUUID(),
-            skill: canonicalSkill,
-            subtopic: canonicalSubtopic,
+            skill: skill.trim(),
+            subtopic: subtopic.trim(),
             question_type: type,
             question: question.trim(),
-            snippet: typeof snippet === "string" ? snippet : null,
-            snippet_language: typeof snippet_language === "string" ? snippet_language : null,
-            expected_output: typeof expected_output === "string" ? expected_output : null,
-            level,
+            level: typeof (raw as any).level === "number" ? (raw as any).level : 2,
             source: "generated",
             edited: false,
         });
     }
 
-    if (!sawSnippetCode && !skippedCodeSnippetReason) {
-        throw new LLMCallError(
-            "Question bank has no 'snippet_code' question and no 'skipped_code_snippet_reason' was given"
-        );
-    }
-    if (!sawSnippetQuery && !skippedQuerySnippetReason) {
-        throw new LLMCallError(
-            "Question bank has no 'snippet_query' question and no 'skipped_query_snippet_reason' was given"
-        );
-    }
-    if (skippedCodeSnippetReason && skippedQuerySnippetReason) {
-        // Both waived -- this JD likely isn't genuinely "technical" in the
-        // intended sense. Not a retryable failure (retrying an identical
-        // prompt won't manufacture skills that aren't in the JD), but must
-        // be surfaced for admin review rather than silently proceeding with
-        // zero snippet questions.
-        console.warn(
-            `[question-generation] Both snippet types skipped for this JD -- code: ${skippedCodeSnippetReason} | query: ${skippedQuerySnippetReason}. Flagging for admin review.`
-        );
-    }
-
-    return { questions, skippedQuerySnippetReason, skippedCodeSnippetReason };
+    return { questions };
 }
 
-const MAX_RETRIES = 2;
+// ─── Main Export ──────────────────────────────────────────────────────────────
 
 /**
- * Call C: question generation. Generates between MIN_QUESTIONS and
- * MAX_QUESTIONS questions, hard-capped, validated against every spec rule
- * (count, distribution coverage, snippet type invariants, no code leakage
- * into the spoken question text, length/compound checks). Retries up to
- * MAX_RETRIES times on any validation failure; if retries are exhausted,
- * throws -- callers must NOT persist a partial/out-of-range bank.
+ * Single LLM call to generate a smart, JD-aware question bank directly from
+ * the structured jdExtractedDetails already stored in the DB.
+ *
+ * No longer requires a prior skill-extraction (Call A) or subtopic-decomposition
+ * (Call B) step — those were redundant since jdExtractedDetails already contains
+ * prioritized skills, criteria, scoring hints, and keywords.
+ *
+ * Snippet questions store descriptive intent in the `question` field.
+ * The live agent generates the actual code/query at ask-time using the
+ * subtopic + candidate's previous answer context.
  */
 export async function generateQuestions(
-    jdText: string,
-    skillSubtopicMap: SkillSubtopics[],
+    jdExtractedDetails: JdExtractedDetails | unknown,
     level: number,
-    model: string
-): Promise<ValidatedQuestionBank> {
+    model: string,
+    interviewType: "tech" | "conversational" = "tech",
+    targetQuestions: number = 12
+): Promise<ValidatedQuestionBank & { usage: ChatJSONResult["usage"] }> {
+    // Parse if stored as a JSON string
+    let details: JdExtractedDetails;
+    try {
+        details =
+            typeof jdExtractedDetails === "string"
+                ? (JSON.parse(jdExtractedDetails) as JdExtractedDetails)
+                : (jdExtractedDetails as JdExtractedDetails);
+    } catch {
+        throw new LLMCallError("jdExtractedDetails is not valid JSON");
+    }
+
+    if (!details || typeof details !== "object") {
+        throw new LLMCallError("jdExtractedDetails is empty or not an object");
+    }
+
+    const criteria = details.criteria;
+    if (!Array.isArray(criteria) || criteria.length === 0) {
+        throw new LLMCallError(
+            "jdExtractedDetails has no criteria — extract the JD before generating questions"
+        );
+    }
+
     let lastError: unknown;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         try {
             const result = await chatJSON({
                 model,
-                systemPrompt: buildSystemPrompt(level, skillSubtopicMap),
-                userPrompt: `Produce the ${MIN_QUESTIONS}-${MAX_QUESTIONS} question bank now, following the rules exactly.`,
+                systemPrompt: buildSystemPrompt(details, level, interviewType),
+                userPrompt: `Generate the ${targetQuestions}-question bank now, following all rules exactly. Return strict JSON only.`,
                 maxTokens: 8000,
             });
-            return validateQuestionBank(result.data, skillSubtopicMap, level);
+            const validated = validateQuestionBank(result.data);
+            return { ...validated, usage: result.usage };
         } catch (err) {
             lastError = err;
+            if (attempt < MAX_RETRIES) {
+                // Small backoff before retry
+                await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+            }
         }
     }
-    throw lastError instanceof Error ? lastError : new LLMCallError("Question generation failed after retries");
+    throw lastError instanceof Error
+        ? lastError
+        : new LLMCallError("Question generation failed after retries");
 }

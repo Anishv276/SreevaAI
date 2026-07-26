@@ -5,9 +5,9 @@ Modal deployment of the post-interview report/summary/billing/debug-PDF tail
 (livekit-python-agent/interview/report_worker.py's _run()), unchanged logic, just
 invoked as a cloud function instead of a Node child_process.spawn() piped via stdin.
 
-Highest-stakes migration of the 3: non-idempotent billing writes + Slack PDF upload
-for test sessions, ~300s runtime budget (report generation) + 60s (summary). Connects
-directly to Supabase Postgres via asyncpg, same as generate_brief.py.
+Highest-stakes of these Modal migrations: non-idempotent billing writes + Slack PDF
+upload for test sessions, ~300s runtime budget (report generation) + 60s (summary).
+Connects directly to Supabase Postgres via asyncpg.
 
 Deploy:   modal deploy modal_app/generate_report.py
 Test run: modal run modal_app/generate_report.py::test_report --payload-file <path.json>

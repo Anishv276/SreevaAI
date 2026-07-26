@@ -28,6 +28,8 @@ export function WizardPage2Review({ questions, onChange, skippedQuerySnippetReas
     const [editText, setEditText] = useState("");
     const [showAddForm, setShowAddForm] = useState(false);
     const [newSkill, setNewSkill] = useState("");
+    const [newSubtopic, setNewSubtopic] = useState("");
+    const [newType, setNewType] = useState<BankQuestion["question_type"]>("conceptual");
     const [newQuestion, setNewQuestion] = useState("");
 
     const grouped = useMemo(() => {
@@ -60,12 +62,13 @@ export function WizardPage2Review({ questions, onChange, skippedQuerySnippetReas
     const addCustomQuestion = () => {
         const question = newQuestion.trim();
         const skill = newSkill.trim() || "General";
+        const subtopic = newSubtopic.trim() || "General";
         if (!question) return;
         const custom: BankQuestion = {
             id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             skill,
-            subtopic: "Custom",
-            question_type: "custom",
+            subtopic,
+            question_type: newType,
             question,
             level: questions[0]?.level ?? 2,
             source: "custom",
@@ -74,6 +77,8 @@ export function WizardPage2Review({ questions, onChange, skippedQuerySnippetReas
         onChange([...questions, custom]);
         setNewQuestion("");
         setNewSkill("");
+        setNewSubtopic("");
+        setNewType("conceptual");
         setShowAddForm(false);
     };
 
@@ -115,23 +120,40 @@ export function WizardPage2Review({ questions, onChange, skippedQuerySnippetReas
 
             {showAddForm && (
                 <div className="rounded-xl p-4 space-y-3" style={{ border: "1px solid #E9E7FF", background: "#FAFAFC" }}>
-                    <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                         <input
                             value={newSkill}
                             onChange={(e) => setNewSkill(e.target.value)}
-                            placeholder="Skill (optional)"
+                            placeholder="Skill (e.g. Python)"
                             className="h-9 px-3 rounded-lg bg-white text-sm outline-none"
                             style={{ border: "1px solid #E9E7FF" }}
                         />
                         <input
-                            value={newQuestion}
-                            onChange={(e) => setNewQuestion(e.target.value)}
-                            onKeyDown={(e) => e.key === "Enter" && addCustomQuestion()}
-                            placeholder="Question text…"
+                            value={newSubtopic}
+                            onChange={(e) => setNewSubtopic(e.target.value)}
+                            placeholder="Subtopic (e.g. Memory Management)"
                             className="h-9 px-3 rounded-lg bg-white text-sm outline-none"
                             style={{ border: "1px solid #E9E7FF" }}
                         />
+                        <select
+                            value={newType}
+                            onChange={(e) => setNewType(e.target.value as BankQuestion["question_type"])}
+                            className="h-9 px-3 rounded-lg bg-white text-sm outline-none"
+                            style={{ border: "1px solid #E9E7FF" }}
+                        >
+                            <option value="conceptual">Conceptual</option>
+                            <option value="snippet_code">Code Snippet (Live)</option>
+                            <option value="snippet_query">Query Snippet (Live)</option>
+                        </select>
                     </div>
+                    <input
+                        value={newQuestion}
+                        onChange={(e) => setNewQuestion(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && addCustomQuestion()}
+                        placeholder={newType === "conceptual" ? "Question or concept scenario to test…" : "Descriptive intent for live code/query generation…"}
+                        className="w-full h-9 px-3 rounded-lg bg-white text-sm outline-none"
+                        style={{ border: "1px solid #E9E7FF" }}
+                    />
                     <div className="flex justify-end gap-2">
                         <button type="button" onClick={() => setShowAddForm(false)} className="h-8 px-3 rounded-lg text-xs font-medium text-gray-500 hover:bg-gray-100">
                             Cancel

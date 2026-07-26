@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import { ArrowLeft, Volume2, Mic, BrainCircuit, FileCheck2, MessageSquare } from "lucide-react";
+import { ArrowLeft, Volume2, Mic, BrainCircuit, FileCheck2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { InterviewSubKey, UsageOverview, EventsSectionSlug } from "./usage-types";
@@ -14,7 +14,6 @@ const SUB_STYLE: Record<InterviewSubKey, { color: string; icon: LucideIcon; ring
   stt: { color: "#f43f5e", icon: Mic, ring: "ring-rose-400", text: "text-rose-600", slug: "interview-stt" },
   generation: { color: "#0ea5e9", icon: BrainCircuit, ring: "ring-sky-400", text: "text-sky-600", slug: "interview-generation" },
   eval: { color: "#10b981", icon: FileCheck2, ring: "ring-emerald-400", text: "text-emerald-600", slug: "interview-eval" },
-  brief: { color: "#8b5cf6", icon: MessageSquare, ring: "ring-violet-400", text: "text-violet-600", slug: "interview-brief" },
 };
 
 // Per-model pie palette (fixed categorical order; folds overflow into "Other").
@@ -64,7 +63,7 @@ export function InterviewAnalysis({
       <div className="rounded-3xl border border-violet-100 bg-white p-6 shadow-md">
         <h2 className="text-2xl font-black text-gray-900">Interview Sessions — Full Breakdown</h2>
         <p className="mt-1 text-sm text-gray-500">
-          STT, TTS, Generation, Eval and Brief costs. Click a card for per-candidate detail.
+          STT, TTS, Generation, and Eval costs. Click a card for per-candidate detail.
         </p>
 
         {/* Total + sub-cards */}

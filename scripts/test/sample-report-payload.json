@@ -44,7 +44,7 @@
   "jdJson": {"job_title": "GTM Engineer (Fresher)", "criteria": []},
   "resumeJson": {"full_name": "Vadla Vamsi Krishna", "work_history": []},
   "answerIntegrityEnabled": false,
-  "usage": {"evalUsages": [], "briefUsages": [], "llmgenUsages": []},
+  "usage": {"evalUsages": [], "llmgenUsages": []},
   "billing": {
     "sessionUsage": null,
     "durationSeconds": 300,

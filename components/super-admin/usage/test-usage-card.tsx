@@ -19,8 +19,6 @@ type TestBillingRow = {
   evalCalls: number;
   generationCost: number;
   generationCalls: number;
-  briefCost: number;
-  briefCalls: number;
   reportCost: number;
   reportCalls: number;
   totalCost: number;
@@ -30,7 +28,7 @@ type TestBilling = {
   count: number;
   totals: {
     ttsCost: number; sttCost: number; evalCost: number;
-    generationCost: number; briefCost: number; reportCost: number; totalCost: number;
+    generationCost: number; reportCost: number; totalCost: number;
   };
 };
 
@@ -77,13 +75,12 @@ export function TestUsageCard({ orgId, fmt }: { orgId: string; fmt: (usd: number
       </button>
       {open && (
         <>
-          <div className="grid grid-cols-3 gap-3 border-t border-amber-100 p-5 sm:grid-cols-6">
+          <div className="grid grid-cols-3 gap-3 border-t border-amber-100 p-5 sm:grid-cols-5">
             {[
               ["TTS", t.ttsCost],
               ["STT", t.sttCost],
               ["Eval", t.evalCost],
               ["Generation", t.generationCost],
-              ["Brief", t.briefCost],
               ["Report", t.reportCost],
             ].map(([label, val]) => (
               <div key={label as string} className="rounded-xl bg-amber-50/50 p-3 text-center">
@@ -96,7 +93,7 @@ export function TestUsageCard({ orgId, fmt }: { orgId: string; fmt: (usd: number
             <table className="w-full text-left text-sm">
               <thead style={{ background: "#FFFBF3" }}>
                 <tr>
-                  {["Date", "Interviewer / Job", "Candidate", "TTS", "STT", "LLM Eval", "Generation", "Brief", "Report", "Total"].map((h) => (
+                  {["Date", "Interviewer / Job", "Candidate", "TTS", "STT", "LLM Eval", "Generation", "Report", "Total"].map((h) => (
                     <th
                       key={h}
                       className={`whitespace-nowrap px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-amber-500 ${h === "Total" ? "text-right" : ""}`}
@@ -109,7 +106,7 @@ export function TestUsageCard({ orgId, fmt }: { orgId: string; fmt: (usd: number
               <tbody className="divide-y divide-amber-50">
                 {data.rows.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="px-4 py-8 text-center text-xs text-amber-400">
+                    <td colSpan={9} className="px-4 py-8 text-center text-xs text-amber-400">
                       No test sessions recorded yet.
                     </td>
                   </tr>
@@ -132,9 +129,6 @@ export function TestUsageCard({ orgId, fmt }: { orgId: string; fmt: (usd: number
                     </td>
                     <td className="px-4 py-3 tabular-nums text-amber-600">
                       {r.generationCalls > 0 ? fmt(r.generationCost) : <span className="text-amber-300">—</span>}
-                    </td>
-                    <td className="px-4 py-3 tabular-nums text-amber-600">
-                      {r.briefCalls > 0 ? fmt(r.briefCost) : <span className="text-amber-300">—</span>}
                     </td>
                     <td className="px-4 py-3 tabular-nums text-amber-600">
                       {r.reportCalls > 0 ? fmt(r.reportCost) : <span className="text-amber-300">—</span>}

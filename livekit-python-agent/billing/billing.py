@@ -147,10 +147,10 @@ _DEEPGRAM_STT_RATES: dict[str, float] = {
 _VALID_FEATURES: frozenset[str] = frozenset({
     "interview",
     "interviewReport",
-    "interviewBrief",
     "interviewLLMGeneration",
     "resumeExtraction",
     "jdExtraction",
+    "questionBank",
     "resumeReport",
 })
 
@@ -287,10 +287,10 @@ class OrgBilling(BaseModel):
     """
     interview:              FeatureBilling = Field(default_factory=FeatureBilling)
     interviewReport:        FeatureBilling = Field(default_factory=FeatureBilling)
-    interviewBrief:         FeatureBilling = Field(default_factory=FeatureBilling)
     interviewLLMGeneration: FeatureBilling = Field(default_factory=FeatureBilling)
     resumeExtraction:       FeatureBilling = Field(default_factory=FeatureBilling)
     jdExtraction:           FeatureBilling = Field(default_factory=FeatureBilling)
+    questionBank:           FeatureBilling = Field(default_factory=FeatureBilling)
     resumeReport:           FeatureBilling = Field(default_factory=FeatureBilling)
 
 
@@ -863,8 +863,8 @@ async def _refresh_org_usage_summary(conn, org_id: str) -> None:
                 THEN (SELECT SUM((m->>'costUsd')::float8) FROM jsonb_array_elements(usage->'resumeReport'->'llm') m) END), 0) AS "resumeReportCostUsd",
               COALESCE(SUM(CASE WHEN feature = 'interview'
                 THEN (SELECT SUM((m->>'costUsd')::float8) FROM jsonb_array_elements(usage->'eval'->'llm') m) END), 0) AS "interviewEvalCostUsd",
-              COALESCE(SUM(CASE WHEN feature = 'interview'
-                THEN (SELECT SUM((m->>'costUsd')::float8) FROM jsonb_array_elements(usage->'brief'->'llm') m) END), 0) AS "interviewBriefCostUsd",
+              COALESCE(SUM(CASE WHEN feature = 'questionBank'
+                THEN (SELECT SUM((m->>'costUsd')::float8) FROM jsonb_array_elements(usage->'questionBank'->'llm') m) END), 0) AS "questionBankCostUsd",
               COALESCE(SUM(CASE WHEN feature = 'interview'
                 THEN (SELECT SUM((m->>'costUsd')::float8) FROM jsonb_array_elements(usage->'llmGeneration'->'llm') m) END), 0) AS "interviewGenerationCostUsd",
               COALESCE(SUM(CASE WHEN feature = 'interview'
@@ -884,29 +884,29 @@ async def _refresh_org_usage_summary(conn, org_id: str) -> None:
         resume_ext = float(row["resumeExtractionCostUsd"] or 0)
         resume_report = float(row["resumeReportCostUsd"] or 0)
         interview_eval = float(row["interviewEvalCostUsd"] or 0)
-        interview_brief = float(row["interviewBriefCostUsd"] or 0)
+        question_bank = float(row["questionBankCostUsd"] or 0)
         interview_gen = float(row["interviewGenerationCostUsd"] or 0)
         interview_report = float(row["interviewReportCostUsd"] or 0)
         interview_tts = float(row["interviewTtsCostUsd"] or 0)
         interview_stt = float(row["interviewSttCostUsd"] or 0)
-        total = jd + resume_ext + resume_report + interview_eval + interview_brief + interview_gen + interview_report + interview_tts + interview_stt
+        total = jd + resume_ext + resume_report + interview_eval + question_bank + interview_gen + interview_report + interview_tts + interview_stt
         org_row = await conn.fetchrow('SELECT name FROM "OrganizationDetails" WHERE id = $1', org_id)
         org_name = org_row["name"] if org_row else ""
         await conn.execute(
             """
             INSERT INTO "OrgUsageSummary"
               ("orgId","orgName","jdExtractionCostUsd","resumeExtractionCostUsd","resumeReportCostUsd",
-               "interviewLlmCostUsd","interviewEvalCostUsd","interviewBriefCostUsd","interviewGenerationCostUsd",
+               "interviewLlmCostUsd","interviewEvalCostUsd","questionBankCostUsd","interviewGenerationCostUsd",
                "interviewTtsCostUsd","interviewSttCostUsd","interviewReportCostUsd","totalCostUsd","lastComputedAt")
             VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9,$10,$11,$12,NOW())
             ON CONFLICT ("orgId") DO UPDATE SET
               "orgName" = $2, "jdExtractionCostUsd" = $3, "resumeExtractionCostUsd" = $4, "resumeReportCostUsd" = $5,
-              "interviewLlmCostUsd" = $6, "interviewEvalCostUsd" = $6, "interviewBriefCostUsd" = $7,
+              "interviewLlmCostUsd" = $6, "interviewEvalCostUsd" = $6, "questionBankCostUsd" = $7,
               "interviewGenerationCostUsd" = $8, "interviewTtsCostUsd" = $9, "interviewSttCostUsd" = $10,
               "interviewReportCostUsd" = $11, "totalCostUsd" = $12, "lastComputedAt" = NOW()
             """,
             org_id, org_name, round(jd, 8), round(resume_ext, 8), round(resume_report, 8),
-            round(interview_eval, 8), round(interview_brief, 8), round(interview_gen, 8),
+            round(interview_eval, 8), round(question_bank, 8), round(interview_gen, 8),
             round(interview_tts, 8), round(interview_stt, 8), round(interview_report, 8), round(total, 8),
         )
         # NOTE: interviewLlmCostUsd historically mirrors interviewEvalCostUsd
@@ -936,7 +936,6 @@ def _llm_entry(usage: dict[str, Any], *, provider: str = "openai") -> Optional[d
 _INTERVIEW_SUBKEY: dict[str, str] = {
     "interviewEval": "eval",
     "interview": "eval",
-    "interviewBrief": "brief",
     "interviewLLMGeneration": "llmGeneration",
     "interviewReport": "report",
 }
@@ -958,6 +957,33 @@ class JdExtractionLedger:
         await EntityLedger.upsert(
             conn, org_id=org_id, feature="jdExtraction", event_id=f"jd:{job_id}",
             fragment={"jdExtraction": {"llm": [entry]}},
+            job_id=job_id, job_title=ctx.get("jobTitle"),
+            is_test=bool(ctx.get("isTest", False)),
+            created_at=ctx.get("createdAt"),
+        )
+
+
+class QuestionBankLedger:
+    """Upserts the questionBank:{jobId} row. usage.questionBank.llm[].
+
+    Job-scoped like JdExtractionLedger, not interview-scoped -- question-bank
+    generation happens once at JD-creation time in the Create Job wizard, not
+    per live interview session.
+    """
+
+    @classmethod
+    async def record(cls, conn, org_id: str, feature: str, usage: dict[str, Any]) -> None:
+        ctx = _usage_context(usage)
+        job_id = str(ctx.get("jobId") or "").strip()
+        if not job_id:
+            logger.warning("[BILLING] QuestionBankLedger: no jobId in context — skipping ledger row")
+            return
+        entry = _llm_entry(usage)
+        if not entry:
+            return
+        await EntityLedger.upsert(
+            conn, org_id=org_id, feature="questionBank", event_id=f"questionBank:{job_id}",
+            fragment={"questionBank": {"llm": [entry]}},
             job_id=job_id, job_title=ctx.get("jobTitle"),
             is_test=bool(ctx.get("isTest", False)),
             created_at=ctx.get("createdAt"),
@@ -1177,9 +1203,11 @@ async def _record_ledger_entry(conn, org_id: str, feature: str, usage: dict[str,
         return
     if feature == "jdExtraction":
         await JdExtractionLedger.record(conn, org_id, feature, usage)
+    elif feature == "questionBank":
+        await QuestionBankLedger.record(conn, org_id, feature, usage)
     elif feature in ("resumeExtraction", "resumeReport"):
         await ResumeLedger.record(conn, org_id, feature, usage)
-    else:  # interview / interviewBrief / interviewLLMGeneration / interviewReport / interviewEval
+    else:  # interview / interviewLLMGeneration / interviewReport / interviewEval
         await InterviewLedger.record_llm(conn, org_id, feature, usage)
 
 
@@ -1208,7 +1236,7 @@ def _to_ts(v: Any):
 class BillingRepository:
     """All DB writes for billing. Stateless — no instance data, only classmethods."""
 
-    # Standalone Modal workers (e.g. generate_brief.py) own their own asyncpg
+    # Standalone Modal workers (e.g. generate_report.py) own their own asyncpg
     # pool and can't pull in agent_persistence.DatabasePool without dragging
     # its report_pipeline re-export chain into their image. They inject their
     # pool here instead; the default path (live agent runtime) is unaffected.

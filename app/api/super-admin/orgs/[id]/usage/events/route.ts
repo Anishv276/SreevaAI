@@ -12,7 +12,7 @@ import { apiErrorResponse } from "@/lib/slack-error-logger";
  * prisma/schema.prisma's UsageEvent doc comment for the exact shape).
  *
  * Each section here pulls ONE sub-feature key out of that JSON (e.g. "jd"
- * reads usage.jdExtraction.llm[], "interview-brief" reads usage.brief.llm[])
+ * reads usage.jdExtraction.llm[], "interview-eval" reads usage.eval.llm[])
  * and expands every (entity, model) combination into its own display row —
  * the UI still renders a flat table, this route just synthesizes it from the
  * nested per-entity storage instead of reading flat per-call rows.
@@ -31,7 +31,6 @@ const SECTION_MAP: Record<string, { feature: string; sub: SubFeature }> = {
   "interview-stt": { feature: "interview", sub: { kind: "audio", path: "stt" } },
   "interview-generation": { feature: "interview", sub: { kind: "llm", path: "llmGeneration" } },
   "interview-eval": { feature: "interview", sub: { kind: "llm", path: "eval" } },
-  "interview-brief": { feature: "interview", sub: { kind: "llm", path: "brief" } },
 };
 
 function n(v: unknown): number {
@@ -178,10 +177,9 @@ function expandInterviewRow(entity: EntityRow): InterviewDisplayRow {
   const llmCalls = (path: string) => arr(usage[path]?.llm).reduce((s: number, m: any) => s + n(m.calls), 0);
   const evalCost = llmCost("eval"), evalCalls = llmCalls("eval");
   const genCost = llmCost("llmGeneration"), genCalls = llmCalls("llmGeneration");
-  const briefCost = llmCost("brief"), briefCalls = llmCalls("brief");
   const ttsCost = n(usage.tts?.costUsd), ttsCharacters = arr(usage.tts?.byModel).reduce((s: number, m: any) => s + n(m.characters), 0);
   const sttCost = n(usage.stt?.costUsd), sttAudioSeconds = arr(usage.stt?.byModel).reduce((s: number, m: any) => s + n(m.seconds), 0);
-  const totalCost = evalCost + genCost + briefCost + ttsCost + sttCost;
+  const totalCost = evalCost + genCost + ttsCost + sttCost;
   return {
     id: entity.id,
     createdAt: entity.createdAt.toISOString(),
@@ -189,7 +187,6 @@ function expandInterviewRow(entity: EntityRow): InterviewDisplayRow {
     candidateName: entity.candidateName,
     evalRuns: evalCalls, evalCostUsd: round(evalCost),
     generationRuns: genCalls, generationCostUsd: round(genCost),
-    briefRuns: briefCalls, briefCostUsd: round(briefCost),
     ttsCharacters, ttsCostUsd: round(ttsCost),
     sttAudioSeconds, sttCostUsd: round(sttCost),
     totalCostUsd: round(totalCost),
@@ -203,7 +200,6 @@ type InterviewDisplayRow = {
   candidateName: string | null;
   evalRuns: number; evalCostUsd: number;
   generationRuns: number; generationCostUsd: number;
-  briefRuns: number; briefCostUsd: number;
   ttsCharacters: number; ttsCostUsd: number;
   sttAudioSeconds: number; sttCostUsd: number;
   totalCostUsd: number;

@@ -70,7 +70,7 @@ export async function GET(request: Request) {
                     jobCreatedAt: true,
                     jobUpdatedAt: true,
                     resumeScreeningCriteria: true,
-                    aiGeneratedInterviewQuestions: true,
+
                     jdFileName: true,
                     jdPreviewUrl: true,
                     organizationId: true,
@@ -104,7 +104,7 @@ export async function GET(request: Request) {
                 aiScreening: {
                     enabled: true,
                 },
-                interviewQuestions: job.aiGeneratedInterviewQuestions ? JSON.parse(job.aiGeneratedInterviewQuestions) : []
+
             };
         });
         return NextResponse.json({
@@ -214,7 +214,7 @@ export async function POST(request: Request) {
                 resumeScreeningCriteria: JSON.stringify(mergedScreeningCriteria),
                 resumeScreeningThreshold: data.resumeScreeningThreshold ?? 60,
                 applicationDeadline: normalizeDeadlineDate(data.applicationDeadline as string | null | undefined),
-                aiGeneratedInterviewQuestions: data.aiGeneratedInterviewQuestions ? JSON.stringify(data.aiGeneratedInterviewQuestions) : "[]",
+
                 aiInterviewerName: data.aiInterviewerName || "Ishitha",
                 interviewMode: data.interviewMode || "ats",
                 interviewType: data.interviewType || "tech",

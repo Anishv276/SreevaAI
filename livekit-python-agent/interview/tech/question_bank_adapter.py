@@ -38,43 +38,27 @@ def _topic_item_for_question(q: dict[str, Any], must_have_skills: set[str]) -> T
     skill = str(q.get("skill") or "").strip() or "General"
     subtopic = str(q.get("subtopic") or "").strip()
     question_text = str(q.get("question") or "").strip()
-    snippet = q.get("snippet")
     question_type = str(q.get("question_type") or "conceptual").strip()
-    expected_output = str(q.get("expected_output") or "").strip()
-
-    snippet_language = str(q.get("snippet_language") or "").strip().lower()
 
     title = f"{skill} -- {subtopic}" if subtopic else skill
-    full_description = question_text
-    if snippet and question_type in _SNIPPET_FENCE_TAG:
+    
+    if question_type in _SNIPPET_FENCE_TAG:
         fence_tag = _SNIPPET_FENCE_TAG[question_type]
-        # This anchor question already carries an exact, pre-written snippet --
-        # the LLM must reproduce it VERBATIM in the fenced code_card block (see
-        # phases.py's _code_card_format_rule for the fence-tag contract that
-        # extract_code_card() parses), not invent a new one. The literal code
-        # is never spoken -- only the short lead-in outside the fence is. The
-        # "LANG: <language>" line right after the fence tag carries the real
-        # language for frontend syntax highlighting (extract_code_card()
-        # parses it separately from the code itself) -- since it's already
-        # known for a stored anchor question, no re-detection is needed.
-        lang_line = f"LANG: {snippet_language}\n" if snippet_language else ""
-        full_description += (
-            f"\nWhen you open this topic, ask it using this EXACT snippet, verbatim, "
-            f"inside a ```{fence_tag}``` fenced block (do not modify or shorten it):\n"
-            f"```{fence_tag}\n{lang_line}{snippet}\n```"
+        full_description = (
+            f"[INSTRUCTION FOR AGENT]: This is a {fence_tag} question.\n"
+            f"Intent to test: '{question_text}'.\n"
+            f"Generate a fresh, level-calibrated snippet on the fly that tests this intent. "
+            f"Output the snippet inside a ```{fence_tag}``` fenced block on the candidate's screen, "
+            f"and keep the expected output/ground truth in your internal state for scoring."
+        )
+    else:
+        full_description = (
+            f"[INSTRUCTION FOR AGENT]: Concept/scenario to test: '{question_text}'.\n"
+            f"Do NOT read this text verbatim like a script. Reframe it naturally into a smooth, "
+            f"conversational question tailored to the flow of the interview."
         )
 
-    # probe_focus is read by agent_runtime.py's eval-payload builder as
-    # "topic_probe_focus" and injected directly into the per-turn scoring
-    # prompt (scoring.py::_call_scoring) as extra grounding context -- this is
-    # the existing, already-wired channel for "additional context to help
-    # score this topic's answer," so expected_output rides along on it rather
-    # than threading a new parameter through eval.py/scoring.py. It
-    # supplements the qualitative rubric already in _call_scoring; it does
-    # not replace it.
-    probe_focus = question_text
-    if expected_output and question_type in _SNIPPET_FENCE_TAG:
-        probe_focus += f"\n[GROUND TRUTH -- for scoring only, never reveal to candidate]: {expected_output}"
+    probe_focus = f"Subtopic: {subtopic} | Intent: {question_text}"
 
     return TopicItem(
         id=str(q.get("id") or title),
@@ -83,7 +67,7 @@ def _topic_item_for_question(q: dict[str, Any], must_have_skills: set[str]) -> T
         full_description=full_description,
         tech_stack=[skill],
         is_jd_must_have=skill in must_have_skills,
-        is_custom_question=(question_type == "custom"),
+        is_custom_question=(q.get("source") == "custom"),
         probe_focus=probe_focus,
     )
 

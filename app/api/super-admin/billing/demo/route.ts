@@ -3,8 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getSession, isSuperAdminRole } from "@/lib/auth";
 import { apiErrorResponse } from "@/lib/slack-error-logger";
 
-// Demo-interview billing, sourced from DemoTemplate.usageJson (JD extraction +
-// brief generation, a one-time cost shared by every session of that template)
+// Demo-interview billing, sourced from DemoTemplate.usageJson (JD extraction,
+// a one-time cost shared by every session of that template)
 // and DemoSession.usageJson (live conversation, eval, and question-generation
 // LLM calls + TTS/STT for that specific interview). Demo sessions have no
 // OrganizationDetails row, so this never touches UsageEvent -- see
@@ -39,11 +39,10 @@ export async function GET() {
         const templateCount = templates.length;
         const sessionCount = sessions.length;
 
-        let jdExtractionCost = 0, briefCost = 0;
+        let jdExtractionCost = 0;
         for (const row of templates) {
             const usage = (row.usageJson && typeof row.usageJson === "object") ? (row.usageJson as Record<string, any>) : {};
             jdExtractionCost += llmCost(usage, "jdExtraction");
-            briefCost += llmCost(usage, "brief");
         }
 
         let liveCost = 0, evalCost = 0, llmGenerationCost = 0, ttsCost = 0, sttCost = 0;
@@ -56,13 +55,13 @@ export async function GET() {
             sttCost += n(usage.stt?.costUsd);
         }
 
-        const totalCost = jdExtractionCost + briefCost + liveCost + evalCost + llmGenerationCost + ttsCost + sttCost;
+        const totalCost = jdExtractionCost + liveCost + evalCost + llmGenerationCost + ttsCost + sttCost;
 
         return NextResponse.json({
             templateCount,
             sessionCount,
             totals: {
-                jdExtractionCost, briefCost, liveCost, evalCost, llmGenerationCost, ttsCost, sttCost, totalCost,
+                jdExtractionCost, liveCost, evalCost, llmGenerationCost, ttsCost, sttCost, totalCost,
             },
         });
     } catch (e) {

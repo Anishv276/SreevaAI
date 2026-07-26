@@ -42,19 +42,18 @@ export async function GET(request: Request) {
             },
         });
 
-        let totalTts = 0, totalStt = 0, totalEval = 0, totalGeneration = 0, totalBrief = 0, totalReport = 0, totalCost = 0;
+        let totalTts = 0, totalStt = 0, totalEval = 0, totalGeneration = 0, totalReport = 0, totalCost = 0;
 
         const rows = entities.map((e) => {
             const usage = (e.usage && typeof e.usage === "object") ? (e.usage as Record<string, any>) : {};
             const evalCost = llmCost(usage, "eval");
             const generationCost = llmCost(usage, "llmGeneration");
-            const briefCost = llmCost(usage, "brief");
             const reportCost = llmCost(usage, "report");
             const tts = n(usage.tts?.costUsd);
             const stt = n(usage.stt?.costUsd);
-            const cost = evalCost + generationCost + briefCost + reportCost + tts + stt;
+            const cost = evalCost + generationCost + reportCost + tts + stt;
             totalTts += tts; totalStt += stt; totalEval += evalCost;
-            totalGeneration += generationCost; totalBrief += briefCost; totalReport += reportCost;
+            totalGeneration += generationCost; totalReport += reportCost;
             totalCost += cost;
 
             return {
@@ -70,8 +69,6 @@ export async function GET(request: Request) {
                 evalCalls: llmCalls(usage, "eval"),
                 generationCost,
                 generationCalls: llmCalls(usage, "llmGeneration"),
-                briefCost,
-                briefCalls: llmCalls(usage, "brief"),
                 reportCost,
                 reportCalls: llmCalls(usage, "report"),
                 totalCost: cost,
@@ -82,7 +79,7 @@ export async function GET(request: Request) {
             rows,
             totals: {
                 ttsCost: totalTts, sttCost: totalStt, evalCost: totalEval,
-                generationCost: totalGeneration, briefCost: totalBrief, reportCost: totalReport,
+                generationCost: totalGeneration, reportCost: totalReport,
                 totalCost,
             },
             count: entities.length,

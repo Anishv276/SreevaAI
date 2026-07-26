@@ -5,7 +5,7 @@ import redisConnection, { getBullPrefix } from "../../lib/redis";
 const QUEUE_NAMES = [
   "resume-processing",
   "jd-extraction",
-  "brief-generation",
+  "question-generation",
   "interview-report",
   "invitation-delivery-queue",
   "recording-retention-cleanup",

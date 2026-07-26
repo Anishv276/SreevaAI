@@ -80,7 +80,7 @@ export const DEFAULT_ORG_AI_CONFIG = {
   llmResumeReport:       "gpt-5.4-mini",
   llmInterviewLive:      "gpt-4.1-mini",
   llmInterviewEval:      "gpt-4.1-nano",
-  llmInterviewBrief:     "gpt-4.1",
+  llmQuestionBank:       "gpt-5.4-mini",
   llmInterviewReport:    "gpt-5.4-mini",
 } as const;
 

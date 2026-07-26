@@ -11,6 +11,7 @@ export type BillingFeature =
   | "interview"
   | "resumeExtraction"
   | "jdExtraction"
+  | "questionBank"
   | "resumeReport"
   | "interviewReport";
 
@@ -277,7 +278,7 @@ export type OrgUsageBreakdown = {
   resumeRuns: number;
   interviewLlmCostUsd: number; // live/eval session LLM (the "interview" blob bucket's own LLM cost)
   interviewEvalCostUsd: number;
-  interviewBriefCostUsd: number;
+  questionBankCostUsd: number;
   interviewGenerationCostUsd: number;
   interviewTtsCostUsd: number;
   interviewSttCostUsd: number;
@@ -303,8 +304,8 @@ export type UsageEventAgg = {
 
 // Sub-feature keys emitted by aggregateOrgUsageEvents (one bucket each).
 export type UsageAggKey =
-  | "jdExtraction" | "resumeExtraction" | "resumeReport"
-  | "eval" | "brief" | "llmGeneration" | "report"
+  | "jdExtraction" | "resumeExtraction" | "resumeReport" | "questionBank"
+  | "eval" | "llmGeneration" | "report"
   | "interviewTts" | "interviewStt";
 
 export type OrgUsageEventRow = { feature: string; usage: unknown };
@@ -344,8 +345,8 @@ function foldAudio(agg: UsageEventAgg, arr: any[], unit: "characters" | "seconds
  */
 export function aggregateOrgUsageEvents(rows: OrgUsageEventRow[]): Record<UsageAggKey, UsageEventAgg> {
   const out: Record<UsageAggKey, UsageEventAgg> = {
-    jdExtraction: emptyAgg(), resumeExtraction: emptyAgg(), resumeReport: emptyAgg(),
-    eval: emptyAgg(), brief: emptyAgg(), llmGeneration: emptyAgg(), report: emptyAgg(),
+    jdExtraction: emptyAgg(), resumeExtraction: emptyAgg(), resumeReport: emptyAgg(), questionBank: emptyAgg(),
+    eval: emptyAgg(), llmGeneration: emptyAgg(), report: emptyAgg(),
     interviewTts: emptyAgg(), interviewStt: emptyAgg(),
   };
   const arr = (v: any) => (Array.isArray(v) ? v : []);
@@ -356,9 +357,10 @@ export function aggregateOrgUsageEvents(rows: OrgUsageEventRow[]): Record<UsageA
     } else if (row.feature === "resumeExtraction") {
       foldLlm(out.resumeExtraction, arr(usage.resumeExtraction?.llm));
       foldLlm(out.resumeReport, arr(usage.resumeReport?.llm));
+    } else if (row.feature === "questionBank") {
+      foldLlm(out.questionBank, arr(usage.questionBank?.llm));
     } else if (row.feature === "interview") {
       foldLlm(out.eval, arr(usage.eval?.llm));
-      foldLlm(out.brief, arr(usage.brief?.llm));
       foldLlm(out.llmGeneration, arr(usage.llmGeneration?.llm));
       foldLlm(out.report, arr(usage.report?.llm));
       foldAudio(out.interviewTts, arr(usage.tts?.byModel), "characters");
@@ -385,7 +387,7 @@ export async function computeOrgUsageBreakdown(org: {
   const totalCostUsd = roundCost(
     agg.jdExtraction.costUsd + agg.resumeExtraction.costUsd + agg.resumeReport.costUsd +
     agg.eval.costUsd + agg.interviewTts.costUsd + agg.interviewStt.costUsd +
-    agg.brief.costUsd + agg.llmGeneration.costUsd + agg.report.costUsd
+    agg.questionBank.costUsd + agg.llmGeneration.costUsd + agg.report.costUsd
   );
 
   return {
@@ -398,7 +400,7 @@ export async function computeOrgUsageBreakdown(org: {
     resumeRuns: agg.resumeExtraction.calls + agg.resumeReport.calls,
     interviewLlmCostUsd: roundCost(agg.eval.costUsd),
     interviewEvalCostUsd: roundCost(agg.eval.costUsd),
-    interviewBriefCostUsd: roundCost(agg.brief.costUsd),
+    questionBankCostUsd: roundCost(agg.questionBank.costUsd),
     interviewGenerationCostUsd: roundCost(agg.llmGeneration.costUsd),
     interviewTtsCostUsd: roundCost(agg.interviewTts.costUsd),
     interviewSttCostUsd: roundCost(agg.interviewStt.costUsd),
@@ -437,7 +439,7 @@ export async function refreshOrgUsageSummary(orgId: string): Promise<OrgUsageBre
       resumeReportCostUsd: b.resumeReportCostUsd,
       interviewLlmCostUsd: b.interviewLlmCostUsd,
       interviewEvalCostUsd: b.interviewEvalCostUsd,
-      interviewBriefCostUsd: b.interviewBriefCostUsd,
+      questionBankCostUsd: b.questionBankCostUsd,
       interviewGenerationCostUsd: b.interviewGenerationCostUsd,
       interviewTtsCostUsd: b.interviewTtsCostUsd,
       interviewSttCostUsd: b.interviewSttCostUsd,
@@ -451,7 +453,7 @@ export async function refreshOrgUsageSummary(orgId: string): Promise<OrgUsageBre
       resumeReportCostUsd: b.resumeReportCostUsd,
       interviewLlmCostUsd: b.interviewLlmCostUsd,
       interviewEvalCostUsd: b.interviewEvalCostUsd,
-      interviewBriefCostUsd: b.interviewBriefCostUsd,
+      questionBankCostUsd: b.questionBankCostUsd,
       interviewGenerationCostUsd: b.interviewGenerationCostUsd,
       interviewTtsCostUsd: b.interviewTtsCostUsd,
       interviewSttCostUsd: b.interviewSttCostUsd,

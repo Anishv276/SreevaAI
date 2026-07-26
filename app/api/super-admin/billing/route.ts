@@ -195,7 +195,7 @@ export async function GET(request: Request) {
         });
         const consumptionHub: Record<string, any> = {
             interview:              feat(agg.eval, agg.interviewTts, agg.interviewStt),
-            interviewBrief:         feat(agg.brief),
+            questionBank:           feat(agg.questionBank),
             interviewLLMGeneration: feat(agg.llmGeneration),
             interviewReport:        feat(agg.report),
             resumeExtraction:       feat(agg.resumeExtraction),

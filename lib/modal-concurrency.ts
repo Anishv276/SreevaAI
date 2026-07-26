@@ -1,8 +1,8 @@
 import redisConnection from "./redis";
 
 /**
- * Per-org concurrency limiter for Modal-backed jobs (resume/JD extraction, brief
- * generation, interview report generation). Modal has no native per-key concurrency
+ * Per-org concurrency limiter for Modal-backed jobs (resume extraction,
+ * interview report generation). Modal has no native per-key concurrency
  * primitive (confirmed against their docs -- max_containers/@modal.concurrent are
  * global per function only), so this reuses the exact same Redis INCR/EXPIRE
  * semaphore pattern already proven in lib/org-concurrency.ts, just gating entry into
@@ -66,10 +66,7 @@ export async function releaseModalSlot(jobType: string, orgId: string): Promise<
  */
 export const MODAL_ORG_CONCURRENCY = {
   resumeExtraction: Number(process.env.ORG_CONCURRENCY_MODAL_RESUME || 5),
-  jdExtraction: Number(process.env.ORG_CONCURRENCY_MODAL_JD || 2),
-  briefGeneration: Number(process.env.ORG_CONCURRENCY_MODAL_BRIEF || 5),
   interviewReport: Number(process.env.ORG_CONCURRENCY_MODAL_REPORT || 5),
-  demoBriefGeneration: Number(process.env.ORG_CONCURRENCY_MODAL_DEMO_BRIEF || 5),
 };
 
 /**

@@ -13,7 +13,7 @@ report. This script runs the exact same calls (report_pipeline/debug_report/
 billing, unchanged) as a short-lived process spawned by the durable Node
 worker instead, so the agent job can close in seconds.
 
-Usage (called by worker.ts via stdin, mirrors generate_brief.py's contract):
+Usage (called by worker.ts via stdin):
     python interview/report_worker.py
     (JSON payload piped via stdin -- see PayloadReportJob shape below)
 
@@ -140,10 +140,9 @@ async def _run(payload: dict) -> None:
 
     usage = payload.get("usage") or {}
     eval_usages = usage.get("evalUsages") or []
-    brief_usages = usage.get("briefUsages") or []
     llmgen_usages = usage.get("llmgenUsages") or []
 
-    # Real and test sessions take the SAME path: eval/brief/llmgen LLM usage is
+    # Real and test sessions take the SAME path: eval/llmgen LLM usage is
     # upserted into the interview:{app} UsageEvent row (via PendingBuffer ->
     # flush), just flagged isTest so test spend is distinguishable but never
     # written to a separate table/blob. The session's TTS/STT are recorded from
@@ -152,9 +151,6 @@ async def _run(payload: dict) -> None:
     for u in eval_usages:
         u["context"] = {**_ctx_base, "ledgerFeature": "interviewEval", "eventId": f"interview:{app_id}:eval"}
         await persist_org_manual_billing_usage(org_id, "interview", u)
-    for u in brief_usages:
-        u["context"] = {**_ctx_base, "eventId": f"interview:{app_id}:brief"}
-        await persist_org_manual_billing_usage(org_id, "interviewBrief", u)
     for u in llmgen_usages:
         u["context"] = {**_ctx_base, "eventId": f"interview:{app_id}:llmgen"}
         await persist_org_manual_billing_usage(org_id, "interviewLLMGeneration", u)

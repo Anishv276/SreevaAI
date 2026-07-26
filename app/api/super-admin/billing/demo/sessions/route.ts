@@ -7,9 +7,9 @@ import { apiErrorResponse } from "@/lib/slack-error-logger";
 // "Demo" card drill-down. One row per DemoSession: name, email, template,
 // live/eval/llmGeneration run counts + cost, TTS/STT cost, session total.
 //
-// The template's one-time JD-extraction + brief cost is NOT repeated on every
+// The template's one-time JD-extraction cost is NOT repeated on every
 // session row (it isn't a per-session cost -- every session of a template
-// reuses the same pre-generated brief). It's attached only to the row for
+// reuses the same pre-generated question bank). It's attached only to the row for
 // that template's FIRST (earliest) session, same as UsageEvent's jd:{jobId}
 // row is a separate entity from interview:{appId} rows, never duplicated
 // across every interview under that job.
@@ -50,7 +50,7 @@ export async function GET(request: Request) {
         });
 
         // First (earliest) session per template gets the template's one-time
-        // JD-extraction + brief cost attached to its row.
+        // JD-extraction cost attached to its row.
         const earliestSessionIdByTemplate = new Map<string, string>();
         for (const s of [...sessions].sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime())) {
             if (!earliestSessionIdByTemplate.has(s.template.id)) {
@@ -77,9 +77,8 @@ export async function GET(request: Request) {
             const isFirstSessionForTemplate = earliestSessionIdByTemplate.get(s.template.id) === s.id;
             const templateUsage = isFirstSessionForTemplate ? templateUsageById.get(s.template.id) : null;
             const jdExtractionCost = templateUsage ? llmCost(templateUsage, "jdExtraction") : 0;
-            const briefCost = templateUsage ? llmCost(templateUsage, "brief") : 0;
 
-            const totalCost = liveCost + evalCost + llmGenerationCost + ttsCost + sttCost + jdExtractionCost + briefCost;
+            const totalCost = liveCost + evalCost + llmGenerationCost + ttsCost + sttCost + jdExtractionCost;
 
             return {
                 id: s.id,
@@ -91,8 +90,6 @@ export async function GET(request: Request) {
                 startedAt: s.startedAt.toISOString(),
                 isFirstSessionForTemplate,
                 jdExtractionCost,
-                briefCost,
-                briefCalls: templateUsage ? llmCalls(templateUsage, "brief") : 0,
                 liveCost,
                 liveCalls: llmCalls(usage, "live"),
                 evalCost,

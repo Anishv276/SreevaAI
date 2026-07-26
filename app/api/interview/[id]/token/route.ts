@@ -160,10 +160,9 @@ export async function POST(
         // no worker -- so later JD edits/regeneration never disturb a session
         // already in progress. Idempotent: only fires once per Interview (a
         // reconnect after LAUNCHING must not re-freeze against a possibly-newer
-        // Job.questionBank). Tech interviews only -- conversational interviews
-        // keep using aiInterviewBrief, written by the existing brief-generation
-        // worker at slot-booking time.
-        if (application.job.interviewType === "tech" && !interview.jdQuestionBankSnapshot && application.job.questionBank) {
+        // Job.questionBank). Applies to both tech and conversational jobs now
+        // that conversational also generates a question bank via the wizard.
+        if (!interview.jdQuestionBankSnapshot && application.job.questionBank) {
             await prisma.interview.update({
                 where: { applicationId },
                 data: {

@@ -638,11 +638,12 @@ function DemoVoiceStage({
 
     // Launch timeout: if the greeting audio never arrives, don't leave the user
     // staring at "Preparing Interview Room" forever -- surface a failure screen.
+    // Set to 60s (60000ms) to accommodate worker cold-start / prewarming time in dev/staging.
     useEffect(() => {
         if (phase !== "launching") return;
         const timeout = setTimeout(() => {
             if (!agentReadySentRef.current) onFailed();
-        }, 25000);
+        }, 60000);
         return () => clearTimeout(timeout);
     }, [phase, onFailed]);
 

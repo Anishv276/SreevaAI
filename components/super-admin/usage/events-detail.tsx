@@ -19,7 +19,6 @@ const COLUMN_PRESETS: Record<string, ColKey[]> = {
   "interview-stt": ["candidate", "job", "model", "calls", "stt", "cost"],
   "interview-generation": ["candidate", "job", "model", "calls", "tokens", "cost"],
   "interview-eval": ["candidate", "job", "model", "calls", "tokens", "cost"],
-  "interview-brief": ["candidate", "job", "model", "calls", "tokens", "cost"],
 };
 
 const COL_LABEL: Record<ColKey, string> = {

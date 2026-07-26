@@ -189,14 +189,8 @@ def build_interview_directive(
         if _brief_skills:
             _skill_lines = []
             for _st in _brief_skills:
-                if _st.tag == "RESUME_TOPIC":
-                    _src_label = "[COMMON SKILL — on resume + JD, probe depth]"
-                elif _st.tag == "JD_TOPIC":
-                    _src_label = "[JD REQUIRED — not on resume, ask cold-reasoning, accept no exposure]"
-                else:  # ROLE_TOPIC
-                    _src_label = "[ROLE DEPTH — expert knowledge check, ask concept/approach]"
                 _focus = _st.probe_focus or ""
-                _line = f"  - {_st.title}  {_src_label}"
+                _line = f"  - {_st.title}"
                 if _st.full_description:
                     _line += f"\n      CONTEXT: {_st.full_description}"
                 if _st.tech_stack:
@@ -207,13 +201,7 @@ def build_interview_directive(
                     _line += f"\n      — {_st.why_relevant}"
                 _skill_lines.append(_line)
             skills_block = (
-                f"\nSKILLS TO COVER (ordered by role relevance):\n"
-                f"  FRAMING RULES BY TAG — follow these exactly:\n"
-                f"  [COMMON SKILL] → On resume AND required by JD. Ask cold-reasoning questions about the skill "
-                f"itself (fundamentals/mechanics/performance/robustness) — NEVER 'tell me about a project using X.'\n"
-                f"  [JD REQUIRED]  → Role needs it, not on resume. Ask a cold-reasoning question anyway — if they "
-                f"have no exposure, accept it and move on. Never ask 'have you used X in a project.'\n"
-                f"  [ROLE DEPTH]   → Expert-knowledge check. Ask about understanding/approach in the abstract.\n"
+                f"\nSKILLS TO COVER (ordered by question bank priority):\n"
                 + "\n".join(_skill_lines) + "\n"
                 + f"{_skill_probe_style}"
                 + f"{_code_card_format_rule}"

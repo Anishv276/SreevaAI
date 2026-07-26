@@ -106,17 +106,6 @@ export const interviewLaunchTimeoutQueue = new Queue('interview-launch-timeout',
     removeOnFail:    { age: TWO_MIN },
   },
 });
-// 10. Pre-generate interview brief at slot confirmation (real candidates only)
-export const briefGenerationQueue = new Queue('brief-generation', {
-  connection: redisConnection,
-  prefix,
-  defaultJobOptions: {
-    attempts: 2,
-    backoff: { type: 'exponential', delay: 5000 },
-    removeOnComplete: { age: TWO_MIN },
-    removeOnFail:    { age: TWO_MIN },
-  },
-});
 // 11. Post-interview report/summary/billing-snapshot/debug-PDF tail, moved off
 // the LiveKit agent job (which LiveKit Cloud recycles shortly after the room
 // closes) onto this durable worker. attempts: 1 -- billing-usage persistence
@@ -137,16 +126,14 @@ export const interviewReportQueue = new Queue('interview-report', {
     removeOnFail:    { age: FIVE_MIN_REPORT },
   },
 });
-// 12. Demo template brief generation — runs in the normal BullMQ worker
-//     (NOT Modal). Triggered after jd-extraction completes for a DemoTemplate.
-//     Calls the same LLM-based brief pipeline as production, but writes result
-//     to DemoTemplate.briefJson instead of Application/Interview tables.
-export const demoBriefGenerationQueue = new Queue('demo-brief-generation', {
+// 12. Question bank generation (Create Job wizard "Start Generation") -- runs
+//     the Call A/B/C pipeline off the request thread; progress lines are
+//     written to Job.questionGenerationLog for the wizard to poll.
+export const questionGenerationQueue = new Queue('question-generation', {
   connection: redisConnection,
   prefix,
   defaultJobOptions: {
-    attempts: 2,
-    backoff: { type: 'exponential', delay: 5000 },
+    attempts: 1, // generateQuestions() already retries internally
     removeOnComplete: { age: FIVE_MIN },
     removeOnFail:    { age: FIVE_MIN },
   },

@@ -110,67 +110,14 @@ def build_evaluation_layer_prompt(
     level: int = 2,
 ) -> str:
     _strategy = interview_brief.interview_strategy or ""
-    _summary  = interview_brief.candidate_summary or ""
     _flags    = interview_brief.red_flags or []
     _anchor   = interview_brief.anchor_topic
     _role_ctx = interview_brief.role_context
 
     _must_haves = ", ".join(_role_ctx.must_have_skills[:8]) if _role_ctx.must_have_skills else "see JD"
 
-    def _topic_source_contract(t) -> str:
-        tag = (t.tag or "").upper()
-        if tag == "RESUME_TOPIC":
-            return (
-                "SOURCE=RESUME  ▸ Candidate HAS done this. We know it.\n"
-                "    HOW TO ASK: ground in ONE concrete detail from their actual description — a specific "
-                "deal, number, objection, or outcome — not a generic 'what was yours' shape that would "
-                "fit any resume item. Never ask 'do you have experience' or 'why did you work there'. "
-                "They worked there. Vary the framing every time.\n"
-                "    WRONG: 'Why did you work on this?' / 'What drew you to this account?'"
-            )
-        elif tag == "JD_TOPIC":
-            return (
-                "SOURCE=JD_REQUIRED  ▸ Role needs this. Candidate has NOT claimed it on resume.\n"
-                "    HOW TO ASK: neutral curiosity about exposure. Never assume they know it.\n"
-                "    WRONG: 'Walk me through your experience with this.' (assumes experience)\n"
-                "    RIGHT: 'This role leans heavily on outbound — what's your exposure there?'"
-            )
-        else:  # ROLE_TOPIC
-            return (
-                "SOURCE=ROLE_DEPTH  ▸ Expert domain check. NOT on resume, NOT in JD.\n"
-                "    HOW TO ASK: ask about understanding or approach. They may have zero experience.\n"
-                "    WRONG: 'How have you used MEDDIC in your work?' (assumes usage)\n"
-                "    RIGHT: 'How do you think about qualifying a deal before investing real time in it?'"
-            )
-
-    def _level_depth_hint(t, level: int) -> str:
-        tag = (t.tag or "").upper()
-        if tag == "RESUME_TOPIC":
-            return {
-                1: "Ask WHAT they did and what their specific role in the deal/account was.",
-                2: "Ask what was specifically their call — push past 'we'.",
-                3: "Ask about a real tradeoff or negotiation decision, pushed past surface setup.",
-                4: "Go straight to a tradeoff or negotiation decision. Skip setup.",
-            }.get(level, "Ask what they personally owned.")
-        elif tag == "JD_TOPIC":
-            return {
-                1: "Ask gently — 'have you had a chance to work with X or explore it?'",
-                2: "Ask where they've actually used it in a real deal.",
-                3: "Ask about real depth and constraints under quota pressure.",
-                4: "Ask about strategic judgment around it, not just usage.",
-            }.get(level, "Ask about their exposure neutrally.")
-        else:
-            return {
-                1: "Check if they understand the concept — not whether they've done it at scale.",
-                2: "Ask about their approach or any real exposure they've had.",
-                3: "Ask about a concrete decision or tradeoff in this area.",
-                4: "Ask about territory or team-level thinking.",
-            }.get(level, "Ask how they think about or approach this.")
-
     _topics_summary = "\n".join(
         f"  {i+1}. {t.title}\n"
-        f"     {_topic_source_contract(t)}\n"
-        f"     LEVEL HINT (LEVEL {level}): {_level_depth_hint(t, level)}\n"
         f"     CONTEXT: {t.full_description}\n"
         f"     {('PROBE: ' + t.probe_focus) if t.probe_focus else ''}"
         f"{'  |  ' if t.probe_focus and t.probe_avoid else ''}"
@@ -181,41 +128,16 @@ def build_evaluation_layer_prompt(
     brief_block = f"""CANDIDATE: {candidate_name}
 ROLE: {job_title}  |  LEVEL: {level}
 
-ANALYST READ:
-{_summary}
-
 INTERVIEW STRATEGY:
 {_strategy}
 
-━━━ HOW TO GENERATE QUESTIONS — READ THIS BEFORE EVERY QUESTION ━━━
-Every topic below has a SOURCE tag. The source tag tells you what the candidate knows
-and exactly how to frame your question. Get this wrong and the question is wrong.
-
-  SOURCE=RESUME     → They DID this. It is on their resume. Ask about depth — what they
-                       closed, what was their call, what fell through. NEVER ask why they
-                       worked somewhere. NEVER ask 'do you have experience with X' — they do.
-
-  SOURCE=JD_REQUIRED → The role needs this. They have NOT claimed it on their resume.
-                       We don't know if they've done it. Ask neutrally about exposure.
-                       NEVER assume they know it. NEVER say 'on your resume'.
-                       If they say they haven't done it — accept it, move on.
-
-  SOURCE=ROLE_DEPTH  → Expert domain check. NOT on resume. NOT in JD.
-                       We have zero information about their experience here.
-                       Ask about understanding or approach, never about experience they may not have.
-
-Your job: read the topic CONTEXT below, pick the right SOURCE framing, and generate
-a fresh question that sounds like it came from you listening to them — not from a template.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 ANCHOR TOPIC (open here):
   {_anchor.title}
-  {_topic_source_contract(_anchor)}
   CONTEXT: {_anchor.full_description}
   Probe focus: {_anchor.probe_focus if _anchor.probe_focus else 'Probe for depth and genuine ownership of the topic.'}
   Probe avoid: {', '.join(_anchor.probe_avoid[:2]) if _anchor.probe_avoid else 'none'}
 
-TOPIC POOL (work through in order — each has its own source framing above):
+QUESTION BANK TOPICS (work through in order):
 {_topics_summary}
 
 JD MUST-HAVES:
@@ -251,17 +173,10 @@ RED FLAGS (watch for these — do not ignore):
         ),
     }.get(level, "Probe for real ownership and specific sales decisions.")
     return f"""━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ANALYST BRIEF -- READ THIS FIRST
+QUESTION BANK & EVALUATION PLAN
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-The section below is a pre-interview analyst read of {candidate_name} for the {job_title} role (LEVEL {level}).
-It was written specifically to give you a FORMED OPINION before the interview starts.
-This brief is your SOURCE OF TRUTH for:
-  - Which topics to open on (OPENING ANGLE section)
-  - What claims to probe hard vs accept (SKILL REALITY section)
-  - What the analyst flagged as uncertain or overclaimed (UNCERTAIN AREAS section)
-  - What JD skills are missing from the resume (JD FIT section)
-Every question you generate should be grounded in this brief.
-Never ask a generic question when the brief gives you a specific angle.
+Interview plan for {candidate_name} for the {job_title} role (LEVEL {level}).
+All topics below are sourced directly from the curated Question Bank.
 {brief_block}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 LEVEL: {level}

@@ -378,26 +378,6 @@ QUESTION_GENERATION_SYSTEM = """\
 You are Ishitha, a sharp and warm AI interviewer. You are conducting a real interview — not
 filling out a form.
 
-Before you write anything, read RECENT_QUESTION_PATTERNS below. It lists the opener and
-scaffold (the underlying question shape/template, independent of topic) for your last several
-questions. Your new question's opener AND scaffold must both be different from every entry in
-that list — not just reworded, structurally different. A repeated scaffold is a repeated
-question even if the topic and vocabulary changed.
-
-RECENT_QUESTION_PATTERNS:
-{recent_question_patterns}
-
-DECLINED_FACTS (facts the candidate has explicitly been unable to produce this interview):
-{declined_facts}
-Before writing a question, check whether it targets anything on that list — not by matching
-wording, but by matching the underlying thing being requested. If it's on the list, do not
-construct a question that resolves to asking for it again, regardless of wording or how much
-time has passed.
-
-If the scaffold your current PROBE DIRECTIVE suggests would collide with one already used,
-do not use that scaffold — the directive's example phrasing is illustrative, not a script; pick
-a genuinely different construction that still satisfies the same goal and question type.
-
 YOUR JOB THIS TURN: ask ONE follow-up question based on what the candidate just said.
 
 ━━━ THIS IS A TECHNICAL INTERVIEW, NOT A CHAT ━━━
@@ -1198,12 +1178,5 @@ def get_probe_context(
     if _trend:
         lines.append("")
         lines.append(f"SCORE TREND ON THIS TOPIC: {_trend}")
-
-    lines.append("")
-    lines.append("RECENT_QUESTION_PATTERNS:")
-    lines.append(recent_question_patterns)
-    lines.append("")
-    lines.append("DECLINED_FACTS:")
-    lines.append(declined_facts)
 
     return "\n".join(lines)

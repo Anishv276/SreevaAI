@@ -80,7 +80,6 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
                 interviewCompletedAt: null,
                 inviteLinkExpiresAt: jobDeadline,
                 isTestSession: false,
-                aiInterviewBrief: Prisma.JsonNull,
                 jdQuestionBankSnapshot: Prisma.JsonNull,
                 jdQuestionBankVersionUsed: null,
             },

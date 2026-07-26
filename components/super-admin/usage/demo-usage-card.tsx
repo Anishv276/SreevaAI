@@ -4,7 +4,7 @@ import { Sparkles, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Demo-interview billing (/demo page sessions). Sourced from
-// DemoTemplate.usageJson (one-time JD extraction + brief cost per template)
+// DemoTemplate.usageJson (one-time JD extraction cost per template)
 // and DemoSession.usageJson (per-session live/eval/llmGeneration/TTS/STT
 // cost) via /api/super-admin/billing/demo and
 // /api/super-admin/billing/demo/sessions. Demo sessions have no
@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 // billing -- shown as its own card, not scoped to the selected org.
 
 type DemoTotals = {
-    jdExtractionCost: number; briefCost: number; liveCost: number;
+    jdExtractionCost: number; liveCost: number;
     evalCost: number; llmGenerationCost: number; ttsCost: number; sttCost: number;
     totalCost: number;
 };
@@ -20,7 +20,7 @@ type DemoOverview = { templateCount: number; sessionCount: number; totals: DemoT
 type DemoSessionRow = {
     id: string; clientName: string; clientEmail: string; templateTitle: string; roleTitle: string;
     status: string; startedAt: string; isFirstSessionForTemplate: boolean;
-    jdExtractionCost: number; briefCost: number; briefCalls: number;
+    jdExtractionCost: number;
     liveCost: number; liveCalls: number;
     evalCost: number; evalCalls: number;
     llmGenerationCost: number; llmGenerationCalls: number;
@@ -85,10 +85,9 @@ export function DemoUsageCard({ fmt }: { fmt: (usd: number) => string }) {
             </button>
             {open && (
                 <>
-                    <div className="grid grid-cols-3 gap-3 border-t p-5 sm:grid-cols-7" style={{ borderColor: "#F0EEF8" }}>
+                    <div className="grid grid-cols-3 gap-3 border-t p-5 sm:grid-cols-6" style={{ borderColor: "#F0EEF8" }}>
                         {[
                             ["JD Extraction", t.jdExtractionCost],
-                            ["Brief", t.briefCost],
                             ["Live", t.liveCost],
                             ["Eval", t.evalCost],
                             ["Question Gen", t.llmGenerationCost],
@@ -105,7 +104,7 @@ export function DemoUsageCard({ fmt }: { fmt: (usd: number) => string }) {
                         <table className="w-full text-left text-sm">
                             <thead style={{ background: "#F9F8FF" }}>
                                 <tr>
-                                    {["Date", "Candidate", "Template", "JD + Brief", "Live", "Eval", "Question Gen", "TTS", "STT", "Total"].map((h) => (
+                                    {["Date", "Candidate", "Template", "JD Extraction", "Live", "Eval", "Question Gen", "TTS", "STT", "Total"].map((h) => (
                                         <th
                                             key={h}
                                             className={`whitespace-nowrap px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-violet-400 ${h === "Total" ? "text-right" : ""}`}
@@ -127,7 +126,7 @@ export function DemoUsageCard({ fmt }: { fmt: (usd: number) => string }) {
                                     </tr>
                                 )}
                                 {rows?.map((r) => {
-                                    const templateCost = r.jdExtractionCost + r.briefCost;
+                                    const templateCost = r.jdExtractionCost;
                                     return (
                                         <tr key={r.id} className="hover:bg-violet-50/40">
                                             <td className="whitespace-nowrap px-4 py-3 text-xs text-violet-700">
