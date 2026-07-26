@@ -53,6 +53,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 interviewMode: true,
                 interviewType: true,
                 level: true,
+                status: true,
+                failureReason: true,
+                extractedSkills: true,
+                questionBank: true,
+                questionBankVersion: true,
+                mustHaveSkills: true,
                 organization: {
                     select: {
                         orgStatus: true,
@@ -163,6 +169,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
                 jdExtractedDetails: true,
                 jdPreviewUrl: true,
                 aiInterviewerVoiceId: true,
+                status: true,
             },
         });
         if (!existingJob) {
@@ -221,6 +228,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (data.interviewMode !== undefined) updateData.interviewMode = data.interviewMode;
         if (data.interviewType !== undefined) updateData.interviewType = data.interviewType;
         if (data.level !== undefined) updateData.level = data.level;
+        if (data.mustHaveSkills !== undefined) updateData.mustHaveSkills = data.mustHaveSkills;
+        // No silent auto-regen: editing the level or JD after a question bank has
+        // already been generated must NOT clear questionBank/status as a side
+        // effect. Regeneration only ever happens via the explicit
+        // generate-questions route (button click). Just flag the bank as
+        // possibly stale so the wizard UI can prompt the admin to regenerate.
+        let staleQuestionBank = false;
+        const changesGenerationInputs = data.level !== undefined || data.jdExtractedDetails !== undefined;
+        if (changesGenerationInputs && (existingJob.status === "GENERATED" || existingJob.status === "PUBLISHED")) {
+            staleQuestionBank = true;
+        }
         if (Object.keys(updateData).length === 0) {
             return NextResponse.json(
                 { error: "No valid fields provided for update" },
@@ -231,7 +249,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             where: { id: jobId },
             data: updateData,
         });
-        return NextResponse.json(updated);
+        return NextResponse.json({ ...updated, staleQuestionBank });
     } catch (error: any) {
         return apiErrorResponse({
             route: `/api/jobs/${jobId}`,

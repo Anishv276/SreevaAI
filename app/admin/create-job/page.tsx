@@ -5,6 +5,9 @@ import { toast } from "@/components/ui/toast-custom";
 import { JobDescription } from "@/components/create-job/job-description";
 import { InterviewSetup } from "@/components/create-job/interview-setup";
 import { ScreeningSettings } from "@/components/create-job/screening-settings";
+import { Steps } from "@/components/create-job/steps";
+import { WizardPage2Review } from "@/components/create-job/wizard-page2-review";
+import { WizardPage3Scoring } from "@/components/create-job/wizard-page3-scoring";
 import { useJobs } from "@/context/jobs-context";
 import { cn } from "@/lib/utils";
 import { getInterviewActionBlockedMessage, getInterviewQuotaSupportMessage, getSupportComposeUrl, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
@@ -12,11 +15,14 @@ import { canUseMultilingual } from "@/lib/org-plans";
 import { parseJobScreeningSettings, sanitizeScreeningCriteria, type ScreeningCriteria } from "@/lib/screening-criteria";
 import { formatJobLimit, getActiveJobCount, isJobCreationLocked } from "@/lib/job-limits";
 import { classifyInterviewType } from "@/lib/interview-type";
-import { CheckCircle2, Rocket, ChevronLeft, ChevronRight, Loader2, Lock, Zap, LayoutList, Calendar, FileText, Mic, SlidersHorizontal } from "lucide-react";
+import { CheckCircle2, Rocket, ChevronLeft, ChevronRight, Loader2, Lock, Zap, LayoutList, Calendar, FileText, Mic, SlidersHorizontal, Sparkles } from "lucide-react";
 import { useAdminOrg } from "@/context/admin-org-context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PremiumDatePicker } from "@/components/ui/premium-date-picker";
+import type { BankQuestion } from "@/lib/question-bank/types";
+
+const WIZARD_STEPS = ["Create Job", "Review Questions", "Scoring & Publish"];
 
 export default function CreateJobPage() {
   return (
@@ -55,6 +61,23 @@ function CreateJobForm() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
+
+  // -- Wizard step state (tech jobs only -- conversational jobs publish
+  // directly from Page 1, unchanged, since they have no generated question
+  // bank). No modal is used anywhere in this flow -- these are real,
+  // in-page steps swapped by index. --
+  const [step, setStep] = useState(0);
+  const [maxStepReached, setMaxStepReached] = useState(0);
+  const [savedJobId, setSavedJobId] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generationError, setGenerationError] = useState<string | null>(null);
+  const [questionBankQuestions, setQuestionBankQuestions] = useState<BankQuestion[]>([]);
+  const [skippedQuerySnippetReason, setSkippedQuerySnippetReason] = useState<string | null>(null);
+  const [skippedCodeSnippetReason, setSkippedCodeSnippetReason] = useState<string | null>(null);
+  const [mustHaveSkills, setMustHaveSkills] = useState<string[]>([]);
+  const [isPublishing, setIsPublishing] = useState(false);
+
+  const isTechJob = (formData.interviewType || "tech") === "tech";
 
   const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
   const orgStatus = String(adminOrg?.status || "ACTIVE").toUpperCase();
@@ -124,6 +147,16 @@ function CreateJobForm() {
             interviewType: (job as any).interviewType || "tech",
             level: (job as any).level || 2,
           }));
+          setSavedJobId(jobId);
+          const bank = (job as any).questionBank;
+          if (bank && Array.isArray(bank.questions)) {
+            setQuestionBankQuestions(bank.questions);
+            setSkippedQuerySnippetReason(bank.skippedQuerySnippetReason ?? null);
+            setSkippedCodeSnippetReason(bank.skippedCodeSnippetReason ?? null);
+          }
+          if (Array.isArray((job as any).mustHaveSkills)) {
+            setMustHaveSkills((job as any).mustHaveSkills);
+          }
         } catch (err) {
           console.error("Failed to load job:", err);
           toast.error("An error occurred while loading job details");
@@ -215,6 +248,131 @@ function CreateJobForm() {
     }
   };
 
+  const buildJobData = (currentFormData: any, resolvedInterviewType: string) => {
+    let parsedQuestions = currentFormData.aiGeneratedInterviewQuestions || [];
+    if (typeof parsedQuestions === "string") { try { parsedQuestions = JSON.parse(parsedQuestions); } catch { parsedQuestions = []; } }
+    return {
+      title: currentFormData.title || "Untitled Job",
+      description: currentFormData.description || "",
+      jobRole: currentFormData.jobRole || "",
+      applicationDeadline: currentFormData.applicationDeadline || null,
+      jdFileName: currentFormData.jdFileName || null,
+      jdPreviewUrl: getPersistedJdUrl(currentFormData),
+      jdExtractedDetails: currentFormData.jdExtractedDetails
+        ? typeof currentFormData.jdExtractedDetails === "string" ? currentFormData.jdExtractedDetails : JSON.stringify(currentFormData.jdExtractedDetails)
+        : null,
+      jdExtractionJobId: currentFormData.jdExtractionJobId || null,
+      aiGeneratedInterviewQuestions: parsedQuestions,
+      resumeScreeningThreshold: Number(currentFormData.resumeScreeningThreshold ?? 60),
+      resumeScreeningCriteria: sanitizeScreeningCriteria(currentFormData.resumeScreeningCriteria || {}),
+      aiInterviewerVoiceId: currentFormData.aiInterviewerVoiceId || "",
+      aiInterviewerName: currentFormData.aiInterviewerName || "Ishitha",
+      interviewMode: currentFormData.interviewMode || "ats",
+      interviewType: resolvedInterviewType,
+      level: currentFormData.level,
+    };
+  };
+
+  // Page 1 "Start Generation" (tech) -- saves the job (DRAFT), then runs the
+  // synchronous Call A -> B -> C pipeline via /generate-questions. No
+  // worker/queue: the frontend simply awaits this one request.
+  const handleStartGeneration = async () => {
+    const currentFormData = formDataRef.current;
+    if (jobCreationLocked && !isEditMode) {
+      toast.error(interviewAccessLocked ? getInterviewQuotaSupportMessage("interviews") : "Job limit reached. Go to Billing to upgrade your plan.");
+      return;
+    }
+    if (!String(currentFormData.applicationDeadline || "").trim()) {
+      toast.error("Please fill the application deadline.");
+      return;
+    }
+    if (!currentFormData.level) {
+      toast.error("Please select a Questioning Level (1-4).");
+      return;
+    }
+    const pendingJdUpload = Boolean(currentFormData.jdFile) || (typeof currentFormData.jdPreviewUrl === "string" && currentFormData.jdPreviewUrl.startsWith("blob:"));
+    if (isAnalyzing || (pendingJdUpload && !getPersistedJdUrl(currentFormData))) {
+      toast.error("Please wait for the JD upload to finish.");
+      return;
+    }
+    if (!currentFormData.jdExtractedDetails) {
+      toast.error("Please upload and analyze a job description first.");
+      return;
+    }
+    setIsGenerating(true);
+    setGenerationError(null);
+    try {
+      const jobData = buildJobData(currentFormData, "tech");
+      let id = savedJobId || jobId;
+      let staleQuestionBank = false;
+      if (id) {
+        const updated = await updateJob(id, jobData);
+        staleQuestionBank = Boolean((updated as any)?.staleQuestionBank);
+      } else {
+        const result = await addJob({ ...jobData, postedAt: new Date().toISOString() } as any);
+        id = result?.id || null;
+      }
+      if (!id) throw new Error("Failed to save job before generation.");
+      setSavedJobId(id);
+
+      const res = await fetch(`/api/jobs/${id}/generate-questions`, { method: "POST" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        // If the level/JD edit that triggered this run left the job's
+        // existing question bank stale, and regeneration itself then failed,
+        // the old (now-stale) bank is what's left in place -- surface that
+        // clearly rather than just reporting the generation failure alone.
+        const failureMsg = staleQuestionBank
+          ? `${data?.error || "Question generation failed."} Your previous question bank is still in place but may be out of date for the edited level/JD.`
+          : data?.error || "Question generation failed.";
+        setGenerationError(failureMsg);
+        toast.error(failureMsg);
+        return;
+      }
+      const bank = data?.questionBank;
+      const qs: BankQuestion[] = Array.isArray(bank?.questions) ? bank.questions : [];
+      setQuestionBankQuestions(qs);
+      setSkippedQuerySnippetReason(bank?.skippedQuerySnippetReason ?? null);
+      setSkippedCodeSnippetReason(bank?.skippedCodeSnippetReason ?? null);
+      setStep(1);
+      setMaxStepReached((m) => Math.max(m, 1));
+      toast.success("Questions generated successfully.");
+    } catch (error: any) {
+      setGenerationError(error?.message || "Question generation failed.");
+      toast.error(error?.message || "Question generation failed.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // Page 3 "Next" -- publish (GENERATED -> PUBLISHED), tech jobs only.
+  const handlePublishWizard = async () => {
+    if (!savedJobId) return;
+    setIsPublishing(true);
+    try {
+      const res = await fetch(`/api/jobs/${savedJobId}/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mustHaveSkills,
+          resumeScreeningThreshold: Number(formData.resumeScreeningThreshold ?? 60),
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        toast.error(data?.error || "Failed to publish job.");
+        return;
+      }
+      setPublishedJobId(savedJobId);
+      setPublished(true);
+      toast.success(isEditAction ? "Job updated successfully!" : "Job created successfully!");
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to publish job.");
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
   const handlePublish = async () => {
     const currentFormData = formDataRef.current;
     if (jobCreationLocked && !isEditMode) {
@@ -236,28 +394,7 @@ function CreateJobForm() {
       return;
     }
     setIsSavingDraft(true);
-    let parsedQuestions = currentFormData.aiGeneratedInterviewQuestions || [];
-    if (typeof parsedQuestions === "string") { try { parsedQuestions = JSON.parse(parsedQuestions); } catch { parsedQuestions = []; } }
-    const jobData = {
-      title: currentFormData.title || "Untitled Job",
-      description: currentFormData.description || "",
-      jobRole: currentFormData.jobRole || "",
-      applicationDeadline: currentFormData.applicationDeadline || null,
-      jdFileName: currentFormData.jdFileName || null,
-      jdPreviewUrl: getPersistedJdUrl(currentFormData),
-      jdExtractedDetails: currentFormData.jdExtractedDetails
-        ? typeof currentFormData.jdExtractedDetails === "string" ? currentFormData.jdExtractedDetails : JSON.stringify(currentFormData.jdExtractedDetails)
-        : null,
-      jdExtractionJobId: currentFormData.jdExtractionJobId || null,
-      aiGeneratedInterviewQuestions: parsedQuestions,
-      resumeScreeningThreshold: Number(currentFormData.resumeScreeningThreshold ?? 60),
-      resumeScreeningCriteria: sanitizeScreeningCriteria(currentFormData.resumeScreeningCriteria || {}),
-      aiInterviewerVoiceId: currentFormData.aiInterviewerVoiceId || "",
-      aiInterviewerName: currentFormData.aiInterviewerName || "Ishitha",
-      interviewMode: currentFormData.interviewMode || "ats",
-      interviewType: resolvedInterviewType,
-      level: currentFormData.level,
-    };
+    const jobData = buildJobData(currentFormData, resolvedInterviewType);
     try {
       let savedId: string | null = null;
       if (isEditMode) {
@@ -364,9 +501,99 @@ function CreateJobForm() {
     );
   }
 
-  // -- Main Form -- two-column layout ----------------------------------------
+  // -- Wizard Page 2 (Review Generated Questions) -- tech jobs only ---------
+  if (isTechJob && step === 1) {
+    return (
+      <div className="pb-10 animate-in fade-in duration-500 max-w-3xl mx-auto">
+        <div className="mb-6">
+          <Steps steps={WIZARD_STEPS} currentStep={step} onStepClick={(i) => i <= maxStepReached && setStep(i)} maxStepReached={maxStepReached} />
+        </div>
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Review Generated Questions</h1>
+            <p className="text-sm text-gray-400 mt-0.5">Edit or add questions before proceeding.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setStep(0)}
+              className="inline-flex items-center justify-center h-10 px-4 rounded-xl bg-white text-sm font-medium text-gray-600 hover:text-violet-600 hover:bg-violet-50 transition-all"
+              style={{ border: "1px solid #E9E7FF" }}>
+              <ChevronLeft className="h-4 w-4" /> Back
+            </button>
+            <button
+              type="button"
+              onClick={() => { setStep(2); setMaxStepReached((m) => Math.max(m, 2)); }}
+              className="btn-shimmer inline-flex items-center justify-center gap-2 h-10 px-6 rounded-xl text-sm font-medium text-white transition-all"
+              style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: "0 4px 14px rgba(124,58,237,0.3)" }}>
+              Proceed <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+        <Card>
+          <WizardPage2Review
+            questions={questionBankQuestions}
+            onChange={setQuestionBankQuestions}
+            skippedQuerySnippetReason={skippedQuerySnippetReason}
+            skippedCodeSnippetReason={skippedCodeSnippetReason}
+          />
+        </Card>
+      </div>
+    );
+  }
+
+  // -- Wizard Page 3 (Scoring & Publish) -- tech jobs only -------------------
+  if (isTechJob && step === 2) {
+    return (
+      <div className="pb-10 animate-in fade-in duration-500 max-w-3xl mx-auto">
+        <div className="mb-6">
+          <Steps steps={WIZARD_STEPS} currentStep={step} onStepClick={(i) => i <= maxStepReached && setStep(i)} maxStepReached={maxStepReached} />
+        </div>
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Scoring & Publish</h1>
+            <p className="text-sm text-gray-400 mt-0.5">Set screening details, then publish.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setStep(1)}
+              className="inline-flex items-center justify-center h-10 px-4 rounded-xl bg-white text-sm font-medium text-gray-600 hover:text-violet-600 hover:bg-violet-50 transition-all"
+              style={{ border: "1px solid #E9E7FF" }}>
+              <ChevronLeft className="h-4 w-4" /> Back
+            </button>
+            <button
+              type="button"
+              onClick={handlePublishWizard}
+              disabled={isPublishing}
+              className="btn-shimmer inline-flex items-center justify-center gap-2 h-10 px-6 rounded-xl text-sm font-medium text-white transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+              style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: isPublishing ? "none" : "0 4px 14px rgba(124,58,237,0.3)" }}>
+              {isPublishing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
+              {isPublishing ? "Publishing…" : "Next"}
+            </button>
+          </div>
+        </div>
+        <Card>
+          <WizardPage3Scoring
+            interviewMode={formData.interviewMode || "ats"}
+            screeningConfig={screeningConfig}
+            setScreeningConfig={handleScreeningConfig}
+            mustHaveSkills={mustHaveSkills}
+            setMustHaveSkills={setMustHaveSkills}
+          />
+        </Card>
+      </div>
+    );
+  }
+
+  // -- Main Form (Page 1) -- two-column layout -------------------------------
   return (
     <div className="pb-10 animate-in fade-in duration-500">
+      {/* Wizard step indicator -- tech jobs only, since conversational jobs
+          publish directly from this page with no generated question bank. */}
+      {isTechJob && (
+        <div className="mb-6 max-w-3xl">
+          <Steps steps={WIZARD_STEPS} currentStep={step} onStepClick={(i) => i <= maxStepReached && setStep(i)} maxStepReached={maxStepReached} />
+        </div>
+      )}
       {/* Page header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div>
@@ -389,17 +616,36 @@ function CreateJobForm() {
             <ChevronLeft className="h-4 w-4" />
             {isEditAction ? "Cancel" : "Back"}
           </button>
-          <button
-            type="button"
-            onClick={handlePublish}
-            disabled={isSavingDraft}
-            className="btn-shimmer inline-flex items-center justify-center gap-2 h-10 px-6 rounded-xl text-sm font-medium text-white transition-all disabled:opacity-70 disabled:cursor-not-allowed"
-            style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: isSavingDraft ? "none" : "0 4px 14px rgba(124,58,237,0.3)" }}>
-            {isSavingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
-            {isSavingDraft ? "Saving…" : isEditAction ? "Update Job" : "Create Job"}
-          </button>
+          {isTechJob ? (
+            <button
+              type="button"
+              onClick={handleStartGeneration}
+              disabled={isGenerating}
+              className="btn-shimmer inline-flex items-center justify-center gap-2 h-10 px-6 rounded-xl text-sm font-medium text-white transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+              style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: isGenerating ? "none" : "0 4px 14px rgba(124,58,237,0.3)" }}>
+              {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {isGenerating ? "Generating questions…" : "Start Generation"}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handlePublish}
+              disabled={isSavingDraft}
+              className="btn-shimmer inline-flex items-center justify-center gap-2 h-10 px-6 rounded-xl text-sm font-medium text-white transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+              style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: isSavingDraft ? "none" : "0 4px 14px rgba(124,58,237,0.3)" }}>
+              {isSavingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
+              {isSavingDraft ? "Saving…" : isEditAction ? "Update Job" : "Create Job"}
+            </button>
+          )}
         </div>
       </div>
+
+      {generationError && (
+        <div className="mb-4 flex items-center gap-2 px-4 py-3 rounded-xl text-xs font-medium text-red-600 max-w-3xl"
+          style={{ background: "#FEF2F2", border: "1px solid #FECACA" }}>
+          {generationError}
+        </div>
+      )}
 
       {/* Two-column grid — fixed height so the page doesn't scroll, only columns scroll if needed */}
       <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4 items-start h-[calc(100vh-100px)] min-h-0">
@@ -547,8 +793,10 @@ function CreateJobForm() {
             </div>
           </Card>
 
-          {/* Screening — Resume only */}
-          {formData.interviewMode !== "interview-only" && (
+          {/* Screening — Resume only. For tech jobs this now lives on wizard
+              Page 3 (Scoring & Publish) alongside must-have skills; shown here
+              only for conversational jobs, which publish directly from this page. */}
+          {!isTechJob && formData.interviewMode !== "interview-only" && (
             <Card>
               <CardHeader icon={<SlidersHorizontal className="h-3.5 w-3.5" />} title="Screening Settings" subtitle="Threshold and criteria for resume scoring" />
               <ScreeningSettings config={screeningConfig} setConfig={handleScreeningConfig} />

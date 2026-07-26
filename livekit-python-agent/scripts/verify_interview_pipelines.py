@@ -172,6 +172,47 @@ SALES_RESUME_JSON = {
 
 CUSTOM_QUESTIONS: list[str] = []
 
+# Tech interviews no longer generate a brief live -- production reads a stored,
+# admin-generated Job.questionBank snapshot instead (see
+# interview.tech.question_bank_adapter.build_brief_from_question_bank(), which
+# agent_runtime.py's interview_type=="tech" branch calls exclusively). This
+# fixture mirrors TECH_JD_DATA's criteria so the tech verification run below
+# exercises the same adapter production actually uses, not the retired
+# generate_interview_brief() LLM pipeline.
+TECH_QUESTION_BANK = {
+    "version": 1,
+    "level": 2,
+    "questions": [
+        {
+            "id": "verify-q1", "skill": "Python", "subtopic": "Production Services",
+            "question_type": "conceptual",
+            "question": "How would you decide between async and multiprocessing for a CPU-bound Python service?",
+        },
+        {
+            "id": "verify-q2", "skill": "PostgreSQL", "subtopic": "Query Optimization",
+            "question_type": "conceptual",
+            "question": "What would you check first if a previously-fast query suddenly got slow?",
+        },
+        {
+            "id": "verify-q3", "skill": "Distributed systems", "subtopic": "Designing for Failure",
+            "question_type": "conceptual",
+            "question": "How would you design a service to stay correct if a downstream dependency becomes slow?",
+        },
+        {
+            "id": "verify-q4", "skill": "REST API design", "subtopic": "Versioning",
+            "question_type": "conceptual",
+            "question": "How would you evolve a public REST API without breaking existing clients?",
+        },
+        {
+            "id": "verify-q5", "skill": "Docker/Kubernetes", "subtopic": "Containerized Deployment",
+            "question_type": "conceptual",
+            "question": "What would you check if a pod keeps getting OOM-killed in production?",
+        },
+    ],
+    "skippedQuerySnippetReason": None,
+    "skippedCodeSnippetReason": None,
+}
+
 
 # ---------------------------------------------------------------------------
 # Candidate simulator -- a second LLM plays the candidate so answers are
@@ -279,7 +320,7 @@ async def run_pipeline(
         from interview.conversational.eval import run_eval_and_build_directive
         from interview.conversational.report import generate_interview_report, generate_interview_summary
     else:
-        from interview.tech.brief import generate_interview_brief
+        from interview.tech.question_bank_adapter import build_brief_from_question_bank
         from interview.tech.scoring import evaluate_answer
         from interview.tech.probe import get_probe_context, QUESTION_GENERATION_SYSTEM
         from interview.tech.prompts import build_evaluation_layer_prompt, build_voice_layer_prompt, build_system_prompt
@@ -302,16 +343,25 @@ async def run_pipeline(
 
     _brief_usages: list[dict] = []
     t0 = time.perf_counter()
-    brief = await generate_interview_brief(
-        candidate_name=candidate_name,
-        job_title=job_title,
-        level=level,
-        jd_data=jd_data,
-        custom_questions=CUSTOM_QUESTIONS,
-        openai_client=client,
-        llm_model=INTERVIEW_LLM_MODEL,
-        usage_sink=_brief_usages.append,
-    )
+    if is_sales:
+        brief = await generate_interview_brief(
+            candidate_name=candidate_name,
+            job_title=job_title,
+            level=level,
+            jd_data=jd_data,
+            custom_questions=CUSTOM_QUESTIONS,
+            openai_client=client,
+            llm_model=INTERVIEW_LLM_MODEL,
+            usage_sink=_brief_usages.append,
+        )
+    else:
+        # Tech: no LLM call, matches production exactly -- pure transform from
+        # a stored question bank (TECH_QUESTION_BANK fixture here).
+        tech_criteria: list[dict[str, Any]] = TECH_JD_DATA["criteria"]
+        must_have_skills = [c["name"] for c in tech_criteria if c.get("priority") == "critical"]
+        brief = build_brief_from_question_bank(
+            TECH_QUESTION_BANK, level=level, must_have_skills=must_have_skills,
+        )
     print(f"brief generated in {time.perf_counter() - t0:.1f}s")
     print(f"anchor_topic: {brief.anchor_topic.title}  [{brief.anchor_topic.tag}]")
     print(f"topic_pool ({len(brief.topic_pool)} topics):")

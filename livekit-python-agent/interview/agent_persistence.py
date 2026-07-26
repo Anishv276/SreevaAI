@@ -203,7 +203,9 @@ async def get_interview_context(app_id: str) -> dict:
            o."sttModel", o."ttsProvider", o."ttsModel", o."ttsSpeed",
            o."llmInterviewLive", o."llmInterviewEval", o."llmInterviewBrief", o."llmInterviewReport",
            i."interviewStatus" AS "interviewStatus",
-           i."aiInterviewBrief" AS "interviewBrief"
+           i."aiInterviewBrief" AS "interviewBrief",
+           i."jdQuestionBankSnapshot" AS "questionBankSnapshot",
+           i."jdQuestionBankVersionUsed" AS "questionBankVersionUsed"
     FROM "Application" a
     JOIN "Job" d ON a."jobId" = d.id
     LEFT JOIN "OrganizationDetails" o ON d."organizationId" = o.id
@@ -239,7 +241,9 @@ async def get_interview_context(app_id: str) -> dict:
                 "proctoringSignals":    row["proctoringSignals"],
                 "interviewQuestions":   row["interviewQuestions"],
                 "interviewStatus":      row["interviewStatus"],
-                "interviewBrief":       row["interviewBrief"],  # None if not yet generated
+                "interviewBrief":       row["interviewBrief"],  # None if not yet generated -- conversational interviews only
+                "questionBankSnapshot":       row["questionBankSnapshot"],  # frozen Job.questionBank -- tech interviews only
+                "questionBankVersionUsed":    row["questionBankVersionUsed"],
                 # AI model config -- all from org DB, no hardcoded defaults
                 "sttModel":             row["sttModel"],
                 "ttsProvider":          row["ttsProvider"],
@@ -299,6 +303,8 @@ async def get_demo_interview_context(app_id: str, dispatch_metadata: dict) -> di
         "interviewQuestions":   None,
         "interviewStatus":      None,
         "interviewBrief":       dispatch_metadata.get("briefJson"),
+        "questionBankSnapshot":       dispatch_metadata.get("questionBankJson"),
+        "questionBankVersionUsed":    None,
         # DEMO-ONLY STT: flux-general (English). Real interviews use each org's
         # own sttModel from OrganizationDetails via get_interview_context().
         "sttModel":             "flux-general-en",

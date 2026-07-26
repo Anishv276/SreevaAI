@@ -30,8 +30,18 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Application not found" }, { status: 404 });
         }
 
-        // Create or reset interview row for test
+        // Create or reset interview row for test. Tech interviews always freeze
+        // a fresh question-bank snapshot from the job's CURRENT bank on every
+        // test run (no live brief-generation fallback -- that path is retired
+        // for tech interviews, see agent_runtime.py's tech branch).
         const interviewId = `test_${applicationId}_${Date.now()}`;
+        const isTechJob = application.job?.interviewType === "tech";
+        const questionBankFields = isTechJob
+            ? {
+                jdQuestionBankSnapshot: (application.job?.questionBank ?? null) as any,
+                jdQuestionBankVersionUsed: application.job?.questionBankVersion ?? null,
+            }
+            : {};
         const interview = await prisma.interview.upsert({
             where: { applicationId },
             create: {
@@ -39,6 +49,7 @@ export async function POST(request: Request) {
                 applicationId,
                 interviewStatus: "PENDING",
                 isTestSession: true,
+                ...questionBankFields,
             },
             update: {
                 interviewStatus: "PENDING",
@@ -50,6 +61,7 @@ export async function POST(request: Request) {
                 aiScoreBreakdown: {},
                 aiInterviewSummary: {},
                 aiSkillRatings: [],
+                ...questionBankFields,
             },
             select: { candidateInviteToken: true },
         });

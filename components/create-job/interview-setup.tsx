@@ -291,58 +291,63 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                 </div>
             </div>
 
-            <div className="h-px" style={{ background: "#F0EEF8" }} />
-
-            {/* Interview Questions */}
-            <div className="space-y-3">
-                <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    <BrainCircuit className="h-3.5 w-3.5 text-[#7C3AED]" /> Interview Questions
-                </label>
-                <div className="flex gap-2">
-                    <input
-                        type="text"
-                        value={newQuestion}
-                        onChange={(e) => setNewQuestion(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && addQuestion()}
-                        onBlur={() => addQuestion()}
-                        placeholder="Add a question and press Enter…"
-                        className="flex-1 h-10 px-3 rounded-xl bg-gray-50 text-sm text-gray-800 outline-none placeholder:text-gray-400 transition-all focus:bg-white focus:shadow-[0_0_0_3px_rgba(124,58,237,0.1)]"
-                        style={{ border: "1px solid #E9E7FF" }}
-                        onFocus={e => { e.target.style.borderColor = "#7C3AED"; }}
-                        onBlurCapture={e => { e.target.style.borderColor = "#E9E7FF"; addQuestion(); }}
-                    />
-                    <button
-                        type="button"
-                        onClick={addQuestion}
-                        disabled={!newQuestion.trim()}
-                        className="h-10 w-10 rounded-xl flex items-center justify-center text-white transition-all disabled:opacity-40"
-                        style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: newQuestion.trim() ? "0 2px 8px rgba(124,58,237,0.25)" : "none" }}
-                    >
-                        <Plus className="w-4 h-4" />
-                    </button>
-                </div>
-                {safeArray(formData.aiGeneratedInterviewQuestions).length > 0 && (
-                    <div className="space-y-2">
-                        {safeArray(formData.aiGeneratedInterviewQuestions).map((q: string, i: number) => (
-                            <div key={i} className="group flex items-start gap-3 px-3.5 py-2.5 rounded-xl bg-white transition-all hover:shadow-sm"
-                                style={{ border: "1px solid #E9E7FF" }}>
-                                <span className="mt-0.5 text-xs font-semibold text-[#7C3AED] bg-violet-50 h-5 w-5 rounded-lg flex items-center justify-center flex-shrink-0">{i + 1}</span>
-                                <span className="flex-1 text-sm text-gray-700 leading-snug">{q}</span>
-                                <button
-                                    type="button"
-                                    onClick={() => removeQuestion(i)}
-                                    className="text-gray-300 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0 mt-0.5"
-                                >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+            {/* Interview Questions -- conversational interviews only. Tech jobs
+                manage their question bank exclusively via the Create Job
+                wizard's Review Questions page (Page 2). */}
+            {(formData.interviewType || "tech") === "conversational" && (
+                <>
+                    <div className="h-px" style={{ background: "#F0EEF8" }} />
+                    <div className="space-y-3">
+                        <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                            <BrainCircuit className="h-3.5 w-3.5 text-[#7C3AED]" /> Interview Questions
+                        </label>
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                value={newQuestion}
+                                onChange={(e) => setNewQuestion(e.target.value)}
+                                onKeyDown={(e) => e.key === "Enter" && addQuestion()}
+                                onBlur={() => addQuestion()}
+                                placeholder="Add a question and press Enter…"
+                                className="flex-1 h-10 px-3 rounded-xl bg-gray-50 text-sm text-gray-800 outline-none placeholder:text-gray-400 transition-all focus:bg-white focus:shadow-[0_0_0_3px_rgba(124,58,237,0.1)]"
+                                style={{ border: "1px solid #E9E7FF" }}
+                                onFocus={e => { e.target.style.borderColor = "#7C3AED"; }}
+                                onBlurCapture={e => { e.target.style.borderColor = "#E9E7FF"; addQuestion(); }}
+                            />
+                            <button
+                                type="button"
+                                onClick={addQuestion}
+                                disabled={!newQuestion.trim()}
+                                className="h-10 w-10 rounded-xl flex items-center justify-center text-white transition-all disabled:opacity-40"
+                                style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: newQuestion.trim() ? "0 2px 8px rgba(124,58,237,0.25)" : "none" }}
+                            >
+                                <Plus className="w-4 h-4" />
+                            </button>
+                        </div>
+                        {safeArray(formData.aiGeneratedInterviewQuestions).length > 0 && (
+                            <div className="space-y-2">
+                                {safeArray(formData.aiGeneratedInterviewQuestions).map((q: string, i: number) => (
+                                    <div key={i} className="group flex items-start gap-3 px-3.5 py-2.5 rounded-xl bg-white transition-all hover:shadow-sm"
+                                        style={{ border: "1px solid #E9E7FF" }}>
+                                        <span className="mt-0.5 text-xs font-semibold text-[#7C3AED] bg-violet-50 h-5 w-5 rounded-lg flex items-center justify-center flex-shrink-0">{i + 1}</span>
+                                        <span className="flex-1 text-sm text-gray-700 leading-snug">{q}</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => removeQuestion(i)}
+                                            className="text-gray-300 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0 mt-0.5"
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                ))}
                             </div>
-                        ))}
+                        )}
+                        {safeArray(formData.aiGeneratedInterviewQuestions).length === 0 && (
+                            <p className="text-xs text-gray-400">No questions added yet. AI may suggest some based on the JD.</p>
+                        )}
                     </div>
-                )}
-                {safeArray(formData.aiGeneratedInterviewQuestions).length === 0 && (
-                    <p className="text-xs text-gray-400">No questions added yet. AI may suggest some based on the JD.</p>
-                )}
-            </div>
+                </>
+            )}
         </div>
     );
 }

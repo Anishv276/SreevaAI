@@ -32,6 +32,8 @@ import type { TextStreamData as TranscriptionSegment } from "@livekit/components
 import "@livekit/components-styles";
 import { Track, RoomEvent } from "livekit-client";
 import type { Room } from "livekit-client";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneLight } from "react-syntax-highlighter/dist/cjs/styles/prism";
 interface InterviewPageProps {
     params: Promise<{ id: string }>;
 }
@@ -71,6 +73,17 @@ function formatDuration(totalSeconds: number) {
     const mins = Math.floor(safe / 60);
     const secs = safe % 60;
     return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+// The backend sends either a real language ("python", "sql") or, when none was
+// known/annotated, its question-type tag ("code_trace"/"query_trace") as a
+// fallback -- react-syntax-highlighter's Prism build only recognizes real
+// language names, so map anything else to a sensible default rather than
+// rendering unstyled.
+function resolveSyntaxHighlightLanguage(language: string): string {
+    const normalized = (language || "").toLowerCase().trim();
+    if (normalized === "query_trace") return "sql";
+    if (normalized === "code_trace" || normalized === "snippet_eval" || !normalized) return "text";
+    return normalized;
 }
 type MediaTrackCarrier = {
     publication?: { track?: { mediaStreamTrack?: MediaStreamTrack } };
@@ -1812,7 +1825,7 @@ function InterviewRoomContent({
     }, [connectionState, lkRoom]);
     const launchReadySignalSentRef = useRef(false);
     const [launchPrereqsReady, setLaunchPrereqsReady] = useState(false);
-    const [codeCard, setCodeCard] = useState<{ prompt: string; code: string; timerSecs: number } | null>(null);
+    const [codeCard, setCodeCard] = useState<{ cardId: string; prompt: string; code: string; language: string; timerSecs: number } | null>(null);
     const [codeCardSecsLeft, setCodeCardSecsLeft] = useState(0);
     useEffect(() => {
         if (!codeCard) return;
@@ -2099,11 +2112,24 @@ function InterviewRoomContent({
                         packet.severity || "medium"
                     );
                 } else if (packet.type === "code_card") {
+                    const cardId = String(packet.card_id || "");
                     setCodeCard({
+                        cardId,
                         prompt: String(packet.prompt || ""),
                         code: String(packet.code || ""),
+                        language: String(packet.language || ""),
                         timerSecs: Number(packet.timer_secs) || 45,
                     });
+                    // Ack that this client actually rendered the card -- the agent
+                    // waits briefly for this before speaking; no ack means it falls
+                    // back to a verbal-only question instead of reading code aloud.
+                    if (cardId && lkRoom?.localParticipant) {
+                        const encoder = new TextEncoder();
+                        lkRoom.localParticipant.publishData(
+                            encoder.encode(JSON.stringify({ type: "code_card_ack", card_id: cardId })),
+                            { reliable: true }
+                        ).catch(() => { /* best-effort -- a failed ack just means the agent times out and falls back */ });
+                    }
                 } else if (packet.type === "code_card_dismiss") {
                     setCodeCard(null);
                 }
@@ -2204,9 +2230,15 @@ function InterviewRoomContent({
                                     {codeCardSecsLeft}s
                                 </div>
                             </div>
-                            <pre className="px-5 py-4 text-sm leading-relaxed overflow-x-auto text-zinc-800 bg-zinc-900/[0.03]">
-                                <code>{codeCard.code}</code>
-                            </pre>
+                            <div className="px-5 py-4 overflow-x-auto bg-zinc-900/[0.03]">
+                                <SyntaxHighlighter
+                                    language={resolveSyntaxHighlightLanguage(codeCard.language)}
+                                    style={oneLight}
+                                    customStyle={{ margin: 0, padding: 0, background: "transparent", fontSize: "0.875rem", lineHeight: 1.625 }}
+                                >
+                                    {codeCard.code}
+                                </SyntaxHighlighter>
+                            </div>
                         </div>
                     </motion.div>
                 )}

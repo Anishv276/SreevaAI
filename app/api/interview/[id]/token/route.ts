@@ -156,6 +156,23 @@ export async function POST(
         const serverUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL || process.env.LIVEKIT_URL;
         const agentName = process.env.LIVEKIT_AGENT_NAME || "ai_interviewer";
 
+        // Freeze the question bank snapshot at true session start -- synchronous,
+        // no worker -- so later JD edits/regeneration never disturb a session
+        // already in progress. Idempotent: only fires once per Interview (a
+        // reconnect after LAUNCHING must not re-freeze against a possibly-newer
+        // Job.questionBank). Tech interviews only -- conversational interviews
+        // keep using aiInterviewBrief, written by the existing brief-generation
+        // worker at slot-booking time.
+        if (application.job.interviewType === "tech" && !interview.jdQuestionBankSnapshot && application.job.questionBank) {
+            await prisma.interview.update({
+                where: { applicationId },
+                data: {
+                    jdQuestionBankSnapshot: application.job.questionBank as any,
+                    jdQuestionBankVersionUsed: application.job.questionBankVersion,
+                },
+            }).catch(() => { });
+        }
+
         // Candidate is entering the room -- mark LAUNCHING so a second device is blocked
         // from here on (PROGRESS is set later by the agent once it actually joins).
         if (interview.interviewStatus === "SCHEDULED") {

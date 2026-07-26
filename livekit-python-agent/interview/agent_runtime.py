@@ -19,8 +19,8 @@ from interview.tech.phases import (
 from interview.tech.brief import (
     InterviewBrief,
     TopicItem,
-    generate_interview_brief,
 )
+from interview.tech.question_bank_adapter import build_brief_from_question_bank
 from interview.agent_runtime_utils import token_limit_kwarg
 from interview.agent_providers import (
     build_elevenlabs_tts,
@@ -683,32 +683,49 @@ _CODE_CARD_TYPE_TAGS = ("code_trace", "snippet_eval", "query_trace")
 _LANG_FENCE_TAGS = ("python", "sql", "sh", "bash", "js", "javascript")
 
 
-def extract_code_card(text: str) -> tuple[str, str, str] | None:
+_LANG_ANNOTATION_RE = re.compile(r"^LANG:\s*([\w+.#-]+)\s*$", re.IGNORECASE)
+
+
+def extract_code_card(text: str) -> tuple[str, str, str, str] | None:
     """If `text` contains a fenced code block, splits it into (spoken_text, code,
-    question_type). spoken_text is everything outside the fence, whitespace-collapsed
-    -- this is what TTS actually says. Returns None if there's no fence (the common
-    case -- most questions are spoken-only). Only the FIRST fence is used; a question
-    should only ever carry one card.
+    question_type, language). spoken_text is everything outside the fence,
+    whitespace-collapsed -- this is what TTS actually says. Returns None if
+    there's no fence (the common case -- most questions are spoken-only). Only
+    the FIRST fence is used; a question should only ever carry one card.
 
     question_type is read from the fence's language tag (e.g. ```code_trace) per the
     QUESTION_GENERATION_SYSTEM contract -- falls back to "code_trace" for an ordinary
     language tag (```python) or no tag, so scoring still gets code-question calibration
-    even if the LLM used a plain language tag instead of the type tag."""
+    even if the LLM used a plain language tag instead of the type tag.
+
+    language (for syntax highlighting on the frontend) is read from an optional
+    "LANG: <language>" annotation line immediately after the type-tag fence line
+    (see question_bank_adapter.py, which embeds this for stored anchor
+    questions where the real language is already known). Falls back to a
+    plain-language tag if one was used instead of the type tag, else "".
+    """
     m = _CODE_FENCE_RE.search(text or "")
     if not m:
         return None
     code = m.group(0).strip("`").strip()
-    first_line = code.split("\n", 1)[0].strip().lower() if code else ""
+    lines = code.split("\n")
+    first_line = lines[0].strip().lower() if lines else ""
+    language = ""
     if first_line in _CODE_CARD_TYPE_TAGS:
         question_type = first_line
-        code = code.split("\n", 1)[1] if "\n" in code else ""
+        code = "\n".join(lines[1:])
+        lang_match = _LANG_ANNOTATION_RE.match(lines[1].strip()) if len(lines) > 1 else None
+        if lang_match:
+            language = lang_match.group(1).strip().lower()
+            code = "\n".join(lines[2:])
     else:
         question_type = "code_trace"
         if first_line in _LANG_FENCE_TAGS:
-            code = code.split("\n", 1)[1] if "\n" in code else ""
+            language = first_line
+            code = "\n".join(lines[1:])
     spoken = (text[: m.start()] + " " + text[m.end():]).strip()
     spoken = re.sub(r"\s+", " ", spoken)
-    return spoken, code, question_type
+    return spoken, code.strip(), question_type, language
 
 
 def validate_spoken_question(text: str, *, max_words: int = 30) -> list[str]:
@@ -1412,6 +1429,13 @@ class InterviewAgent(Agent):
         # card can never clobber a newer one (or a state the candidate already answered
         # and dismissed themselves). See _clear_code_card_after_timeout below.
         self._code_card_generation: int = 0
+        # Render-ack handshake: llm_node waits briefly on _code_card_ack_event
+        # after publishing a card, so a client that can't render (audio-only,
+        # degraded connection, stale build) is detected and the question falls
+        # back to verbal-only instead of describing/reading code aloud. Set on
+        # the "code_card_ack" data-channel packet handler in entrypoint().
+        self._code_card_ack_event: Optional[asyncio.Event] = None
+        self._code_card_ack_id: Optional[str] = None
         # Set via set_code_card_timeout_speaker() once the entrypoint's _deliver_nudge
         # closure exists -- lets _clear_code_card_after_timeout speak a nudge through
         # the same session.say() path as the regular inactivity nudges, instead of
@@ -1652,26 +1676,65 @@ class InterviewAgent(Agent):
         # detect chunk-by-chunk.
         _card = extract_code_card(full_text) if full_text else None
         if _card is not None:
-            spoken_text, code, _card_question_type = _card
+            spoken_text, code, _card_question_type, _card_language = _card
             if code and self._room is not None:
                 _complexity_secs = max(20, min(90, 20 + 4 * code.count("\n")))
+                _card_id = f"card_{self._code_card_generation + 1}_{int(time.time() * 1000)}"
                 try:
                     await self._room.local_participant.publish_data(
                         json.dumps({
                             "type": "code_card",
+                            "card_id": _card_id,
                             "prompt": spoken_text,
                             "code": code,
+                            # Real programming/query language for syntax highlighting
+                            # (e.g. "python", "sql") -- falls back to the question-type
+                            # tag ("code_trace"/"query_trace") if no language annotation
+                            # was present, so the frontend always gets a non-empty hint.
+                            "language": _card_language or _card_question_type,
                             "timer_secs": _complexity_secs,
                         }).encode("utf-8"),
                         reliable=True,
                     )
+                    # Wait briefly for the frontend to ack that it actually rendered the
+                    # card (see the "code_card_ack" data-channel handler near
+                    # self._code_card_ack_event) before committing to the spoken lead-in.
+                    # A client that can't render (audio-only, degraded connection, a
+                    # build that doesn't wire the listener) never acks -- on timeout we
+                    # fall back to a plain verbal question instead of describing a
+                    # snippet the candidate can't see. Per spec: never read code aloud
+                    # as that fallback -- speak a generic verbal substitute instead.
+                    self._code_card_ack_event = asyncio.Event()
+                    self._code_card_ack_id = _card_id
+                    _acked = False
+                    try:
+                        await asyncio.wait_for(self._code_card_ack_event.wait(), timeout=3.0)
+                        _acked = True
+                    except asyncio.TimeoutError:
+                        pass
+                    if not _acked:
+                        logger.warning(
+                            "[CODE_CARD] no render ack from client within 3s (card_id=%s) -- "
+                            "falling back to a verbal-only question, code never read aloud",
+                            _card_id,
+                        )
+                        await self._room.local_participant.publish_data(
+                            json.dumps({"type": "code_card_dismiss", "card_id": _card_id}).encode("utf-8"),
+                            reliable=True,
+                        )
+                        _no_ack_fallback_text = (
+                            "Let's skip that one since I can't confirm you're seeing the snippet -- "
+                            "let's move to the next question instead."
+                        )
+                        yield llm.ChatChunk(id="code-card-no-ack-fallback", delta=llm.ChoiceDelta(role="assistant", content=_no_ack_fallback_text))
+                        return
                     self.code_card_active = True
                     # Read back by _build_eval_payload() so the candidate's answer to
                     # THIS card is scored with code-question calibration instead of
                     # defaulting to generic "mechanism" -- see eval.py QuestionRecord.
                     self.last_code_card_question_type = _card_question_type
                     logger.info(
-                        "[CODE_CARD] published | type=%s | timer=%ds | code_lines=%d",
+                        "[CODE_CARD] published + acked | type=%s | timer=%ds | code_lines=%d",
                         _card_question_type, _complexity_secs, code.count("\n") + 1,
                     )
                     # The frontend auto-hides the card locally after timer_secs but never
@@ -1955,7 +2018,9 @@ class InterviewContext(BaseModel):
     interviewQuestions: Any = None
     proctoringSignals: Any = None
     interviewStatus: Optional[str] = None
-    interviewBrief: Any = None  # Pre-generated JSON (slot flow) or None (test/fallback flow)
+    interviewBrief: Any = None  # Pre-generated JSON (slot flow) or None (test/fallback flow) -- conversational interviews only
+    questionBankSnapshot: Any = None  # Frozen Job.questionBank JSON -- tech interviews only
+    questionBankVersionUsed: Optional[int] = None
     @field_validator("fullName", "jobTitle", "language", mode="before")
     @classmethod
     def _require_nonempty(cls, v: Any) -> str:
@@ -2150,7 +2215,10 @@ async def entrypoint(ctx: JobContext):
             build_system_prompt,
         )
     else:
-        from interview.tech.brief import generate_interview_brief
+        # Tech interviews no longer call generate_interview_brief() at all --
+        # the InterviewBrief is built synchronously from the stored, frozen
+        # question bank snapshot (see build_brief_from_question_bank() below).
+        # generate_interview_brief is left unimported here on purpose.
         from interview.tech.phases import build_greeting_text, build_interview_directive
         from interview.tech.prompts import (
             build_voice_layer_prompt,
@@ -2288,49 +2356,80 @@ async def entrypoint(ctx: JobContext):
     _level_seed = int(ctx_data.level) if ctx_data.level in (1, 2, 3, 4) else 2
     logger.info("[LEVEL] admin level=%s", _level_seed)
 
-    _stored_brief_raw = ctx_data.interviewBrief if not _is_test_session else None
-    _stored_brief_dict: dict | None = (
-        _coerce_jsonish(_stored_brief_raw)
-        if _stored_brief_raw
-        else None
-    )
-    if _stored_brief_dict:
-        # SLOT FLOW: brief was pre-generated by the background worker at slot booking.
-        # Instant load — no LLM call, no latency.
+    if interview_type == "tech":
+        # Tech interviews: no brief LLM call, ever -- InterviewBrief is built
+        # synchronously (pure data transform, no LLM) from the question bank
+        # snapshot frozen onto this Interview row at session start. A missing
+        # snapshot is a hard failure, not a silent fallback to live brief
+        # generation -- that fallback would partially resurrect the exact
+        # brief system this replaces.
+        _stored_bank_raw = ctx_data.questionBankSnapshot
+        _stored_bank_dict: dict | None = _coerce_jsonish(_stored_bank_raw) if _stored_bank_raw else None
+        if not _stored_bank_dict:
+            raise RuntimeError(
+                f"No question_bank snapshot found for tech interview (application context "
+                f"missing jdQuestionBankSnapshot) -- candidate={candidate_first_name or candidate_name!r} "
+                f"role={job_title!r}. Session cannot start."
+            )
         logger.info(
-            "[BRIEF] Loading pre-generated brief from DB | candidate=%s role=%s",
-            candidate_first_name or candidate_name, job_title,
+            "[QUESTION_BANK] Building brief from stored snapshot | candidate=%s role=%s version=%s",
+            candidate_first_name or candidate_name, job_title, ctx_data.questionBankVersionUsed,
         )
-        _interview_brief: InterviewBrief = InterviewBrief.model_validate(_stored_brief_dict)
+        _interview_brief: InterviewBrief = build_brief_from_question_bank(
+            _stored_bank_dict,
+            level=_level_seed,
+            must_have_skills=_jd_skills,
+        )
         logger.info(
-            "[BRIEF] ✓ Loaded from DB | level=%s | anchor=%r | topics=%d",
+            "[QUESTION_BANK] ✓ Built | level=%s | anchor=%r | topics=%d",
             _interview_brief.level,
             _interview_brief.anchor_topic.title,
             len(_interview_brief.topic_pool),
         )
     else:
-        # TEST FLOW (isTest=True) or fallback if worker hasn't finished yet:
-        # Always generate the brief live via LLM — same as before.
-        if _is_test_session:
+        _stored_brief_raw = ctx_data.interviewBrief if not _is_test_session else None
+        _stored_brief_dict: dict | None = (
+            _coerce_jsonish(_stored_brief_raw)
+            if _stored_brief_raw
+            else None
+        )
+        if _stored_brief_dict:
+            # SLOT FLOW: brief was pre-generated by the background worker at slot booking.
+            # Instant load — no LLM call, no latency.
             logger.info(
-                "[BRIEF] TEST SESSION — generating brief live (never from DB) | candidate=%s role=%s",
+                "[BRIEF] Loading pre-generated brief from DB | candidate=%s role=%s",
                 candidate_first_name or candidate_name, job_title,
+            )
+            _interview_brief = InterviewBrief.model_validate(_stored_brief_dict)
+            logger.info(
+                "[BRIEF] ✓ Loaded from DB | level=%s | anchor=%r | topics=%d",
+                _interview_brief.level,
+                _interview_brief.anchor_topic.title,
+                len(_interview_brief.topic_pool),
             )
         else:
-            logger.info(
-                "[BRIEF] No pre-generated brief in DB — falling back to live generation | candidate=%s role=%s",
-                candidate_first_name or candidate_name, job_title,
+            # TEST FLOW (isTest=True) or fallback if worker hasn't finished yet:
+            # Always generate the brief live via LLM — same as before.
+            if _is_test_session:
+                logger.info(
+                    "[BRIEF] TEST SESSION — generating brief live (never from DB) | candidate=%s role=%s",
+                    candidate_first_name or candidate_name, job_title,
+                )
+            else:
+                logger.info(
+                    "[BRIEF] No pre-generated brief in DB — falling back to live generation | candidate=%s role=%s",
+                    candidate_first_name or candidate_name, job_title,
+                )
+            _interview_brief = await generate_interview_brief(
+                candidate_name=candidate_first_name or candidate_name,
+                job_title=job_title,
+                level=_level_seed,
+                jd_data=extracted_details or {},
+                custom_questions=_interview_questions or [],
+                openai_client=_brief_openai_client,
+                llm_model=str(ctx_data.llmInterviewBrief).strip(),
+                usage_sink=_brief_llm_usages.append,
             )
-        _interview_brief = await generate_interview_brief(
-            candidate_name=candidate_first_name or candidate_name,
-            job_title=job_title,
-            level=_level_seed,
-            jd_data=extracted_details or {},
-            custom_questions=_interview_questions or [],
-            openai_client=_brief_openai_client,
-            llm_model=str(ctx_data.llmInterviewBrief).strip(),
-            usage_sink=_brief_llm_usages.append,
-        )
     # Level is fixed and admin-selected -- the brief always echoes back _level_seed.
     candidate_level = _interview_brief.level
     logger.info("[FLOW] Level=%s | candidate=%s | role=%s", candidate_level, candidate_name, job_title)
@@ -3349,6 +3448,15 @@ async def entrypoint(ctx: JobContext):
                 interview_marked_finished = True
                 interview_finished_event.set()
                 disconnect_event.set()  # Resolve hang
+            elif payload.get("type") == "code_card_ack":
+                # Client confirms it actually rendered the card just published --
+                # see llm_node's _code_card_ack_event wait. Only resolve the wait
+                # if this ack matches the card currently pending (a stale ack for
+                # an already-dismissed/older card must not fire a newer wait).
+                _acked_card_id = payload.get("card_id")
+                _ack_event = agent._code_card_ack_event
+                if _ack_event is not None and _acked_card_id == agent._code_card_ack_id:
+                    _ack_event.set()
             # All browser-side proctoring signals (tab_switch, face_absence,
             # multiple_faces, camera_disabled, microphone_disabled) are stored
             # directly to the DB via /api/interview/proctoring by the frontend.

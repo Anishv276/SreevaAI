@@ -1,12 +1,18 @@
 "use client";
 import { useState, useRef } from "react";
-import { Upload, Loader2, FileText, X, CheckCircle2, Eye, FlaskConical, MessageCircle, ChevronDown, GraduationCap } from "lucide-react";
+import { Upload, Loader2, FileText, X, CheckCircle2, Eye, FlaskConical, MessageCircle, GraduationCap, Check } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 const QUESTION_LEVELS = [
     { value: 1, label: "1 - Basic" },
     { value: 2, label: "2 - Moderate" },
     { value: 3, label: "3 - Experienced" },
     { value: 4, label: "4 - Advanced/Senior" },
+] as const;
+
+const INTERVIEW_TYPES = [
+    { value: "tech", label: "Tech Interview", Icon: FlaskConical },
+    { value: "conversational", label: "Conversational Interview", Icon: MessageCircle },
 ] as const;
 
 export function JobDescription({
@@ -25,8 +31,6 @@ export function JobDescription({
     abortAnalysis?: () => void;
 }) {
     const [dragOver, setDragOver] = useState(false);
-    const [showTypePicker, setShowTypePicker] = useState(false);
-    const [showLevelPicker, setShowLevelPicker] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const interviewType = formData.interviewType || "tech";
     const level = formData.level || 2;
@@ -91,75 +95,69 @@ export function JobDescription({
                         </button>
                     </div>
                 </div>
-                <div className="flex items-center gap-2 px-1 relative">
-                    <span
-                        className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-xs font-medium"
-                        style={interviewType === "tech"
-                            ? { background: "#EEF2FF", color: "#4338CA", border: "1px solid #C7D2FE" }
-                            : { background: "#FDF4FF", color: "#A21CAF", border: "1px solid #F0ABFC" }}
-                    >
-                        {interviewType === "tech"
-                            ? <><FlaskConical className="h-3 w-3" /> Tech Interview</>
-                            : <><MessageCircle className="h-3 w-3" /> Conversational Interview</>}
-                    </span>
-                    <button
-                        type="button"
-                        onClick={() => setShowTypePicker((v) => !v)}
-                        className="inline-flex items-center gap-1 h-7 px-2 rounded-lg text-xs font-medium text-gray-500 hover:text-violet-600 hover:bg-violet-50 transition-all"
-                    >
-                        Change <ChevronDown className="h-3 w-3" />
-                    </button>
-                    {showTypePicker && (
-                        <div className="absolute top-8 left-0 z-10 flex flex-col rounded-lg bg-white shadow-lg overflow-hidden"
-                            style={{ border: "1px solid #E9E7FF" }}>
-                            {(["tech", "conversational"] as const).map((opt) => (
-                                <button
-                                    key={opt}
-                                    type="button"
-                                    onClick={() => {
-                                        updateFormData((prev: any) => ({ ...prev, interviewType: opt }));
-                                        setShowTypePicker(false);
-                                    }}
-                                    className="flex items-center gap-2 px-3 py-2 text-xs text-left text-gray-700 hover:bg-violet-50 transition-all whitespace-nowrap"
-                                >
-                                    {opt === "tech" ? <FlaskConical className="h-3 w-3 text-indigo-500" /> : <MessageCircle className="h-3 w-3 text-fuchsia-500" />}
-                                    {opt === "tech" ? "Tech Interview" : "Conversational Interview"}
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                </div>
-                <div className="flex items-center gap-2 px-1 relative">
-                    <span className="text-xs text-gray-500">Questioning Level<span className="text-red-500">*</span></span>
-                    <button
-                        type="button"
-                        onClick={() => setShowLevelPicker((v) => !v)}
-                        className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-xs font-medium transition-all"
-                        style={{ background: "#EFF6FF", color: "#1D4ED8", border: "1px solid #BFDBFE" }}
-                    >
-                        <GraduationCap className="h-3 w-3" />
-                        {QUESTION_LEVELS.find((l) => l.value === level)?.label || "Select level"}
-                        <ChevronDown className="h-3 w-3" />
-                    </button>
-                    {showLevelPicker && (
-                        <div className="absolute top-8 left-0 z-10 flex flex-col rounded-lg bg-white shadow-lg overflow-hidden"
-                            style={{ border: "1px solid #E9E7FF" }}>
-                            {QUESTION_LEVELS.map((opt) => (
+                <div className="space-y-1.5 px-1">
+                    <span className="text-xs text-gray-500">Interview Type</span>
+                    <div className="grid grid-cols-2 gap-2">
+                        {INTERVIEW_TYPES.map((opt) => {
+                            const active = interviewType === opt.value;
+                            return (
                                 <button
                                     key={opt.value}
                                     type="button"
-                                    onClick={() => {
-                                        updateFormData((prev: any) => ({ ...prev, level: opt.value }));
-                                        setShowLevelPicker(false);
+                                    onClick={() => updateFormData((prev: any) => ({ ...prev, interviewType: opt.value }))}
+                                    className={cn(
+                                        "relative flex items-center gap-2 px-3 py-2.5 rounded-xl text-left text-xs font-medium transition-all",
+                                        active ? "shadow-[0_0_0_1.5px_#7C3AED]" : "hover:shadow-[0_0_0_1px_#C4B5FD]"
+                                    )}
+                                    style={{
+                                        border: active ? "1px solid #7C3AED" : "1px solid #E9E7FF",
+                                        background: active ? "linear-gradient(135deg, rgba(139,92,246,0.06), rgba(59,130,246,0.04))" : "#FAFAFC",
+                                        color: active ? "#6D28D9" : "#374151",
                                     }}
-                                    className="flex items-center gap-2 px-3 py-2 text-xs text-left text-gray-700 hover:bg-violet-50 transition-all whitespace-nowrap"
                                 >
-                                    <GraduationCap className="h-3 w-3 text-blue-500" />
-                                    {opt.label}
+                                    <opt.Icon className={cn("h-3.5 w-3.5 flex-shrink-0", active ? "text-[#7C3AED]" : "text-gray-400")} />
+                                    <span className="flex-1">{opt.label}</span>
+                                    {active && (
+                                        <div className="h-4 w-4 rounded-full bg-[#7C3AED] flex items-center justify-center flex-shrink-0">
+                                            <Check className="h-2.5 w-2.5 text-white" />
+                                        </div>
+                                    )}
                                 </button>
-                            ))}
-                        </div>
-                    )}
+                            );
+                        })}
+                    </div>
+                </div>
+                <div className="space-y-1.5 px-1">
+                    <span className="text-xs text-gray-500">Questioning Level<span className="text-red-500">*</span></span>
+                    <div className="grid grid-cols-2 gap-2">
+                        {QUESTION_LEVELS.map((opt) => {
+                            const active = level === opt.value;
+                            return (
+                                <button
+                                    key={opt.value}
+                                    type="button"
+                                    onClick={() => updateFormData((prev: any) => ({ ...prev, level: opt.value }))}
+                                    className={cn(
+                                        "relative flex items-center gap-2 px-3 py-2.5 rounded-xl text-left text-xs font-medium transition-all",
+                                        active ? "shadow-[0_0_0_1.5px_#1D4ED8]" : "hover:shadow-[0_0_0_1px_#BFDBFE]"
+                                    )}
+                                    style={{
+                                        border: active ? "1px solid #1D4ED8" : "1px solid #E9E7FF",
+                                        background: active ? "#EFF6FF" : "#FAFAFC",
+                                        color: active ? "#1D4ED8" : "#374151",
+                                    }}
+                                >
+                                    <GraduationCap className={cn("h-3.5 w-3.5 flex-shrink-0", active ? "text-[#1D4ED8]" : "text-gray-400")} />
+                                    <span className="flex-1">{opt.label}</span>
+                                    {active && (
+                                        <div className="h-4 w-4 rounded-full bg-[#1D4ED8] flex items-center justify-center flex-shrink-0">
+                                            <Check className="h-2.5 w-2.5 text-white" />
+                                        </div>
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </div>
                 </div>
             </div>
         );

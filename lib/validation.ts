@@ -23,6 +23,12 @@ const jobFieldsSchema = z.object({
   interviewMode: z.enum(["ats", "interview-only"]).optional(),
   interviewType: z.enum(["tech", "conversational"]).optional().default("tech"),
   level: z.number().int().min(1).max(4).optional(),
+  // Page-3 admin-entered field for the question-bank wizard, distinct from
+  // resumeScreeningCriteria.skills.mustHave (a different, resume-screening
+  // concept). status/failureReason/questionBank/questionBankVersion/
+  // extractedSkills are server-set only (via generate-questions/publish
+  // routes) and intentionally absent here -- PATCH/POST can't forge them.
+  mustHaveSkills: z.array(z.string()).optional(),
 });
 export const createJobSchema = jobFieldsSchema.superRefine((data, ctx) => {
   if (!data.level) {

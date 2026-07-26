@@ -81,6 +81,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
                 inviteLinkExpiresAt: jobDeadline,
                 isTestSession: false,
                 aiInterviewBrief: Prisma.JsonNull,
+                jdQuestionBankSnapshot: Prisma.JsonNull,
+                jdQuestionBankVersionUsed: null,
             },
             create: {
                 id: generateId("int", application.candidateFullName || applicationId),

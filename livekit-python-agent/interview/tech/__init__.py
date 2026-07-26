@@ -23,8 +23,8 @@ from interview.tech.brief import (
     InterviewBrief,
     TopicItem,
     RoleContext,
-    generate_interview_brief,
 )
+from interview.tech.question_bank_adapter import build_brief_from_question_bank
 from interview.tech.brief_extraction import (
     RawSkillEntry,
     RawWorkEntry,
@@ -60,7 +60,7 @@ __all__ = [
     "InterviewBrief",
     "TopicItem",
     "RoleContext",
-    "generate_interview_brief",
+    "build_brief_from_question_bank",
     "RawSkillEntry",
     "RawWorkEntry",
     "RawResumeJSON",
