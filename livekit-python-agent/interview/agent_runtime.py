@@ -3448,10 +3448,7 @@ async def entrypoint(ctx: JobContext):
                 _ack_event = agent._code_card_ack_event
                 if _ack_event is not None and _acked_card_id == agent._code_card_ack_id:
                     _ack_event.set()
-            # All browser-side proctoring signals (tab_switch, face_absence,
-            # multiple_faces, camera_disabled, microphone_disabled) are stored
-            # directly to the DB via /api/interview/proctoring by the frontend.
-            # The agent is NOT involved in processing these signals.
+            # Browser-side proctoring signals are stored to DB, but also evaluated real-time here.
             elif p_type == "proctoring_event" or payload.get("eventType"):
                 event_type = payload.get("eventType")
                 severity = payload.get("severity", "medium")
