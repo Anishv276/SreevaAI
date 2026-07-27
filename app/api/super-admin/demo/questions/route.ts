@@ -62,13 +62,10 @@ export async function POST(request: Request) {
         if (!jdExtractedDetails || typeof jdExtractedDetails !== "object") {
             const res = await extractJdStructure(template.jdText, model);
             jdExtractedDetails = res.data;
-            
-            const jdCost = await priceLlmUsage(res.usage);
-            currentUsageCostUsd += jdCost;
-            currentUsageJson.jdExtraction = {
-                runs: 1,
-                llm: [{ provider: "openai", model: res.usage.model, calls: 1, inputTokens: res.usage.inputTokens, outputTokens: res.usage.outputTokens, cachedInputTokens: res.usage.cachedInputTokens, costUsd: jdCost }]
-            };
+
+            const jdEntry = await priceLlmUsage(res.usage);
+            currentUsageCostUsd += jdEntry.costUsd;
+            currentUsageJson.jdExtraction = { runs: 1, llm: [jdEntry] };
 
             await db.demoTemplate.update({
                 where: { id: templateId },
@@ -79,12 +76,9 @@ export async function POST(request: Request) {
         // Single call: generate questions directly from structured JD data
         const validated = await generateQuestions(jdExtractedDetails, level, model, resolvedInterviewType, numQuestions);
 
-        const qCost = await priceLlmUsage(validated.usage as any);
-        currentUsageCostUsd += qCost;
-        currentUsageJson.questionBank = {
-            runs: 1,
-            llm: [{ provider: "openai", model: (validated.usage as any).model, calls: 1, inputTokens: (validated.usage as any).inputTokens, outputTokens: (validated.usage as any).outputTokens, cachedInputTokens: (validated.usage as any).cachedInputTokens, costUsd: qCost }]
-        };
+        const qEntry = await priceLlmUsage(validated.usage as any);
+        currentUsageCostUsd += qEntry.costUsd;
+        currentUsageJson.questionBank = { runs: 1, llm: [qEntry] };
 
         // Cap at the requested number of questions for demo brevity
         const selectedQuestions = validated.questions.slice(0, numQuestions);

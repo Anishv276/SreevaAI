@@ -175,6 +175,10 @@ export async function extractJdStructure(
     rawText: string,
     model: string
 ): Promise<JdExtractionResult> {
+    // Accumulated across every attempt (including ones that failed validation
+    // after a real, billable OpenAI call) so a retry never drops already-spent
+    // tokens from billing.
+    const totalUsage = { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 };
     let lastErr: unknown;
     for (let attempt = 0; attempt <= 2; attempt++) {
         try {
@@ -184,6 +188,9 @@ export async function extractJdStructure(
                 userPrompt: buildUserPrompt(rawText),
                 maxTokens: 2000,
             });
+            totalUsage.inputTokens += result.usage.inputTokens;
+            totalUsage.outputTokens += result.usage.outputTokens;
+            totalUsage.cachedInputTokens += result.usage.cachedInputTokens;
             const data = result.data as JdExtractedData;
             if (!data?.job_title || !Array.isArray(data?.criteria)) {
                 throw new LLMCallError("JD extraction returned malformed response (missing job_title or criteria)");
@@ -191,12 +198,7 @@ export async function extractJdStructure(
             return {
                 text: rawText,
                 data,
-                usage: {
-                    model: result.model,
-                    inputTokens: result.usage.inputTokens,
-                    outputTokens: result.usage.outputTokens,
-                    cachedInputTokens: result.usage.cachedInputTokens,
-                },
+                usage: { model: result.model, ...totalUsage },
             };
         } catch (err) {
             lastErr = err;
@@ -205,5 +207,13 @@ export async function extractJdStructure(
             }
         }
     }
-    throw lastErr instanceof Error ? lastErr : new LLMCallError("JD structure extraction failed after retries");
+    const finalError =
+        lastErr instanceof Error ? lastErr : new LLMCallError("JD structure extraction failed after retries");
+    // Every retry attempt above may have burned real, billable OpenAI tokens even
+    // though none produced a usable result -- attach them so the caller can still
+    // bill this before giving up, instead of silently writing off the spend.
+    if (finalError instanceof LLMCallError && (totalUsage.inputTokens || totalUsage.outputTokens)) {
+        finalError.partialUsage = totalUsage;
+    }
+    throw finalError;
 }

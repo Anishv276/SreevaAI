@@ -18,7 +18,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass
-from typing import Any, Literal, Optional
+from typing import Any, Callable, Literal, Optional
 
 from openai import AsyncOpenAI
 
@@ -182,6 +182,7 @@ class LinguisticAnalyzer:
         model: str = "gpt-4.1-mini",
         response_latency_sec: Optional[float] = None,
         baseline_filler_ratio: Optional[float] = None,
+        usage_sink: Optional[Callable[[dict[str, Any]], None]] = None,
     ) -> LinguisticEvalResult:
         heuristics = self.extract_heuristics(candidate_text)
         n_words = heuristics["n_words"]
@@ -232,6 +233,11 @@ class LinguisticAnalyzer:
                     {"role": "user", "content": user_content},
                 ],
             )
+            if usage_sink is not None:
+                from billing.billing import extract_usage as _extract_usage  # noqa: PLC0415
+                billing_usage = _extract_usage(resp, model)
+                if billing_usage["inputTokens"] or billing_usage["outputTokens"] or billing_usage["cachedInputTokens"]:
+                    usage_sink(billing_usage)
             raw_content = resp.choices[0].message.content or "{}"
             data = json.loads(raw_content)
 

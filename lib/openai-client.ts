@@ -16,6 +16,11 @@ export function getOpenAIClient(): OpenAI {
 }
 
 export class LLMCallError extends Error {
+    /** Tokens already spent on failed attempts before this error was thrown
+     * (e.g. a retry loop where earlier attempts billed real tokens but never
+     * produced a usable result) -- callers that give up should still bill this. */
+    public partialUsage?: ChatJSONResult["usage"];
+
     constructor(message: string, public readonly cause?: unknown) {
         super(message);
         this.name = "LLMCallError";

@@ -29,6 +29,7 @@ import {
   processInterviewReportViaModal,
 } from "./lib/modal-dispatch";
 import { extractJdStructure, extractTextFromPdf } from "./lib/jd-structure-extraction";
+import { LLMCallError } from "./lib/openai-client";
 
 // Per-org concurrency caps -- how many jobs of a given queue may run
 // simultaneously FOR THE SAME ORG, independent of the worker's own global
@@ -1594,7 +1595,35 @@ if (isQueueEnabled("jd-extraction")) {
       }
 
       console.log(`[JD-EXTRACTION] Calling LLM (model=${model}) for structured extraction…`);
-      const result = await extractJdStructure(rawText, model);
+      let result;
+      try {
+        result = await extractJdStructure(rawText, model);
+      } catch (err) {
+        // Even on total failure, earlier retry attempts inside extractJdStructure
+        // may have burned real, billable OpenAI tokens (see LLMCallError.partialUsage)
+        // -- bill them before rethrowing so a failed extraction doesn't silently
+        // write off spend.
+        if (err instanceof LLMCallError && err.partialUsage && orgId) {
+          await recordOrgBillingUsage({
+            orgId,
+            feature: "jdExtraction",
+            usage: {
+              model,
+              ...err.partialUsage,
+              eventId: `jd-extraction:${job.id}`,
+              context: {
+                jobId: `extraction:${job.id}`,
+                jobTitle: null,
+                label: fileName ?? null,
+                eventId: `jd-extraction:${job.id}`,
+              },
+            },
+          }).catch((billingErr) => {
+            console.warn(`[JD-EXTRACTION] Partial-usage billing failed (non-fatal):`, billingErr);
+          });
+        }
+        throw err;
+      }
       console.log(`[JD-EXTRACTION] ✓ Done. job_title="${result.data.job_title}" criteria=${result.data.criteria.length}`);
 
       if (orgId) {
@@ -1795,6 +1824,23 @@ if (isQueueEnabled("question-generation")) {
         const numQuestions = Number(job.data?.numQuestions) || 12;
         validated = await generateQuestions(jdExtractedDetails, level, model, interviewType, numQuestions);
       } catch (err) {
+        // Even on total failure, earlier retry attempts may have burned real,
+        // billable OpenAI tokens (see LLMCallError.partialUsage) -- bill them
+        // before giving up so a failed generation doesn't silently write off spend.
+        if (err instanceof LLMCallError && err.partialUsage && dbJob.organizationId) {
+          await recordOrgBillingUsage({
+            orgId: dbJob.organizationId,
+            feature: "questionBank",
+            usage: {
+              model,
+              ...err.partialUsage,
+              eventId: `question-bank:${jobId}`,
+              context: { jobId, jobTitle: dbJob.title },
+            },
+          }).catch((billingErr) => {
+            console.error(`[QUESTION-GEN] jobId=${jobId} Failed to record partial questionBank billing usage:`, billingErr);
+          });
+        }
         await fail(err instanceof LLMCallError ? err.message : "Question generation failed");
         return { ok: false };
       }

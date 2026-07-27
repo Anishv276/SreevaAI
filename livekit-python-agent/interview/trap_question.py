@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from openai import AsyncOpenAI
 
@@ -119,12 +119,24 @@ def _get_client(client: Optional[AsyncOpenAI]) -> AsyncOpenAI:
         return AsyncOpenAI()
 
 
+def _record_trap_usage(
+    resp: Any, model: str, usage_sink: Optional[Callable[[dict[str, Any]], None]]
+) -> None:
+    if usage_sink is None:
+        return
+    from billing.billing import extract_usage  # noqa: PLC0415
+    billing_usage = extract_usage(resp, model)
+    if billing_usage["inputTokens"] or billing_usage["outputTokens"] or billing_usage["cachedInputTokens"]:
+        usage_sink(billing_usage)
+
+
 async def generate_trap_question(
     transcript_lines: list[str],
     resume: Any = None,
     jd_skills: Any = None,
     client: Optional[AsyncOpenAI] = None,
     model: str = "gpt-4o-mini",
+    usage_sink: Optional[Callable[[dict[str, Any]], None]] = None,
 ) -> Optional[TrapQuestionResult]:
     """Generate one trap question from the transcript so far. Returns None on failure."""
     if not transcript_lines:
@@ -147,6 +159,7 @@ async def generate_trap_question(
                 {"role": "user", "content": user_content},
             ],
         )
+        _record_trap_usage(resp, model, usage_sink)
         data = json.loads(resp.choices[0].message.content or "{}")
         question = str(data.get("question", "")).strip()
         false_premise = str(data.get("false_premise", "")).strip()
@@ -163,6 +176,7 @@ async def classify_trap_answer(
     candidate_answer: str,
     client: Optional[AsyncOpenAI] = None,
     model: str = "gpt-4o-mini",
+    usage_sink: Optional[Callable[[dict[str, Any]], None]] = None,
 ) -> TrapClassificationResult:
     """Classify whether the candidate caught the planted false premise. Fails safe to 'caught'."""
     user_content = (
@@ -181,6 +195,7 @@ async def classify_trap_answer(
                 {"role": "user", "content": user_content},
             ],
         )
+        _record_trap_usage(resp, model, usage_sink)
         data = json.loads(resp.choices[0].message.content or "{}")
         return TrapClassificationResult(
             caught_the_trap=bool(data.get("caught_the_trap", True)),

@@ -3504,6 +3504,12 @@ async def entrypoint(ctx: JobContext):
         signal_events = result.get("signal_events") or []
         if signal_events:
             proctoring_events.extend(signal_events)
+        # Bill this eval's usage unconditionally, even if the result turns out to be
+        # stale and gets dropped below -- the OpenAI call already happened and cost
+        # real money regardless of whether its quality_record ends up applied.
+        eval_usages = result.get("eval_llm_usages") or []
+        if eval_usages:
+            _eval_llm_usages_accumulated.extend(eval_usages)
         async with _session_state_lock:
             # EC-5: stale-turn guard MUST be inside the lock. Without this, two concurrent
             # evals for the same turn both pass the check before either updates the counter,
@@ -3522,9 +3528,6 @@ async def entrypoint(ctx: JobContext):
                     result_turn, _last_applied_eval_turn,
                 )
                 return False
-            eval_usages = result.get("eval_llm_usages") or []
-            if eval_usages:
-                _eval_llm_usages_accumulated.extend(eval_usages)
             if quality_record:
                 topic_key = re.sub(
                     r"[^a-z0-9]+", " ",
@@ -3577,6 +3580,7 @@ async def entrypoint(ctx: JobContext):
             transcript_lines=transcript_lines_snap,
             resume=structured_resume,
             jd_skills=_jd_skills,
+            usage_sink=_llmgen_llm_usages.append,
         )
         if not trap_result:
             logger.warning(
@@ -3730,6 +3734,7 @@ async def entrypoint(ctx: JobContext):
                 result = await classify_trap_answer(
                     false_premise=_trap_pending.get("false_premise", ""),
                     candidate_answer=answer_snap,
+                    usage_sink=_eval_llm_usages_accumulated.append,
                 )
                 logger.warning(
                     "[TRAP_QUESTION] Turn %d classified: caught=%s reason=%s",
@@ -3872,6 +3877,7 @@ async def entrypoint(ctx: JobContext):
                             question_text=q_snap,
                             response_latency_sec=latency_snap,
                             baseline_filler_ratio=baseline_snap,
+                            usage_sink=_llmgen_llm_usages.append,
                         )
                         # Feed this turn's own filler ratio into the rolling baseline
                         # for future turns, regardless of whether it was suspicious.

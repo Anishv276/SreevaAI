@@ -17,6 +17,7 @@ import { enqueueJdExtraction } from "@/lib/jd-extraction";
 import { apiErrorResponse } from "@/lib/slack-error-logger";
 import redisConnection, { getBullPrefix } from "@/lib/redis";
 import { Queue } from "bullmq";
+import { priceLlmUsage } from "@/lib/usage-metrics";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -61,6 +62,7 @@ export async function POST(request: Request) {
         let jdText = "";
         let roleTitle = template.title;
         let extracted: any = null;
+        let usage: { model: string; inputTokens: number; outputTokens: number; cachedInputTokens: number } | null = null;
 
         for (let i = 0; i < 40; i++) {
             await new Promise((r) => setTimeout(r, 2000));
@@ -71,6 +73,7 @@ export async function POST(request: Request) {
                 const rv = jdJob.returnvalue || {};
                 jdText = rv.text || "";
                 extracted = rv.data || null;
+                usage = rv.usage || null;
                 roleTitle =
                     extracted?.job_title ||
                     extracted?.jobTitle ||
@@ -92,6 +95,19 @@ export async function POST(request: Request) {
             );
         }
 
+        // This wizard step has no orgId (demo templates have no OrganizationDetails
+        // row), so the jd-extraction worker's recordOrgBillingUsage never fires for
+        // it -- the real OpenAI cost must be priced and persisted here instead,
+        // same as the /demo/questions route's inline extractJdStructure fallback,
+        // or it's silently dropped from DemoTemplate.usageJson entirely.
+        const currentUsageJson = (template.usageJson as any) || {};
+        let currentUsageCostUsd = template.usageCostUsd || 0;
+        if (usage) {
+            const jdEntry = await priceLlmUsage(usage);
+            currentUsageCostUsd += jdEntry.costUsd;
+            currentUsageJson.jdExtraction = { runs: 1, llm: [jdEntry] };
+        }
+
         // Persist
         await db.demoTemplate.update({
             where: { id: templateId },
@@ -99,6 +115,8 @@ export async function POST(request: Request) {
                 jdText,
                 jdExtractedDetails: extracted ?? undefined,
                 roleTitle: roleTitle || template.title,
+                usageJson: currentUsageJson,
+                usageCostUsd: currentUsageCostUsd,
             },
         });
 

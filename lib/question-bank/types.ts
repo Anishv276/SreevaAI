@@ -7,6 +7,20 @@
 
 export type BankQuestionType = "conceptual" | "snippet_code" | "snippet_query" | "custom";
 
+// Fixed taxonomy of question formats — identical across every role and level.
+// See lib/question-bank/question-generation.ts DIFFICULTY_LEVELS for the
+// per-level rules that govern which formats are allowed/required.
+export type QuestionFormatType =
+    | "Definition"
+    | "Compare-Contrast"
+    | "Minimal-Snippet"
+    | "Bounded-Scenario"
+    | "Trade-off-Justify"
+    | "Multi-cause-Diagnostic"
+    | "Constrained-Design"
+    | "System-Design"
+    | "Judgment-under-Ambiguity";
+
 export type BankQuestion = {
     id: string;
     skill: string;
@@ -16,6 +30,12 @@ export type BankQuestion = {
     level: number;
     source: "generated" | "custom";
     edited: boolean;
+    // Audit metadata from the calibrated escalation spec. Optional so older
+    // stored/custom questions (generated before this taxonomy existed) remain valid.
+    format_type?: QuestionFormatType | null;
+    root_cause_count?: string | null; // e.g. "0-1", "1", "2+", "ambiguous/unknown"
+    constraint_count?: string | null; // e.g. "0", "1", "2+", "3+ (incl. non-technical)"
+    skill_tested?: string | null; // one line: the reasoning being evaluated, not the "correct fact"
 };
 
 export type QuestionBank = {
