@@ -49,7 +49,7 @@ export async function chatJSON(opts: {
         completion = await client.chat.completions.create({
             model: opts.model,
             temperature: opts.temperature ?? 0,
-            max_tokens: opts.maxTokens ?? 4000,
+            max_completion_tokens: opts.maxTokens ?? 4000,
             response_format: { type: "json_object" },
             messages: [
                 { role: "system", content: opts.systemPrompt },
@@ -57,7 +57,8 @@ export async function chatJSON(opts: {
             ],
         });
     } catch (err) {
-        throw new LLMCallError("OpenAI request failed", err);
+        console.error("OpenAI request failed:", err);
+        throw new LLMCallError("OpenAI request failed: " + (err instanceof Error ? err.message : String(err)), err);
     }
     const content = completion.choices[0]?.message?.content;
     if (!content) {

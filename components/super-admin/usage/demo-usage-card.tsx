@@ -4,15 +4,18 @@ import { Sparkles, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Demo-interview billing (/demo page sessions). Sourced from
-// DemoTemplate.usageJson (one-time JD extraction cost per template)
-// and DemoSession.usageJson (per-session live/eval/llmGeneration/TTS/STT
-// cost) via /api/super-admin/billing/demo and
-// /api/super-admin/billing/demo/sessions. Demo sessions have no
-// OrganizationDetails row, so this is entirely separate from UsageEvent/org
-// billing -- shown as its own card, not scoped to the selected org.
+// DemoTemplate.usageJson (one-time JD extraction + question bank generation
+// cost per template) and DemoSession.usageJson (per-session eval/
+// llmGeneration/TTS/STT cost -- no separate "live" bucket, every live-agent
+// turn is already captured per-turn under eval/llmGeneration) via
+// /api/super-admin/billing/demo and /api/super-admin/billing/demo/sessions.
+// Demo sessions have no OrganizationDetails row, so this is entirely separate
+// from UsageEvent/org billing -- shown as its own card, not scoped to the
+// selected org. The header's "N sessions" count only includes COMPLETED
+// sessions; the drill-down table below shows every status.
 
 type DemoTotals = {
-    jdExtractionCost: number; liveCost: number;
+    jdExtractionCost: number; questionBankCost: number;
     evalCost: number; llmGenerationCost: number; ttsCost: number; sttCost: number;
     totalCost: number;
 };
@@ -20,13 +23,19 @@ type DemoOverview = { templateCount: number; sessionCount: number; totals: DemoT
 type DemoSessionRow = {
     id: string; clientName: string; clientEmail: string; templateTitle: string; roleTitle: string;
     status: string; startedAt: string; isFirstSessionForTemplate: boolean;
-    jdExtractionCost: number;
-    liveCost: number; liveCalls: number;
+    jdExtractionCost: number; questionBankCost: number;
     evalCost: number; evalCalls: number;
     llmGenerationCost: number; llmGenerationCalls: number;
     ttsCost: number; ttsCharacters: number;
     sttCost: number; sttAudioSeconds: number;
     totalCost: number;
+};
+
+const STATUS_STYLE: Record<string, string> = {
+    COMPLETED: "bg-emerald-50 text-emerald-700",
+    IN_PROGRESS: "bg-amber-50 text-amber-700",
+    LAUNCHING: "bg-amber-50 text-amber-700",
+    FAILED: "bg-rose-50 text-rose-700",
 };
 
 export function DemoUsageCard({ fmt }: { fmt: (usd: number) => string }) {
@@ -88,7 +97,7 @@ export function DemoUsageCard({ fmt }: { fmt: (usd: number) => string }) {
                     <div className="grid grid-cols-3 gap-3 border-t p-5 sm:grid-cols-6" style={{ borderColor: "#F0EEF8" }}>
                         {[
                             ["JD Extraction", t.jdExtractionCost],
-                            ["Live", t.liveCost],
+                            ["Question Bank", t.questionBankCost],
                             ["Eval", t.evalCost],
                             ["Question Gen", t.llmGenerationCost],
                             ["TTS", t.ttsCost],
@@ -104,7 +113,7 @@ export function DemoUsageCard({ fmt }: { fmt: (usd: number) => string }) {
                         <table className="w-full text-left text-sm">
                             <thead style={{ background: "#F9F8FF" }}>
                                 <tr>
-                                    {["Date", "Candidate", "Template", "JD Extraction", "Live", "Eval", "Question Gen", "TTS", "STT", "Total"].map((h) => (
+                                    {["Date", "Candidate", "Status", "Template", "JD Extraction", "Question Bank", "Eval", "Question Gen", "TTS", "STT", "Total"].map((h) => (
                                         <th
                                             key={h}
                                             className={`whitespace-nowrap px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-violet-400 ${h === "Total" ? "text-right" : ""}`}
@@ -117,12 +126,12 @@ export function DemoUsageCard({ fmt }: { fmt: (usd: number) => string }) {
                             <tbody className="divide-y" style={{ borderColor: "#F0EEF8" }}>
                                 {rows === null && (
                                     <tr>
-                                        <td colSpan={10} className="px-4 py-8 text-center text-xs text-violet-400">Loading…</td>
+                                        <td colSpan={11} className="px-4 py-8 text-center text-xs text-violet-400">Loading…</td>
                                     </tr>
                                 )}
                                 {rows?.length === 0 && (
                                     <tr>
-                                        <td colSpan={10} className="px-4 py-8 text-center text-xs text-violet-400">No demo sessions recorded yet.</td>
+                                        <td colSpan={11} className="px-4 py-8 text-center text-xs text-violet-400">No demo sessions recorded yet.</td>
                                     </tr>
                                 )}
                                 {rows?.map((r) => {
@@ -136,6 +145,11 @@ export function DemoUsageCard({ fmt }: { fmt: (usd: number) => string }) {
                                                 <div className="font-medium">{r.clientName}</div>
                                                 <div className="text-xs text-violet-400">{r.clientEmail}</div>
                                             </td>
+                                            <td className="px-4 py-3">
+                                                <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide", STATUS_STYLE[r.status] || "bg-gray-100 text-gray-500")}>
+                                                    {r.status}
+                                                </span>
+                                            </td>
                                             <td className="px-4 py-3 text-violet-900">{r.templateTitle}</td>
                                             <td className="px-4 py-3 tabular-nums text-violet-600">
                                                 {templateCost > 0 ? (
@@ -147,7 +161,13 @@ export function DemoUsageCard({ fmt }: { fmt: (usd: number) => string }) {
                                                 )}
                                             </td>
                                             <td className="px-4 py-3 tabular-nums text-violet-600">
-                                                {r.liveCalls > 0 ? `${fmt(r.liveCost)} · ${r.liveCalls}` : <span className="text-violet-300">—</span>}
+                                                {r.questionBankCost > 0 ? (
+                                                    <span title="One-time template cost, shown on this template's first session only">
+                                                        {fmt(r.questionBankCost)}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-violet-300">—</span>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3 tabular-nums text-violet-600">
                                                 {r.evalCalls > 0 ? `${fmt(r.evalCost)} · ${r.evalCalls}` : <span className="text-violet-300">—</span>}

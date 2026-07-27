@@ -12,6 +12,7 @@ import { TestUsageCard } from "./test-usage-card";
 // Maps a non-interview section to its events endpoint slug.
 const SECTION_TO_SLUG: Partial<Record<SectionKey, EventsSectionSlug>> = {
   jdExtraction: "jd",
+  questionBank: "question-bank",
   resumeExtraction: "resume",
   resumeReport: "resume-report",
   finalReport: "report",

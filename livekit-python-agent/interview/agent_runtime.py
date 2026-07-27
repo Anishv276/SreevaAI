@@ -4477,7 +4477,7 @@ async def entrypoint(ctx: JobContext):
                             cross_ref_rule=_cross_ref_rule,
                             client=_eval_openai_client,
                             llm_model=analysis_model,
-                            usage_sink=_eval_llm_usages_accumulated.append,
+                            usage_sink=_llmgen_llm_usages.append,
                             topic_item=_new_topic_item,
                             prev_answer=_prev_a,
                             prev_question=_last_interviewer_question,
@@ -5796,27 +5796,18 @@ async def entrypoint(ctx: JobContext):
         )
     else:
         # DEMO: no OrganizationDetails row to bill against (persist_org_usage_metrics
-        # requires org_id) -- write to DemoSession.usageJson instead. Live-conversation
-        # LLM usage comes straight from the LiveKit session's own model_usage
-        # buckets (same source UsageSummarizer reads for real sessions); eval/
-        # llmgen usage was already accumulated in-memory throughout the session
-        # by the usage_sink=..._llm_usages.append callbacks above -- just never
-        # flushed to DB before now because this whole branch used to be skipped.
+        # requires org_id) -- write to DemoSession.usageJson instead. Every live-agent
+        # turn is directive-driven and its LLM usage is already captured per-turn by
+        # the usage_sink=..._llm_usages.append callbacks above (eval / llmGeneration
+        # buckets) -- the session-total "live" bucket (session.usage.model_usage) is
+        # the SAME underlying calls re-surfaced in aggregate, so it is intentionally
+        # NOT sent here. This mirrors override_plugin_metrics's zeroing of the "llm"
+        # bucket for real (non-demo) sessions, for the identical reason: avoid
+        # double-billing the same tokens under both the per-turn and session-total
+        # buckets.
         _demo_session_id = app_id[len("demo_"):]  # matches agent_persistence.py's demo_* stripping
-        _demo_session_usage = latest_session_usage or session.usage
-        _demo_live_usages: list[dict] = []
-        for _item in (getattr(_demo_session_usage, "model_usage", []) or []):
-            if getattr(_item, "type", "") != "llm_usage":
-                continue
-            _demo_live_usages.append({
-                "model": str(getattr(_item, "model", "") or "").strip(),
-                "inputTokens": int(getattr(_item, "input_tokens", 0) or 0),
-                "outputTokens": int(getattr(_item, "output_tokens", 0) or 0),
-                "cachedInputTokens": int(getattr(_item, "input_cached_tokens", 0) or 0),
-            })
         await save_demo_session_usage(
             _demo_session_id,
-            live_usages=_demo_live_usages,
             eval_usages=list(_eval_llm_usages_accumulated),
             llmgen_usages=list(_llmgen_llm_usages),
             tts_provider=org_tts_provider,
@@ -5833,47 +5824,56 @@ async def entrypoint(ctx: JobContext):
     # the Node worker is always-on and can retry/observe failures via BullMQ.
     # Demo sessions are throwaway (~5min, no org/billing) -- no report is generated.
     if session_start_time and not _is_demo_session:
+        # skipReport only skips the report/summary LLM generation itself (and the
+        # debug PDF) -- eval/llmGeneration billing must still be enqueued and
+        # flushed even when it's on, because _eval_llm_usages_accumulated /
+        # _llmgen_llm_usages were already captured live during the interview and
+        # report_worker.py is the ONLY place that ever flushes them to the DB (see
+        # its own comment: "real and test sessions take the SAME path"). Previously
+        # this branch skipped the enqueue entirely for skipReport=True test
+        # sessions, which silently discarded that session's eval/generation
+        # billing along with the report -- see report_worker.py's `_run` for the
+        # skipReport handling on the other end.
         if _is_test_session and _skip_report:
-            # ponytail: test session with report disabled -- skip all LLM report/summary calls
-            logger.info("[REPORT] Skipped (test session with skipReport=True) for %s", app_id)
-        else:
-            _usage_snap = latest_session_usage or session.usage
-            _report_payload = {
-                "appId": app_id,
-                "orgId": org_id,
-                "jobTitle": job_title,
-                "interviewType": interview_type,
-                "candidateName": candidate_name,
-                "llmInterviewReport": str(ctx_data.llmInterviewReport).strip(),
-                "isTest": _is_test_session,
-                "answerIntegrityEnabled": bool(evaluation_signal_toggles.get("answer_integrity")),
-                "transcriptLines": list(transcript_lines),
-                "answerScores": list(answer_scores),
-                "proctoringData": dict(proctoring_data) if proctoring_data else {},
-                "jdJson": _coerce_jsonish(extracted_details) if extracted_details else None,
-                "resumeJson": structured_resume if isinstance(structured_resume, dict) else None,
-                "topicRecords": list(_topic_records),
-                "usage": {
-                    "evalUsages": list(_eval_llm_usages_accumulated),
-                    "llmgenUsages": list(_llmgen_llm_usages),
-                },
-                "billing": {
-                    "sessionUsage": _usage_to_dict(_usage_snap),
-                    "durationSeconds": (time.time() - session_start_time) if session_start_time else None,
-                    "ttsProvider": org_tts_provider,
-                    "ttsModel": org_tts_model,
-                    "sttProvider": "DEEPGRAM",
-                    "sttModel": str(ctx_data.sttModel),
-                    "ttsCharacters": billable_tts_characters,
-                    "ttsAudioSeconds": plugin_tts_audio_seconds,
-                    "sttAudioSeconds": plugin_stt_audio_seconds,
-                },
-                "debugReport": {
-                    "topicPool": [t.model_dump() for t in _interview_brief.topic_pool],
-                    "coveredTopics": _covered_topic_keys.coverage_rows(),
-                },
-            }
-            await _enqueue_report_job(app_id, _report_payload)
+            logger.info("[REPORT] Report/summary skipped (test session with skipReport=True) for %s -- billing still enqueued", app_id)
+        _usage_snap = latest_session_usage or session.usage
+        _report_payload = {
+            "appId": app_id,
+            "orgId": org_id,
+            "jobTitle": job_title,
+            "interviewType": interview_type,
+            "candidateName": candidate_name,
+            "llmInterviewReport": str(ctx_data.llmInterviewReport).strip(),
+            "isTest": _is_test_session,
+            "skipReport": _is_test_session and _skip_report,
+            "answerIntegrityEnabled": bool(evaluation_signal_toggles.get("answer_integrity")),
+            "transcriptLines": list(transcript_lines),
+            "answerScores": list(answer_scores),
+            "proctoringData": dict(proctoring_data) if proctoring_data else {},
+            "jdJson": _coerce_jsonish(extracted_details) if extracted_details else None,
+            "resumeJson": structured_resume if isinstance(structured_resume, dict) else None,
+            "topicRecords": list(_topic_records),
+            "usage": {
+                "evalUsages": list(_eval_llm_usages_accumulated),
+                "llmgenUsages": list(_llmgen_llm_usages),
+            },
+            "billing": {
+                "sessionUsage": _usage_to_dict(_usage_snap),
+                "durationSeconds": (time.time() - session_start_time) if session_start_time else None,
+                "ttsProvider": org_tts_provider,
+                "ttsModel": org_tts_model,
+                "sttProvider": "DEEPGRAM",
+                "sttModel": str(ctx_data.sttModel),
+                "ttsCharacters": billable_tts_characters,
+                "ttsAudioSeconds": plugin_tts_audio_seconds,
+                "sttAudioSeconds": plugin_stt_audio_seconds,
+            },
+            "debugReport": {
+                "topicPool": [t.model_dump() for t in _interview_brief.topic_pool],
+                "coveredTopics": _covered_topic_keys.coverage_rows(),
+            },
+        }
+        await _enqueue_report_job(app_id, _report_payload)
     # Cancel any leftover fire-and-forget work so job teardown is instant.
     if background_tasks:
         logger.debug(f"[SHUTDOWN] Cancelling {len(background_tasks)} background task(s)")

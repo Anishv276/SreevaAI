@@ -68,6 +68,7 @@ async def _run(payload: dict) -> None:
     job_title = payload.get("jobTitle", "")
     candidate_name = payload.get("candidateName", "")
     is_test = bool(payload.get("isTest"))
+    skip_report = bool(payload.get("skipReport"))
     transcript_lines = payload.get("transcriptLines") or []
     answer_scores = payload.get("answerScores") or []
     topic_records = payload.get("topicRecords") or []
@@ -101,42 +102,53 @@ async def _run(payload: dict) -> None:
         except Exception as pdf_err:
             logger.error("[DEBUG_REPORT] Outer exception sending debug PDF: %s", pdf_err, exc_info=True)
 
-    scores_context = None
-    logger.info("[REPORT] Generating with answer_scores=%d turns", len(answer_scores))
-    try:
-        scores_context = await generate_interview_report(
-            app_id,
-            transcript_lines,
-            answer_scores,
-            job_title,
-            llmInterviewReport=payload.get("llmInterviewReport", ""),
-            proctoring_data=payload.get("proctoringData") or {},
-            org_id=org_id,
-            jd_json=payload.get("jdJson"),
-            resume_json=payload.get("resumeJson"),
-            topic_records=list(topic_records),
-            candidate_name=candidate_name,
-            answer_integrity_enabled=bool(payload.get("answerIntegrityEnabled")),
-            is_test=is_test,
-        )
-        logger.info("[REPORT] Completed. scores_context keys=%s",
-                    list(scores_context.keys()) if scores_context else None)
-    except Exception as e:
-        logger.error(f"[REPORT] Failed for {app_id}: {e}")
+    # skipReport ("Enable Report Eval" off on the /test page) skips ONLY the
+    # report/summary LLM generation below -- the debug PDF above and the
+    # eval/llmGeneration billing flush below both still run unconditionally.
+    # Eval/llmGeneration usage was already captured live during the interview
+    # (agent_runtime.py's _eval_llm_usages_accumulated/_llmgen_llm_usages) and
+    # this worker is the only place that ever flushes it to the DB, so gating
+    # the whole worker run on skipReport (the old behavior) silently discarded
+    # billing data that had nothing to do with the report itself.
+    if skip_report:
+        logger.info("[REPORT] Skipped report/summary generation (skipReport=True) for %s", app_id)
+    else:
+        scores_context = None
+        logger.info("[REPORT] Generating with answer_scores=%d turns", len(answer_scores))
+        try:
+            scores_context = await generate_interview_report(
+                app_id,
+                transcript_lines,
+                answer_scores,
+                job_title,
+                llmInterviewReport=payload.get("llmInterviewReport", ""),
+                proctoring_data=payload.get("proctoringData") or {},
+                org_id=org_id,
+                jd_json=payload.get("jdJson"),
+                resume_json=payload.get("resumeJson"),
+                topic_records=list(topic_records),
+                candidate_name=candidate_name,
+                answer_integrity_enabled=bool(payload.get("answerIntegrityEnabled")),
+                is_test=is_test,
+            )
+            logger.info("[REPORT] Completed. scores_context keys=%s",
+                        list(scores_context.keys()) if scores_context else None)
+        except Exception as e:
+            logger.error(f"[REPORT] Failed for {app_id}: {e}")
 
-    try:
-        await generate_interview_summary(
-            app_id,
-            transcript_lines,
-            job_title,
-            llmInterviewReport=payload.get("llmInterviewReport", ""),
-            org_id=org_id,
-            scores_context=scores_context,
-            candidate_name=candidate_name,
-            is_test=is_test,
-        )
-    except Exception as e:
-        logger.error(f"[SUMMARY] Failed for {app_id}: {e}")
+        try:
+            await generate_interview_summary(
+                app_id,
+                transcript_lines,
+                job_title,
+                llmInterviewReport=payload.get("llmInterviewReport", ""),
+                org_id=org_id,
+                scores_context=scores_context,
+                candidate_name=candidate_name,
+                is_test=is_test,
+            )
+        except Exception as e:
+            logger.error(f"[SUMMARY] Failed for {app_id}: {e}")
 
     usage = payload.get("usage") or {}
     eval_usages = usage.get("evalUsages") or []

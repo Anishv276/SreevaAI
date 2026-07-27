@@ -4,8 +4,12 @@ import { getSession, isSuperAdminRole } from "@/lib/auth";
 import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 // Per-session demo billing breakdown for the super-admin billing page's
-// "Demo" card drill-down. One row per DemoSession: name, email, template,
-// live/eval/llmGeneration run counts + cost, TTS/STT cost, session total.
+// "Demo" card drill-down. One row per DemoSession: name, email, status,
+// template, eval/llmGeneration run counts + cost, TTS/STT cost, session
+// total. Includes every status (LAUNCHING/IN_PROGRESS/FAILED/COMPLETED) --
+// unlike the overview route's sessionCount, this is an audit view, not a
+// headline number, so abandoned attempts are shown (with zeroed usage) with
+// their status visible rather than hidden.
 //
 // The template's one-time JD-extraction cost is NOT repeated on every
 // session row (it isn't a per-session cost -- every session of a template
@@ -68,7 +72,6 @@ export async function GET(request: Request) {
 
         const rows = sessions.map((s) => {
             const usage = (s.usageJson && typeof s.usageJson === "object") ? (s.usageJson as Record<string, any>) : {};
-            const liveCost = llmCost(usage, "live");
             const evalCost = llmCost(usage, "eval");
             const llmGenerationCost = llmCost(usage, "llmGeneration");
             const ttsCost = n(usage.tts?.costUsd);
@@ -77,8 +80,9 @@ export async function GET(request: Request) {
             const isFirstSessionForTemplate = earliestSessionIdByTemplate.get(s.template.id) === s.id;
             const templateUsage = isFirstSessionForTemplate ? templateUsageById.get(s.template.id) : null;
             const jdExtractionCost = templateUsage ? llmCost(templateUsage, "jdExtraction") : 0;
+            const questionBankCost = templateUsage ? llmCost(templateUsage, "questionBank") : 0;
 
-            const totalCost = liveCost + evalCost + llmGenerationCost + ttsCost + sttCost + jdExtractionCost;
+            const totalCost = evalCost + llmGenerationCost + ttsCost + sttCost + jdExtractionCost + questionBankCost;
 
             return {
                 id: s.id,
@@ -90,8 +94,7 @@ export async function GET(request: Request) {
                 startedAt: s.startedAt.toISOString(),
                 isFirstSessionForTemplate,
                 jdExtractionCost,
-                liveCost,
-                liveCalls: llmCalls(usage, "live"),
+                questionBankCost,
                 evalCost,
                 evalCalls: llmCalls(usage, "eval"),
                 llmGenerationCost,

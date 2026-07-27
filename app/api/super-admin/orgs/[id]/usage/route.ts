@@ -79,36 +79,43 @@ export async function GET(
         costUsd: round(jdCost), runs: agg.jdExtraction.calls,
         primaryModel: primaryModel(agg.jdExtraction.byModel),
         ledgerCostUsd: round(jdCost), legacyCostUsd: 0,
+        inputTokens: agg.jdExtraction.inputTokens, outputTokens: agg.jdExtraction.outputTokens,
       },
       {
         key: "questionBank" as const, label: "Question Bank",
         costUsd: round(questionBankCost), runs: agg.questionBank.calls,
         primaryModel: primaryModel(agg.questionBank.byModel),
         ledgerCostUsd: round(questionBankCost), legacyCostUsd: 0,
+        inputTokens: agg.questionBank.inputTokens, outputTokens: agg.questionBank.outputTokens,
       },
       {
         key: "resumeExtraction" as const, label: "Resume Extraction",
         costUsd: round(resumeExtractionCost), runs: agg.resumeExtraction.calls,
         primaryModel: primaryModel(agg.resumeExtraction.byModel),
         ledgerCostUsd: round(resumeExtractionCost), legacyCostUsd: 0,
+        inputTokens: agg.resumeExtraction.inputTokens, outputTokens: agg.resumeExtraction.outputTokens,
       },
       {
         key: "resumeReport" as const, label: "Resume Report",
         costUsd: round(resumeReportCost), runs: agg.resumeReport.calls,
         primaryModel: primaryModel(agg.resumeReport.byModel),
         ledgerCostUsd: round(resumeReportCost), legacyCostUsd: 0,
+        inputTokens: agg.resumeReport.inputTokens, outputTokens: agg.resumeReport.outputTokens,
       },
       {
         key: "interview" as const, label: "Interview",
         costUsd: round(interviewCost), runs: agg.eval.calls,
         primaryModel: primaryModel(agg.eval.byModel),
         ledgerCostUsd: round(interviewCost), legacyCostUsd: 0,
+        inputTokens: agg.eval.inputTokens + agg.llmGeneration.inputTokens,
+        outputTokens: agg.eval.outputTokens + agg.llmGeneration.outputTokens,
       },
       {
         key: "finalReport" as const, label: "Final Report",
         costUsd: round(reportCost), runs: agg.report.calls,
         primaryModel: primaryModel(agg.report.byModel),
         ledgerCostUsd: round(reportCost), legacyCostUsd: 0,
+        inputTokens: agg.report.inputTokens, outputTokens: agg.report.outputTokens,
       },
     ];
 

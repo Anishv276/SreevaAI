@@ -1,7 +1,7 @@
 // Response types for the super-admin usage view API.
 // See app/api/super-admin/orgs/[id]/usage/route.ts and .../usage/events/route.ts.
 
-export type SectionKey = "jdExtraction" | "resumeExtraction" | "resumeReport" | "interview" | "finalReport";
+export type SectionKey = "jdExtraction" | "questionBank" | "resumeExtraction" | "resumeReport" | "interview" | "finalReport";
 export type InterviewSubKey = "tts" | "stt" | "generation" | "eval";
 
 export type UsageSection = {
@@ -12,6 +12,8 @@ export type UsageSection = {
   primaryModel: string | null;
   ledgerCostUsd: number;
   legacyCostUsd: number;
+  inputTokens: number;
+  outputTokens: number;
 };
 
 export type InterviewSubSection = {
@@ -93,6 +95,7 @@ export type UsageEventsResponse = {
 // UI section slug used to query the events endpoint.
 export type EventsSectionSlug =
   | "jd"
+  | "question-bank"
   | "resume"
   | "resume-report"
   | "report"

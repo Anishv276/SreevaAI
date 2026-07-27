@@ -24,6 +24,7 @@ type SubFeature =
 
 const SECTION_MAP: Record<string, { feature: string; sub: SubFeature }> = {
   jd: { feature: "jdExtraction", sub: { kind: "llm", path: "jdExtraction" } },
+  "question-bank": { feature: "questionBank", sub: { kind: "llm", path: "questionBank" } },
   resume: { feature: "resumeExtraction", sub: { kind: "llm", path: "resumeExtraction" } },
   "resume-report": { feature: "resumeExtraction", sub: { kind: "llm", path: "resumeReport" } },
   report: { feature: "interview", sub: { kind: "llm", path: "report" } },

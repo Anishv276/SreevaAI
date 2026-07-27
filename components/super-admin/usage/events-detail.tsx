@@ -12,6 +12,7 @@ type ColKey = "job" | "candidate" | "model" | "calls" | "tokens" | "tts" | "stt"
 
 const COLUMN_PRESETS: Record<string, ColKey[]> = {
   jd: ["job", "model", "calls", "tokens", "cost"],
+  "question-bank": ["job", "model", "calls", "tokens", "cost"],
   resume: ["candidate", "job", "model", "calls", "tokens", "cost"],
   "resume-report": ["candidate", "job", "model", "calls", "tokens", "cost"],
   report: ["candidate", "job", "model", "calls", "tokens", "cost"],

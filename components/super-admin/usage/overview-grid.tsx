@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import { FileSearch, FileText, FileBarChart2, Video, ClipboardCheck, ChevronRight } from "lucide-react";
+import { FileSearch, FileText, FileBarChart2, Video, ClipboardCheck, ChevronRight, Library } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SectionKey, UsageOverview } from "./usage-types";
@@ -12,6 +12,7 @@ export const SECTION_STYLE: Record<
   { color: string; icon: LucideIcon; iconBg: string; iconFg: string; hoverBorder: string; hoverText: string }
 > = {
   jdExtraction: { color: "#10b981", icon: FileSearch, iconBg: "bg-emerald-50", iconFg: "text-emerald-600", hoverBorder: "hover:border-emerald-200", hoverText: "group-hover:text-emerald-600" },
+  questionBank: { color: "#06b6d4", icon: Library, iconBg: "bg-cyan-50", iconFg: "text-cyan-600", hoverBorder: "hover:border-cyan-200", hoverText: "group-hover:text-cyan-600" },
   resumeExtraction: { color: "#3b82f6", icon: FileText, iconBg: "bg-blue-50", iconFg: "text-blue-600", hoverBorder: "hover:border-blue-200", hoverText: "group-hover:text-blue-600" },
   resumeReport: { color: "#e87ba4", icon: FileBarChart2, iconBg: "bg-rose-50", iconFg: "text-rose-600", hoverBorder: "hover:border-rose-200", hoverText: "group-hover:text-rose-600" },
   interview: { color: "#7c3aed", icon: Video, iconBg: "bg-violet-50", iconFg: "text-violet-600", hoverBorder: "hover:border-violet-200", hoverText: "group-hover:text-violet-600" },
@@ -93,6 +94,11 @@ export function OverviewGrid({
                 {s.runs > 0 ? `${s.runs.toLocaleString()} runs` : "No runs yet"}
                 {s.primaryModel ? ` · ${s.primaryModel}` : ""}
               </p>
+              {(s.inputTokens > 0 || s.outputTokens > 0) && (
+                <p className="mt-0.5 text-xs text-gray-400 tabular-nums">
+                  {(s.inputTokens + s.outputTokens).toLocaleString()} tokens
+                </p>
+              )}
               <span className={cn("mt-4 text-sm font-semibold text-gray-400", st.hoverText)}>
                 View details →
               </span>
