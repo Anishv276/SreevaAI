@@ -5,10 +5,12 @@ export type JdExtractionJobData =
   | {
     kind: "file";
     fileName: string;
-    buffer: Buffer | { type?: string; data?: number[] };
+    bucket: string;
+    key: string;
     orgOpenAIModel: string;
     orgId?: string;
   }
+
   | {
     kind: "url";
     url: string;

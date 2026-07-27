@@ -139,31 +139,31 @@ export async function POST(request: Request) {
             const bytes = await file.arrayBuffer();
             const buffer = Buffer.from(bytes);
             console.log("[FILE_EXTRACT_START]:", { name: file.name, size: buffer.length, type });
-            // Upload to R2 and enqueue extraction concurrently
-            const [jobId, fileUrl] = await Promise.all([
-                enqueueJdExtraction({ kind: "file", fileName: file.name, buffer, orgOpenAIModel, orgId }),
-                (async () => {
-                    try {
-                        const bucket = process.env.R2_JDS_BUCKET || "jds";
-                        const orgForSlug = await prisma.organizationDetails.findUnique({ where: { id: orgId }, select: { urlSlug: true } });
-                        const orgSlug = orgForSlug?.urlSlug || orgId;
-                        // No job exists yet at this point (this route runs DURING job
-                        // creation, to extract the JD that helps create the job) -- so
-                        // this can't follow the org/job/file structure other uploads
-                        // use. Staged under org/JDs/ instead; not moved after the job
-                        // is created since nothing currently re-associates it.
-                        const fileName = `${orgSlug}/JDs/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_').toLowerCase()}`;
-                        console.log("[STORAGE_PUSH]: Uploading JD to R2", fileName);
-                        const { putObject } = await import("@/lib/s3");
-                        return await putObject(bucket, fileName, buffer, file.type);
-                    } catch (err: any) {
-                        console.error("[STORAGE_FATAL_ERROR]: JD R2 Upload Failed", err.message);
-                        return null;
-                    }
-                })()
-            ]);
+            // Upload to R2 first, then enqueue a reference to it -- the extraction
+            // job must never receive the raw buffer directly (BullMQ serializes
+            // job data as JSON over Redis, which corrupts binary buffers).
+            const bucket = process.env.R2_JDS_BUCKET || "jds";
+            const orgForSlug = await prisma.organizationDetails.findUnique({ where: { id: orgId }, select: { urlSlug: true } });
+            const orgSlug = orgForSlug?.urlSlug || orgId;
+            // No job exists yet at this point (this route runs DURING job
+            // creation, to extract the JD that helps create the job) -- so
+            // this can't follow the org/job/file structure other uploads
+            // use. Staged under org/JDs/ instead; not moved after the job
+            // is created since nothing currently re-associates it.
+            const fileName = `${orgSlug}/JDs/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_').toLowerCase()}`;
+            console.log("[STORAGE_PUSH]: Uploading JD to R2", fileName);
+            const { putObject } = await import("@/lib/s3");
+            let fileUrl: string | null = null;
+            try {
+                fileUrl = await putObject(bucket, fileName, buffer, file.type);
+            } catch (err: any) {
+                console.error("[STORAGE_FATAL_ERROR]: JD R2 Upload Failed", err.message);
+                return NextResponse.json({ error: "Failed to upload JD file." }, { status: 500 });
+            }
+            const jobId = await enqueueJdExtraction({ kind: "file", fileName: file.name, bucket, key: fileName, orgOpenAIModel, orgId });
             console.log(`[JD-EXTRACT] Enqueued file extraction job ${jobId}`);
             return NextResponse.json({ jobId, url: fileUrl }, { status: 202 });
+
         }
         // -- RESUME path: upload to R2, then hand off extraction to the worker --
         if (!file) {

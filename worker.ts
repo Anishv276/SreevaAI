@@ -1568,7 +1568,7 @@ if (isQueueEnabled("jd-extraction")) {
   const jdExtractionWorker = trackWorker("jd-extraction", new Worker(
     JD_EXTRACTION_QUEUE_NAME,
     async (job) => {
-      const { buffer: fileBuffer, fileName, text, kind, orgId, orgOpenAIModel } = job.data || {};
+      const { bucket, key, fileName, text, kind, orgId, orgOpenAIModel } = job.data || {};
       console.log(`\n=================================================`);
       console.log(`▶ [JD-EXTRACTION WORKER] PID=${process.pid} Job id="${job.id}" kind="${kind}"`);
       console.log(`=================================================\n`);
@@ -1580,13 +1580,13 @@ if (isQueueEnabled("jd-extraction")) {
         rawText = String(text || "");
         console.log(`[JD-EXTRACTION] kind=text length=${rawText.length}`);
       } else if (kind === "file") {
-        console.log(`[JD-EXTRACTION] Parsing PDF: ${fileName}`);
-        const buf = Buffer.isBuffer(fileBuffer)
-          ? fileBuffer
-          : Buffer.from(fileBuffer?.data ?? fileBuffer);
+        console.log(`[JD-EXTRACTION] Fetching PDF from R2: ${bucket}/${key}`);
+        const buf = await getObjectBuffer(bucket, key);
+        console.log(`[JD-EXTRACTION] Fetched ${buf.length} bytes, parsing PDF: ${fileName}`);
         rawText = await extractTextFromPdf(buf);
         console.log(`[JD-EXTRACTION] PDF parsed, text length=${rawText.length}`);
       } else {
+
         throw new Error(`[JD-EXTRACTION] Unknown kind: "${kind}"`);
       }
 
