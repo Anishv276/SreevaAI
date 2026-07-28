@@ -21,7 +21,7 @@ from interview.tech.brief import (
     TopicItem,
 )
 from interview.tech.question_bank_adapter import build_brief_from_question_bank
-from interview.agent_runtime_utils import token_limit_kwarg
+from interview.agent_runtime_utils import token_limit_kwarg, llm_metadata
 from interview.live_trap_score import LiveTrapScore
 from interview.agent_providers import (
     build_elevenlabs_tts,
@@ -471,147 +471,6 @@ def _build_cross_ref_rule(source_tag: str) -> str:
         "and move on. Do NOT frame it as if it were on their resume."
     )
 
-@dataclass(frozen=True)
-class _CandidateIntent:
-    """Classification of what the candidate's last turn actually was.
-
-    Single source of truth for filler/reaction selection -- previously this
-    classification logic was duplicated (with diverging pattern lists) between
-    the probe-directive path and the move-on-directive path, which is how
-    phrasings like "I'm asking is this a small question?" fell through one
-    classifier's clarification check but not the other's (move-on had no
-    clarification check at all).
-    """
-    is_connection_check: bool
-    is_clarification_ask: bool
-    is_no_recall: bool
-    is_hedge: bool
-    hint: str  # ready-to-use guidance string for the LLM prompt
-
-
-def _classify_candidate_intent(
-    prev_answer: str, prev_question: str = "", *, for_move_on: bool = False,
-) -> _CandidateIntent:
-    """Classify the candidate's last turn.
-
-    prev_question grounds the classification in what was actually asked --
-    without it, a short reply like "what?" or "is this a...?" is judged purely
-    by its own wording, and the resulting hint has no question to re-ask or
-    reference, so the LLM's "re-ask the SAME question" instruction was pointing
-    at nothing concrete. Passing prev_question lets the hint quote the actual
-    question back, and lets short bare replies ("what?", "sorry?") only count
-    as a clarification ask when there WAS a real question to be confused about
-    (not during warmup chit-chat where prev_question is empty).
-
-    for_move_on=True: the topic is already decided to change (a MOVE_ON is in
-    progress) -- prev_answer/prev_question are used ONLY to pick the best
-    filler/reaction, never to alter the transition itself. The default
-    (for_move_on=False, used by the within-topic probe path) still tells the
-    LLM to stay on the same question when the candidate was confused, since
-    there the topic genuinely isn't moving.
-    """
-    from interview.tech.probe import _ALLOWED_FILLERS  # single source of truth -- see probe.py
-
-    prev_lower = (prev_answer or "").lower().strip()
-    prev_q_stripped = (prev_question or "").strip()
-    _fillers_note = ", ".join(f"'{w}'" for w in _ALLOWED_FILLERS)
-
-    is_connection_check = any(
-        p in prev_lower for p in ("can you hear", "are you there", "hello?", "you there?")
-    )
-    # Clarification/confusion signals -- expanded from the original list after a
-    # live transcript showed real candidate phrasings slipping through:
-    # "I'm asking is this a small question?", "is this a dumb/smart question",
-    # "which project", "what question", "not clear", "confused".
-    is_clarification_ask = is_connection_check or any(
-        p in prev_lower
-        for p in (
-            "are you asking", "you're asking", "i'm asking", "im asking",
-            "do you mean", "what do you mean", "which project", "which one",
-            "which question", "what project", "what question",
-            "can you clarify", "can you repeat", "can you refresh",
-            "is this a", "is that a",  # "is this a small/dumb/smart question?"
-            "not clear", "confus", "don't understand", "dont understand",
-            "didn't get", "didnt get", "come again",
-        )
-    )
-    # Bare one/two-word confusion replies ("what?", "sorry?", "huh?") only count
-    # as clarification if there was an actual question to be confused about --
-    # otherwise a short warmup pleasantry ("what's up") would misfire.
-    if not is_clarification_ask and prev_q_stripped and len(prev_lower.split()) <= 3:
-        is_clarification_ask = any(
-            prev_lower == p or prev_lower.startswith(p)
-            for p in ("what?", "what", "sorry?", "sorry", "huh?", "huh", "pardon?", "pardon")
-        )
-    is_no_recall = (not prev_lower) or any(
-        p in prev_lower
-        for p in ("i don't know", "i dont know", "i forgot", "i don't remember",
-                   "i dont remember", "not sure", "can't recall", "cant recall",
-                   "don't remember", "no idea")
-    )
-    is_hedge = any(
-        p in prev_lower for p in ("i think", "probably", "maybe", "i believe", "kind of", "sort of")
-    )
-
-    _q_ref = f" (\"{prev_q_stripped[:120]}\")" if prev_q_stripped else ""
-
-    if is_connection_check:
-        if for_move_on:
-            hint = (
-                "CONNECTION CHECK: They asked if you can hear them, not answered the question"
-                f"{_q_ref}. Briefly confirm you can hear them before moving on -- "
-                "e.g. 'Yes, I can hear you' / 'Loud and clear' -- then transition into the new topic."
-            )
-        else:
-            hint = (
-                "CONNECTION CHECK: They asked if you can hear them, not answered the question. "
-                "Briefly confirm you can hear them, then re-ask the SAME question you just asked"
-                f"{_q_ref} (don't move to a new topic or skip it as if it were answered)."
-            )
-    elif is_clarification_ask:
-        if for_move_on:
-            hint = (
-                f"CLARIFICATION DETECTED: They were confused or asking what you meant{_q_ref} -- "
-                f"they never actually answered it. Acknowledge that briefly -- pick ONE that fits "
-                f"from this exact list: {_fillers_note} -- then move into the new topic. "
-                "Do not imply their confusion was an answer or that the old question got resolved."
-            )
-        else:
-            hint = (
-                "CLARIFICATION DETECTED: They are confused or asking what you meant -- they did NOT "
-                "answer the question and did NOT ask to move on. You MUST re-explain or rephrase the "
-                f"SAME question you just asked{_q_ref}, more simply, anchoring the topic name "
-                "explicitly. Do NOT ask a new question. Do NOT change topics. Do NOT treat this as "
-                "an answer."
-            )
-    elif is_no_recall:
-        hint = (
-            f"FILLER: they couldn't recall — pick ONE that fits from this exact list: {_fillers_note}. "
-            "Don't reuse recent turns' wording."
-        )
-    elif len(prev_lower.split()) <= 8:
-        hint = (
-            f"FILLER: short answer, acknowledge briefly — pick ONE that fits from this exact list: "
-            f"{_fillers_note}. Don't reuse recent turns' wording."
-        )
-    elif is_hedge:
-        hint = (
-            f"FILLER: they hedged, don't praise it — pick ONE that fits from this exact list: "
-            f"{_fillers_note}. Don't reuse recent turns' wording."
-        )
-    else:
-        hint = (
-            f"FILLER: substantive answer — pick ONE that fits from this exact list: {_fillers_note}. "
-            "Don't reuse recent turns' wording."
-        )
-
-    return _CandidateIntent(
-        is_connection_check=is_connection_check,
-        is_clarification_ask=is_clarification_ask,
-        is_no_recall=is_no_recall,
-        is_hedge=is_hedge,
-        hint=hint,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -723,10 +582,13 @@ def render_declined_facts(declined_facts_log: list[str]) -> str:
 # ---------------------------------------------------------------------------
 _CODE_FENCE_RE = re.compile(r"```(?:\w+)?\n?.*?```", re.S)
 
-
 _CODE_CARD_TYPE_TAGS = ("code_trace", "snippet_eval", "query_trace")
 _LANG_FENCE_TAGS = ("python", "sql", "sh", "bash", "js", "javascript")
 
+
+
+
+from interview.tech.probe import CODE_CARD_CONTRACT  # single source of truth
 
 _LANG_ANNOTATION_RE = re.compile(r"^LANG:\s*([\w+.#-]+)\s*$", re.IGNORECASE)
 
@@ -855,8 +717,8 @@ def _build_probe_directive(
     asked_questions_log: list[str],
     topic_transcript: list[str],
     signals_history: list[str] | None = None,
-    probe_rotation_index: int = 0,
     interview_type: str = "tech",
+    last_question_type: str = "",
     recent_question_patterns: str = "(none yet)",
     declined_facts: str = "(none yet)",
     cross_cutting_signal: Optional[str] = None,
@@ -876,10 +738,19 @@ def _build_probe_directive(
     interview_type: routes to interview.tech.probe or interview.conversational.probe
     for the signal-specific probe directive (different signal sets per module).
     """
+    # The question-generation prompt ships WITH the directive. It used to be a module
+    # constant nothing injected, so its rules (inherit from their answer, make them do
+    # rather than describe, one question mark, the code-card fence contract) never
+    # reached the LLM that actually writes the follow-up -- the directive arrived with
+    # no instructions on how to turn it into a question.
     if interview_type == "conversational":
-        from interview.conversational.probe import get_probe_context
+        from interview.conversational.probe import (
+            get_probe_context,
+            QUESTION_GENERATION_SYSTEM as _question_gen_prompt,
+        )
     else:
-        from interview.tech.probe import get_probe_context
+        from interview.tech.probe import get_probe_context, render_question_generation_system
+        _question_gen_prompt = render_question_generation_system(level)
 
     # probe_focus is now one descriptive paragraph per topic (not a rotating
     # list of sub-concepts) -- pass it straight through as probing guidance.
@@ -921,15 +792,17 @@ def _build_probe_directive(
         declined_facts=declined_facts,
         cross_cutting_signal=cross_cutting_signal,
         topic_score_history=topic_score_history,
+        **({"last_question_type": last_question_type} if interview_type != "conversational" else {}),
     )
 
     # Filler guidance -- classify prev answer intent so Ishitha's reaction is connected.
     # Shared classifier (also used by _generate_move_on_directive) so clarification/
     # confusion detection doesn't drift between the two directive-building paths.
-    _intent = _classify_candidate_intent(prev_answer, prev_question)
-    _is_connection_check = _intent.is_connection_check
-    _is_clarification_ask = _intent.is_clarification_ask
-    _filler_hint = _intent.hint
+    # Clarification detection comes from the SIGNAL, not from a keyword scan of the
+    # answer. The classifier already emits clarification_request with the full
+    # question+answer in view; a second regex path here could only ever disagree
+    # with it, and when it did it silently won.
+    _is_clarification_ask = signal == "clarification_request"
 
     # Short display label for the HARD STOP line -- prefer structured topic title,
     # fall back to the first segment of the full active_topic context string.
@@ -940,6 +813,8 @@ def _build_probe_directive(
 
     parts_out = [
         f"[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]",
+        f"",
+        _question_gen_prompt,
         f"",
         f"ACTIVE TOPIC LOCK: {active_topic}",
         f"You are ON this topic ONLY. Every question you ask must be about this topic and nothing else.",
@@ -953,8 +828,6 @@ def _build_probe_directive(
         f"",
         f"WHAT TO PROBE:",
         _probe_ctx,
-        f"",
-        _filler_hint,
         f"",
     ]
     if _asked:
@@ -987,7 +860,7 @@ def _build_probe_directive(
         parts_out += [
             "NOW: React to what they said (one short phrase), then ask your follow-up question.",
             "One question mark. Never two questions in one turn.",
-            "The question can have 1-3 sentences of natural setup before the actual question — that's fine.",
+            "Reaction + question together: two sentences max, under 30 words -- as specified above.",
             "Grounded in what they just told you. Never 'Can you' or 'Could you'. Never 'Great!' or 'Awesome!'.",
             "",
         ]
@@ -1017,7 +890,6 @@ async def _generate_move_on_directive(
     usage_sink: Optional[Any] = None,
     topic_item: Optional[Any] = None,
     prev_answer: str = "",  # candidate's last answer — used to derive the right opening filler
-    prev_question: str = "",  # question that answer was responding to — grounds clarification detection
     app_id: str = "",
     candidate_name: str = "",
     is_skill_only: bool = False,  # tech interviews: topics are skills, never projects/work
@@ -1099,16 +971,33 @@ async def _generate_move_on_directive(
         }.get(source, "A skill relevant to this role.")
         _angle_guide = (
             f"SOURCE: {source} -- {_skill_source_note}\n"
-            f"This is a SKILL-ONLY technical interview. NEVER reference the candidate's resume, "
-            f"projects, work history, or employer -- not even to 'ground' the question. Every question "
-            f"must be a cold-reasoning prompt about the skill itself, answerable by anyone who genuinely "
-            f"knows it.\n\n"
+            f"This is a SKILL-ONLY technical interview. Never reference the candidate's resume, "
+            f"projects, work history, or employer -- we don't have them, so a question that assumes "
+            f"them is unanswerable.\n"
+            f"WHAT THAT RULE DOES NOT MEAN: it does NOT mean the question should be abstract, "
+            f"context-free, or textbook. 'No resume' constrains WHOSE experience you may refer to -- it "
+            f"says nothing about whether the question has a scenario. The best skill-only questions are "
+            f"HIGHLY applied; they just use a HYPOTHETICAL scenario instead of the candidate's history. "
+            f"Put the candidate inside a situation and make them choose:\n"
+            f"  Textbook (bad):  'What's the difference between an ArrayList and a LinkedList?'\n"
+            f"  Applied (good):  'If you were building something that needed heavy insertions in the "
+            f"middle of a list, would you reach for an ArrayList or a LinkedList?'\n"
+            f"Both are answerable with zero knowledge of the candidate. The second one sounds like a "
+            f"real engineer talking, tells you far more, and is what you must produce. 'If you were "
+            f"building...', 'Say you've got...', 'Imagine a service that...' are all fully compatible "
+            f"with the no-resume rule -- reach for them by default.\n\n"
             f"HOW TO BUILD THE QUESTION -- combine these, don't pick just one:\n"
             f"  SKILL: {topic_item.title if topic_item else new_topic_title} -- name it naturally.\n"
             f"  CONTEXT: {(topic_item.full_description if topic_item else '') or '(none)'} -- use it to ground "
             f"a concrete distinction, mechanism, or scenario.\n"
             f"  TECH STACK: {', '.join(topic_item.tech_stack) if (topic_item and topic_item.tech_stack) else '(none)'}\n"
             f"  PROBE FOCUS (MANDATORY angle): {_probe_focus_str or 'a fundamentals or mechanics angle for this skill'}\n\n"
+            f"BANK FIDELITY RULE (CRITICAL): if CONTEXT or PROBE FOCUS above contains a bank question with a "
+            f"concrete scenario/setup (a specific situation, constraint, or 'you need to...' framing), your "
+            f"opening question MUST keep that scenario -- same setup, same constraint. You may only smooth the "
+            f"sentence for spoken delivery. Do NOT flatten it into a bare 'what is X' or 'what's the difference "
+            f"between X and Y' -- that throws away a scenario question someone already wrote well. Only invent "
+            f"your own opener from scratch if the bank question genuinely IS a bare definition with no scenario.\n\n"
             f"DEPTH TARGET (LEVEL {level}): {_level_skill}\n"
             f"FORBIDDEN: 'tell me about a project where', 'your resume', 'a time when you', 'have you used', "
             f"any company/project name, any 'what did you build/own' framing."
@@ -1281,17 +1170,66 @@ async def _generate_move_on_directive(
         "       - DIAGNOSE: something is wrong/slow, what do they check FIRST (not a checklist).\n"
         "     The candidate's actual answer will then drive the follow-ups; the opener just has to create a real "
         "     claim to probe, not a yes/no or a recited fact.\n"
-        "  3. ONE concept, spoken in under 30 words, ONE question mark. Do NOT stack a paragraph of NLP/theory "
+        "  3. NEVER 'Can you' / 'Could you' / 'Would you be able to' — form-filler openers that make a real "
+        "     question sound like a survey. Ask the thing directly.\n"
+        "  4. NEVER ask the candidate to WRITE, type, code up, sketch, or draw anything. This is a voice call "
+        "     with no keyboard and no shared editor: they can only SPEAK, or READ a code card you show them. "
+        "     Any 'write a...' / 'code up a...' / 'draw the...' ask is literally unanswerable in this medium. "
+        "     If you want code reasoning, SHOW a snippet and have them talk through it.\n"
+        "  5. ONE concept, spoken in under 30 words, ONE question mark. Do NOT stack a paragraph of NLP/theory "
         "     setup before the question (the giant multi-clause 'could you explain X, and Y, and how Z' opener is "
         "     banned — it's unanswerable by voice and signals nothing). If the skill needs context, give ONE "
-        "     short clause, then ask ONE concrete thing.\n\n"
+        "     short clause, then ask ONE concrete thing.\n"
+        "  6. NO double-barrelled asks. 'What a thread is AND how you'd create one', 'how they differ AND when "
+        "     you'd choose one' are TWO questions — the candidate answers whichever half is easier and you learn "
+        "     nothing about the other. Pick the half that carries more signal and ask only that; the follow-up "
+        "     turn exists for the other half.\n\n"
+
+        "━━━ ACTIVE LISTENING: THE CLOSING BEAT MUST ENGAGE, NOT QUOTE ━━━\n"
+        "Quoting the candidate back at themselves is NOT active listening, and it is the single "
+        "fastest way to sound like a machine. 'You mentioned X earlier, which is interesting' is a "
+        "TEMPLATE with a slot -- it reads as interested while engaging with nothing, and it becomes "
+        "unbearable by the third repetition. Banned outright, along with every variant: 'You said X, "
+        "which is interesting/surprising', 'Interesting you said X', 'X, that's an interesting "
+        "point'.\n"
+        "React to the SUBSTANCE of what they said instead, then bridge:\n"
+        "  - They named the wrong technology for this topic → acknowledge it's a real thing, then "
+        "    steer: 'React does handle that its own way -- but on the Spring side, ...'\n"
+        "  - They gave a partial answer → name what they got, then move: 'Right, polymorphism is one "
+        "    of them -- let's move to collections.'\n"
+        "  - They said something confused or empty → don't dignify it with a quote. Skip the beat "
+        "    entirely and just open the new topic cleanly. Quoting confusion back at a struggling "
+        "    candidate reads as mockery.\n"
+        "The test: could your closing beat be pasted onto a DIFFERENT answer without editing? If yes "
+        "it's a template, delete it and either react to the actual substance or say nothing.\n\n"
+
+        "━━━ A TRANSITION HAS TWO BEATS, NOT ONE ━━━\n"
+        "The reason a move-on sounds robotic is almost never the question — it's that the question "
+        "arrives with no closure on what came before. Real interviewers close, then open:\n"
+        "  BEAT 1 (close): land the previous thread by naming the specific thing they just said. "
+        "Not the topic title, not praise — the detail. 'Right, so the retry logic was the messy part —'\n"
+        "  BEAT 2 (open): the new topic's question, per the rules above.\n"
+        "Your CLOSING BEAT line supplies beat 1 and OPENING ANGLE supplies beat 2. They must read as "
+        "ONE spoken turn, not a reaction stapled to an unrelated question.\n"
+        "Beat 1 is short — under 10 words, often under 6. If the candidate's last answer was empty, a "
+        "denial, or garbled, there is nothing to close: skip beat 1 entirely rather than inventing a "
+        "detail to name. Never use beat 1 to summarise, grade, or teach.\n"
+        "Never make the bridge explicit machinery: 'moving on', 'next topic', 'switching gears', "
+        "'let's talk about', 'now I want to ask you about', 'shifting to' are all banned — the bridge "
+        "is carried by naming their detail, never by announcing the transition.\n\n"
 
         + _open_examples +
 
         "━━━ DIRECTIVE STRUCTURE ━━━\n"
         "Write in plain text, no markdown:\n"
         "DECISION: MOVE_ON\n"
-        "TOPIC YOU ARE LEAVING: <old topic> — CLOSED. Do not reference it again.\n"
+        "TOPIC YOU ARE LEAVING: <old topic>\n"
+        "CLOSING BEAT: one short clause Ishitha uses to CLOSE the old thread before opening the "
+        "new one — it must name the specific last thing the candidate said (a tool, a number, a "
+        "decision), not the topic title, and must not evaluate it ('good', 'nice'). This is the "
+        "half that makes a transition sound human; without it the new question lands as a cold "
+        "cut. After this beat the old topic is closed — do not return to it or ask anything "
+        "further about it.\n"
         "NEW ACTIVE TOPIC: <new topic>  [TAG: <source>]\n"
         "WHAT WE KNOW: 2-3 bullet points about the new topic from the analyst brief\n"
         "OPENING ANGLE: The specific thing worth probing first — what question to open with conceptually, "
@@ -1305,7 +1243,9 @@ async def _generate_move_on_directive(
         "No compound questions, no 'and also', no multi-part asks. "
         "Keep OPENING ANGLE guidance short — Ishitha's actual spoken question must land under "
         "30 words total, so don't ask her to build multi-sentence context before the question.\n\n"
-        "Output plain text only. No markdown. No code blocks."
+        "The DIRECTIVE ITSELF must be plain text -- no markdown, no fenced code block in your output. "
+        "If this is a code_trace/query_trace topic, describe in OPENING ANGLE what the snippet should "
+        "test; Ishitha writes the actual fenced code block herself when she speaks, same as a PROBE turn."
     )
     _user = (
         f"LEVEL: {level}\n"
@@ -1334,7 +1274,7 @@ async def _generate_move_on_directive(
                 stream=True,
                 stream_options={"include_usage": True},
                 store=True,
-                metadata={"call_type": "move_on_directive", "level": level, "source": source},
+                metadata=llm_metadata(call_type="move_on_directive", level=level, source=source),
             )
             async for chunk in stream:
                 if chunk.choices and chunk.choices[0].delta.content:
@@ -1358,56 +1298,38 @@ async def _generate_move_on_directive(
         # Build filler instruction from the actual prev answer + prev question so the
         # LLM picks a reaction that matches what the candidate really said -- not a
         # generic list it ignores. Uses the same shared classifier as the probe-directive
-        # path. for_move_on=True: prev_answer/prev_question are used ONLY to pick the
+        # path. prev_answer is used ONLY to pick the
         # best filler wording -- the topic transition itself is never altered here
         # (previously "clarification detected" was a separate branch that changed what
         # instruction the LLM got about moving on at all; now every case flows through
         # one instruction and the topic always moves the same way).
         _prev_trimmed = (prev_answer or "").strip()[:300]
-        _prev_q_trimmed = (prev_question or "").strip()[:200]
-        _intent = _classify_candidate_intent(_prev_trimmed, _prev_q_trimmed, for_move_on=True)
         if _prev_trimmed:
-            # Describe the situation (not a phrase to say) so the model composes its own reaction
-            _prev_lc = _prev_trimmed.lower()
-            if not _prev_lc or any(p in _prev_lc for p in ("i don't know", "i forgot", "i don't remember", "not sure", "can't recall")):
-                _intent_hint = "They couldn't recall or said they don't know."
-            elif len(_prev_lc.split()) <= 8:
-                _intent_hint = "Very short answer, possibly surface-level."
-            elif any(p in _prev_lc for p in ("i think", "probably", "maybe", "i believe", "kind of", "sort of")):
-                _intent_hint = "They hedged or were vague — acknowledge without validating."
-            else:
-                _intent_hint = "Substantive answer."
+            # No keyword scan of the answer here. A "SITUATION: they hedged" label added
+            # nothing the LLM could not read off THEIR LAST ANSWER directly below, and it
+            # was a third competing copy of denial/hedge detection that could contradict
+            # the classifier's signal. Same REACTION_POLICY the PROBE path uses, so a
+            # topic change and a follow-up don't sound like two different interviewers.
+            from interview.tech.probe import REACTION_POLICY  # noqa: PLC0415
+
             _filler_instruction = (
-                f"\n\nOPENING REACTION — compose fresh, do not pick from a phrase bank:\n"
+                f"\n\nOPENING REACTION (this is the CLOSING BEAT):\n"
                 f"THEIR LAST ANSWER: \"{_prev_trimmed}\"\n"
-                f"SITUATION: {_intent_hint}\n"
-                "Feel out how this actually landed for you (surprised, unimpressed, amused, unsure, relieved) "
-                "and react to that, in your own short words (1-6 words), not a category label.\n"
-                "Default to NO filler — a filler is the exception, not the norm. Only add one (umm, hmm, uhh, "
-                "ohh, haha) when this specific answer genuinely surprised you, needs a beat to process, or the "
-                "moment calls for warmth. Roughly 1 in 3 turns should have a filler at most — never two turns in a row.\n"
-                "If a filler fits, it belongs at a real planning boundary — turn-initial (most common), at a "
-                "clause break, or right before a specific word you're retrieving — e.g. 'Hmm, okay, so —' or "
-                "'Right, so — uhh — what happened next?' NEVER mid-phrase inside an already-fused expression "
-                "like 'pretty good' or 'makes sense' — real speakers don't split a decided phrase.\n"
-                "Never reuse a filler word or reaction phrasing you've used in the last 2-3 turns of this interview.\n"
-                "The reaction and the new question must feel like one connected turn — "
-                "not a reaction to silence followed by an unrelated question.\n"
-                "NEVER say 'Great!', 'Awesome!', 'Fantastic!', 'Amazing!', or any hollow praise.\n"
-                "NEVER say 'Thanks for sharing' or any 'thanks for [verb]ing' phrase.\n"
-                f"NEVER reference the old topic '{old_topic_title}' — it is closed.\n"
-                "DO NOT wrap up, say goodbye, or add any closing phrase.\n"
+                f"{REACTION_POLICY}\n"
+                f"  Never ask anything further about '{old_topic_title}' and never summarise or grade "
+                f"it; naming their detail is the bridge, and the topic is closed once the beat lands.\n"
+                "  DO NOT wrap up, say goodbye, or add any closing phrase.\n"
             )
         else:
             _filler_instruction = (
-                "\n\nOPENING REACTION: One short natural lead-in (3-8 words). "
-                "NEVER say 'Great!', 'Awesome!', 'Fantastic!', or hollow praise. "
-                "NEVER say 'Thanks for sharing'.\n"
+                "\n\nOPENING REACTION: no previous answer to react to — skip the closing beat entirely "
+                "and open the new topic directly. Never manufacture a reaction to silence.\n"
             )
         directive = (
             "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
             + generated
             + _filler_instruction
+            + "\n\n" + CODE_CARD_CONTRACT + "\n"
             + memory_block
             + cross_ref_rule
         )
@@ -3972,8 +3894,8 @@ async def entrypoint(ctx: JobContext):
                 )
                 # Resume exactly what the eval had already queued up before the trap
                 # interrupted -- reusing the same PROBE-vs-MOVE_ON phrasing distinction
-                # the rest of the codebase already uses (see _classify_candidate_intent's
-                # for_move_on hint text above), instead of one generic bridge-back line.
+                # the rest of the codebase already uses, instead of one generic
+                # bridge-back line.
                 _resume_directive = _trap_pending.get("resume_directive", "")
                 _resume_topic_lock = _trap_pending.get("resume_topic_lock", "")
                 _was_move_on = bool(_trap_pending.get("was_move_on"))
@@ -4585,7 +4507,6 @@ async def entrypoint(ctx: JobContext):
                                 usage_sink=_llmgen_llm_usages.append,
                                 topic_item=_pre_next_item,
                                 prev_answer=(payload.get("answer") or ""),
-                                prev_question=_last_interviewer_question,
                                 app_id=app_id,
                                 candidate_name=candidate_name,
                                 is_skill_only=(interview_type == "tech"),
@@ -4648,7 +4569,6 @@ async def entrypoint(ctx: JobContext):
                         " | ".join(sorted(_covered_topic_keys.keys())) if _covered_topic_keys else "(none)",
                     )
                     # Derive tag from brief TopicItem for correct question framing
-                    _topic_key_lc = _topic_short_key(_active_topic or "").lower()
                     _src = _next_brief_item.tag if _next_brief_item else "RESUME_TOPIC"
                     # Build MOVE_ON directive -- LLM generates it, not agent verbatim script
                     _old_topic_title = _topic_short_title(_old_topic or "")
@@ -4658,7 +4578,6 @@ async def entrypoint(ctx: JobContext):
                     # treat a topic the candidate may already have touched. The source
                     # framing itself ("we require X" vs "you built X") lives in the
                     # directive's _angle_guide and Ishitha's system prompt -- not here.
-                    _topic_type = _next_brief_item.topic_type if _next_brief_item else ""
                     _cross_ref_rule = _build_cross_ref_rule(_src)
                     # Use the pre-fired directive task if it matches the active topic,
                     # otherwise fall back to a fresh call (topic changed mid-flight).
@@ -4701,7 +4620,6 @@ async def entrypoint(ctx: JobContext):
                             usage_sink=_llmgen_llm_usages.append,
                             topic_item=_new_topic_item,
                             prev_answer=_prev_a,
-                            prev_question=_last_interviewer_question,
                             app_id=app_id,
                             candidate_name=candidate_name,
                             is_skill_only=(interview_type == "tech"),
@@ -4838,8 +4756,13 @@ async def entrypoint(ctx: JobContext):
                         asked_questions_log=list(_asked_questions_log),
                         topic_transcript=_topic_thread_lines,
                         signals_history=_signals_history_this_topic,
-                        probe_rotation_index=_rotation_idx,
                         interview_type=interview_type,
+                        # Type of the code card the candidate just answered, if any.
+                        # Snapshotted into the payload by _build_eval_payload before
+                        # agent.last_code_card_question_type is cleared. Without this,
+                        # tech.probe's whole CODE PROBE GUIDANCE block never fires and
+                        # a code-card follow-up gets the same directive as a verbal one.
+                        last_question_type=str(payload.get("question_type") or ""),
                         recent_question_patterns=render_recent_question_patterns(_recent_question_patterns),
                         declined_facts=render_declined_facts(_declined_facts_log),
                         cross_cutting_signal=_eval_cross_cutting,

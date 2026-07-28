@@ -48,7 +48,7 @@ from typing_extensions import TypedDict
 
 from interview.agent_utils import truncate_to_tokens
 from interview.agent_runtime_support import logger, DATABASE_URL
-from interview.agent_runtime_utils import token_limit_kwarg
+from interview.agent_runtime_utils import token_limit_kwarg, llm_metadata
 from interview.tech.brief_extraction import RawResumeJSON, ResumeExtractor
 
 from billing.billing import record_external_billing_usage as _persist_billing
@@ -327,12 +327,12 @@ class ReportLLMClient:
                     stream_options={"include_usage": True},
                     response_format=spec.response_format,
                     store=True,
-                    metadata={
-                        "call_type": spec.call_type,
-                        "app_id":    spec.app_id,
-                        "org_id":    spec.org_id,
-                        "attempt":   str(attempt),
-                    },
+                    metadata=llm_metadata(
+                        call_type=spec.call_type,
+                        app_id=spec.app_id,
+                        org_id=spec.org_id or "",
+                        attempt=attempt,
+                    ),
                     messages=[
                         {"role": "system", "content": _strip_surrogates(spec.system)},
                         {"role": "user",   "content": _strip_surrogates(spec.user)},

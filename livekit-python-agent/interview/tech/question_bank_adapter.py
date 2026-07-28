@@ -53,12 +53,13 @@ def _topic_item_for_question(q: dict[str, Any], must_have_skills: set[str]) -> T
         )
     else:
         full_description = (
-            f"[INSTRUCTION FOR AGENT]: Concept/scenario to test: '{question_text}'.\n"
-            f"Do NOT read this text verbatim like a script. Reframe it naturally into a smooth, "
-            f"conversational question tailored to the flow of the interview."
+            f"[INSTRUCTION FOR AGENT]: This bank question is already a well-written scenario -- "
+            f"keep its concrete setup and constraint, do not discard it for a generic definition "
+            f"question. Only adjust wording so it sounds spoken, not read off a card.\n"
+            f"BANK QUESTION (preserve this scenario): '{question_text}'"
         )
 
-    probe_focus = f"Subtopic: {subtopic} | Intent: {question_text}"
+    probe_focus = f"Subtopic: {subtopic} | Bank question (preserve the scenario): {question_text}"
 
     return TopicItem(
         id=str(q.get("id") or title),

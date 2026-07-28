@@ -13,10 +13,11 @@ Returns:
 Universal signal taxonomy (replaces the old 16-signal stage-scoped system):
   Response-shape signals (shape of reply, checked first):
     clarification_request, rephrase_request, off_topic
-  Content signals (8 universal, level-calibrated):
-    depth_mastered, depth_clear, depth_applied,
-    depth_shallow, depth_misconception, depth_generic,
-    pure_denial, recovery_attempted
+  Content signals (9 universal, level-calibrated):
+    depth_strong, depth_clear, tradeoff_blind, scope_diffuse,
+    confident_uncertain, depth_shallow, depth_misconception,
+    depth_generic, pure_denial
+  Plus a self_corrected BOOLEAN modifier (not a signal -- see SELF_CORRECTION_TRIGGER)
   No null ever: fallback is depth_shallow.
 """
 from __future__ import annotations
@@ -27,7 +28,7 @@ from typing import Any, Optional
 
 logger = logging.getLogger("interview-agent")
 from interview.agent_runtime_support import EVAL_TEMPERATURE
-from interview.agent_runtime_utils import token_limit_kwarg
+from interview.agent_runtime_utils import token_limit_kwarg, llm_metadata
 
 
 # ---------------------------------------------------------------------------
@@ -50,7 +51,7 @@ RESPONSE_SIGNALS = {
 }
 
 # ---------------------------------------------------------------------------
-# Universal content signals (8) — the signal encodes TWO independent axes that
+# Universal content signals (9) — the signal encodes THREE independent axes that
 # real technical interviewers score separately (Google's rubric scores
 # problem-solving/correctness independently from communication; Karat rubrics
 # separate "code correctness" from "technical communication"):
@@ -62,8 +63,27 @@ RESPONSE_SIGNALS = {
 #            label_only  → could be said by someone who read one docs paragraph
 #            mechanism   → can explain HOW / trace a concrete case
 #            applied     → real tradeoff + judgment from having done the work
+#   AXIS 3 — STANCE: how the answer is HELD and OWNED, independent of whether it
+#            is right or deep. Two failure modes live here that neither other axis
+#            can express, and each needs a different next question:
+#              cost-blindness  → correct mechanism, no idea what it COSTS
+#                                (tradeoff_blind — the junior/senior discriminator)
+#              scope-blindness → real work described, own contribution invisible
+#                                (scope_diffuse — a probe target, never a deduction)
+#            plus confident_uncertain: right answer, visibly guessed. Grading
+#            fluency instead of substance is the best-documented scoring bias, and
+#            it runs both ways — depth_misconception guards the confident-and-wrong
+#            direction, confident_uncertain guards the hesitant-but-right one.
 #
-# The 8 signals are the meaningful CELLS of that grid. Level (1-4) calibrates
+# A signal EARNS its slot only if it demands a DIFFERENT next question. Signals do
+# exactly two jobs: pick the probe and feed scoring. Two signals that fire the same
+# probe are one signal with two names, and on a single-pick enum they only add
+# contention. That test is why depth_mastered and depth_applied were merged into
+# depth_strong (identical probe, identical voice, and a coin-flip between them on
+# every strong answer that scored differently), and why recovery_attempted was
+# demoted to a boolean (see SELF_CORRECTION_TRIGGER below).
+#
+# The 9 signals are the meaningful CELLS of that grid. Level (1-4) calibrates
 # the WEIGHT, not which cell fires. The classifier is told to resolve the two
 # axes FIRST, then map to the cell — this is what stops everything collapsing
 # to depth_shallow.
@@ -76,14 +96,15 @@ RESPONSE_SIGNALS = {
 # ---------------------------------------------------------------------------
 CONTENT_SIGNAL_DEFINITIONS: dict[str, dict] = {
 
-    "depth_mastered": {
-        "trigger": "CORRECT + APPLIED depth. Explains the mechanism (HOW), the tradeoff or failure mode (WHY it breaks), AND judgment about when to use it vs alternatives. All three present and technically accurate. Survives a 'what breaks this' push. For code/query questions: correctly traces the execution or returns the right result AND explains WHY the code behaves that way (scope rule, evaluation order, NULL semantics, etc.) — not just the output.",
-        "pattern": "A practitioner's answer, not a textbook one. They can trace the internals, name the failure cases, and defend a real judgment call. This is the ceiling — reserve it.",
+    "depth_strong": {
+        "trigger": "CORRECT + APPLIED depth. Mechanism (HOW), tradeoff or failure mode (WHY it breaks), AND judgment about when to use it vs alternatives — all present and accurate. Survives a 'what breaks this' push. The judgment may be demonstrated EITHER abstractly (they can defend the choice against a named alternative) OR through a grounded real instance ('50k reads/sec, Redis TTL=30s, we hit cache stampede, fixed it with probabilistic early expiration'). Both routes reach the same ceiling. For code/query questions: correctly traces the execution AND explains WHY the code behaves that way (scope rule, evaluation order, NULL semantics) — not just the output.",
+        "pattern": "A practitioner's answer, not a textbook one: traces the internals, names the failure cases, defends a real judgment call. This is the ceiling — reserve it.",
         "examples": [
             "For DB indexing: 'A B-tree keeps keys sorted so range scans walk leaf nodes in order — that's why BETWEEN is fast. But a low-cardinality column like a boolean flag, the planner ignores the index and does a seq scan anyway because the index isn't selective. I'd only index it if it's part of a composite with a selective leading column.'",
+            "For caching (grounded route): '50k reads/sec on our catalog, Redis TTL=30s. On expiry we hit cache stampede — every miss slammed Postgres at once. Fixed it with probabilistic early expiration. Traded staler reads for not taking the DB down.'",
             "For a code_trace: correctly says output is '[1, 2]' AND explains that list slicing creates a new list so the original is unchanged — traces the memory model, not just the output",
         ],
-        "not_this": "NOT this if any dimension (mechanism/tradeoff/judgment) is missing → depth_clear. NOT this if any specific claim in it is factually WRONG, however fluent → depth_misconception. NOT this if it's a real-experience story without the mechanism → depth_applied.",
+        "not_this": "NOT this if any dimension (mechanism/tradeoff/judgment) is missing → depth_clear, or → tradeoff_blind if specifically the cost/alternative is the missing piece. NOT this if any specific claim is factually WRONG, however fluent → depth_misconception. NOT this if the answer is right but visibly guessed → confident_uncertain. NOT this if the work is real but the candidate's own scope in it is invisible → scope_diffuse.",
     },
 
     "depth_clear": {
@@ -94,14 +115,38 @@ CONTENT_SIGNAL_DEFINITIONS: dict[str, dict] = {
             "For a code_trace: 'It prints 4 because the loop runs n-1 times, not n.' — correct output with correct reason, but didn't explain what happens at the boundary condition",
             "For a query_trace: 'It returns nothing because the LEFT JOIN on orders filters to only users WITH orders — wait, no, the WHERE on orders.id IS NOT NULL is doing that.' — traced the right issue, missed explaining why NULL propagation causes it",
         ],
-        "not_this": "NOT this if a tradeoff AND judgment are also present and accurate → depth_mastered. NOT this if it's just a correct-sounding label with no real mechanism traced → depth_shallow. NOT this if any claim is wrong → depth_misconception.",
+        "not_this": "NOT this if a tradeoff AND judgment are also present and accurate → depth_strong. NOT this if the missing layer is SPECIFICALLY the cost/alternative → tradeoff_blind. NOT this if it's just a correct-sounding label with no real mechanism traced → depth_shallow. NOT this if any claim is wrong → depth_misconception.",
     },
 
-    "depth_applied": {
-        "trigger": "CORRECT + real applied judgment grounded in a concrete situation: a specific decision, a real failure debugged, a real tradeoff navigated — with a specific constraint (a number, a scale, a deadline) and what they actually did.",
-        "pattern": "Gold standard for grounding. 'In [specific situation] I did X because Y, and the tradeoff was Z' — not 'I usually do X'. Proves the knowledge is load-bearing, not just recalled.",
-        "examples": ["For caching: '50k reads/sec on our catalog, Redis TTL=30s. On expiry we hit cache stampede — every miss slammed Postgres at once. Fixed it with probabilistic early expiration so keys refresh before the hard TTL. Traded slightly-staler reads for not taking the DB down.'"],
-        "not_this": "NOT this if the scenario is generic or hypothetical ('you'd usually cache X') → depth_generic. NOT this if there's no specific constraint or outcome. A habit is not an applied instance.",
+    "tradeoff_blind": {
+        "trigger": "CORRECT MECHANISM, ZERO COST AWARENESS. They explain how their approach works and it is accurate — but they cannot name what it COSTS, when it would be the wrong call, or what they'd compare it against. Every technique is presented as strictly good. Fires specifically when the missing layer is the tradeoff/alternative, and pushing on it produces more of the same benefit list rather than a cost.",
+        "pattern": "The single sharpest junior-vs-senior discriminator. Juniors learn what a tool DOES; seniors learn what it COSTS and when not to reach for it. An engineer who cannot name the downside of their own choice has not made a choice — they have applied a default. Distinct from depth_clear (which is any missing layer) because the probe is different: depth_clear gets 'what else', this gets a FORCED CHOICE under a constraint.",
+        "examples": [
+            "For indexing: 'Indexes make queries fast, so I'd add one on every column we filter by.' — correct that indexes speed reads, no awareness of write amplification, storage, or planner selectivity.",
+            "For caching: 'Redis in front of the DB, that solves the latency.' — no mention of invalidation, staleness, or what happens on a cold cache.",
+            "For microservices: accurately describes service isolation and independent deploys, names no cost at all — not network latency, not distributed transactions, not operational overhead.",
+        ],
+        "not_this": "NOT this if they DO name a cost or alternative, even briefly → depth_clear or depth_strong. NOT this if the mechanism itself is absent or hollow → depth_shallow (they must have earned the mechanism for this to be the interesting gap). NOT this if any claim is wrong → depth_misconception. NOT this if it's an ungrounded best-practice checklist → depth_generic.",
+    },
+
+    "scope_diffuse": {
+        "trigger": "REAL WORK, INVISIBLE OWNERSHIP. They describe a specific, credible thing that actually happened — a real system, a real migration, a real incident — but their OWN contribution is collective, passive, or unstated: 'we decided', 'the team moved to', 'it was migrated', 'we ended up choosing'. The work is real; the candidate's personal scope inside it is not yet visible.",
+        "pattern": "A PROBE TARGET, NOT A DEDUCTION — this is the single most common shape of a TRUE answer, because most real engineering is collective and most engineers describe it that way by default. It is not evasion and must never be scored as one. It fires so the next question can ask what THEIR call was; if that probe lands, the answer often converts straight to depth_strong.",
+        "examples": [
+            "'We moved off the monolith and split out the payments service, and we chose gRPC for the internal calls.' — real migration, real decision, zero indication of what this person did.",
+            "'The team was seeing timeouts under load so it was rearchitected with a queue.' — passive voice throughout, no actor named at all.",
+        ],
+        "not_this": "NOT this if their personal decision or action IS identified ('I benchmarked both and picked gRPC because...') → score on depth alone. NOT this if there's no real instance at all, just a hypothetical ('you'd want a queue there') → depth_generic. NOT this if the described work is vague rather than specific → depth_shallow. Ownership language is the ONLY thing this signal reads — never infer that a 'we' means they didn't do the work.",
+    },
+
+    "confident_uncertain": {
+        "trigger": "RIGHT ANSWER, VISIBLY GUESSED. The technical content lands correct, but the delivery shows they do not actually know it — hedging stacked on hedging ('I think... maybe... probably... not sure but'), an upward questioning intonation on the fact itself, immediately offering a contradictory alternative, or explicitly flagging it as a guess. The correctness may be genuine recall under low confidence, or it may be luck; this signal exists to find out which.",
+        "pattern": "Grading FLUENCY instead of SUBSTANCE is the best-documented failure in interview scoring, and it runs in BOTH directions. The confident-and-wrong direction is already handled (depth_misconception outranks fluency). This is the mirror: a hesitant candidate who is actually right must not be marked down for sounding unsure, and a lucky guess must not be credited as knowledge. Neither depth_clear (over-credits the guess) nor depth_shallow (under-credits real knowledge) can express this, which is why it needs its own probe: re-ask the SAME fact from a different direction — a guess flips, real knowledge holds.",
+        "examples": [
+            "'I think it's... maybe O(log n)? Could be O(n), I'm not really sure.' — the right answer is in there, stated as a coin flip.",
+            "'Probably because the index isn't selective enough? Something like that anyway.' — correct reasoning, offered as a question.",
+        ],
+        "not_this": "NOT this for ordinary mild hedging around a confidently-held answer ('I'd say it's O(log n) because the tree is balanced') → grade on depth normally; a single 'I think' is not uncertainty. NOT this if the answer is actually WRONG → depth_misconception, regardless of how hedged. NOT this if they hedge and then never land on anything → depth_shallow or pure_denial. The answer must be CORRECT for this to fire.",
     },
 
     "depth_shallow": {
@@ -136,23 +181,80 @@ CONTENT_SIGNAL_DEFINITIONS: dict[str, dict] = {
         "trigger": "PLAUSIBLE BUT UNGROUNDED. A memorized best-practice checklist that could apply to almost any question — technically not-wrong, but with zero reasoning tied to THIS specific problem. Someone who never did the work could say the exact same thing.",
         "pattern": "The prepared-candidate failure mode: fluent frameworks, no substance. Distinct from depth_shallow (which is a hollow LABEL) — this is a hollow PROCESS. 'I'd check logs, look at metrics, optimize' fits every performance question ever asked.",
         "examples": ["For a slow query: 'I'd check the logs, look at metrics, monitor performance, and optimize based on findings.'", "For DB choice: 'It depends on the use case — I'd gather requirements and pick the best tool.'"],
-        "not_this": "NOT this if there's a real reason specific to THIS question → depth_clear. NOT this if it's a hollow one-word label rather than a checklist → depth_shallow. NOT this if it's grounded in a specific real instance → depth_applied.",
+        "not_this": "NOT this if there's a real reason specific to THIS question → depth_clear. NOT this if it's a hollow one-word label rather than a checklist → depth_shallow. NOT this if it's grounded in a specific real instance → depth_strong (or scope_diffuse if the instance is real but their own role in it is invisible).",
     },
 
     "pure_denial": {
-        "trigger": "ZERO attempt. A flat non-answer: 'I don't know', 'not sure', 'never used it', or silence. No engagement with the content at all.",
-        "pattern": "Distinct from every other signal, which all have SOME attempt. Honest and worth acknowledging cleanly — a calibrated 'I don't know' is more useful than a confident wrong guess, and must never score below depth_misconception.",
-        "examples": ["I don't know.", "I'm not sure about that one.", "I haven't really worked with that."],
-        "not_this": "NOT this if there's ANY attempt, even wrong or hollow. A wrong attempt → depth_misconception. A hollow-label attempt → depth_shallow. Reserve strictly for a complete non-attempt.",
+        "trigger": (
+            "ZERO attempt AND ZERO content. Apply this MECHANICAL TEST before selecting it, and "
+            "select it ONLY if the answer fails the test:\n"
+            "  STEP 1 — Strip every denial/hedge phrase from the answer ('I don't know', 'not sure', "
+            "'I forgot', 'I haven't used it', 'maybe', 'I think', 'actually', 'sure', 'okay').\n"
+            "  STEP 2 — Look at what TEXT REMAINS. Does anything remain that names a technical term, a "
+            "concept, a tool, a language, a comparison, or any claim at all — however wrong, garbled, "
+            "partial, or off-target?\n"
+            "  STEP 3 — If ANYTHING remains: this is NOT pure_denial. Classify it on that remaining "
+            "content instead (wrong claim → depth_misconception, hollow label → depth_shallow, "
+            "unrelated subject → off_topic). If NOTHING remains: pure_denial.\n"
+            "This is a test on CONTENT, never on tone, length, confidence, or transcription quality. A "
+            "one-word answer that names a real concept PASSES the test and is not a denial. A rambling "
+            "answer that names nothing FAILS it and is."
+        ),
+        "pattern": "Distinct from every other signal, which all have SOME attempt. Honest and worth acknowledging cleanly — a calibrated 'I don't know' is more useful than a confident wrong guess, and must never score below depth_misconception. The bar is: after this sentence, do we know ANYTHING about what they think the answer might be? If yes, it is NOT pure_denial, however hedged or unsure it sounds.",
+        "examples": ["I don't know.", "Not sure.", "No idea.", "I haven't worked with that.", "[silence]"],
+        "not_this": (
+            "NOT this if there's ANY attempt, even wrong, hollow, hedged, or trailing off mid-thought. "
+            "A wrong attempt → depth_misconception. A hollow-label attempt → depth_shallow. "
+            "'I don't know, maybe it's something like X' → scored on X, not pure_denial. "
+            "'I don't remember exactly, but I think it does Y' → scored on Y, not pure_denial. "
+            "'I'm not sure if it's synchronized or a lock, one of those' → an attempt (two named candidates), not pure_denial. "
+            "'I don't think I've used that, but it sounds like it might Z' → scored on Z, not pure_denial. "
+            "Only the FIRST clause matching 'I don't know' etc. is never enough by itself — read the "
+            "whole turn. Reserve pure_denial strictly for a complete non-attempt with no content at all.\n"
+            "\n"
+            "THESE FOUR SHAPES ARE THE COMMON MISFIRES. None of them is pure_denial:\n"
+            "  (a) A GARBLED OR PARTIAL TECHNICAL TERM. Voice transcription mangles words constantly. "
+            "If the mangled text is plausibly a technical term for this topic, credit the attempt and "
+            "grade the content — 'and calculation' when asked about OOP principles is almost certainly "
+            "'encapsulation', which is a CORRECT answer, not a denial. Recover the intended term from "
+            "the topic context before judging. Never punish a candidate for the microphone.\n"
+            "  (b) A COMPARISON TO ANOTHER TECHNOLOGY. 'Java is very different from Python', 'we use it "
+            "like React' — these are real claims that reveal a real (possibly wrong) mental model. That "
+            "is content. Wrong-but-stated → depth_misconception. Vague-but-stated → depth_shallow. "
+            "Unrelated subject entirely → off_topic. Never pure_denial.\n"
+            "  (c) A CONVERSATIONAL ACKNOWLEDGEMENT THAT IS NOT AN ANSWER YET. 'Sure.', 'Okay.', 'Yeah.' "
+            "— the candidate is agreeing to answer, not declining to. They have not denied anything. "
+            "This is a non-answer to be re-prompted, NOT a denial to be scored — use clarification_request "
+            "so the interviewer simply asks again rather than treating it as a knowledge gap.\n"
+            "  (d) A VAGUE ATTEMPT USING NON-TECHNICAL WORDS. 'we use different variables', 'it's more "
+            "on the setup side' — an attempt to describe a mechanism in lay terms. That is exactly what "
+            "depth_shallow exists for. A candidate reaching for plain language is still reaching."
+        ),
     },
 
-    "recovery_attempted": {
-        "trigger": "SELF-CORRECTION to a CORRECT landing. Starts uncertain or wrong, then catches their OWN error mid-answer and arrives at an accurate answer — without the interviewer pointing it out. Score the corrected landing.",
-        "pattern": "A strong positive signal that only real understanding produces — you cannot self-correct a fact you never understood. Weight toward the corrected version, not the initial slip.",
-        "examples": ["'I said it keeps things sorted — no wait, that's a BST. A hash map uses a hash function to pick the bucket, order isn't preserved.'", "'Restart — it's not a separate thread, the frame just suspends at yield and resumes on next().'"],
-        "not_this": "NOT this if they fumbled and did NOT actually reach a better answer → depth_shallow or depth_misconception. Recovery requires LANDING on something correct, not just hesitating or hedging.",
-    },
 }
+
+# Self-correction is NOT a signal -- it is a MODIFIER on whatever signal fired.
+#
+# It used to be the 9th content signal ("recovery_attempted"), which was wrong on
+# two counts. First, it only ever fired on a CORRECT landing, which made it
+# "depth_clear plus a tone note" -- it was spending a slot on the single-pick enum
+# to carry an instruction about how to SOUND. Second, because the enum picks one
+# winner, a candidate who self-corrected into a still-thin answer had nowhere to
+# go: the correction was either recorded and the thinness lost, or vice versa.
+#
+# As a boolean it composes with every signal instead of competing with them:
+# self_corrected + depth_clear, self_corrected + depth_shallow, self_corrected +
+# tradeoff_blind are all now expressible, and the probe reads the flag for its
+# opening beat while the signal still drives the question.
+SELF_CORRECTION_TRIGGER = (
+    "TRUE when the candidate caught and fixed their OWN error mid-answer, without the interviewer "
+    "pointing it out -- 'I said it keeps things sorted, no wait, that's a BST' / 'restart, it's not "
+    "a separate thread, the frame just suspends at yield'. A genuine positive: you cannot "
+    "self-correct a fact you never understood. Score the LANDING, not the slip. FALSE for ordinary "
+    "hesitation or hedging with no actual correction, and FALSE if they fumbled without reaching a "
+    "better answer."
+)
 
 # Flat set of all valid signal names (response shape + content) for validation
 ALL_SIGNALS: frozenset[str] = frozenset(RESPONSE_SIGNALS) | frozenset(CONTENT_SIGNAL_DEFINITIONS)
@@ -220,15 +322,49 @@ If none of RS-a/b/c/d fired: this answer gets exactly ONE content signal (below)
 
 
 def _build_content_signal_prompt_block(level: int, question_type: str = "") -> str:
-    """Universal content signal detection — all 8 signals always available, no stage scoping.
-    Level (1-4) calibrates how seriously each outcome is weighted.
+    """Universal content signal detection — all 9 signals always available, no stage scoping.
+
+    Level (1-4) calibrates how seriously each outcome is WEIGHTED. It never changes
+    WHICH signal fires: a wrong claim is depth_misconception at every level, and an
+    unnamed tradeoff is tradeoff_blind at every level. Only the severity moves. This
+    separation is deliberate -- if level changed the detection criteria too, the same
+    answer would be classified differently for two candidates and the report would be
+    comparing different things.
+
     question_type (optional): the type of question that was asked (e.g. 'code_trace',
     'snippet_eval', 'query_trace'). Used to inject code-question-specific calibration."""
     _level_context = {
-        1: "LEVEL 1 (junior/entry): depth_shallow is a real gap but not a red flag. depth_clear is a strong positive.",
-        2: "LEVEL 2 (mid-level): depth_clear is the expected floor. depth_shallow signals a knowledge gap worth probing.",
-        3: "LEVEL 3 (senior): depth_mastered or depth_applied expected. depth_shallow is a significant gap.",
-        4: "LEVEL 4 (principal/staff): depth_applied or depth_mastered is the baseline. depth_shallow is a red flag.",
+        1: (
+            "LEVEL 1 (junior/entry): depth_clear is a STRONG positive — do not withhold it waiting "
+            "for depth_strong. depth_shallow is a real gap but not a red flag. tradeoff_blind is "
+            "EXPECTED at this level and near-costless: juniors have not yet been burned by the "
+            "downside of anything. confident_uncertain is normal and should not be penalised — "
+            "hedging is honest at this level. scope_diffuse is expected; juniors genuinely do own "
+            "small slices of collective work."
+        ),
+        2: (
+            "LEVEL 2 (mid-level): depth_clear is the expected FLOOR. depth_shallow signals a real "
+            "knowledge gap worth probing. tradeoff_blind is a MILD negative — by mid-level they "
+            "should have hit at least one downside in production. confident_uncertain is mildly "
+            "negative on core skills, neutral elsewhere. scope_diffuse is worth one probe but not "
+            "a mark against them."
+        ),
+        3: (
+            "LEVEL 3 (senior): depth_strong is the target and depth_clear is the floor. "
+            "depth_shallow is a SIGNIFICANT gap. tradeoff_blind is a SERIOUS negative — cost "
+            "awareness is the core of the senior role, and presenting every technique as strictly "
+            "good is the clearest sign someone has not operated at this level. scope_diffuse "
+            "matters here: a senior who cannot articulate their own call inside a team decision "
+            "has not demonstrated seniority, so probe it and weight the answer heavily."
+        ),
+        4: (
+            "LEVEL 4 (principal/staff): depth_strong is the BASELINE, not the ceiling. "
+            "depth_shallow is a red flag. tradeoff_blind is close to DISQUALIFYING on a core "
+            "skill — at this level the entire job is choosing between valid options under "
+            "constraint. scope_diffuse is a major flag: staff-level impact is precisely the part "
+            "that is theirs, and inability to name it is itself the finding. confident_uncertain "
+            "on a core skill is notable — fluency on fundamentals is assumed at this level."
+        ),
     }.get(level, "Grade for genuine understanding at the expected level.")
 
     # Code-question-specific calibration injected when the question was a code type.
@@ -242,7 +378,7 @@ def _build_content_signal_prompt_block(level: int, question_type: str = "") -> s
                 "code produces it (no trace of execution, no naming of the rule or mechanism).\n"
                 "  depth_clear: correct output AND explained at least one execution step (e.g. 'because "
                 "the loop starts at index 1, not 0' or 'because append mutates in place').\n"
-                "  depth_mastered: correct output + full trace of execution + explains edge case or "
+                "  depth_strong: correct output + full trace of execution + explains edge case or "
                 "boundary behavior without being asked.\n"
                 "  depth_misconception: stated the WRONG output value, or wrong diagnosis of why it "
                 "behaves that way (e.g. said 'it prints 5' when it prints 4).\n"
@@ -255,7 +391,7 @@ def _build_content_signal_prompt_block(level: int, question_type: str = "") -> s
                 "identify the specific bug or the condition that triggers it.\n"
                 "  depth_clear: correctly identified the bug AND the condition that triggers it, but "
                 "did not explain the underlying mechanism (why the code is wrong).\n"
-                "  depth_mastered: correctly identified the bug, the trigger condition, AND explained "
+                "  depth_strong: correctly identified the bug, the trigger condition, AND explained "
                 "why the code fails (the language rule or logic gap being violated).\n"
                 "  depth_misconception: identified a bug that does NOT exist, or misidentified the "
                 "wrong line/function as the source of the bug.\n"
@@ -268,7 +404,7 @@ def _build_content_signal_prompt_block(level: int, question_type: str = "") -> s
                 "trace the JOIN/WHERE/GROUP behavior or the specific case asked about.\n"
                 "  depth_clear: correctly described what the query returns in the specific case AND "
                 "explained one key behavior (e.g. NULL propagation, LEFT JOIN semantics).\n"
-                "  depth_mastered: correct result + full trace of the query plan + identifies a "
+                "  depth_strong: correct result + full trace of the query plan + identifies a "
                 "performance trap or edge case (e.g. missing index, unexpected NULL, dropped rows).\n"
                 "  depth_misconception: said the query returns a wrong result, or described the "
                 "JOIN/WHERE behavior incorrectly.\n"
@@ -286,7 +422,7 @@ def _build_content_signal_prompt_block(level: int, question_type: str = "") -> s
     _gates_block = "\n\n".join(_gate_lines)
 
     return f"""\
----- CONTENT SIGNAL — pick exactly ONE of these 8 ----
+---- CONTENT SIGNAL — pick exactly ONE of these 9 ----
 
 {_level_context}
 {_code_q_note}
@@ -311,14 +447,33 @@ RESOLVE TWO AXES FIRST, THEN MAP TO THE SIGNAL (do this before picking a name):
     applied    — real tradeoff + judgment, ideally from a grounded real instance
 
   Then map:
-    correct + applied                    → depth_mastered  (or depth_applied if it's
-                                            a grounded real-experience instance)
-    correct + mechanism                  → depth_clear
+    correct + applied                    → depth_strong
+    correct + mechanism, no cost named   → tradeoff_blind
+    correct + mechanism, other gap       → depth_clear
     correct + label_only                 → depth_shallow
+    correct but visibly guessed          → confident_uncertain
+    real instance, ownership invisible   → scope_diffuse
     plausible-but-ungrounded checklist   → depth_generic
     wrong (any depth)                    → depth_misconception
     none                                 → pure_denial
-    self-corrected to a correct landing  → recovery_attempted
+
+  ORDER OF RESOLUTION when more than one could fit (first match wins):
+    0. NOTHING remains after stripping hedges → pure_denial (run the mechanical test in its
+       definition FIRST; it is the narrowest signal here, not the default landing spot)
+    1. wrong claim anywhere                 → depth_misconception (correctness dominates)
+    2. correct but visibly guessed          → confident_uncertain (the guess is the story)
+    3. real instance, ownership invisible   → scope_diffuse (ask whose call it was)
+    4. mechanism present, no cost named     → tradeoff_blind
+    5. otherwise map on the two axes above
+
+  ANTI-LOOP RULE — pure_denial and depth_shallow are the two signals that attract lazy
+  classification, because they are the easiest to justify for a weak answer. If EITHER has
+  already fired twice on this topic, treat a third as a red flag on your own reasoning and
+  re-read the answer specifically hunting for content you skipped: a mangled technical term,
+  a comparison, a partial mechanism, a wrong claim worth naming. A candidate producing three
+  identical signals in a row usually means the classifier stopped reading, not that the
+  candidate stopped answering. Only repeat the signal if the mechanical test genuinely still
+  fails on this specific answer.
 
 {_gates_block}
 
@@ -328,17 +483,22 @@ CRITICAL ordering rules:
    articulate. Confident-and-wrong scores BELOW hesitant-and-right and BELOW "I don't know".
 2. LABEL ≠ UNDERSTANDING. A correct-sounding label with no mechanism traced is depth_shallow,
    NOT depth_clear. Do not credit the keyword — credit only the substance under it.
-3. depth_applied: only when grounded in a SPECIFIC real instance (a real decision, failure,
-   or constraint), not a hypothetical or a habit.
-4. recovery_attempted: candidate catches their OWN error unprompted and lands correct. Score the landing.
-5. pure_denial is ONLY for a complete non-attempt. ANY attempt — even wrong — is a different signal.
+3. scope_diffuse: fires on a SPECIFIC real instance whose OWNERSHIP is collective or passive. It is
+   a PROBE TARGET, not a deduction — never read a "we" as evidence they didn't do the work. If
+   there is no real instance at all (just a hypothetical or a habit), this is not it.
+4. tradeoff_blind: requires the mechanism to be PRESENT and correct — it is the COST that's
+   missing, not the understanding. A hollow answer that also names no cost is depth_shallow.
+5. confident_uncertain: the answer must be CORRECT. A hedged WRONG answer is depth_misconception,
+   and a hedge that never lands on anything is depth_shallow or pure_denial.
+6. pure_denial is ONLY for a complete non-attempt. ANY attempt — even wrong — is a different signal.
 
 FALLBACK RULE (no null ever, but do NOT use this as a shortcut): Before ever landing on
 depth_shallow, you MUST re-walk the two axes explicitly:
   - Is any specific claim actually FALSE? → depth_misconception, not depth_shallow.
   - Is it a real, if imperfect, mechanism trace (even one step)? → depth_clear, not depth_shallow.
   - Is it a fluent checklist/best-practice recital with no claim tied to THIS question? → depth_generic, not depth_shallow.
-  - Is it grounded in a specific real instance with a constraint and outcome? → depth_applied/depth_mastered, not depth_shallow.
+  - Is it grounded in a specific real instance with a constraint and outcome? → depth_strong, or
+    scope_diffuse if that instance's ownership is collective. Not depth_shallow.
   - Is it a complete non-attempt with nothing said? → pure_denial, not depth_shallow.
 depth_shallow is a narrow, specific cell — a correct label with truly nothing underneath it —
 not a default resting place for uncertainty. Reaching it requires ruling out all five alternatives
@@ -355,7 +515,9 @@ async def _classify_signal_from_answer(
     level: int = 2,
 ) -> tuple[str, str | None, dict | None]:
     """
-    Fallback: compare the answer against all 8 universal content signals.
+    Fallback: compare the answer against all 9 universal content signals.
+    Used only when the primary signal call returned nothing parseable, so it does
+    not decide self_corrected -- that modifier defaults to False on this path.
     Called only when the main eval LLM failed to return a valid signal.
     Fallback signal is always depth_shallow (never null).
     """
@@ -372,7 +534,7 @@ async def _classify_signal_from_answer(
         "Output ONLY valid JSON: {\"signal\": \"<signal_name>\", \"signal_reason\": \"<3-12 word exact quote from their answer>\"}\n"
         "signal MUST be exactly one of the signal names listed above. Never null — but do not default to "
         "depth_shallow out of uncertainty. Rule out a wrong claim (depth_misconception), a real mechanism "
-        "trace (depth_clear), a generic checklist (depth_generic), a grounded instance (depth_applied), and "
+        "trace (depth_clear), a generic checklist (depth_generic), a grounded instance (depth_strong), and "
         "a non-attempt (pure_denial) first. depth_shallow is only a correct label with truly nothing underneath."
     )
     _user = f"QUESTION: {last_question}\n\nANSWER: {candidate_answer}"
@@ -389,7 +551,7 @@ async def _classify_signal_from_answer(
                 ],
                 response_format={"type": "json_object"},
             ),
-            timeout=5.0,
+            timeout=30.0,
         )
         from billing.billing import extract_usage as _extract_usage  # noqa: PLC0415
         _usage = _extract_usage(resp, llm_model) if resp else None
@@ -580,13 +742,9 @@ async def _call_scoring(
             response_format={"type": "json_object"},
             stream_options={"include_usage": True},
             store=True,
-            metadata={
-                "call_type": "eval_scoring",
-                "level": str(level),
-                "org_id": str(org_id or ""),
-            },
+            metadata=llm_metadata(call_type="eval_scoring", level=level, org_id=org_id or ""),
         ),
-        timeout=8.0,
+        timeout=45.0,
     )
 
     raw = ""
@@ -615,11 +773,11 @@ async def _call_signal_classification(
     active_topic: str,
     level: int = 2,
     question_type: str = "",
-) -> tuple[str | None, str | None, dict]:
+) -> tuple[str | None, str | None, bool, dict]:
     """
     Call 2 — universal signal classification, with its own 400-600 token reasoning budget.
     Brief chain-of-thought is allowed before the final JSON.
-    Returns (signal, signal_reason, llm_usage_dict).
+    Returns (signal, signal_reason, self_corrected, llm_usage_dict).
     question_type: the type of question that was asked (code_trace, snippet_eval, query_trace,
     mechanism, etc.) — used to calibrate signal classification for code card questions.
     """
@@ -629,11 +787,14 @@ async def _call_signal_classification(
             "Your job is to identify the signal that best describes the candidate's answer.\n\n"
             "You may reason briefly (2-4 sentences) before giving your final answer, but your final output\n"
             "MUST end with valid JSON on its own line:\n"
-            '{"signal": "<signal_name>", "signal_reason": "<3-12 word exact quote from their answer>"}\n\n'
+            '{"signal": "<signal_name>", "signal_reason": "<3-12 word exact quote from their answer>",\n'
+            ' "self_corrected": true|false}\n\n'
+            "self_corrected is a MODIFIER, decided SEPARATELY from the signal — it does not compete with\n"
+            "it and does not change which signal you pick. " + SELF_CORRECTION_TRIGGER + "\n\n"
             "signal MUST be exactly one of the signal names below. NEVER null — but do not default to\n"
             "depth_shallow out of uncertainty. Rule out a wrong claim (depth_misconception), a real\n"
             "mechanism trace (depth_clear), a generic checklist (depth_generic), a grounded instance\n"
-            "(depth_applied/depth_mastered), and a non-attempt (pure_denial) first. depth_shallow is only\n"
+            "(depth_strong), and a non-attempt (pure_denial) first. depth_shallow is only\n"
             "a correct label with truly nothing underneath — not a resting place for indecision.\n"
             f"Topic: {active_topic or 'general'} | Level: {level}\n"
             + (f"Question type: {question_type} (see code-question calibration rules below)\n" if question_type else "")
@@ -660,13 +821,9 @@ async def _call_signal_classification(
                 },
             ],
             store=True,
-            metadata={
-                "call_type": "eval_signal",
-                "level": str(level),
-                "org_id": str(org_id or ""),
-            },
+            metadata=llm_metadata(call_type="eval_signal", level=level, org_id=org_id or ""),
         ),
-        timeout=6.0,
+        timeout=30.0,
     )
 
     raw = resp.choices[0].message.content or ""
@@ -679,6 +836,7 @@ async def _call_signal_classification(
     # Extract the last JSON object from the response (chain-of-thought comes first)
     signal: str | None = None
     signal_reason: str | None = None
+    self_corrected: bool = False
     import re as _re
     _json_matches = _re.findall(r'\{[^{}]+\}', raw)
     for _candidate_json in reversed(_json_matches):
@@ -692,11 +850,12 @@ async def _call_signal_classification(
                     _defn = CONTENT_SIGNAL_DEFINITIONS.get(_sig) or RESPONSE_SIGNALS.get(_sig)
                     _reason = _defn.get("trigger") or _defn.get("description") if _defn else None
                 signal_reason = _reason
+                self_corrected = bool(_parsed.get("self_corrected"))
                 break
         except (json.JSONDecodeError, ValueError):
             continue
 
-    return signal, signal_reason, _llm_usage
+    return signal, signal_reason, self_corrected, _llm_usage
 
 
 async def evaluate_answer(
@@ -767,7 +926,7 @@ async def evaluate_answer(
 
     try:
         # Fire both calls concurrently — scoring and signal classification are independent.
-        (scoring_data, _scoring_usage), (raw_signal, signal_reason, _signal_usage) = (
+        (scoring_data, _scoring_usage), (raw_signal, signal_reason, self_corrected, _signal_usage) = (
             await asyncio.gather(
                 _call_scoring(
                     **_common_kwargs,
@@ -828,7 +987,17 @@ async def evaluate_answer(
                 action, forced_action = "REDIRECT", True
                 zero_scores = True
         elif signal == "pure_denial":
-            zero_scores = True
+            # NOT zero_scores. pure_denial means "no attempt was made", which is a
+            # real outcome worth 0 on depth -- but forcing ALL four dimensions to
+            # 0.0 fed consecutive_zero_scores, which hits is_dry_topic() at 2 and
+            # closes the topic. Combined with an over-firing pure_denial classifier
+            # that meant one misread answer plus one denial killed a topic before
+            # any real question was asked, and every topic reported sat=0.0/5.0
+            # because a zeroed turn contributes nothing to saturation either.
+            # The scoring call already returns near-zero dimensions for a genuine
+            # non-answer; trust it and let a real denial earn its own low score
+            # rather than hard-stamping one.
+            pass
         elif signal not in CONTENT_SIGNAL_DEFINITIONS and signal is not None:
             logger.warning("[EVAL] unknown signal %r — running fallback classifier", signal)
             signal = None
@@ -865,13 +1034,16 @@ async def evaluate_answer(
             overall = (clarity * 0.20 + depth * 0.35 + specificity * 0.20 + grounding * 0.25)
             reason = f"{signal} — active misconception, scored below a non-attempt"
 
-        # recovery_attempted: score the corrected landing, give a small boost
-        if signal == "recovery_attempted" and not zero_scores:
+        # self_corrected: a MODIFIER, not a signal (see SELF_CORRECTION_TRIGGER above).
+        # Applies on top of whatever signal fired, so a self-correction into a still-thin
+        # answer keeps its thin signal AND gets credit for the catch -- the old
+        # recovery_attempted signal could express only one of those two facts.
+        if self_corrected and not zero_scores:
             _recovery_boost = 1.5
             clarity = min(10.0, clarity + _recovery_boost)
             depth = min(10.0, depth + _recovery_boost)
             overall = min(10.0, (clarity * 0.20 + depth * 0.35 + specificity * 0.20 + grounding * 0.25))
-            reason = f"{reason} — recovery credited" if reason else "recovery_attempted credited"
+            reason = f"{reason} — self-correction credited" if reason else "self-correction credited"
 
         if zero_scores:
             clarity = 0.0

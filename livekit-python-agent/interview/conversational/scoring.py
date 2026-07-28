@@ -19,7 +19,7 @@ from typing import Any, Optional
 
 logger = logging.getLogger("interview-agent")
 from interview.agent_runtime_support import EVAL_TEMPERATURE
-from interview.agent_runtime_utils import token_limit_kwarg
+from interview.agent_runtime_utils import token_limit_kwarg, llm_metadata
 
 
 # ---------------------------------------------------------------------------
@@ -387,7 +387,7 @@ async def _classify_signal_from_answer(
                 ],
                 response_format={"type": "json_object"},
             ),
-            timeout=5.0,
+            timeout=30.0,
         )
         from billing.billing import extract_usage as _extract_usage  # noqa: PLC0415
         _usage = _extract_usage(resp, llm_model) if resp else None
@@ -538,13 +538,9 @@ async def _call_scoring(
             response_format={"type": "json_object"},
             stream_options={"include_usage": True},
             store=True,
-            metadata={
-                "call_type": "eval_scoring_sales",
-                "level": str(level),
-                "org_id": str(org_id or ""),
-            },
+            metadata=llm_metadata(call_type="eval_scoring_sales", level=level, org_id=org_id or ""),
         ),
-        timeout=8.0,
+        timeout=45.0,
     )
 
     raw = ""
@@ -640,13 +636,9 @@ async def _call_signal_classification(
                 },
             ],
             store=True,
-            metadata={
-                "call_type": "eval_signal_sales",
-                "level": str(level),
-                "org_id": str(org_id or ""),
-            },
+            metadata=llm_metadata(call_type="eval_signal_sales", org_id=org_id or ""),
         ),
-        timeout=6.0,
+        timeout=30.0,
     )
 
     raw = resp.choices[0].message.content or ""

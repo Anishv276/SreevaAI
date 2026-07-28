@@ -278,7 +278,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
                 job_title=p.job_title,
                 signals_already_fired=current_topic_state.signals_fired if current_topic_state else [],
             ),
-            timeout=10.0,
+            timeout=60.0,
         )
     except (asyncio.TimeoutError, Exception) as ex:
         logger.error("[EVAL:sales] turn=%d | scoring %s — recovery decision",

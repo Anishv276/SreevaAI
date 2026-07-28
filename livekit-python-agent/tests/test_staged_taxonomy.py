@@ -221,7 +221,6 @@ def test_cleared_signals_direct_a_real_question_at_the_next_rung(cleared_signal)
     out = get_probe_context(
         signal=cleared_signal, signal_reason=None, level=2,
         topic_follow_ups=1, topic_denied=False, prev_answer="a correct answer",
-        ladder_rung="mechanism",
     )
     assert "NO_FOLLOW_UP_NEEDED" not in out
     assert cleared_signal in out
@@ -232,7 +231,6 @@ def test_gap_signal_does_not_short_circuit():
     out = get_probe_context(
         signal="mechanism_shallow", signal_reason="it just makes things faster", level=2,
         topic_follow_ups=1, topic_denied=False, prev_answer="it just makes things faster",
-        ladder_rung="mechanism",
     )
     assert "NO_FOLLOW_UP_NEEDED" not in out
     assert "MECHANISM DEEP-DIVE" in out
@@ -241,21 +239,30 @@ def test_gap_signal_does_not_short_circuit():
 def test_cross_cutting_signal_note_included_alongside_stage_signal():
     out = get_probe_context(
         signal="definition_partial", signal_reason=None, level=2,
-        topic_follow_ups=1, topic_denied=False, prev_answer="um, it's kind of like...",
-        ladder_rung="definition", cross_cutting_signal="verbal_disfluency",
+        topic_follow_ups=1, topic_denied=False, prev_answer="um, it's kind of like...", cross_cutting_signal="verbal_disfluency",
     )
     assert "CROSS-CUTTING SIGNAL: verbal_disfluency" in out
     assert "Delivery was rambly" in out
 
 
 def test_denial_tier_stage_signal_triggers_step_down_override():
+    """The step-down path is driven by the CLASSIFIER's signal, never by a keyword
+    scan of the answer text. Previously a substring match on "I don't know" forced
+    this path regardless of what the classifier decided, so an answer that merely
+    contained a hedge was treated as a flat non-attempt."""
     out = get_probe_context(
-        signal="distinction_absent", signal_reason=None, level=2,
+        signal="pure_denial", signal_reason=None, level=2,
         topic_follow_ups=2, topic_denied=False, prev_answer="I don't know.",
-        ladder_rung="difference",
     )
     assert "ACKNOWLEDGEMENT + STEP-DOWN" in out
-    assert "distinction_absent" in out
+
+    # Same hedge wording, but the classifier found real content -> NOT the denial path.
+    hedged = get_probe_context(
+        signal="depth_shallow", signal_reason="I'd use a HashMap", level=2,
+        topic_follow_ups=2, topic_denied=False,
+        prev_answer="I don't know exactly, but I'd use a HashMap.",
+    )
+    assert "ACKNOWLEDGEMENT + STEP-DOWN" not in hedged
 
 
 def test_active_wrongness_signal_gets_misconception_surface_directive():
@@ -263,7 +270,6 @@ def test_active_wrongness_signal_gets_misconception_surface_directive():
         signal="distinction_reversed", signal_reason="a set preserves insertion order", level=2,
         topic_follow_ups=2, topic_denied=False,
         prev_answer="A set preserves insertion order and allows duplicates, a list doesn't.",
-        ladder_rung="difference",
     )
     assert "MISCONCEPTION SURFACE" in out
     assert "Do NOT state the correction" in out or "Do NOT correct them" in out
@@ -283,7 +289,6 @@ def test_gap_signal_directive_stays_on_the_same_concept_not_a_new_subtopic():
         topic_follow_ups=1, topic_denied=False,
         prev_answer="You call start() and that runs the thread, run() just runs it I guess.",
         prev_question="What's the difference between calling start() and calling run() on a Thread?",
-        ladder_rung="mechanism",
     )
     assert "NO_FOLLOW_UP_NEEDED" not in out
     # Must instruct tracing/opening the SAME mechanism, never introduce a new topic.

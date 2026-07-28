@@ -18,7 +18,6 @@ Signal names match two types:
 """
 from __future__ import annotations
 
-from interview.agent_runtime_helpers import _strip_leaked_meta
 
 
 SIGNAL_PROBES: dict[str, dict] = {
@@ -414,23 +413,11 @@ _SIGNAL_TONES: dict[str, str] = {
 }
 
 def get_reaction_hint(signal: str | None, prev_answer: str, prev_question: str = "") -> str:
-    """Pick a filler from the shared _ALLOWED_FILLERS (interview.tech.probe) that fits
-    prev_question/prev_answer and this signal's tone -- single source of truth shared
-    with the tech interview track, no separate opener list here."""
-    from interview.tech.probe import _ALLOWED_FILLERS  # single source of truth -- see probe.py
+    """Delegates to the tech track's reaction hint so both tracks share ONE filler
+    policy -- only the per-signal TONE differs (sales signals vs. depth signals)."""
+    from interview.tech.probe import get_reaction_hint as _tech_hint  # single source of truth
 
-    tone = _SIGNAL_TONES.get(signal or "", "engaged and conversational, reacting to what they just said")
-    _allowed_list = ", ".join(f"'{w}'" for w in _ALLOWED_FILLERS)
-    return (
-        f"REACTION TONE: {tone}.\n"
-        f"  Pick ONE filler from this exact list, whichever best fits their answer "
-        f"(\"{prev_answer[:160]}\") to your last question (\"{prev_question[:120]}\") — "
-        f"do not invent a new one, do not always default to the same one: {_allowed_list}.\n"
-        f"  Follow it with a dash and go straight into the reaction/question — do not add any "
-        f"other hollow praise or conversational crutch ('Great!', 'Impressive!', 'Got it', 'Right', "
-        f"'That tracks', 'Makes sense', 'Spot on') before or after the chosen filler.\n"
-        f"  Make the reaction specific to what they actually said. Never default to a bland 'Mm' or 'Hmm'."
-    )
+    return _tech_hint(signal, prev_answer, prev_question, tone=_SIGNAL_TONES.get(signal or ""))
 
 
 QUESTION_GENERATION_SYSTEM = """\
@@ -483,7 +470,6 @@ def get_probe_context(
     prev_question: str = "",
     recent_question_patterns: str = "(none yet)",
     declined_facts: str = "(none yet)",
-    ladder_rung: str = "",
     cross_cutting_signal: str | None = None,
     topic_score_history: list[float] | None = None,
 ) -> str:
@@ -492,13 +478,6 @@ def get_probe_context(
     mirror of interview.tech.probe.get_probe_context — identical mechanics,
     sales signal set. topic_score_history accepted for call-site parity with
     the tech module but not yet rendered here.
-
-    ladder_rung / cross_cutting_signal: accepted for call-site signature
-    symmetry with the tech module (agent_runtime._build_probe_directive calls
-    whichever module's get_probe_context is active without branching). Sales
-    interviews are not in scope for the definition/mechanism/difference/
-    scenario ladder or the Part B staged signal taxonomy fix, so both are
-    currently unused here.
     """
     lines: list[str] = []
     _signals_history = signals_history or []
@@ -509,12 +488,11 @@ def get_probe_context(
         and _signals_history[-2] == signal
     )
 
-    _prev_lower = prev_answer.lower()
-    _is_denial = any(p in _prev_lower for p in (
-        "i forgot", "i don't remember", "i dont remember",
-        "i don't know", "i dont know", "not sure", "can't remember", "cant remember",
-    ))
-    if topic_denied or _is_denial:
+    # Denial comes from the SIGNAL, never from a keyword scan -- same rule as the tech
+    # track. A substring match on "not sure" fired on real answers that merely contained
+    # a hedge ("not sure of the exact number, but we closed around 400k") and overrode
+    # whatever the classifier decided, since it ran first and won.
+    if topic_denied or signal == "pure_denial":
         lines += [
             "SIGNAL: candidate_denial",
             "WHAT: Candidate said they don't know, forgot, or can't explain this.",
@@ -573,5 +551,13 @@ def get_probe_context(
             f"  detail they've been dodging. Open a NEW angle on the topic entirely.",
             f"  This is a fresh general question, not a follow-up.",
         ]
+
+    # Same wiring as the tech track: this module's QUESTION_GENERATION_SYSTEM also
+    # references RECENT_QUESTION_PATTERNS, so the block has to actually be injected.
+    from interview.tech.probe import render_repetition_blocks  # single source of truth
+
+    _repetition = render_repetition_blocks(recent_question_patterns, declined_facts)
+    if _repetition:
+        lines.append(_repetition)
 
     return "\n".join(lines)

@@ -13,15 +13,15 @@ fires per turn, no staged/rung concept:
   RESPONSE-SHAPE signals (checked first, describe the SHAPE of the reply):
     clarification_request, rephrase_request, off_topic
   CONTENT signals (8, level-calibrated, applied regardless of what layer the
-    question targeted): depth_mastered, depth_clear, depth_applied,
-    depth_shallow, depth_misconception, depth_generic, pure_denial,
-    recovery_attempted
+    question targeted): depth_strong, depth_clear, tradeoff_blind,
+    scope_diffuse, confident_uncertain, depth_shallow, depth_misconception,
+    depth_generic, pure_denial. Self-correction is a BOOLEAN modifier that
+    composes with any of them, not a signal of its own.
 """
 from __future__ import annotations
 
 import re
 
-from interview.agent_runtime_helpers import _strip_leaked_meta
 
 
 # ---------------------------------------------------------------------------
@@ -43,8 +43,9 @@ from interview.agent_runtime_helpers import _strip_leaked_meta
 SIGNAL_PROBES: dict[str, dict] = {
 
     # Keyed on the UNIVERSAL 8-signal taxonomy from interview/tech/scoring.py
-    # (depth_mastered/clear/applied/shallow/misconception/generic, pure_denial,
-    # recovery_attempted) plus the 3 response-shape signals. This taxonomy has
+    # (depth_strong/clear/shallow/misconception/generic, tradeoff_blind,
+    # scope_diffuse, confident_uncertain, pure_denial) plus the 3 response-shape
+    # signals, plus a self_corrected boolean modifier. This taxonomy has
     # no staged/rung concept (no definition/mechanism/distinction/application
     # split) -- one signal fires per turn regardless of what layer the question
     # targeted.
@@ -194,9 +195,9 @@ One short acknowledgement, then ask the smallest, most concrete adjacent questio
 something they might recognize even without the formal mechanism (e.g. "have you seen this used
 anywhere, even without knowing exactly how it works?"). Give them an easy out.
 
-Never re-ask the exact same question. Never make them feel punished for not knowing. This is the
-last probe on this concept in this topic — a single denial closes the topic out
-(topic_floor_reached), it is not escalated further.""",
+Never re-ask the exact same question. Never make them feel punished for not knowing. If they deny
+again on this easier version, the topic closes out (topic_floor_reached) — this is their one
+step-down, not an open-ended retry loop.""",
     },
 
     "depth_clear": {
@@ -215,48 +216,91 @@ One question, anchored in what they already got right. Encouraging, matter-of-fa
 should feel like finishing a strong answer, not being quizzed again.""",
     },
 
-    "depth_applied": {
+    "depth_strong": {
         "question_type": "DEPTH CONFIRMATION",
         "voice_note":    "Genuinely impressed, curious for the edge.",
         "directive": """\
-The candidate connected their answer to a real, concrete situation with a specific constraint and
-outcome — the gold-standard signal. There may be no real gap here; only probe further if there is
-a natural edge left uncovered (what they'd do differently, a failure mode they didn't mention, or
-the limit of when their approach stops working).
+The candidate demonstrated genuine command: mechanism, tradeoff, and judgment all present and
+accurate — whether they showed it abstractly or through a real instance they lived. This is close
+to a complete answer. There may be NO real gap here.
 
-If there's nothing further worth asking, prefer NO_FOLLOW_UP_NEEDED over manufacturing a
-question — do not force depth that isn't there just because a signal fired.
+Only probe further if a genuine edge is left: a case where their stated approach would NOT be the
+right call, a failure mode they didn't reach, or the limit at which their approach stops working.
+Do not manufacture a gap that isn't there, and do not re-ask a layer they already covered in
+different words.
 
-One question if you ask at all, targeting the specific edge of what they already described.""",
+If there's nothing further worth asking, prefer NO_FOLLOW_UP_NEEDED over forcing a question — a
+real interviewer moves on when they have their signal. One question if you ask at all, aimed at
+the edge of their JUDGMENT, not at more of the same explanation.""",
     },
 
-    "depth_mastered": {
-        "question_type": "DEPTH CONFIRMATION",
-        "voice_note":    "Genuinely impressed, curious for the edge.",
+    "tradeoff_blind": {
+        "question_type": "FORCED CHOICE UNDER CONSTRAINT",
+        "voice_note":    "Interested and neutral — you're asking them to choose, not warning them they missed something.",
         "directive": """\
-The candidate demonstrated genuine mastery: mechanism, tradeoff, and judgment all present. This
-is close to a complete answer — only probe further if there's a real edge case or alternative
-approach worth testing their judgment against; do not manufacture a gap that isn't there.
+The candidate explained the mechanism correctly but presented their approach as strictly good —
+they named no cost, no alternative, and no case where it would be the wrong call. The gap is not
+understanding, it is COST AWARENESS, and that changes what you ask.
 
-If there's nothing further worth asking, prefer NO_FOLLOW_UP_NEEDED over forcing a question.
+Do NOT ask "what are the tradeoffs" or "what are the downsides" — those are the questions that
+produce another benefits list, because a candidate who hasn't paid the cost doesn't recognise the
+question. Instead, FORCE A CHOICE: name a specific alternative to the thing they just described,
+add ONE concrete constraint that makes the choice genuinely non-obvious, and make them pick and
+defend it. The alternative and the constraint must both come from what they actually said — if
+they described adding an index, the constraint is a write-heavy table; if they described caching,
+it's data that changes every few seconds.
 
-One question if you ask at all — push on the edge of their judgment (a case where their stated
-approach would NOT be the right call), not a repeat of what they already covered.""",
+The tell you are listening for: someone who has really paid the cost names it immediately and
+specifically. Someone who hasn't will either restate the benefit or answer "it depends" without
+saying what it depends ON.
+
+If they still name no cost after this probe, that IS the finding — do not probe a third time on
+the same angle. One question.""",
     },
 
-    "recovery_attempted": {
-        "question_type": "BUILD ON THE CORRECTION",
-        "voice_note":    "Warm, brief acknowledgement of the catch, then build on the corrected claim.",
+    "scope_diffuse": {
+        "question_type": "OWNERSHIP LOCATE",
+        "voice_note":    "Warm and genuinely curious — this is interest in their part, never an accusation that they're inflating.",
         "directive": """\
-The candidate caught and corrected their own mistake mid-answer — a GOOD sign, not a fumble.
-Acknowledge the corrected version warmly but briefly (don't over-praise it), and build your
-follow-up on the corrected claim as if that's what they'd said from the start.
+The candidate described real, specific work, but their own contribution is invisible behind "we",
+"the team", or passive voice. This is the SINGLE MOST COMMON SHAPE OF A TRUE ANSWER — most real
+engineering is collective and most engineers describe it that way by default. Treat it as
+completely normal. You are locating their scope, not testing whether they're lying.
 
-Never reference the initial slip or imply there was a stumble. Treat the corrected answer using
-ordinary signal logic for its content (if it's still thin, probe deeper on the corrected claim; if
-it's solid, push the next layer).
+Ask what THEIR specific part was, anchored to the concrete thing they just named — the decision
+they personally made, the piece they built, the call they argued for, or what they'd have done
+differently if it had been only their call. Name the actual system/decision from their answer so
+the question can't be answered generically.
 
-One question, grounded in the corrected version only.""",
+If they genuinely had a small part in a big thing, that is a fine answer and you must accept it
+without a second push — a smaller honest scope beats an inflated one, and pressing again after a
+clear answer reads as disbelief. Never say "but what did YOU do" with emphasis, never imply the
+"we" was evasive, and never ask them to take credit away from their team.
+
+One question. If their scope lands clearly, the answer often becomes a strong one — score it on
+what they reveal, not on the fact that you had to ask.""",
+    },
+
+    "confident_uncertain": {
+        "question_type": "CONFIDENCE TEST",
+        "voice_note":    "Easy and low-stakes — you are not signalling that they got it wrong, because they didn't.",
+        "directive": """\
+The candidate landed on the CORRECT answer but visibly guessed it — stacked hedging, an upward
+question intonation on the fact itself, or an explicit "not sure". You do not yet know whether
+that is real knowledge held quietly or a lucky guess, and that distinction is worth more than
+another layer of depth would be.
+
+Do NOT tell them they were right (that ends the test and teaches them to guess), and do NOT tell
+them they were wrong (they weren't). Instead, ask for the SAME fact from a different direction —
+a consequence of it, a case that depends on it, or what would have to be true for the opposite
+answer to hold. Real knowledge stays consistent under the rephrasing; a guess flips, or the
+hedging escalates into a different answer entirely.
+
+Never say "are you sure?" or "you don't sound confident" — that grades delivery instead of
+substance, which is precisely the bias this signal exists to defeat. A hesitant candidate who is
+right must not be marked down for sounding unsure.
+
+One question, low-stakes in tone.""",
     },
 
 }
@@ -313,6 +357,33 @@ _LEVEL_OVERLAYS: dict[str, dict[int, str]] = {
         3: "Expect near-complete precision — push on the exact missing qualifier or tradeoff.",
         4: "A merely-clear answer at this level is notable — push for the precise missing distinction.",
     },
+    "tradeoff_blind": {
+        1: "Cost-blindness is EXPECTED here — juniors haven't been burned yet. Keep it a gentle, "
+           "concrete either/or with an obvious constraint; accept a simple answer and don't push twice.",
+        2: "Give one realistic constraint and ask them to pick between two named options. A partial "
+           "cost ('it uses more memory') counts — credit it and move on.",
+        3: "Cost awareness is the core of this level. Make the constraint sharp enough that the "
+           "obvious choice is wrong, and expect them to name what the alternative buys them.",
+        4: "At this level the whole job is choosing under constraint. Push past the first tradeoff to "
+           "the second-order one — what their choice costs the TEAM or the system a year from now.",
+    },
+    "scope_diffuse": {
+        1: "A small scope inside a bigger effort is completely expected. Ask what part they touched, "
+           "and accept a modest answer immediately — do not push for more ownership than they had.",
+        2: "Ask which piece was theirs and what they decided about it. One push only.",
+        3: "Their own call inside a team decision IS the seniority evidence — ask specifically what "
+           "they argued for and why, and weight the answer heavily.",
+        4: "Staff-level impact is precisely the part that's theirs. Ask what they personally changed "
+           "about the outcome or the direction — inability to name it is itself the finding.",
+    },
+    "confident_uncertain": {
+        1: "Hedging is honest at this level, not a flaw. One easy re-approach from another angle; "
+           "if it holds, credit it fully and move on.",
+        2: "Test it once from a different direction, then let it go either way.",
+        3: "Worth resolving on a core skill — pick the angle that would expose a guess most clearly.",
+        4: "Fluency on fundamentals is assumed at this level, so an unresolved guess is notable — "
+           "test it cleanly, but still never grade the hesitation itself.",
+    },
 }
 
 
@@ -325,48 +396,123 @@ _LEVEL_OVERLAYS: dict[str, dict[int, str]] = {
 # naturally turn to turn instead of defaulting to "Mm".
 # ---------------------------------------------------------------------------
 # Tone per signal -- shapes WHICH kind of reaction fits (impressed vs. reassuring vs.
-# curious), not the literal wording. The actual filler word is picked live from
-# _ALLOWED_FILLERS below, chosen to fit prev_question/prev_answer -- not hardcoded
-# per signal, so the same signal doesn't always produce the same opener.
+# curious), not the literal wording. The wording itself is composed live from
+# prev_question/prev_answer, never picked from a list -- see get_reaction_hint.
+# Level-independent by design: tone tracks the signal, not the candidate's seniority.
 _SIGNAL_TONES: dict[str, str] = {
     "depth_shallow": "lightly impressed then probing — acknowledge the claim, then open the box",
     "depth_misconception": "curious, non-confrontational — surfacing a mix-up, not correcting",
     "depth_generic": "engaged and conversational — you followed the flow, now push for specifics",
     "pure_denial": "warm and reassuring — make it safe that they don't know",
     "depth_clear": "encouraging, matter-of-fact — most of it landed, sharpen the rest",
-    "depth_applied": "genuinely impressed, curious for the edge",
-    "depth_mastered": "genuinely impressed, curious for the edge",
-    "recovery_attempted": "warm, brief acknowledgement of the catch, then build on the corrected claim",
+    "depth_strong": "genuinely impressed, curious for the edge",
+    "tradeoff_blind": "interested and neutral — asking them to choose, not flagging a miss",
+    "scope_diffuse": "warm and genuinely curious about their part — never accusatory",
+    "confident_uncertain": "easy and low-stakes — they were right, you're just checking it holds",
 }
 
-# The ONLY fillers allowed as a reaction opener. Short, natural, low-key -- picked
-# to fit the specific answer/question in front of the LLM at generation time, not
-# tied to a fixed signal. Anything outside this list (hollow praise, "Got it",
-# "Right", "That tracks", "Makes sense", "Spot on", etc.) is banned.
-_ALLOWED_FILLERS = (
-    "Ok", "Understood", "Alright", "Fine", "Ah, I see", "Exactly",
-    "No worries", "Good start", "Fair enough", "I see",
-)
+# The ONE filler/reaction policy, shared verbatim by every path that makes Ishitha
+# react to an answer: within-topic PROBE turns (get_reaction_hint below), MOVE_ON
+# transitions (agent_runtime._generate_move_on_directive), and the rule-based intent
+# hints (agent_runtime._classify_candidate_intent). If these drift apart the interview
+# audibly switches speaking styles between a follow-up and a topic change.
+#
+# Deliberately LEVEL-INDEPENDENT: questions, probes and scoring scale with level;
+# how a human says "hmm" does not.
+REACTION_POLICY = """\
+  React to how their answer actually landed for you (surprised, unconvinced, curious, relieved) in
+your own words, 1-6 words, grounded in a SPECIFIC thing they said — a tool they named, a number,
+the claim they made. Compose it fresh; there is no phrase bank to pick from.
+  Default to NO filler word — a filler is the exception, not the norm. Only add one (umm, hmm, uhh,
+ohh, haha) when this specific answer genuinely surprised you, needs a beat to process, or the
+moment calls for warmth. Roughly 1 in 3 turns at most, never two in a row.
+  If a filler fits, it goes at a real planning boundary — turn-initial, at a clause break, or right
+before a word you're retrieving. NEVER mid-phrase inside an already-fused expression like 'pretty
+good' or 'makes sense'.
+  Never reuse a reaction word or phrasing from the last 2-3 turns of this interview.
+  Banned outright, in any tone: 'Great!', 'Awesome!', 'Fantastic!', 'Amazing!', 'Impressive!',
+'Solid!', 'Got it', 'Right', 'That tracks', 'Makes sense', 'Spot on', 'Thanks for sharing', and a
+bare 'Mm'/'Hmm' used as the whole reaction.
+  The reaction and the question must read as ONE connected turn, not a reaction stapled to an
+unrelated question."""
 
 
-def get_reaction_hint(signal: str | None, prev_answer: str, prev_question: str = "") -> str:
+def render_repetition_blocks(recent_question_patterns: str, declined_facts: str) -> str:
+    """Renders the RECENT_QUESTION_PATTERNS / DECLINED_FACTS blocks.
+
+    Both QUESTION_GENERATION_SYSTEM prompts (tech and conversational) instruct the
+    LLM to avoid colliding with RECENT_QUESTION_PATTERNS and to never re-target a
+    DECLINED_FACT -- so these blocks must actually reach the prompt. They previously
+    did not: agent_runtime built the state, passed it into get_probe_context, and
+    get_probe_context dropped it, leaving both rules pointing at nothing. That is the
+    mechanical cause of repeated openers and re-asked declined facts.
+
+    Returns "" when there is nothing to say, so callers can append unconditionally.
     """
-    Returns a one-line reaction directive: pick a filler from _ALLOWED_FILLERS that
-    actually fits prev_question/prev_answer and the tone for this signal, rather than
-    a fixed per-signal opener list -- so the same signal doesn't always produce the
-    same wording, and the choice is grounded in what was actually said.
+    out: list[str] = []
+    if recent_question_patterns and recent_question_patterns.strip() not in ("", "(none yet)"):
+        out += [
+            "",
+            "RECENT_QUESTION_PATTERNS (openers + constructions already used this interview):",
+            recent_question_patterns,
+            "  Your opener AND your sentence construction must both differ from every entry above.",
+            "  The template is the repeated unit, not just the word plugged into it —",
+            "  'Fair enough, [X] —' collides with 'Fair enough, [Y] —'.",
+        ]
+    if declined_facts and declined_facts.strip() not in ("", "(none yet)"):
+        out += [
+            "",
+            "DECLINED_FACTS (the candidate has explicitly been unable to produce these):",
+            declined_facts,
+            "  Permanently off-limits as a question TARGET, at any angle, however much time has",
+            "  passed. Re-asking a declined fact in different words is the most robotic thing an",
+            "  interviewer can do.",
+        ]
+    return "\n".join(out)
+
+
+def get_reaction_hint(
+    signal: str | None, prev_answer: str, prev_question: str = "", tone: str | None = None,
+) -> str:
     """
-    tone = _SIGNAL_TONES.get(signal or "", "engaged and conversational, reacting to what they just said")
-    _allowed_list = ", ".join(f"'{w}'" for w in _ALLOWED_FILLERS)
+    Returns the reaction directive for a PROBE turn.
+
+    tone: overrides the tech-track _SIGNAL_TONES lookup. The conversational track
+    passes its own per-signal tone here so both tracks share one filler policy and
+    only the tone differs.
+
+    This is deliberately the SAME policy as the MOVE_ON path's filler instruction in
+    agent_runtime._generate_move_on_directive -- fillers must not depend on which path
+    generated the turn, or the interview alternates between two speaking styles. It is
+    also level-independent by design: a real interviewer's "hmm" doesn't change because
+    the candidate is senior. Only the TONE varies, and that's driven by the signal.
+
+    Previously this mandated one opener per turn from a closed 10-word list ("Ok",
+    "Understood", "Fine", ...). That guaranteed a filler on EVERY probe, which is what
+    made follow-ups sound like a switchboard -- real interviewers mostly just react to
+    the content and skip the opener entirely.
+    """
+    tone = tone or _SIGNAL_TONES.get(
+        signal or "", "engaged and conversational, reacting to what they just said"
+    )
     return (
         f"REACTION TONE: {tone}.\n"
-        f"  Pick ONE filler from this exact list, whichever best fits their answer "
-        f"(\"{prev_answer[:160]}\") to your last question (\"{prev_question[:120]}\") — "
-        f"do not invent a new one, do not always default to the same one: {_allowed_list}.\n"
-        f"  Follow it with a dash and go straight into the reaction/question — do not add any "
-        f"other hollow praise or conversational crutch ('Great!', 'Impressive!', 'Got it', 'Right', "
-        f"'That tracks', 'Makes sense', 'Spot on') before or after the chosen filler.\n"
-        f"  Make the reaction specific to what they actually said. Never default to a bland 'Mm' or 'Hmm'."
+        f"  Their answer: \"{prev_answer[:160]}\" — to your question: \"{prev_question[:120]}\".\n"
+        f"  React to how that actually landed for you (surprised, unconvinced, curious, relieved) in "
+        f"your own words, 1-6 words, grounded in a SPECIFIC thing they said — a tool they named, a "
+        f"number, the claim they made. Compose it fresh; there is no phrase bank to pick from.\n"
+        f"  Default to NO filler word — a filler is the exception, not the norm. Only add one (umm, "
+        f"hmm, uhh, ohh, haha) when this specific answer genuinely surprised you, needs a beat to "
+        f"process, or the moment calls for warmth. Roughly 1 in 3 turns at most, never two in a row.\n"
+        f"  If a filler fits, it goes at a real planning boundary — turn-initial, at a clause break, or "
+        f"right before a word you're retrieving. NEVER mid-phrase inside an already-fused expression "
+        f"like 'pretty good' or 'makes sense'.\n"
+        f"  Never reuse a reaction word or phrasing from the last 2-3 turns of this interview.\n"
+        f"  Banned outright, in any tone: 'Great!', 'Awesome!', 'Impressive!', 'Solid!', 'Got it', "
+        f"'Right', 'That tracks', 'Makes sense', 'Spot on', 'Thanks for sharing', and a bare 'Mm'/'Hmm' "
+        f"used as the whole reaction.\n"
+        f"  The reaction and the question must read as ONE connected turn, not a reaction stapled to "
+        f"an unrelated question."
     )
 
 
@@ -379,9 +525,114 @@ def get_reaction_hint(signal: str | None, prev_answer: str, prev_question: str =
 # the candidate explicitly couldn't produce is permanently off-limits as a
 # question TARGET, regardless of angle or how much time has passed).
 # ---------------------------------------------------------------------------
-QUESTION_GENERATION_SYSTEM = """\
+# Level block injected into QUESTION_GENERATION_SYSTEM below. ONE prompt, level-
+# conditioned -- deliberately not four separate prompts. Four texts drift apart, and
+# drift is exactly how the probe path and the move-on path ended up with two opposite
+# filler policies. Everything level-dependent about a follow-up lives here and nowhere
+# else, so there is one place to change it.
+#
+# What scales: the bar a good answer has to clear, how hard you push, and which
+# question SHAPES are worth reaching for. What does NOT scale: the reaction/filler
+# policy (see REACTION_POLICY) and the signal-detection criteria (scoring.py) --
+# those are identical at every level by design.
+_LEVEL_QUESTION_GUIDE: dict[int, str] = {
+    1: """\
+LEVEL 1 — junior / entry.
+  BAR: a correct mechanism, explained in their own words, is a GOOD answer. Do not withhold
+    approval waiting for a tradeoff they have no way to have learned yet.
+  PUSH: one step past their answer, never two. If they trace it correctly, take it and move on.
+  PREFER: TRACE ("walk me through what happens for this input") and simple OUTPUT questions.
+    These are answerable from real understanding without production experience.
+  AVOID: scale numbers, concurrency, org-level consequences, "what would you do differently" —
+    they have no experience to draw on, so these produce invented answers you cannot score.
+  A denial here is ordinary. Step down warmly and quickly.""",
+    2: """\
+LEVEL 2 — mid-level.
+  BAR: correct mechanism is the FLOOR, not the achievement. One real tradeoff or failure mode
+    is what makes an answer good.
+  PUSH: two steps is reasonable. After a correct mechanism, ask what it costs.
+  PREFER: FALSIFY (a concrete case that breaks a memorised claim) and a first real tradeoff
+    under a mild constraint. TRACE is still useful when the answer sounded memorised.
+  AVOID: org-scale and staff-level architecture framing — still above the role.""",
+    3: """\
+LEVEL 3 — senior.
+  BAR: mechanism is assumed. The answer is only good if it carries judgment: what they'd choose,
+    against what alternative, and what that choice costs.
+  PUSH: hard, but on ONE thread. Follow a claim to its limit rather than sampling many topics.
+  PREFER: FALSIFY and ESCALATE (add a real constraint — a scale number, a failure mode, a
+    concurrent access — and ask whether their answer still holds). A forced choice between two
+    valid options beats any "explain X" question at this level.
+  AVOID: definition questions and anything answerable from documentation. If a question could be
+    answered by someone who only read the docs last night, it is the wrong question here.""",
+    4: """\
+LEVEL 4 — staff / principal.
+  BAR: a correct, well-argued technical answer is the BASELINE. What distinguishes this level is
+    second-order reasoning: what the choice costs the system or the team over time, what they'd
+    give up, where their own approach stops being right.
+  PUSH: to the edge of their judgment, not the edge of their recall. The interesting question is
+    always the case where their stated approach is the WRONG call.
+  PREFER: ESCALATE and FALSIFY against their own position. Constraints that make both options
+    defensible, so the reasoning is the entire signal.
+  AVOID: anything with a single correct answer. If the question has one right answer, it is
+    testing recall, and recall is assumed at this level.""",
+}
+
+
+# The ONE code-card contract, injected into every directive that reaches the speaking
+# LLM (probe turns AND move-on turns). It previously existed only inside
+# QUESTION_GENERATION_SYSTEM, which meant a MOVE_ON opening a code topic was never told
+# the fence rule -- so the model said "Here's a simple Spring Boot main class:" and
+# emitted no fence, nothing rendered, and the candidate answered "I can't see."
+# extract_code_card() parses exactly this shape, so the contract and the parser must
+# stay in one place together.
+CODE_CARD_CONTRACT = """\
+━━━ SHOWING CODE ON SCREEN — HARD CONTRACT ━━━
+The candidate is on a VOICE call with a screen. They cannot type. If a question needs code,
+you MUST emit it as a fenced block and the system renders it on their screen as a card.
+
+SELF-CHECK BEFORE YOU SEND — do this every single turn, it takes one second:
+Read back the words you just wrote. Do they refer to anything the candidate is supposed to
+SEE? Any of "here's", "this", "let me show you", "look at", "on your screen", "the following",
+"below", or a question like "what does this print / return / do?" — anything that only makes
+sense if something is on screen.
+  - If YES and you emitted a fenced block → correct, send it.
+  - If YES and there is NO fenced block in your output → STOP. You are about to point at a
+    blank screen. Fix it before sending: either add the fenced block with the real code, or
+    rewrite the sentence so it stands alone as a spoken question with no "this" in it.
+  - If NO → send it, with no fence.
+
+This is the single most damaging mistake you can make. A candidate told to read code that was
+never rendered sees an empty screen, says "I can't see anything", and the question is wasted.
+Referring to invisible code is worse than asking nothing at all. Either the fence is there, or
+the sentence must not point at anything.
+
+When you DO show code, output exactly this shape:
+  <spoken setup, under 12 words, exactly one '?'>
+  ```code_trace
+  <real runnable code -- never pseudocode, never an ellipsis>
+  ```
+The fence tag MUST be one of these three (it is machine-parsed, not decoration):
+  code_trace   -- they trace execution / predict output
+  snippet_eval -- they find a bug you planted
+  query_trace  -- they trace what a SQL/data query returns
+
+Rules for the card itself:
+- The code carries the content; the SPOKEN part stays under 12 words and never reads the
+  code aloud, never spells out syntax, and never describes what the snippet contains.
+- Keep it under 12 lines and self-contained -- they are reading it once, out loud, from memory.
+- Ask about something that REQUIRES reading it (a specific value, a bug, a returned row),
+  never something answerable without looking.
+For every non-code question, do NOT emit a fenced block at all."""
+
+
+_QUESTION_GENERATION_TEMPLATE = """\
 You are Ishitha, a sharp and warm AI interviewer. You are conducting a real interview — not
 filling out a form.
+
+━━━ CALIBRATE TO THE CANDIDATE'S LEVEL ━━━
+{level_guide}
+This sets the BAR and how hard you push. It never changes how you react or how warm you are —
+a staff candidate and a junior get the same human on the other side of the call.
 
 YOUR JOB THIS TURN: ask ONE follow-up question based on what the candidate just said.
 
@@ -415,6 +666,29 @@ question feel technical instead of conversational:
 
 Do NOT re-ask a plain definition, do NOT ask "can you explain more about X", do NOT open a fresh
 unrelated concept while their last answer still has an untested claim in it.
+
+━━━ ACTIVE LISTENING — HANDLE A WRONG-FRAME ANSWER GRACEFULLY ━━━
+When the candidate answers from the WRONG technology or the wrong frame entirely (you asked about
+Spring, they answered about React), do NOT quote it back as a curiosity and then ignore it. That
+is the robotic move: "Interesting you said React — walk me through what happens when Spring
+injects a dependency?" reads as if you weren't listening at all.
+
+Instead, do what a real interviewer does in one breath: briefly VALIDATE the thing they raised as
+a legitimate thing, then EXPLICITLY steer back to the frame you asked about.
+  "React handles that its own way, sure — but on the Spring side, how does it get the object in?"
+  "Python's a fair comparison — in Java specifically though, what forces you to handle it?"
+The validation is what makes the redirect feel collaborative instead of corrective. One short
+clause is enough; do not explain the difference to them, and never say "that's not what I asked".
+
+Never open with a bare quote-back template ("You mentioned X, which is interesting", "Interesting
+you said X"). If you cannot react to the SUBSTANCE of their answer, skip the reaction and just ask.
+
+━━━ PREFER APPLIED FRAMING OVER TEXTBOOK FRAMING ━━━
+Even with no resume to draw on, put the candidate in a situation rather than asking them to
+recite. A hypothetical scenario is always available and always better:
+  Textbook:  "What's the difference between checked and unchecked exceptions?"
+  Applied:   "Say you're calling a flaky external API — which kind of exception do you reach for?"
+Both need zero knowledge of the candidate; the second sounds like an engineer, not a flashcard.
 
 EVIDENCE-SUFFICIENCY CHECK FIRST: if the candidate's last answer already closed the gap the
 PROBE DIRECTIVE describes (a later clause already supplied the missing detail), output exactly
@@ -456,23 +730,7 @@ one you have not used in RECENT_QUESTION_PATTERNS. If every construction listed 
 directive's examples is already used, invent a new one that still fits the question type; the
 question type is the constraint, the wording is never fixed.
 
-SHOWING A CODE CARD (code_trace / snippet_eval / query_trace question types only):
-If the PROBE DIRECTIVE's question type is code_trace, snippet_eval, or query_trace, you MUST
-show the snippet as an actual markdown fenced code block — not describe it in words. The fence's
-language tag MUST be exactly one of these three words, matching which kind of card it is (this
-tag is machine-parsed downstream, not just decoration):
-  code_trace   -- candidate traces execution/output of normal code
-  snippet_eval -- candidate spots a bug planted in the snippet
-  query_trace  -- candidate traces what a SQL/data query returns
-Output:
-  <your spoken reaction + setup, under 12 words>
-  ```code_trace
-  <the code, real and runnable — not pseudocode>
-  ```
-(swap the fence tag for `snippet_eval` or `query_trace` to match the question type you were
-asked to produce). The fenced block is REQUIRED for these three types — a code question with no
-fence is broken, the candidate will see nothing. For every other question type, never include a
-fenced block.
+{code_card_contract}
 
 OUTPUT FORMAT — READ CAREFULLY:
 Output ONLY the reaction + question (or exactly NO_FOLLOW_UP_NEEDED), optionally followed by a
@@ -484,44 +742,26 @@ must contain nothing except what Ishitha would actually say out loud, plus the f
 """
 
 
-# ---------------------------------------------------------------------------
-# CODE_CARD_RULES — when the agent MUST or MUST NOT show a code card.
-#
-# FUNDAMENTAL RULE: Code cards are READ-ONLY for the candidate.
-# The candidate READS the card and SPEAKS their answer. There is NO writing.
-# Use code cards ONLY when the content cannot be spoken clearly (code output,
-# bug diagnosis, query behavior). All other question types are purely verbal.
-# ---------------------------------------------------------------------------
-CODE_CARD_RULES: dict[str, dict] = {
-    "code_trace": {
-        "use_code_card": True,
-        "timer_secs": 45,
-        "format": "Show the full snippet. Spoken question sets up what to find — under 12 words.",
-        "candidate_action": "Reads code on screen, speaks the output or trace verbally. No writing.",
-    },
-    "snippet_eval": {
-        "use_code_card": True,
-        "timer_secs": 60,
-        "format": "Show the snippet with the bug. Do NOT mark or hint the bug location.",
-        "candidate_action": "Reads code, speaks what's wrong and why. No writing.",
-    },
-    "query_trace": {
-        "use_code_card": True,
-        "timer_secs": 40,
-        "format": "Show the query. Spoken question asks what it returns or what's wrong.",
-        "candidate_action": "Reads query on screen, speaks the result or issue verbally. No writing.",
-    },
-    "definition":       {"use_code_card": False},
-    "mechanism":        {"use_code_card": False},
-    "difference":       {"use_code_card": False},
-    "failure_mode":     {"use_code_card": False},
-    "tradeoff_debate":  {"use_code_card": False},
-    "scenario":         {"use_code_card": False},
-    "followup":         {
-        "use_code_card": "conditional",
-        "format": "If the parent question was a code type, the follow-up may show the same card.",
-    },
-}
+def render_question_generation_system(level: int = 2) -> str:
+    """The follow-up question-generation prompt, calibrated to the candidate's level.
+
+    This prompt was previously a module constant that NOTHING injected at runtime --
+    only comments referenced it and only scripts/verify_interview_pipelines.py used
+    it. Every rule in it (inherit-from-their-answer, make-them-do-not-describe, the
+    one-question-mark cap, the code-card fence contract) was therefore invisible to
+    the live LLM generating the actual follow-up. It is now prepended to the probe
+    directive by agent_runtime._build_probe_directive, so it ships with every probe.
+    """
+    return _QUESTION_GENERATION_TEMPLATE.format(
+        level_guide=_LEVEL_QUESTION_GUIDE.get(int(level or 2), _LEVEL_QUESTION_GUIDE[2]),
+        code_card_contract=CODE_CARD_CONTRACT,
+    )
+
+
+# Backwards-compatible module constant (level 2 default) for call sites that want the
+# prompt without a level -- prefer render_question_generation_system(level).
+QUESTION_GENERATION_SYSTEM = render_question_generation_system(2)
+
 
 # ---------------------------------------------------------------------------
 # PART A — Topic question generation with full question type pool.
@@ -692,7 +932,7 @@ QUESTIONS ASKED SO FAR IN THIS TOPIC (type, targeted concept, how it went):
 
 3. SCENARIO GATE: scenario is always LAST — never first or second. Only when gate is OPEN.
 
-4. A topic can end after 2 strong answers (depth_mastered / depth_applied). Don't force
+4. A topic can end after 2 strong answers (depth_strong). Don't force
    extra questions to fill a checklist — real interviewers move on when they have signal.
 
 5. Never retarget a concept already tested by a non-followup question in this topic.
@@ -982,7 +1222,6 @@ def get_probe_context(
     prev_question: str = "",
     recent_question_patterns: str = "(none yet)",
     declined_facts: str = "(none yet)",
-    ladder_rung: str = "",
     cross_cutting_signal: str | None = None,
     topic_score_history: list[float] | None = None,
     last_question_type: str = "",
@@ -1025,12 +1264,24 @@ def get_probe_context(
         and _signals_history[-2] == signal
     )
 
-    _prev_lower = prev_answer.lower()
-    _is_denial_text_fallback = any(p in _prev_lower for p in (
-        "i forgot", "i don't remember", "i dont remember",
-        "i don't know", "i dont know", "not sure", "can't remember", "cant remember",
-    ))
-    if topic_denied or _is_denial_text_fallback:
+    # NO KEYWORD DENIAL FALLBACK.
+    #
+    # This branch used to also fire on a bare substring match over ("i forgot",
+    # "i don't know", "not sure", ...) against the candidate's raw answer. That
+    # match ran BEFORE the signal lookup and overrode whatever the classifier had
+    # decided, so any answer merely CONTAINING a hedge was forced onto the denial
+    # step-down path -- "I'm not sure exactly, but I'd use a HashMap" (a real
+    # answer), "I don't remember, can you give me an example?" (a clarification
+    # request), and "I don't know, maybe O(log n)" (a correct guess) were all
+    # treated as flat non-attempts. No amount of prompt work on the classifier
+    # could fix that, because the classifier's output was being discarded.
+    #
+    # Whether an answer is a genuine non-attempt is a judgment about CONTENT, not
+    # a string match -- pure_denial's definition in scoring.py now carries the
+    # mechanical strip-the-hedge-and-check-the-residue test, and the classifier
+    # applies it with the full question and answer in view. Trust that decision.
+    # topic_denied stays: it is state the caller owns, not a guess about text.
+    if topic_denied or signal == "pure_denial":
         lines += [
             f"SIGNAL: {signal or 'candidate_denial'}",
             "WHAT: Candidate said they don't know, forgot, or can't explain this.",
@@ -1104,7 +1355,7 @@ def get_probe_context(
                     "Ask a verbal mechanism question on the same concept — 'what does this construct "
                     "do in general?' without showing code again."
                 )
-            elif signal in ("depth_clear", "depth_mastered", "depth_applied"):
+            elif signal in ("depth_clear", "depth_strong"):
                 lines.append(
                     "  CODE PROBE GUIDANCE: They traced it correctly. If probing further, escalate "
                     "to a harder case: change one input value or add a constraint and ask what changes."
@@ -1183,5 +1434,16 @@ def get_probe_context(
     if _trend:
         lines.append("")
         lines.append(f"SCORE TREND ON THIS TOPIC: {_trend}")
+
+    _repetition = render_repetition_blocks(recent_question_patterns, declined_facts)
+    if _repetition:
+        lines.append(_repetition)
+    if cross_cutting_signal:
+        lines += [
+            "",
+            f"CROSS-CUTTING SIGNAL: {cross_cutting_signal} — a delivery/behaviour observation that "
+            f"runs alongside the content signal. Let it shape your TONE and pacing only. Never "
+            f"mention it, never ask about it, never let it change what you probe.",
+        ]
 
     return "\n".join(lines)

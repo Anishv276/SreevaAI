@@ -10,7 +10,8 @@ Architecture:
 
 Signal taxonomy (universal, 8 content + 3 response shape — see scoring.py):
   Response-shape: clarification_request, rephrase_request, off_topic
-  Content (positive): depth_mastered, depth_clear, depth_applied, recovery_attempted
+  Content (positive): depth_strong, depth_clear
+  Content (gap, but not failure): tradeoff_blind, scope_diffuse, confident_uncertain
   Content (gap): depth_shallow, depth_generic
   Content (negative): depth_misconception, pure_denial
 
@@ -35,7 +36,6 @@ from interview.slack_error_logger import log_llm_error
 
 logger = logging.getLogger("interview-agent")
 
-_NO_NEW_QUESTION_CUTOFF_SECONDS: int = 45
 
 # ---------------------------------------------------------------------------
 # Level-aware saturation thresholds -- one threshold per level, every topic
@@ -103,13 +103,26 @@ class TopicState:
             return sat_pct < self._WEAK_EXIT_TURN3_PCT
         return self.follow_up_turns >= self._HARD_CAP_TURNS
 
+    # A topic closes as "dry" only after THREE consecutive true zeros, and only once
+    # the candidate has actually been asked a real follow-up. At two, a single
+    # misclassified answer plus one genuine "not sure" was enough to kill a topic
+    # before the interview had asked anything -- which is why every topic exited at
+    # sat=0.0 having asked one question. Three consecutive zeros is unambiguous;
+    # two is within the noise floor of the classifier.
+    _DRY_TOPIC_ZEROS: int = 3
+
     def is_dry_topic(self) -> bool:
-        """Two CONSECUTIVE answers with score 0 -> candidate is stuck, move on."""
-        return self.consecutive_zero_scores >= 2
+        """THREE consecutive score-0 answers -> the candidate is genuinely stuck here."""
+        return (
+            self.consecutive_zero_scores >= self._DRY_TOPIC_ZEROS
+            and self.follow_up_turns >= self._DRY_TOPIC_ZEROS
+        )
 
     def should_exit_on_denials(self) -> bool:
-        """Single pure_denial signal -> close the topic."""
-        return self.consecutive_denials >= 1
+        """Two CONSECUTIVE pure_denial signals -> close the topic.
+        A single denial gets one easier step-down question first (see
+        SIGNAL_PROBES["pure_denial"] in probe.py) instead of closing outright."""
+        return self.consecutive_denials >= 2
 
 
     def add_contribution(self, weighted: float, signal: str | None, turn: int | None = None) -> None:
@@ -142,10 +155,10 @@ class TopicState:
         if turn is not None:
             self.updated_turn = turn
 
-        # pure_denial streak: single occurrence -> close topic
+        # pure_denial streak: two consecutive -> close topic (first gets a step-down probe)
         if signal in DENIAL_SIGNALS:
             self.consecutive_denials += 1
-            if self.consecutive_denials >= 1:
+            if self.consecutive_denials >= 2:
                 self.closed_on_denials = True
         else:
             self.consecutive_denials = 0
@@ -394,15 +407,6 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     # -- Update saturation state ----------------------------------------------
     if current_topic_state:
         current_topic_state.add_contribution(_weighted, signal, turn=p.turn)
-
-    # Part C.2: decide whether the sub-concept rotation may advance next turn
-    # (concept_cleared / concept_gap_repeated). Computed from THIS turn's
-    # signal (the answer just scored) so agent_runtime's probe_rotation_index
-    # increment can be made conditional on it, instead of unconditionally
-    # advancing every PROBE turn regardless of whether the current
-    # sub-concept's gap actually resolved. Only meaningful when action ends up
-    # PROBE -- MOVE_ON discards rotation state for this topic entirely.
-    _should_rotate_subconcept = True  # rotation is now always allowed; probe_rotation_index in agent_runtime handles diversity
 
     is_saturated = current_topic_state.is_saturated if current_topic_state else False
     _weak_exit = current_topic_state is not None and current_topic_state.is_weak_candidate_exit()

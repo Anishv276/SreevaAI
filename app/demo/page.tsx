@@ -289,92 +289,129 @@ export default function DemoPage() {
                                 {filteredTemplates.map((t, i) => {
                                     return (
                                         <motion.button
-                                            initial={{ opacity: 0, y: 15 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            transition={{ delay: i * 0.1, duration: 0.4, ease: "easeOut" }}
                                             key={t.id}
                                             onClick={() => { setSelectedTemplate(t); setPhase("details"); }}
-                                            className={cn(
-                                                "group relative flex flex-col text-left w-full min-w-0 max-w-[360px] bg-white rounded-[24px] p-5 sm:p-7 transition-all duration-300 border border-zinc-200 overflow-hidden",
-                                                t.mode === "TECH" 
-                                                    ? "hover:border-violet-500/40 hover:shadow-[0_20px_40px_-15px_rgba(124,58,237,0.12)]" 
-                                                    : "hover:border-cyan-500/40 hover:shadow-[0_20px_40px_-15px_rgba(6,182,212,0.12)]"
-                                            )}
+                                            className="group text-left w-full min-w-0 max-w-[360px] bg-transparent outline-none"
+                                            style={{ perspective: "1200px" }}
                                             whileTap={{ scale: 0.98 }}
                                         >
-                                            {/* Subtle Glowing Background Effect */}
-                                            <div className={cn(
-                                                "absolute top-0 right-0 w-64 h-64 opacity-0 group-hover:opacity-100 transition-opacity duration-700 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none",
-                                                t.mode === "TECH" ? "bg-violet-500/20" : "bg-cyan-500/20"
-                                            )} />
+                                            <div className="relative w-full h-full transition-all duration-700 ease-in-out [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)] rounded-[28px] shadow-[0_8px_30px_rgba(0,0,0,0.04)] group-hover:shadow-[0_30px_60px_rgba(0,0,0,0.12)]">
+                                                
+                                                {/* FRONT FACE */}
+                                                <div className="w-full h-full bg-white rounded-[28px] p-7 border border-zinc-200 [backface-visibility:hidden] [-webkit-backface-visibility:hidden] flex flex-col">
+                                                    <div className="flex flex-col h-full w-full relative z-10">
+                                                        {/* Top Row: Pill and Duration */}
+                                                        <div className="flex items-start justify-between mb-6">
+                                                            <div className={cn(
+                                                                "px-3.5 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border",
+                                                                t.mode === "TECH" ? "bg-violet-50 text-violet-700 border-violet-100" : "bg-sky-50 text-sky-700 border-sky-100"
+                                                            )}>
+                                                                {t.mode === "TECH" ? "Technical" : "Conversational"}
+                                                            </div>
+                                                            <div className="flex items-center gap-1.5 text-[11px] text-zinc-500 font-semibold bg-zinc-50 px-3 py-1.5 rounded-full border border-zinc-200 shadow-sm">
+                                                                <Clock className="w-3.5 h-3.5" />
+                                                                <span>5 min</span>
+                                                            </div>
+                                                        </div>
 
-                                            <div className="relative z-10 w-full flex flex-col h-full items-center text-center pt-10">
-                                                {/* Top-center Label */}
-                                                <div className="absolute -top-3 left-0 w-full flex justify-center">
-                                                    <div className={cn(
-                                                        "px-4 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border bg-transparent backdrop-blur-sm",
-                                                        t.mode === "TECH" ? "text-violet-600 border-violet-200" : "text-cyan-600 border-cyan-200"
-                                                    )}>
-                                                        {t.mode === "TECH" ? "Technical" : "Conversational"}
+                                                        {/* Domain & Role */}
+                                                        <div className="mb-6">
+                                                            <h3 className="text-xl font-bold text-zinc-900 mb-2 leading-tight tracking-tight">
+                                                                {t.title}
+                                                            </h3>
+                                                            <p className="text-sm font-medium text-zinc-500 line-clamp-1">
+                                                                {t.roleTitle}
+                                                            </p>
+                                                        </div>
+
+                                                        {/* Topics / Skills */}
+                                                        <div className="flex flex-wrap gap-2 mb-6">
+                                                            {(t.skills && t.skills.length > 0
+                                                                ? t.skills
+                                                                : t.mode === "TECH"
+                                                                    ? ["Python", "AI", "Algorithms"]
+                                                                    : ["Communication", "AI", "Soft Skills"]
+                                                            ).slice(0, 3).map((skill, idx) => {
+                                                                const words = skill.trim().split(/\s+/);
+                                                                const topic = words.length > 2 ? `${words.slice(0, 2).join(" ")}...` : skill;
+                                                                return (
+                                                                    <span
+                                                                        key={idx}
+                                                                        className="px-3 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-[11px] font-semibold text-zinc-700 shadow-sm"
+                                                                        title={skill}
+                                                                    >
+                                                                        {topic}
+                                                                    </span>
+                                                                );
+                                                            })}
+                                                        </div>
+
+                                                        <div className="flex-grow"></div>
+
+                                                        {/* Divider */}
+                                                        <div className="h-px w-full bg-zinc-200 mb-6"></div>
+
+                                                        {/* Bottom Section: Profile and Button */}
+                                                        <div className="flex flex-col gap-5">
+                                                            <div className="flex items-center justify-between px-1">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="w-9 h-9 rounded-full border border-zinc-200 overflow-hidden bg-zinc-100 flex items-center justify-center shadow-sm">
+                                                                        <User className="w-4.5 h-4.5 text-zinc-400" />
+                                                                    </div>
+                                                                    <div>
+                                                                        <p className="text-[13px] font-bold text-zinc-900 leading-none mb-1">Ishitha</p>
+                                                                        <div className="flex items-center gap-1 text-[11px] text-zinc-500 font-medium">
+                                                                            <Languages className="w-3.5 h-3.5" />
+                                                                            <span>Indian English</span>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="w-full">
+                                                                <div className="w-full h-12 rounded-[16px] text-sm font-bold text-white bg-zinc-900 flex items-center justify-center gap-2 shadow-md">
+                                                                    View Role Details <ArrowRight className="h-4 w-4" />
+                                                                </div>
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 </div>
 
-                                                {/* Domain & Role */}
-                                                <h3 className="text-xl font-bold text-zinc-900 mt-2 mb-1">
-                                                    {t.title}
-                                                </h3>
-                                                <p className="text-sm font-medium text-zinc-600 mb-4 line-clamp-1">
-                                                    {t.roleTitle}
-                                                </p>
-
-                                                {/* Skills */}
-                                                <div className="flex items-center justify-center gap-2 mb-4">
-                                                    {(t.skills && t.skills.length > 0
-                                                        ? t.skills
-                                                        : t.mode === "TECH"
-                                                            ? ["Python", "AI"]
-                                                            : ["Communication", "AI"]
-                                                    ).map((skill) => (
-                                                        <span
-                                                            key={skill}
-                                                            className="px-3 py-1 rounded-full border border-zinc-200 text-[11px] text-zinc-600 bg-white shadow-sm"
-                                                        >
-                                                            {skill}
-                                                        </span>
-                                                    ))}
-                                                </div>
-
-                                                {/* Character Profile */}
-                                                <div className="flex items-center justify-center gap-2 mb-2">
-                                                    <div className="w-6 h-6 rounded-full border border-zinc-200 overflow-hidden bg-zinc-100 flex items-center justify-center">
-                                                        <User className="w-3.5 h-3.5 text-zinc-500" />
+                                                {/* BACK FACE */}
+                                                <div className="absolute inset-0 w-full h-full bg-zinc-900 text-white rounded-[28px] p-7 border border-zinc-800 [backface-visibility:hidden] [-webkit-backface-visibility:hidden] [transform:rotateY(180deg)] flex flex-col">
+                                                    <div className="flex items-center gap-2 mb-4">
+                                                        <div className={cn(
+                                                            "w-2 h-2 rounded-full",
+                                                            t.mode === "TECH" ? "bg-violet-400" : "bg-sky-400"
+                                                        )} />
+                                                        <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-400">About the Role</span>
                                                     </div>
-                                                    <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">
-                                                        Ishitha
-                                                    </span>
-                                                </div>
-
-                                                {/* Spacer to push bottom section down */}
-                                                <div className="flex-grow flex flex-col justify-center items-center py-2"></div>
-
-                                                {/* Bottom Info Row */}
-                                                <div className="w-full flex justify-center items-center gap-6 text-[11px] text-zinc-500 font-medium mb-5 px-1">
-                                                    <div className="flex items-center gap-1.5">
-                                                        <Clock className="w-3.5 h-3.5" />
-                                                        <span>5 min</span>
+                                                    <h3 className="text-xl font-bold mb-1 text-white leading-tight">{t.title}</h3>
+                                                    <p className="text-xs text-zinc-400 mb-6">{t.roleTitle}</p>
+                                                    
+                                                    <div className="flex-grow overflow-y-auto pr-2" style={{ scrollbarWidth: "none" }}>
+                                                        <ul className="flex flex-col gap-3.5">
+                                                            {(t.skills && t.skills.length > 0
+                                                                ? t.skills
+                                                                : t.mode === "TECH"
+                                                                    ? ["Python", "AI", "Algorithms"]
+                                                                    : ["Communication", "AI", "Soft Skills"]
+                                                            ).map((skill, i) => (
+                                                                <li key={i} className="text-[13px] text-zinc-300 leading-relaxed flex items-start gap-2.5">
+                                                                    <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-zinc-600 flex-shrink-0" />
+                                                                    <span>{skill}</span>
+                                                                </li>
+                                                            ))}
+                                                        </ul>
                                                     </div>
-                                                    <div className="flex items-center gap-1.5">
-                                                        <Languages className="w-3.5 h-3.5" />
-                                                        <span>Indian English</span>
+                                                    
+                                                    <div className="mt-5 w-full shrink-0">
+                                                        <div className="w-full h-12 rounded-[16px] text-sm font-bold text-zinc-900 bg-white flex items-center justify-center gap-2 transition-transform duration-300 active:scale-95 shadow-xl shadow-black/50">
+                                                            Start Interview <ArrowRight className="h-4 w-4" />
+                                                        </div>
                                                     </div>
                                                 </div>
 
-                                                {/* Start Button */}
-                                                <div className="w-full">
-                                                    <div className="w-full py-3 rounded-[14px] text-sm font-bold text-white bg-[#222222] flex items-center justify-center gap-2 transition-all duration-300 shadow-sm group-hover:bg-[#111111] group-hover:shadow-md">
-                                                        Try Interview <ArrowRight className="h-4 w-4" />
-                                                    </div>
-                                                </div>
                                             </div>
                                         </motion.button>
                                     );

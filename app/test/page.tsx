@@ -14,15 +14,29 @@ import {
     useConnectionState,
     useTranscriptions,
     useTracks,
+    useRoomContext,
 } from "@livekit/components-react";
 import type { TextStreamData as TranscriptionSegment } from "@livekit/components-react";
-import { ConnectionState, Track } from "livekit-client";
+import { ConnectionState, RoomEvent, Track } from "livekit-client";
 import { AuraVisualizer } from "@/components/agents-ui/aura-visualizer";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BASIC_PLAN_SIGNALS, normalizeProctoringSignals, type ProctoringSignalToggles } from "@/lib/proctoring-signals";
 import { FaceProctoring } from "@/components/careers/interview/FaceProctoring";
 import { HardwareHeartbeat } from "@/components/careers/interview/HardwareHeartbeat";
+import { AnimatePresence, motion } from "framer-motion";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneLight } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import "@livekit/components-styles";
+
+// fallback -- react-syntax-highlighter's Prism build only recognizes real
+// language names, so map anything else to a sensible default rather than
+// rendering unstyled.
+function resolveSyntaxHighlightLanguage(language: string): string {
+    const normalized = (language || "").toLowerCase().trim();
+    if (normalized === "query_trace") return "sql";
+    if (normalized === "code_trace" || normalized === "snippet_eval" || !normalized) return "text";
+    return normalized;
+}
 
 // --- Types -------------------------------------------------------------------
 type Org = { id: string; name: string; slug: string; status: string };
@@ -286,6 +300,60 @@ function InterviewRoom({ applicationId, onUpdate, timerStartedAtRef, enableCamer
         timerStartedAtRef.current !== null ? Math.floor((Date.now() - timerStartedAtRef.current) / 1000) : 0
     );
     const [events, setEvents] = useState<TestEvent[]>([]);
+    const room = useRoomContext();
+    const [codeCard, setCodeCard] = useState<{ cardId: string; prompt: string; code: string; language: string; timerSecs: number } | null>(null);
+    const [codeCardSecsLeft, setCodeCardSecsLeft] = useState(0);
+
+    useEffect(() => {
+        if (!codeCard) return;
+        setCodeCardSecsLeft(codeCard.timerSecs);
+        const interval = setInterval(() => {
+            setCodeCardSecsLeft((s) => {
+                if (s <= 1) {
+                    clearInterval(interval);
+                    setCodeCard(null); // local auto-dismiss; the backend dismisses independently on answer
+                    return 0;
+                }
+                return s - 1;
+            });
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [codeCard]);
+
+    useEffect(() => {
+        if (!room) return;
+        const decoder = new TextDecoder();
+        const onDataReceived = (payload: Uint8Array) => {
+            try {
+                const packet = JSON.parse(decoder.decode(payload));
+                if (packet.type === "code_card") {
+                    const cardId = String(packet.card_id || "");
+                    setCodeCard({
+                        cardId,
+                        prompt: String(packet.prompt || ""),
+                        code: String(packet.code || ""),
+                        language: String(packet.language || ""),
+                        timerSecs: Number(packet.timer_secs) || 45,
+                    });
+                    if (cardId && room.localParticipant) {
+                        const encoder = new TextEncoder();
+                        room.localParticipant.publishData(
+                            encoder.encode(JSON.stringify({ type: "code_card_ack", card_id: cardId })),
+                            { reliable: true }
+                        ).catch(() => { /* best-effort -- a failed ack just means the agent times out and falls back */ });
+                    }
+                } else if (packet.type === "code_card_dismiss") {
+                    setCodeCard(null);
+                }
+            } catch {
+                // Ignore non-JSON packets.
+            }
+        };
+        room.on(RoomEvent.DataReceived, onDataReceived);
+        return () => {
+            room.off(RoomEvent.DataReceived, onDataReceived);
+        };
+    }, [room]);
 
     useEffect(() => {
         if (timerStartedAtRef.current === null && lines.some(l => l.speaker === "AI")) {
@@ -324,8 +392,8 @@ function InterviewRoom({ applicationId, onUpdate, timerStartedAtRef, enableCamer
     const isConnected = connectionState === ConnectionState.Connected;
 
     useEffect(() => {
-        onUpdate({ lines, events, elapsedSeconds, timerStarted, isConnected, sessionEnded: hasEnded });
-    }, [lines, events, elapsedSeconds, timerStarted, isConnected, hasEnded, onUpdate]);
+        onUpdate({ lines, events, elapsedSeconds, timerStarted, isConnected, sessionEnded: hasEnded, codeCard, codeCardSecsLeft });
+    }, [lines, events, elapsedSeconds, timerStarted, isConnected, hasEnded, codeCard, codeCardSecsLeft, onUpdate]);
 
     // We just return the audio renderer; UI is handled by parent now.
     return <RoomAudioRenderer />;
@@ -362,6 +430,8 @@ function TestPageContent({ testKey }: { testKey: string }) {
         timerStarted: false,
         isConnected: false,
         sessionEnded: false,
+        codeCard: null as { cardId: string; prompt: string; code: string; language: string; timerSecs: number } | null,
+        codeCardSecsLeft: 0,
     });
     // Owned here (parent survives LiveKitRoom/InterviewRoom remounts on reconnect) so
     // the interview timer keeps counting from its real start instead of resetting to 0.
@@ -458,6 +528,8 @@ function TestPageContent({ testKey }: { testKey: string }) {
             timerStarted: false,
             isConnected: false,
             sessionEnded: false,
+            codeCard: null,
+            codeCardSecsLeft: 0,
         });
         timerStartedAtRef.current = null;
         interviewStartedAtRef.current = null;
@@ -564,8 +636,12 @@ function TestPageContent({ testKey }: { testKey: string }) {
     // Live fullscreen state -- jobs the persistent "return to fullscreen" banner below,
     // independent of the one-shot violation modal (which only fires once per exit and can
     // be dismissed, leaving no other way back in otherwise).
+    // Gated on enableCamera for the same reason every other proctoring path is: with
+    // the camera off we never request fullscreen (see requestFullscreenMode below), so
+    // isFullscreen stays false forever and the "return to fullscreen" banner shows over
+    // a session that was never supposed to be proctored at all.
     useEffect(() => {
-        if (!isActive) { setIsFullscreen(false); return; }
+        if (!isActive || !enableCamera) { setIsFullscreen(false); return; }
         const check = () => {
             const doc = document as any;
             setIsFullscreen(!!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement));
@@ -581,7 +657,7 @@ function TestPageContent({ testKey }: { testKey: string }) {
             document.removeEventListener("mozfullscreenchange", check);
             document.removeEventListener("MSFullscreenChange", check);
         };
-    }, [isActive]);
+    }, [isActive, enableCamera]);
 
     // Tab-switch / fullscreen-exit / window-focus-loss detection -- mirrors the real
     // interview page's proctoring logic 1:1, gated by the same org-configured toggles.
@@ -922,6 +998,52 @@ function TestPageContent({ testKey }: { testKey: string }) {
                             />
                         </div>
 
+                        {/* Code Card Overlay -- shown when the interviewer asks a query/snippet question */}
+                        <AnimatePresence>
+                            {displayState.codeCard && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: -16, scale: 0.97 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: -16, scale: 0.97 }}
+                                    transition={{ duration: 0.2 }}
+                                    className="absolute top-24 left-1/2 -translate-x-1/2 z-[70] w-[min(640px,90vw)] pointer-events-none"
+                                >
+                                    <div className="rounded-2xl border border-zinc-200/70 bg-white/95 backdrop-blur-md shadow-[0_20px_60px_rgba(0,0,0,0.15)] overflow-hidden">
+                                        {/* Timer only in the header -- the question belongs BELOW the
+                                            code, so the candidate reads the snippet first and then the
+                                            ask, in the order it is spoken. */}
+                                        <div className="flex items-center justify-end px-5 py-2.5 border-b border-zinc-100 bg-zinc-50/80">
+                                            <div className="flex items-center gap-1.5 shrink-0 tabular-nums text-xs font-semibold text-zinc-500">
+                                                <div
+                                                    className={cn(
+                                                        "w-1.5 h-1.5 rounded-full",
+                                                        displayState.codeCardSecsLeft <= 5 ? "bg-red-500" : "bg-violet-500"
+                                                    )}
+                                                />
+                                                {displayState.codeCardSecsLeft}s
+                                            </div>
+                                        </div>
+                                        <div className="px-5 py-4 overflow-x-auto bg-zinc-900/[0.03]">
+                                            <SyntaxHighlighter
+                                                language={resolveSyntaxHighlightLanguage(displayState.codeCard.language)}
+                                                style={oneLight}
+                                                customStyle={{ margin: 0, padding: 0, background: "transparent", fontSize: "0.875rem", lineHeight: 1.625 }}
+                                            >
+                                                {displayState.codeCard.code}
+                                            </SyntaxHighlighter>
+                                        </div>
+                                        {displayState.codeCard.prompt && (
+                                            <div className="px-5 py-3.5 border-t border-zinc-100 bg-white">
+                                                <p className="text-sm font-semibold text-zinc-800 leading-relaxed">
+                                                    {displayState.codeCard.prompt}
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+
                         {/* Camera Preview - Top Right Corner (proctoring view only, not recorded) */}
                         {enableCamera && (
                             <div className="absolute top-4 right-4 z-50 flex flex-col items-end gap-2">
@@ -998,7 +1120,7 @@ function TestPageContent({ testKey }: { testKey: string }) {
                         {/* Persistent return-to-fullscreen banner -- stays up the whole time the
                             session is out of fullscreen, so there's always a way back in even
                             after the one-shot violation modal above has been dismissed. */}
-                        {!isFullscreen && !activeFocusViolation && displayState.timerStarted && (
+                        {enableCamera && !isFullscreen && !activeFocusViolation && displayState.timerStarted && (
                             <div className="fixed inset-0 z-[290] bg-zinc-950/95 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-200">
                                 <div className="max-w-sm w-full bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-2xl text-center space-y-5">
                                     <div className="mx-auto w-16 h-16 rounded-2xl flex items-center justify-center bg-violet-500/10">

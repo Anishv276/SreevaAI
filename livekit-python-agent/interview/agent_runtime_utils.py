@@ -43,6 +43,14 @@ def token_limit_kwarg(llm_model: str, max_tokens: int) -> Dict[str, int]:
     return {"max_tokens": max_tokens}
 
 
+def llm_metadata(**fields: Any) -> Dict[str, str]:
+    """Coerces every value to str() -- OpenAI's `metadata` param on
+    chat.completions.create() rejects any non-string value (e.g. a raw int
+    `level`) with a 400, silently breaking that call's fallback path. Always
+    build the `metadata=` kwarg through this instead of a raw dict literal."""
+    return {k: str(v) for k, v in fields.items()}
+
+
 # ===============================================================================
 # SECTION 1 -- AgentConfig (Singleton Configuration)
 # ===============================================================================
