@@ -18,10 +18,30 @@ export async function GET() {
                 title: true,
                 roleTitle: true,
                 mode: true,
+                jdExtractedDetails: true,
             },
             orderBy: { createdAt: "desc" },
         });
-        return NextResponse.json({ templates });
+
+        const withSkills = templates.map((template: (typeof templates)[number]) => {
+            const { jdExtractedDetails, ...t } = template;
+            const details = jdExtractedDetails as {
+                criteria?: Array<{ category: string; name: string }>;
+                keywords?: string[];
+            } | null;
+
+            const skills =
+                details?.criteria
+                    ?.filter((c) => c.category === "skill")
+                    .map((c) => c.name) ?? [];
+
+            return {
+                ...t,
+                skills: (skills.length > 0 ? skills : details?.keywords ?? []).slice(0, 2),
+            };
+        });
+
+        return NextResponse.json({ templates: withSkills });
     } catch (error) {
         return apiErrorResponse({
             route: "/api/demo/templates",

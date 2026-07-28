@@ -26,6 +26,7 @@ interface DemoTemplate {
     title: string;
     roleTitle: string;
     mode: "TECH" | "CONVERSATION";
+    skills?: string[];
 }
 
 type Phase = "select" | "details" | "verify" | "launching" | "interview" | "done" | "failed";
@@ -328,12 +329,19 @@ export default function DemoPage() {
 
                                                 {/* Skills */}
                                                 <div className="flex items-center justify-center gap-2 mb-4">
-                                                    <span className="px-3 py-1 rounded-full border border-zinc-200 text-[11px] text-zinc-600 bg-white shadow-sm">
-                                                        {t.mode === "TECH" ? "Python" : "Communication"}
-                                                    </span>
-                                                    <span className="px-3 py-1 rounded-full border border-zinc-200 text-[11px] text-zinc-600 bg-white shadow-sm">
-                                                        AI
-                                                    </span>
+                                                    {(t.skills && t.skills.length > 0
+                                                        ? t.skills
+                                                        : t.mode === "TECH"
+                                                            ? ["Python", "AI"]
+                                                            : ["Communication", "AI"]
+                                                    ).map((skill) => (
+                                                        <span
+                                                            key={skill}
+                                                            className="px-3 py-1 rounded-full border border-zinc-200 text-[11px] text-zinc-600 bg-white shadow-sm"
+                                                        >
+                                                            {skill}
+                                                        </span>
+                                                    ))}
                                                 </div>
 
                                                 {/* Character Profile */}

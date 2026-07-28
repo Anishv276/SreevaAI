@@ -33,16 +33,21 @@ _SARVAM_VALID_SPEAKERS = frozenset({
 _PROVIDER_DEFAULTS: dict[str, Any] = {
     "sarvam_pace":             1.2,
     # bulbul:v3 -- per Sarvam docs (https://docs.sarvam.ai/api-reference-docs/text-to-speech/stream)
-    # 22050 Hz is recommended for streaming (24000 is higher quality but slower to generate)
-    "sarvam_v3_sample_rate":   22050,
-    "sarvam_v2_sample_rate":   22050,
-    # 128k (LiveKit doc default) over 64k -- an interview call runs 15-20+ minutes
-    # continuously, so sustained audio quality for the whole call matters more here
-    # than shaving latency off the very first chunk. Candidates listen closely to
-    # understand nuanced questions; a lower bitrate persists as a quality cost for
-    # the entire session, not just the opening moment.
+    # 24000 Hz over the 22050 Hz "streaming-recommended" default -- candidates
+    # reported the interviewer's voice sounding muffled, and mp3 @22050 is the
+    # softest-sounding combination this plugin allows. The slightly slower
+    # generation is a fixed per-turn cost, not a growing one.
+    "sarvam_v3_sample_rate":   24000,
+    "sarvam_v2_sample_rate":   24000,
+    # Codec switched mp3 -> wav (lossless PCM). mp3 is lossy, and LiveKit then
+    # Opus-encodes for transport -- mp3->Opus is two lossy re-encodes stacked,
+    # which is exactly what reads as "muffled" on synthesized speech (mp3's
+    # pre-echo/smearing on sibilants is more audible on TTS than on music).
+    # wav carries linear PCM straight through to the single Opus transport
+    # hop. Bitrate is meaningless for lossless PCM but the field is required
+    # by the plugin API regardless of codec, so it's left populated.
     "sarvam_output_bitrate":   "128k",
-    "sarvam_output_codec":     "mp3",
+    "sarvam_output_codec":     "wav",
     # min_buffer_size = chars before Sarvam starts processing (not frames/bytes).
     # The plugin sends text to Sarvam WORD BY WORD over the WS (see word_stream in
     # livekit-plugins-sarvam tts.py send_task) -- these two values are the ONLY

@@ -420,10 +420,18 @@ def _looks_like_interviewer_echo(candidate_text: str, last_question: str) -> boo
     if not q_words or not a_words:
         return False
     word_overlap = len(q_words & a_words) / len(a_words)
-    # High character-level similarity (near-verbatim substring/prefix match) OR
-    # the candidate's words are almost entirely drawn from the question's own
-    # vocabulary -- either shape is consistent with echoed TTS, not an answer.
-    return ratio >= 0.55 or word_overlap >= 0.75
+    # word_overlap alone is too loose: a genuine short answer that reuses the
+    # question's own vocabulary ("How would you handle a memory leak in a Node
+    # process?" -> "For a memory leak in a Node process I'd check heap
+    # snapshots") can clear 0.75 word_overlap despite being a real, on-topic
+    # answer -- that false-positive was misfiring as an echo and re-asking the
+    # same question, which reads to the candidate as "it didn't listen to me."
+    # Require near-verbatim character similarity by itself, OR high character
+    # similarity together with near-total word overlap -- a real echo (exact
+    # or lightly STT-mangled playback) scores high on both at once, while a
+    # genuine answer that happens to reuse question vocabulary typically only
+    # trips one.
+    return ratio >= 0.85 or (ratio >= 0.55 and word_overlap >= 0.85)
 def _topic_short_title(topic: str) -> str:
     """Extract short title from full topic string (before ' - ')."""
     return (topic or "").split(" - ")[0].strip()
