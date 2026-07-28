@@ -1014,8 +1014,8 @@ async def generate_interview_report(
     if not os.environ.get("OPENAI_API_KEY"):
         logger.warning("[REPORT:sales] Skipping: missing OPENAI_API_KEY")
         return None
-    if not llmInterviewReport:
-        logger.error("[REPORT:sales] Missing org.llmInterviewReport from DB for app=%s", app_id)
+    if not llmInterviewReport or llmInterviewReport.strip().lower() == "none":
+        logger.error("[REPORT:sales] Missing/invalid org.llmInterviewReport from DB for app=%s (got %r)", app_id, llmInterviewReport)
         return None
 
     interview_scores = [s for s in answer_scores if not s.get("is_warmup", False)]

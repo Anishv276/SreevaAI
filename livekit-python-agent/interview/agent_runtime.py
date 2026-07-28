@@ -1,5 +1,6 @@
 import asyncio
 import collections
+import difflib
 import json
 import os
 import time
@@ -388,6 +389,41 @@ def _clean_stt_text(raw_text: str) -> str:
             continue
         cleaned_tokens.append(token)
     return _STT_WHITESPACE_RE.sub(" ", " ".join(cleaned_tokens)).strip()
+_ECHO_NORMALIZE_RE = re.compile(r"[^a-z0-9\s]")
+def _looks_like_interviewer_echo(candidate_text: str, last_question: str) -> bool:
+    """True when `candidate_text` is substantially the interviewer's own last
+    question played back -- i.e. Deepgram picked up Ishitha's TTS output (leaking
+    through the mic/speakers, or a brief STT misattribution during barge-in) and
+    transcribed it as if the candidate said it, rather than the candidate actually
+    answering. Distinct from `candidate_asked_to_repeat`: that tool fires when the
+    candidate explicitly asks for a repeat ("can you say that again?"); this catches
+    the case where nobody asked for anything -- the "answer" IS the question, so an
+    LLM judging semantic intent has nothing to key off, and the eval pipeline treats
+    it as a genuine (shallow/off-topic) answer and probes on it forever instead of
+    just re-asking.
+    """
+    q = (last_question or "").strip()
+    a = (candidate_text or "").strip()
+    if not q or not a:
+        return False
+    # A real answer of any substance is extremely unlikely to score this high
+    # against the question text itself -- short answers ("yes", "I think so")
+    # never trip this because they're far too short to reach the ratio+overlap
+    # bar below, so this only fires on near-verbatim playback.
+    norm_q = _ECHO_NORMALIZE_RE.sub("", q.lower()).strip()
+    norm_a = _ECHO_NORMALIZE_RE.sub("", a.lower()).strip()
+    if len(norm_a) < 8:
+        return False
+    ratio = difflib.SequenceMatcher(None, norm_q, norm_a).ratio()
+    q_words = set(w for w in re.split(r"\s+", norm_q) if len(w) >= 3)
+    a_words = set(w for w in re.split(r"\s+", norm_a) if len(w) >= 3)
+    if not q_words or not a_words:
+        return False
+    word_overlap = len(q_words & a_words) / len(a_words)
+    # High character-level similarity (near-verbatim substring/prefix match) OR
+    # the candidate's words are almost entirely drawn from the question's own
+    # vocabulary -- either shape is consistent with echoed TTS, not an answer.
+    return ratio >= 0.55 or word_overlap >= 0.75
 def _topic_short_title(topic: str) -> str:
     """Extract short title from full topic string (before ' - ')."""
     return (topic or "").split(" - ")[0].strip()
@@ -1461,6 +1497,10 @@ class InterviewAgent(Agent):
         # (tracked separately from pending_trap_question so it's an explicit agent
         # field, not a mutation of the dict that's also stored under that name).
         self.trap_rephrased_once: bool = False
+        # Guards the STT self-echo rephrase below from firing twice in a row for the
+        # same question (e.g. if the echo recurs after the first rephrase). Reset to
+        # False every time a genuinely new interviewer question is tracked.
+        self.question_echo_rephrased_once: bool = False
     # ── Live Trap Score API ─────────────────────────────────────────────────
     def handle_proctoring_event(self, event_type: str, severity: str = "medium") -> bool:
         """
@@ -1558,6 +1598,116 @@ class InterviewAgent(Agent):
         if warmup_directive:
             return (INTERVIEW_TEMPERATURE, "greeting_rapport_closing")
         return (INTERVIEW_TEMPERATURE, "adaptive_listener_core")
+
+    async def _speak_with_code_card_check(self, full_text: str, raw_chunks: list):
+        """Shared by every llm_node branch that can legally open with a code/query
+        question (PROBE turns AND plain MOVE_ON/anchor turns -- a new topic's
+        opening question is just as likely to be a code_trace/snippet_eval/query_trace
+        question as a PROBE follow-up is). Detects a fenced code block in full_text,
+        publishes it to the frontend as a code_card overlay, and yields ONLY the
+        spoken lead-in to TTS -- code must never be read aloud. Falls through to
+        yielding raw_chunks unmodified when there's no fence to extract.
+        """
+        _card = extract_code_card(full_text) if full_text else None
+        if _card is None:
+            for chunk in raw_chunks:
+                yield chunk
+            return
+
+        spoken_text, code, _card_question_type, _card_language = _card
+        if code and self._room is not None:
+            _complexity_secs = max(20, min(90, 20 + 4 * code.count("\n")))
+            _card_id = f"card_{self._code_card_generation + 1}_{int(time.time() * 1000)}"
+            try:
+                await self._room.local_participant.publish_data(
+                    json.dumps({
+                        "type": "code_card",
+                        "card_id": _card_id,
+                        "prompt": spoken_text,
+                        "code": code,
+                        # Real programming/query language for syntax highlighting
+                        # (e.g. "python", "sql") -- falls back to the question-type
+                        # tag ("code_trace"/"query_trace") if no language annotation
+                        # was present, so the frontend always gets a non-empty hint.
+                        "language": _card_language or _card_question_type,
+                        "timer_secs": _complexity_secs,
+                    }).encode("utf-8"),
+                    reliable=True,
+                )
+                # Wait briefly for the frontend to ack that it actually rendered the
+                # card (see the "code_card_ack" data-channel handler near
+                # self._code_card_ack_event) before committing to the spoken lead-in.
+                # A client that can't render (audio-only, degraded connection, a
+                # build that doesn't wire the listener) never acks -- on timeout we
+                # fall back to a plain verbal question instead of describing a
+                # snippet the candidate can't see. Per spec: never read code aloud
+                # as that fallback -- speak a generic verbal substitute instead.
+                self._code_card_ack_event = asyncio.Event()
+                self._code_card_ack_id = _card_id
+                _acked = False
+                try:
+                    await asyncio.wait_for(self._code_card_ack_event.wait(), timeout=3.0)
+                    _acked = True
+                except asyncio.TimeoutError:
+                    pass
+                if not _acked:
+                    logger.warning(
+                        "[CODE_CARD] no render ack from client within 3s (card_id=%s) -- "
+                        "falling back to a verbal-only question, code never read aloud",
+                        _card_id,
+                    )
+                    await self._room.local_participant.publish_data(
+                        json.dumps({"type": "code_card_dismiss", "card_id": _card_id}).encode("utf-8"),
+                        reliable=True,
+                    )
+                    _no_ack_fallback_text = (
+                        "Let's skip that one since I can't confirm you're seeing the snippet -- "
+                        "let's move to the next question instead."
+                    )
+                    yield llm.ChatChunk(id="code-card-no-ack-fallback", delta=llm.ChoiceDelta(role="assistant", content=_no_ack_fallback_text))
+                    return
+                self.code_card_active = True
+                # Read back by _build_eval_payload() so the candidate's answer to
+                # THIS card is scored with code-question calibration instead of
+                # defaulting to generic "mechanism" -- see eval.py QuestionRecord.
+                self.last_code_card_question_type = _card_question_type
+                logger.info(
+                    "[CODE_CARD] published + acked | type=%s | timer=%ds | code_lines=%d",
+                    _card_question_type, _complexity_secs, code.count("\n") + 1,
+                )
+                # The frontend auto-hides the card locally after timer_secs but never
+                # tells the backend -- without this, a candidate who never speaks at
+                # all leaves code_card_active=True forever, which permanently disables
+                # inactivity nudges (see the gate at "and not agent.code_card_active"
+                # below) for the rest of the interview. Mirror the same timeout here so
+                # a silent candidate still gets the normal nudge/recovery flow.
+                self._code_card_generation += 1
+                asyncio.create_task(
+                    self._clear_code_card_after_timeout(_complexity_secs, self._code_card_generation)
+                )
+            except Exception as _card_err:
+                # Publish itself failed (data channel down, room gone, etc). Never
+                # fall back to speaking full_text here -- that would read the fenced
+                # code aloud verbatim, exactly the failure mode this method exists to
+                # prevent. Speak the same generic verbal substitute as the no-ack path.
+                logger.warning(
+                    "[CODE_CARD] publish failed: %s -- falling back to a verbal-only "
+                    "question, code never read aloud", _card_err,
+                )
+                _publish_fail_fallback_text = (
+                    "Let's skip that one since I can't confirm you're seeing the snippet -- "
+                    "let's move to the next question instead."
+                )
+                yield llm.ChatChunk(id="code-card-publish-fail-fallback", delta=llm.ChoiceDelta(role="assistant", content=_publish_fail_fallback_text))
+                return
+        elif not code:
+            # Fence matched but no code survived stripping (e.g. an empty
+            # ``` ``` block) -- nothing sensitive to hide, safe to speak the
+            # lead-in text as-is (it's whatever was outside the empty fence).
+            spoken_text = full_text
+        if spoken_text:
+            yield llm.ChatChunk(id="code-card-spoken", delta=llm.ChoiceDelta(role="assistant", content=spoken_text))
+
     async def llm_node(self, chat_ctx, tools, model_settings):
         # Step 5 hard stop: once the session-end sequence has been signaled
         # (time limit reached, candidate disconnected, or interview marked
@@ -1650,6 +1800,15 @@ class InterviewAgent(Agent):
         # directive built from it, not a fresh free-form question.
         _is_probe_turn = _has_next_turn_directive and not _has_moveon
         if not _is_probe_turn:
+            # A MOVE_ON/anchor turn opens a NEW topic, and per
+            # question_bank_adapter.py a topic's opening question can legally be a
+            # code_trace/snippet_eval/query_trace question whose instructions tell
+            # the LLM to emit a fenced code block right here. Streaming raw chunks
+            # straight to TTS (the old behavior) spoke that fenced code aloud
+            # verbatim -- buffer the full text first so _speak_with_code_card_check
+            # can strip any fence before anything reaches TTS, same as PROBE turns.
+            _pieces: list[str] = []
+            _raw_chunks: list = []
             async with activity.llm.chat(
                 chat_ctx=effective_ctx,
                 tools=tools,
@@ -1658,7 +1817,13 @@ class InterviewAgent(Agent):
                 extra_kwargs={"temperature": turn_temp},
             ) as stream:
                 async for chunk in stream:
-                    yield chunk
+                    _raw_chunks.append(chunk)
+                    delta = getattr(chunk, "delta", None)
+                    if delta is not None and delta.content:
+                        _pieces.append(delta.content)
+            _full_text = "".join(_pieces).strip()
+            async for _out_chunk in self._speak_with_code_card_check(_full_text, _raw_chunks):
+                yield _out_chunk
             return
 
         async def _generate_full_text(extra_system: str = "") -> tuple[str, list]:
@@ -1713,100 +1878,12 @@ class InterviewAgent(Agent):
 
         # Code-card overlay: the question-generation prompt is allowed to emit a
         # fenced ```code block``` for a TRACE/OUTPUT question ("what does this
-        # return?"). Detect it here, publish it to the frontend over the data
-        # channel, and replace raw_chunks with a synthetic one carrying ONLY the
-        # spoken lead-in -- TTS must never speak the code itself. Rebuilding as
-        # one clean chunk (rather than patching the streamed raw_chunks in place)
-        # sidesteps the fence markers being split across arbitrary chunk
-        # boundaries, which streamed token-by-token text makes unreliable to
-        # detect chunk-by-chunk.
-        _card = extract_code_card(full_text) if full_text else None
-        if _card is not None:
-            spoken_text, code, _card_question_type, _card_language = _card
-            if code and self._room is not None:
-                _complexity_secs = max(20, min(90, 20 + 4 * code.count("\n")))
-                _card_id = f"card_{self._code_card_generation + 1}_{int(time.time() * 1000)}"
-                try:
-                    await self._room.local_participant.publish_data(
-                        json.dumps({
-                            "type": "code_card",
-                            "card_id": _card_id,
-                            "prompt": spoken_text,
-                            "code": code,
-                            # Real programming/query language for syntax highlighting
-                            # (e.g. "python", "sql") -- falls back to the question-type
-                            # tag ("code_trace"/"query_trace") if no language annotation
-                            # was present, so the frontend always gets a non-empty hint.
-                            "language": _card_language or _card_question_type,
-                            "timer_secs": _complexity_secs,
-                        }).encode("utf-8"),
-                        reliable=True,
-                    )
-                    # Wait briefly for the frontend to ack that it actually rendered the
-                    # card (see the "code_card_ack" data-channel handler near
-                    # self._code_card_ack_event) before committing to the spoken lead-in.
-                    # A client that can't render (audio-only, degraded connection, a
-                    # build that doesn't wire the listener) never acks -- on timeout we
-                    # fall back to a plain verbal question instead of describing a
-                    # snippet the candidate can't see. Per spec: never read code aloud
-                    # as that fallback -- speak a generic verbal substitute instead.
-                    self._code_card_ack_event = asyncio.Event()
-                    self._code_card_ack_id = _card_id
-                    _acked = False
-                    try:
-                        await asyncio.wait_for(self._code_card_ack_event.wait(), timeout=3.0)
-                        _acked = True
-                    except asyncio.TimeoutError:
-                        pass
-                    if not _acked:
-                        logger.warning(
-                            "[CODE_CARD] no render ack from client within 3s (card_id=%s) -- "
-                            "falling back to a verbal-only question, code never read aloud",
-                            _card_id,
-                        )
-                        await self._room.local_participant.publish_data(
-                            json.dumps({"type": "code_card_dismiss", "card_id": _card_id}).encode("utf-8"),
-                            reliable=True,
-                        )
-                        _no_ack_fallback_text = (
-                            "Let's skip that one since I can't confirm you're seeing the snippet -- "
-                            "let's move to the next question instead."
-                        )
-                        yield llm.ChatChunk(id="code-card-no-ack-fallback", delta=llm.ChoiceDelta(role="assistant", content=_no_ack_fallback_text))
-                        return
-                    self.code_card_active = True
-                    # Read back by _build_eval_payload() so the candidate's answer to
-                    # THIS card is scored with code-question calibration instead of
-                    # defaulting to generic "mechanism" -- see eval.py QuestionRecord.
-                    self.last_code_card_question_type = _card_question_type
-                    logger.info(
-                        "[CODE_CARD] published + acked | type=%s | timer=%ds | code_lines=%d",
-                        _card_question_type, _complexity_secs, code.count("\n") + 1,
-                    )
-                    # The frontend auto-hides the card locally after timer_secs but never
-                    # tells the backend -- without this, a candidate who never speaks at
-                    # all leaves code_card_active=True forever, which permanently disables
-                    # inactivity nudges (see the gate at "and not agent.code_card_active"
-                    # below) for the rest of the interview. Mirror the same timeout here so
-                    # a silent candidate still gets the normal nudge/recovery flow.
-                    self._code_card_generation += 1
-                    asyncio.create_task(
-                        self._clear_code_card_after_timeout(_complexity_secs, self._code_card_generation)
-                    )
-                except Exception as _card_err:
-                    logger.warning("[CODE_CARD] publish failed: %s -- speaking full text as fallback", _card_err)
-                    spoken_text = full_text
-            elif not code:
-                # Fence matched but no code survived stripping (e.g. an empty
-                # ``` ``` block) -- fall back to speaking the raw text rather
-                # than silently dropping content.
-                spoken_text = full_text
-            if spoken_text:
-                yield llm.ChatChunk(id="code-card-spoken", delta=llm.ChoiceDelta(role="assistant", content=spoken_text))
-            return
+        # return?"). _speak_with_code_card_check detects it, publishes it to the
+        # frontend over the data channel, and yields ONLY the spoken lead-in --
+        # TTS must never speak the code itself.
+        async for _out_chunk in self._speak_with_code_card_check(full_text, raw_chunks):
+            yield _out_chunk
 
-        for chunk in raw_chunks:
-            yield chunk
     async def tts_node(self, text, model_settings):
         activity = self._get_activity_or_raise()
         tts_engine = activity.tts
@@ -2784,7 +2861,13 @@ async def entrypoint(ctx: JobContext):
                 min_duration=0.5,
                 min_words=1,
                 discard_audio_if_uninterruptible=True,
-                resume_false_interruption=False,
+                # True (SDK default) -- a "false interruption" is background noise/breathing/
+                # echo that STT briefly misreads as the candidate speaking. With this at False,
+                # the agent paused and then NEVER resumed, permanently dropping the rest of
+                # its sentence on every false trigger -- the exact "voice gets stuck / cuts
+                # off mid-sentence" symptom. True pauses briefly, then resumes speaking from
+                # where it left off once false_interruption_timeout confirms no real speech.
+                resume_false_interruption=True,
                 false_interruption_timeout=3.0,
                 backchannel_boundary=(1.0, 3.5),
             ),
@@ -3638,6 +3721,44 @@ async def entrypoint(ctx: JobContext):
             # --- STT text cleanup / noise suppression ---
             content = _clean_stt_text(content)
             if not content:
+                return
+            # STT self-echo guard: Deepgram sometimes transcribes Ishitha's own TTS
+            # audio (mic bleed, or a brief misattribution around barge-in) as candidate
+            # speech, handing this handler a near-verbatim copy of the question that
+            # was JUST asked. Nobody asked to repeat anything, so candidate_asked_to_repeat
+            # never fires, and the eval pipeline scored it as a genuine (shallow/off-topic)
+            # answer and kept probing on it instead of just re-asking -- see the reported
+            # transcript where "Can you comment changes" / "to start with something
+            # fundamental" echoed Ishitha's own question back turn after turn with no
+            # rephrase ever happening. Only on a real end-of-turn (not a partial) and only
+            # once per question, so a candidate who legitimately quotes part of the
+            # question back while answering isn't looped forever.
+            if (
+                is_final_eot
+                and warmup_complete
+                and not agent.question_echo_rephrased_once
+                and _looks_like_interviewer_echo(content, _last_interviewer_question)
+            ):
+                agent.question_echo_rephrased_once = True
+                logger.warning(
+                    "[STT_ECHO] Turn %d: candidate text looks like an echo of the interviewer's "
+                    "own last question -- re-asking instead of scoring. echoed=%r",
+                    turn_snapshot, content[:80],
+                )
+                remove_system_messages_multi(chat_ctx, (
+                    "[META_QUESTION_DIRECTIVE", "[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT",
+                ))
+                chat_ctx.add_message(
+                    role="system",
+                    content=(
+                        "[META_QUESTION_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                        "The candidate did not answer -- what came through sounds like your own "
+                        "question echoed back (a transcription glitch), not a real response.\n"
+                        f"Ask this question again in simpler, shorter words: \"{(_last_interviewer_question or '').strip()}\"\n"
+                        "Do not mention the glitch. Do not score this as an answer. Ask only the "
+                        "re-asked question, under 15 words."
+                    ),
+                )
                 return
             # Code card: candidate answered (real speech reached this point), so dismiss
             # it and let inactivity nudges resume normally on their next turn.
@@ -5004,6 +5125,9 @@ async def entrypoint(ctx: JobContext):
                     # Store the FULL interviewer turn verbatim -- no sentence extraction,
                     # no length cap -- so the debug report shows the complete question.
                     _last_interviewer_question = clean_content.strip()
+                    # A genuinely new question is being tracked -- re-arm the STT
+                    # self-echo guard so it can fire again if this new question echoes too.
+                    agent.question_echo_rephrased_once = False
                     # H4 fix: validate the LLM actually asked about the expected topic
                     # before committing _last_question_topic. If it clearly switched to
                     # another known topic, or is asking a closing question, score under

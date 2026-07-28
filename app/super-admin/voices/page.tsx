@@ -31,6 +31,14 @@ type VoiceRegistry = {
   }>;
   builtInVoices: BuiltInVoice[];
 };
+type ElevenLabsCatalogVoice = {
+  id: string;
+  name: string;
+  description: string | null;
+  gender: "male" | "female" | null;
+  previewUrl: string | null;
+  category: string | null;
+};
 type Provider = "SARVAM" | "ELEVENLABS";
 const PROVIDER_META: Record<Provider, { label: string; color: string; bg: string; border: string; dot: string; activeBg: string; activeText: string }> = {
   SARVAM: {
@@ -62,6 +70,13 @@ export default function SuperAdminVoicesPage() {
   const [selectedSarvamIds, setSelectedSarvamIds] = useState<string[]>([]);
   const [registry, setRegistry] = useState<VoiceRegistry | null>(null);
   const [form, setForm] = useState({ provider: "ELEVENLABS" as Provider, id: "" });
+  // ElevenLabs full-catalog browse picker (fetched live from ElevenLabs, not the curated built-in list)
+  const [showElevenLabsPicker, setShowElevenLabsPicker] = useState(false);
+  const [elevenLabsCatalog, setElevenLabsCatalog] = useState<ElevenLabsCatalogVoice[] | null>(null);
+  const [elevenLabsCatalogLoading, setElevenLabsCatalogLoading] = useState(false);
+  const [elevenLabsCatalogError, setElevenLabsCatalogError] = useState<string | null>(null);
+  const [elevenLabsSearch, setElevenLabsSearch] = useState("");
+  const [selectedElevenLabsIds, setSelectedElevenLabsIds] = useState<string[]>([]);
   // Preview state
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -174,6 +189,53 @@ export default function SuperAdminVoicesPage() {
     await submitAction("add", { id, provider: form.provider });
     setForm((p) => ({ ...p, id: "" }));
   };
+  const loadElevenLabsCatalog = async () => {
+    if (elevenLabsCatalog || elevenLabsCatalogLoading) return;
+    setElevenLabsCatalogLoading(true);
+    setElevenLabsCatalogError(null);
+    try {
+      const res = await fetch("/api/super-admin/voices/elevenlabs-catalog", { cache: "no-store" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || "Failed to load ElevenLabs catalog");
+      setElevenLabsCatalog(data.voices as ElevenLabsCatalogVoice[]);
+    } catch (e: unknown) {
+      setElevenLabsCatalogError(e instanceof Error ? e.message : "Failed to load ElevenLabs catalog");
+    } finally {
+      setElevenLabsCatalogLoading(false);
+    }
+  };
+  const missingElevenLabsCatalog = useMemo(() => {
+    if (!elevenLabsCatalog) return [];
+    const activeIds = new Set(registry?.selectableVoices.map((v) => v.id) ?? []);
+    const term = elevenLabsSearch.trim().toLowerCase();
+    return elevenLabsCatalog
+      .filter((v) => !activeIds.has(v.id))
+      .filter((v) => (term ? [v.id, v.name, v.description ?? ""].join(" ").toLowerCase().includes(term) : true));
+  }, [elevenLabsCatalog, elevenLabsSearch, registry]);
+  const addElevenLabsFromCatalog = async () => {
+    if (!selectedElevenLabsIds.length) { toast.error("Select at least one voice"); return; }
+    setSaving(true);
+    try {
+      for (const id of selectedElevenLabsIds) {
+        const res = await fetch("/api/super-admin/voices", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "add", provider: "ELEVENLABS", id }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.error || `Failed to add ${id}`);
+      }
+      toast.success(`${selectedElevenLabsIds.length} ElevenLabs voice(s) added`);
+      setSelectedElevenLabsIds([]);
+      setShowElevenLabsPicker(false);
+      await loadRegistry();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to add voices");
+      reportClientError(e, { action: "bulk_add_elevenlabs_voices" });
+    } finally {
+      setSaving(false);
+    }
+  };
   const addSarvam = async () => {
     if (!selectedSarvamIds.length) { toast.error("Select at least one voice"); return; }
     setSaving(true);
@@ -285,14 +347,89 @@ export default function SuperAdminVoicesPage() {
             </div>
             {/* Voice ID or Sarvam picker */}
             {form.provider !== "SARVAM" ? (
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Voice ID</label>
-                <input
-                  value={form.id}
-                  onChange={(e) => setForm((p) => ({ ...p, id: e.target.value }))}
-                  placeholder="Paste ElevenLabs voice ID…"
-                  className="h-9 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
-                />
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Voice ID</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !showElevenLabsPicker;
+                      setShowElevenLabsPicker(next);
+                      if (next) void loadElevenLabsCatalog();
+                    }}
+                    className="text-[10px] font-bold text-violet-600 hover:text-violet-700"
+                  >
+                    {showElevenLabsPicker ? "Paste ID instead" : "Browse all voices"}
+                  </button>
+                </div>
+                {!showElevenLabsPicker ? (
+                  <input
+                    value={form.id}
+                    onChange={(e) => setForm((p) => ({ ...p, id: e.target.value }))}
+                    placeholder="Paste ElevenLabs voice ID…"
+                    className="h-9 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                  />
+                ) : (
+                  <div className="space-y-1.5">
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-gray-400" />
+                      <input
+                        value={elevenLabsSearch}
+                        onChange={(e) => setElevenLabsSearch(e.target.value)}
+                        placeholder="Search ElevenLabs library…"
+                        className="h-8 w-full rounded-lg border border-gray-200 bg-violet-50 pl-8 pr-3 text-xs font-medium text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-violet-400 focus:bg-white focus:ring-2 focus:ring-violet-100"
+                      />
+                    </div>
+                    <div className="max-h-56 overflow-y-auto rounded-xl border border-gray-200 bg-white">
+                      {elevenLabsCatalogLoading ? (
+                        <div className="flex items-center justify-center gap-2 px-4 py-6 text-xs font-medium text-gray-500">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading ElevenLabs library…
+                        </div>
+                      ) : elevenLabsCatalogError ? (
+                        <p className="px-4 py-3 text-xs font-medium text-rose-600">{elevenLabsCatalogError}</p>
+                      ) : missingElevenLabsCatalog.length === 0 ? (
+                        <p className="px-4 py-3 text-xs font-medium text-gray-500">
+                          {elevenLabsSearch ? "No voices match your search" : "All ElevenLabs voices are already in the engine"}
+                        </p>
+                      ) : (
+                        <div className="p-1.5 space-y-0.5">
+                          {missingElevenLabsCatalog.map((voice) => {
+                            const checked = selectedElevenLabsIds.includes(voice.id);
+                            return (
+                              <label
+                                key={voice.id}
+                                className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 transition hover:bg-violet-50"
+                              >
+                                <div className={cn(
+                                  "flex h-4 w-4 shrink-0 items-center justify-center rounded border-2 transition",
+                                  checked ? "border-violet-500 bg-violet-500" : "border-slate-300"
+                                )}>
+                                  {checked && <svg className="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                                </div>
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() =>
+                                    setSelectedElevenLabsIds((prev) =>
+                                      checked ? prev.filter((id) => id !== voice.id) : [...prev, voice.id]
+                                    )
+                                  }
+                                  className="sr-only"
+                                />
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-gray-900">{voice.name}</p>
+                                  <p className="truncate text-[11px] text-gray-400">
+                                    {[voice.gender, voice.category].filter(Boolean).join(" · ") || voice.id}
+                                  </p>
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-1">
@@ -369,8 +506,17 @@ export default function SuperAdminVoicesPage() {
             {/* Add button */}
             <button
               type="button"
-              disabled={saving || (form.provider === "SARVAM" ? selectedSarvamIds.length === 0 : !form.id.trim())}
-              onClick={form.provider === "SARVAM" ? addSarvam : onAdd}
+              disabled={
+                saving ||
+                (form.provider === "SARVAM"
+                  ? selectedSarvamIds.length === 0
+                  : showElevenLabsPicker
+                    ? selectedElevenLabsIds.length === 0
+                    : !form.id.trim())
+              }
+              onClick={
+                form.provider === "SARVAM" ? addSarvam : showElevenLabsPicker ? addElevenLabsFromCatalog : onAdd
+              }
               className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-violet-500 to-blue-400 text-xs font-bold text-white shadow-sm shadow-orange-200 transition hover:from-orange-600 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
@@ -378,7 +524,11 @@ export default function SuperAdminVoicesPage() {
                 ? selectedSarvamIds.length > 0
                   ? `Add ${selectedSarvamIds.length} Voice${selectedSarvamIds.length > 1 ? "s" : ""}`
                   : "Select Voices to Add"
-                : "Add to Engine"}
+                : showElevenLabsPicker
+                  ? selectedElevenLabsIds.length > 0
+                    ? `Add ${selectedElevenLabsIds.length} Voice${selectedElevenLabsIds.length > 1 ? "s" : ""}`
+                    : "Select Voices to Add"
+                  : "Add to Engine"}
             </button>
           </div>
         </div>

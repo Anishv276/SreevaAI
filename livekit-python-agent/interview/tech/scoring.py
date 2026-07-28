@@ -203,7 +203,19 @@ RS-c — OFF_TOPIC: Did candidate answer a COMPLETELY DIFFERENT question — one
       falls through to the content signal below, NOT off_topic.
       off_topic ONLY fires when the subject matter itself is unrelated to what was asked.
 
-If none of RS-a/b/c fired: this answer gets exactly ONE content signal (below).\
+RS-d — GARBLED/UNINTELLIGIBLE TRANSCRIPT: Is the text itself broken, muffled, or noise —
+      not a real sentence in any language, mostly fragments/filler ("uh- wha- sorry- can
+      you- mm"), cut off mid-word, or otherwise not coherent enough to tell what the
+      candidate meant to say? This is a TRANSCRIPTION problem (mic cutting out, background
+      noise, connection glitch), not a weak or wrong answer.
+      → YES: SIGNAL = clarification_request. STOP.
+      NOT this if the text is short but forms a real, coherent attempt at an answer, even a
+      one-word or terse technical one ("O(log n)", "primary key", "yes", "I don't know",
+      "b-tree index") — those are real content, not noise, and must fall through normally.
+      Judge this on whether a human reading the transcript could tell what topic the
+      candidate was trying to address at all, not on how complete or correct the answer is.
+
+If none of RS-a/b/c/d fired: this answer gets exactly ONE content signal (below).\
 """
 
 
@@ -321,9 +333,16 @@ CRITICAL ordering rules:
 4. recovery_attempted: candidate catches their OWN error unprompted and lands correct. Score the landing.
 5. pure_denial is ONLY for a complete non-attempt. ANY attempt — even wrong — is a different signal.
 
-FALLBACK RULE (no null ever): If you truly cannot decide, first re-check AXIS 1 — if any claim
-is wrong, it's depth_misconception; if the attempt is a hollow label, depth_shallow. Only use
-depth_shallow as a last resort when the answer is a genuine but empty attempt.\
+FALLBACK RULE (no null ever, but do NOT use this as a shortcut): Before ever landing on
+depth_shallow, you MUST re-walk the two axes explicitly:
+  - Is any specific claim actually FALSE? → depth_misconception, not depth_shallow.
+  - Is it a real, if imperfect, mechanism trace (even one step)? → depth_clear, not depth_shallow.
+  - Is it a fluent checklist/best-practice recital with no claim tied to THIS question? → depth_generic, not depth_shallow.
+  - Is it grounded in a specific real instance with a constraint and outcome? → depth_applied/depth_mastered, not depth_shallow.
+  - Is it a complete non-attempt with nothing said? → pure_denial, not depth_shallow.
+depth_shallow is a narrow, specific cell — a correct label with truly nothing underneath it —
+not a default resting place for uncertainty. Reaching it requires ruling out all five alternatives
+above, not just failing to be sure which one applies.\
 """
 
 
@@ -351,7 +370,10 @@ async def _classify_signal_from_answer(
         "that best describes this specific answer.\n\n"
         f"SIGNALS (choose exactly one):\n{_signal_descriptions}\n\n"
         "Output ONLY valid JSON: {\"signal\": \"<signal_name>\", \"signal_reason\": \"<3-12 word exact quote from their answer>\"}\n"
-        "signal MUST be exactly one of the signal names listed above. If unsure, use depth_shallow. Never null."
+        "signal MUST be exactly one of the signal names listed above. Never null — but do not default to "
+        "depth_shallow out of uncertainty. Rule out a wrong claim (depth_misconception), a real mechanism "
+        "trace (depth_clear), a generic checklist (depth_generic), a grounded instance (depth_applied), and "
+        "a non-attempt (pure_denial) first. depth_shallow is only a correct label with truly nothing underneath."
     )
     _user = f"QUESTION: {last_question}\n\nANSWER: {candidate_answer}"
     _usage: dict | None = None
@@ -608,7 +630,11 @@ async def _call_signal_classification(
             "You may reason briefly (2-4 sentences) before giving your final answer, but your final output\n"
             "MUST end with valid JSON on its own line:\n"
             '{"signal": "<signal_name>", "signal_reason": "<3-12 word exact quote from their answer>"}\n\n'
-            "signal MUST be exactly one of the signal names below. NEVER null. If unsure, use depth_shallow.\n"
+            "signal MUST be exactly one of the signal names below. NEVER null — but do not default to\n"
+            "depth_shallow out of uncertainty. Rule out a wrong claim (depth_misconception), a real\n"
+            "mechanism trace (depth_clear), a generic checklist (depth_generic), a grounded instance\n"
+            "(depth_applied/depth_mastered), and a non-attempt (pure_denial) first. depth_shallow is only\n"
+            "a correct label with truly nothing underneath — not a resting place for indecision.\n"
             f"Topic: {active_topic or 'general'} | Level: {level}\n"
             + (f"Question type: {question_type} (see code-question calibration rules below)\n" if question_type else "")
             + "\n"

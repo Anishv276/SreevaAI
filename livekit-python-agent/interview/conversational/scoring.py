@@ -278,7 +278,14 @@ G0e — OFF_TOPIC: Candidate answered a COMPLETELY DIFFERENT question, unrelated
       matter? → YES: SIGNAL = off_topic. STOP.
       NOT this for a vague or shallow ON-TOPIC attempt — that falls to content gates.
 
-If G0a-G0e = NO: evaluate ALL of the content gates below and pick the STRONGEST match.
+G0f — GARBLED/UNINTELLIGIBLE TRANSCRIPT: Is the text itself broken, muffled, or noise — not
+      a real sentence, mostly fragments/filler, cut off mid-word, or otherwise not coherent
+      enough to tell what the candidate meant? A transcription/audio problem, not a weak
+      answer. → YES: SIGNAL = clarification_request. STOP.
+      NOT this if the text is short but forms a real, coherent attempt at an answer, even a
+      terse one ("yes", "I don't know", "cold calling") — that's real content, not noise.
+
+If G0a-G0f = NO: evaluate ALL of the content gates below and pick the STRONGEST match.
 
 ---- TECHNICAL CONTENT GATES ----
 

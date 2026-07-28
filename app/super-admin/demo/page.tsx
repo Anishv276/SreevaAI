@@ -2,11 +2,76 @@
 import { useState, useEffect, useRef } from "react";
 import {
     Plus, Upload, Loader2, CheckCircle2,
-    AlertCircle, Eye, EyeOff, Users, 
+    AlertCircle, Eye, EyeOff, Users,
     FileText, Zap, MessageSquare, Code2, X, RefreshCw, Trash2,
-    ChevronRight, ArrowLeft, Sparkles, Pencil, Check, Mic
+    ChevronRight, ArrowLeft, Sparkles, Pencil, Check, Mic, ChevronDown
 } from "lucide-react";
 import { ALL_VOICES } from "@/lib/constants/voices";
+
+type ElevenLabsCatalogVoice = { id: string; name: string; description: string | null; gender: "male" | "female" | null; previewUrl: string | null; category: string | null };
+
+const SARVAM_VOICES = ALL_VOICES.filter(v => v.provider === "SARVAM");
+
+function VoiceDropdown({
+    label, voices, loading, error, selectedId, onSelect,
+}: {
+    label: string;
+    voices: Array<{ id: string; name: string; description?: string | null }>;
+    loading?: boolean;
+    error?: string | null;
+    selectedId: string;
+    onSelect: (id: string) => void;
+}) {
+    const [open, setOpen] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        const onClick = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+        document.addEventListener("mousedown", onClick);
+        return () => document.removeEventListener("mousedown", onClick);
+    }, []);
+    const selected = voices.find(v => v.id === selectedId);
+    return (
+        <div className="relative" ref={ref}>
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{label}</label>
+            <button
+                type="button"
+                onClick={() => setOpen(p => !p)}
+                className="mt-1 flex h-9 w-full items-center justify-between rounded-lg px-3 text-xs font-medium text-gray-700 transition hover:border-violet-300"
+                style={{ border: "1px solid #E9E7FF" }}
+            >
+                <span className={selected ? "truncate font-semibold text-gray-900" : "text-gray-400"}>
+                    {loading ? "Loading…" : selected ? selected.name : "Select a voice"}
+                </span>
+                <ChevronDown className={`h-3.5 w-3.5 flex-shrink-0 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`} />
+            </button>
+            {open && (
+                <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-xl bg-white shadow-xl" style={{ border: "1px solid #E9E7FF" }}>
+                    {loading ? (
+                        <div className="flex items-center justify-center gap-2 px-4 py-5 text-xs font-medium text-gray-500">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading voices…
+                        </div>
+                    ) : error ? (
+                        <p className="px-4 py-3 text-xs font-medium text-rose-600">{error}</p>
+                    ) : voices.length === 0 ? (
+                        <p className="px-4 py-3 text-xs font-medium text-gray-400">No voices available</p>
+                    ) : (
+                        voices.map(v => (
+                            <button
+                                key={v.id}
+                                type="button"
+                                onClick={() => { onSelect(v.id); setOpen(false); }}
+                                className={`flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs transition hover:bg-violet-50 ${selectedId === v.id ? "bg-violet-50/60 text-violet-700" : "text-gray-700"}`}
+                            >
+                                <Mic className="h-3.5 w-3.5 flex-shrink-0 text-violet-400" />
+                                <span className="truncate font-medium">{v.name}</span>
+                            </button>
+                        ))
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
 import { Slider } from "@/components/ui/slider";
 
 interface DemoTemplate {
@@ -295,6 +360,9 @@ function CreateTemplateWizard({ onClose, onCreated }: { onClose: () => void; onC
     const [interviewType, setInterviewType] = useState<"tech" | "conversational">("tech");
     const [level, setLevel] = useState(2);
     const [voiceId, setVoiceId] = useState("");
+    const [elevenLabsVoices, setElevenLabsVoices] = useState<ElevenLabsCatalogVoice[]>([]);
+    const [elevenLabsLoading, setElevenLabsLoading] = useState(true);
+    const [elevenLabsError, setElevenLabsError] = useState<string | null>(null);
     const [generating, setGenerating] = useState(false);
     const [questions, setQuestions] = useState<any[]>([]);
     const [editingIdx, setEditingIdx] = useState<number | null>(null);
@@ -303,6 +371,24 @@ function CreateTemplateWizard({ onClose, onCreated }: { onClose: () => void; onC
     const [finalizing, setFinalizing] = useState(false);
     const [error, setError] = useState("");
     const fileRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        const loadElevenLabsVoices = async () => {
+            setElevenLabsLoading(true);
+            setElevenLabsError(null);
+            try {
+                const res = await fetch("/api/super-admin/voices/elevenlabs-catalog", { cache: "no-store" });
+                const data = await res.json().catch(() => null);
+                if (!res.ok) throw new Error(data?.error || "Failed to load ElevenLabs voices");
+                setElevenLabsVoices(data.voices || []);
+            } catch (e: unknown) {
+                setElevenLabsError(e instanceof Error ? e.message : "Failed to load ElevenLabs voices");
+            } finally {
+                setElevenLabsLoading(false);
+            }
+        };
+        void loadElevenLabsVoices();
+    }, []);
 
     // Step 1: Create template with title
     const handleTitleNext = async () => {
@@ -596,19 +682,21 @@ function CreateTemplateWizard({ onClose, onCreated }: { onClose: () => void; onC
                         {/* Voice */}
                         <div className="space-y-1.5">
                             <label className="text-xs font-semibold uppercase tracking-wider text-gray-400">Interview Voice</label>
-                            <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto pr-1">
-                                {ALL_VOICES.slice(0, 8).map(v => (
-                                    <button
-                                        key={v.id}
-                                        type="button"
-                                        onClick={() => setVoiceId(v.id)}
-                                        className={`flex items-center gap-2 p-2.5 rounded-xl text-left transition-all text-xs font-medium ${voiceId === v.id ? "text-violet-700" : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"}`}
-                                        style={voiceId === v.id ? { background: "linear-gradient(135deg, rgba(139,92,246,0.1), rgba(59,130,246,0.06))", border: "1px solid rgba(139,92,246,0.25)" } : { border: "1px solid #E9E7FF" }}
-                                    >
-                                        <Mic className="h-3.5 w-3.5 flex-shrink-0" />
-                                        <span className="truncate">{v.name}</span>
-                                    </button>
-                                ))}
+                            <div className="grid grid-cols-2 gap-2">
+                                <VoiceDropdown
+                                    label="ElevenLabs"
+                                    voices={elevenLabsVoices}
+                                    loading={elevenLabsLoading}
+                                    error={elevenLabsError}
+                                    selectedId={voiceId}
+                                    onSelect={setVoiceId}
+                                />
+                                <VoiceDropdown
+                                    label="Sarvam"
+                                    voices={SARVAM_VOICES}
+                                    selectedId={voiceId}
+                                    onSelect={setVoiceId}
+                                />
                             </div>
                         </div>
 

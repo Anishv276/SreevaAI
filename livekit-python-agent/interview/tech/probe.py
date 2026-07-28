@@ -53,23 +53,28 @@ SIGNAL_PROBES: dict[str, dict] = {
         "question_type": "CLARIFICATION REPHRASE",
         "voice_note":    "Helpful and patient, not apologetic.",
         "directive": """\
-The candidate asked you to clarify: "{original_question}" → their clarification request was
-"{clarification_request_text}".
+You asked: "{original_question}" and what came back was: "{clarification_request_text}".
 
-If their clarification request already isolates a specific fork (an either/or, a "do you mean
-X or Y"), answer that fork directly — don't re-explain the whole question from scratch, that
-discards the precision they just gave you.
-
-Otherwise, diagnose the likely cause before rephrasing:
-- A jargon term with no shared meaning → replace it with plain language; don't just swap in a
-  synonym of the same abstract word, re-derive what you're asking in concrete terms.
-- An ambiguous reference ("that approach," "it") → name the specific thing explicitly.
-- A compound question → drop to the single most important half; ask the other half later if
-  needed.
-- Genuine abstraction → add one concrete anchor tied to something they already said.
+First check what that actually is:
+- A real, coherent clarification ask (a question about your question, a "do you mean X or Y",
+  "what does that term mean") → diagnose the likely cause before rephrasing:
+  - A jargon term with no shared meaning → replace it with plain language; don't just swap in a
+    synonym of the same abstract word, re-derive what you're asking in concrete terms.
+  - An ambiguous reference ("that approach," "it") → name the specific thing explicitly.
+  - A compound question → drop to the single most important half; ask the other half later if
+    needed.
+  - Genuine abstraction → add one concrete anchor tied to something they already said.
+  If it already isolates a specific fork (an either/or), answer that fork directly — don't
+  re-explain the whole question from scratch, that discards the precision they just gave you.
+- Broken, muffled, or noise text — fragments, filler, cut off mid-word, or otherwise not a real
+  sentence (a transcription/audio glitch, not something they actually said to you) → there is
+  nothing to diagnose. Just ask the same question again in simpler, shorter words. Do not quote
+  or react to the garbled text, don't guess at what it might have meant, and don't mention any
+  audio/technical issue — just re-ask naturally as if repeating for someone who didn't catch it.
 
 Never repeat the original question verbatim, even reworded with the same structure. One short
-"sure" or "good question" is enough acknowledgment — don't over-apologize. Never narrate why
+"sure" or "good question" is enough acknowledgment for a real clarification ask — don't
+over-apologize, and skip any acknowledgment at all for the noise case above. Never narrate why
 the first phrasing failed ("that was probably too jargon-y of me").""",
     },
 

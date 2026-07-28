@@ -30,7 +30,7 @@ export type ValidatedQuestionBank = {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const TARGET_QUESTIONS = 12;
+const DEFAULT_TARGET_QUESTIONS = 12;
 const MAX_RETRIES = 2;
 
 const LEVEL_LABELS: Record<number, string> = {
@@ -148,7 +148,8 @@ code in the question bank (see rules below).`;
 function buildSystemPrompt(
     jdExtractedDetails: JdExtractedDetails,
     level: number,
-    interviewType: "tech" | "conversational"
+    interviewType: "tech" | "conversational",
+    targetQuestions: number
 ): string {
     const levelLabel = LEVEL_LABELS[level] ?? "Intermediate";
     const levelSpec = DIFFICULTY_LEVELS[level] ?? DIFFICULTY_LEVELS[2];
@@ -234,7 +235,7 @@ ${FORMAT_TYPE_TAXONOMY}
 ═══════════════════════════════
 RULES FOR QUESTION GENERATION
 ═══════════════════════════════
-1. Generate EXACTLY ${TARGET_QUESTIONS} questions total.
+1. Generate EXACTLY ${targetQuestions} questions total.
 2. PRIORITIZE must-have skills heavily — spend at least 70% of questions on must-have criteria.
    Give each must-have skill at least 1 question. Nice-to-haves can get 0-1 questions max.
 3. Assign each question a "skill" (e.g. "Python", "System Design") and a "subtopic"
@@ -295,7 +296,7 @@ Return strict JSON only:
   ]
 }
 
-All ${TARGET_QUESTIONS} questions must be in the "questions" array.
+All ${targetQuestions} questions must be in the "questions" array.
 Every question must include: skill, subtopic, question_type, format_type (one of the fixed
 Format-Type taxonomy values, exactly as spelled), root_cause_count, constraint_count,
 skill_tested, and question.
@@ -404,16 +405,23 @@ function normalizeKey(s: string): string {
 
 // ─── Validator ────────────────────────────────────────────────────────────────
 
-export function validateQuestionBank(raw: unknown): ValidatedQuestionBank {
+export function validateQuestionBank(
+    raw: unknown,
+    targetQuestions: number = DEFAULT_TARGET_QUESTIONS
+): ValidatedQuestionBank {
     if (!raw || typeof raw !== "object" || !Array.isArray((raw as any).questions)) {
         throw new LLMCallError("Question generation response missing a 'questions' array");
     }
     const rawQuestions = (raw as any).questions;
     const bankLevel = typeof (raw as any).level === "number" ? (raw as any).level : 2;
 
-    if (rawQuestions.length < TARGET_QUESTIONS - 2 || rawQuestions.length > TARGET_QUESTIONS + 2) {
+    // Small target counts (e.g. demo's 5) still get a ±2 tolerance band, but the
+    // lower bound is clamped at 1 so it never goes negative/zero for tiny targets.
+    const minQuestions = Math.max(1, targetQuestions - 2);
+    const maxQuestions = targetQuestions + 2;
+    if (rawQuestions.length < minQuestions || rawQuestions.length > maxQuestions) {
         throw new LLMCallError(
-            `Question generation returned ${rawQuestions.length} questions, expected ~${TARGET_QUESTIONS} (±2)`
+            `Question generation returned ${rawQuestions.length} questions, expected ~${targetQuestions} (±2)`
         );
     }
 
@@ -432,22 +440,32 @@ export function validateQuestionBank(raw: unknown): ValidatedQuestionBank {
     }
 
     const questions: BankQuestion[] = [];
+    // A single malformed entry (e.g. one snippet question leaking literal code)
+    // used to fail the ENTIRE batch, discarding N-1 perfectly good questions and
+    // burning a full retry (a fresh, billable LLM call) over one bad line. Instead,
+    // drop only the offending entry and keep going -- we only give up on the whole
+    // batch if too few valid questions survive (checked after the loop).
+    const dropReasons: string[] = [];
 
     for (const q of rawQuestions) {
         if (!q || typeof q !== "object") {
-            throw new LLMCallError("A question entry was not an object");
+            dropReasons.push("a question entry was not an object");
+            continue;
         }
         const { skill, subtopic, question_type, question, format_type, root_cause_count, constraint_count, skill_tested } =
             q as Record<string, unknown>;
 
         if (typeof skill !== "string" || !skill.trim()) {
-            throw new LLMCallError("A question entry is missing a valid 'skill' string");
+            dropReasons.push("a question entry is missing a valid 'skill' string");
+            continue;
         }
         if (typeof subtopic !== "string" || !subtopic.trim()) {
-            throw new LLMCallError("A question entry is missing a valid 'subtopic' string");
+            dropReasons.push("a question entry is missing a valid 'subtopic' string");
+            continue;
         }
         if (typeof question !== "string" || !question.trim()) {
-            throw new LLMCallError("A question entry is missing a valid 'question' string");
+            dropReasons.push("a question entry is missing a valid 'question' string");
+            continue;
         }
         let type: BankQuestionType;
         // Recovered format_type when the model wrote its value into question_type
@@ -458,21 +476,22 @@ export function validateQuestionBank(raw: unknown): ValidatedQuestionBank {
         } else {
             const recovered = recoverQuestionType(question_type, format_type, skill, subtopic);
             if (!recovered) {
-                throw new LLMCallError(`A question entry has invalid question_type "${question_type}"`);
+                dropReasons.push(`a question entry has invalid question_type "${question_type}"`);
+                continue;
             }
             type = recovered;
             recoveredFormatType = question_type as QuestionFormatType;
         }
 
         if (hasCodeLeakage(question)) {
-            throw new LLMCallError(
-                `Question field contains literal code/SQL — put intent in 'question', actual code is generated live: "${question.slice(0, 80)}"`
+            dropReasons.push(
+                `question field contained literal code/SQL (put intent in 'question', actual code is generated live): "${question.slice(0, 80)}"`
             );
+            continue;
         }
         if (isCompoundOrTooLong(question, bankLevel)) {
-            throw new LLMCallError(
-                `Question is compound or too long for voice delivery: "${question.slice(0, 80)}"`
-            );
+            dropReasons.push(`question was compound or too long for voice delivery: "${question.slice(0, 80)}"`);
+            continue;
         }
 
         questions.push({
@@ -489,6 +508,17 @@ export function validateQuestionBank(raw: unknown): ValidatedQuestionBank {
             constraint_count: coerceOptionalString(constraint_count),
             skill_tested: coerceOptionalString(skill_tested),
         });
+    }
+
+    // Only fail the batch if dropping bad entries left us below the tolerance
+    // band already accepted above -- this is the same floor used for the raw
+    // count check, so a batch that started acceptable-sized stays acceptable
+    // unless too many individual questions were actually broken.
+    if (questions.length < minQuestions) {
+        const reasonSample = dropReasons.slice(0, 3).join("; ");
+        throw new LLMCallError(
+            `Only ${questions.length} of ${rawQuestions.length} generated questions were valid (need >= ${minQuestions}). Sample issues: ${reasonSample}`
+        );
     }
 
     return { questions };
@@ -513,7 +543,7 @@ export async function generateQuestions(
     level: number,
     model: string,
     interviewType: "tech" | "conversational" = "tech",
-    targetQuestions: number = 12
+    targetQuestions: number = DEFAULT_TARGET_QUESTIONS
 ): Promise<ValidatedQuestionBank & { usage: ChatJSONResult["usage"] }> {
     // Parse if stored as a JSON string
     let details: JdExtractedDetails;
@@ -543,18 +573,32 @@ export async function generateQuestions(
     // winning attempt.
     const totalUsage = { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 };
     let lastError: unknown;
+    const systemPrompt = buildSystemPrompt(details, level, interviewType, targetQuestions);
+    const baseUserPrompt = `Generate the ${targetQuestions}-question bank now, following all rules exactly. Return strict JSON only.`;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         try {
+            // On retry, tell the model exactly what it got wrong last time instead
+            // of blindly re-rolling the identical prompt at temperature 0 (which
+            // tends to reproduce the same mistake). Also nudge temperature up
+            // slightly so the retry isn't a near-exact repeat of the failed output.
+            const userPrompt =
+                attempt === 0 || !lastError
+                    ? baseUserPrompt
+                    : `${baseUserPrompt}\n\nYour previous attempt was REJECTED for this reason: ${
+                          lastError instanceof Error ? lastError.message : String(lastError)
+                      }\nFix that specific problem in this new attempt while still following every other rule.`;
+
             const result = await chatJSON({
                 model,
-                systemPrompt: buildSystemPrompt(details, level, interviewType),
-                userPrompt: `Generate the ${targetQuestions}-question bank now, following all rules exactly. Return strict JSON only.`,
+                systemPrompt,
+                userPrompt,
                 maxTokens: 8000,
+                temperature: attempt === 0 ? 0 : 0.4,
             });
             totalUsage.inputTokens += result.usage.inputTokens;
             totalUsage.outputTokens += result.usage.outputTokens;
             totalUsage.cachedInputTokens += result.usage.cachedInputTokens;
-            const validated = validateQuestionBank(result.data);
+            const validated = validateQuestionBank(result.data, targetQuestions);
             return { ...validated, usage: totalUsage };
         } catch (err) {
             lastError = err;

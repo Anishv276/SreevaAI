@@ -187,6 +187,24 @@ def _build_jd_from_extracted(extracted_json: str | None) -> str:
         return "\n\n".join(parts)
     except Exception:
         return ""
+# Mirrors lib/ai-models-config.ts's DEFAULT_ORG_AI_CONFIG. The org-config columns
+# below are NOT NULL with schema defaults in Prisma, but get_interview_context()
+# reads them through a LEFT JOIN "OrganizationDetails" -- a Job whose
+# organizationId doesn't resolve to a real org row (e.g. NULL, orphaned) makes
+# every o.* column come back SQL NULL despite the Prisma-side default, silently
+# breaking the live interview's model selection and, downstream, report
+# generation (str(None) == "None", a truthy bogus model name). Apply the same
+# fallback here that the Node admin UI applies when it reads/saves this config.
+_DEFAULT_ORG_AI_CONFIG = {
+    "sttModel":           "flux-general-en",
+    "ttsProvider":        "ELEVENLABS",
+    "ttsModel":           "eleven_turbo_v2_5",
+    "llmInterviewLive":   "gpt-4.1-mini",
+    "llmInterviewEval":   "gpt-4.1-nano",
+    "llmInterviewReport": "gpt-5.4-mini",
+}
+
+
 async def get_interview_context(app_id: str) -> dict:
     """Fetch candidate and JD context from PostgreSQL via asyncpg (5-attempt retry)."""
     if not DATABASE_URL:
@@ -240,14 +258,17 @@ async def get_interview_context(app_id: str) -> dict:
                 "interviewStatus":      row["interviewStatus"],
                 "questionBankSnapshot":       row["questionBankSnapshot"],  # frozen Job.questionBank -- every interview type
                 "questionBankVersionUsed":    row["questionBankVersionUsed"],
-                # AI model config -- all from org DB, no hardcoded defaults
-                "sttModel":             row["sttModel"],
-                "ttsProvider":          row["ttsProvider"],
-                "ttsModel":             row["ttsModel"],
+                # AI model config -- from org DB, falling back to
+                # _DEFAULT_ORG_AI_CONFIG when the org row didn't resolve
+                # (orphaned/NULL Job.organizationId) so the LEFT JOIN miss
+                # can't silently propagate NULL/"None" into model selection.
+                "sttModel":             row["sttModel"]           or _DEFAULT_ORG_AI_CONFIG["sttModel"],
+                "ttsProvider":          row["ttsProvider"]        or _DEFAULT_ORG_AI_CONFIG["ttsProvider"],
+                "ttsModel":             row["ttsModel"]           or _DEFAULT_ORG_AI_CONFIG["ttsModel"],
                 "ttsSpeed":             row["ttsSpeed"],
-                "llmInterviewLive":     row["llmInterviewLive"],
-                "llmInterviewEval":     row["llmInterviewEval"],
-                "llmInterviewReport":   row["llmInterviewReport"],
+                "llmInterviewLive":     row["llmInterviewLive"]   or _DEFAULT_ORG_AI_CONFIG["llmInterviewLive"],
+                "llmInterviewEval":     row["llmInterviewEval"]   or _DEFAULT_ORG_AI_CONFIG["llmInterviewEval"],
+                "llmInterviewReport":   row["llmInterviewReport"] or _DEFAULT_ORG_AI_CONFIG["llmInterviewReport"],
             }
         except Exception as e:
             last_error = e

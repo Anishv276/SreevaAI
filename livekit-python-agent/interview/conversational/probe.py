@@ -27,20 +27,25 @@ SIGNAL_PROBES: dict[str, dict] = {
         "question_type": "CLARIFICATION REPHRASE",
         "voice_note":    "Helpful and patient, not apologetic.",
         "directive": """\
-The candidate asked you to clarify: "{original_question}" → their clarification request was
-"{clarification_request_text}".
+You asked: "{original_question}" and what came back was: "{clarification_request_text}".
 
-If their clarification request already isolates a specific fork (an either/or, a "do you mean
-X or Y"), answer that fork directly — don't re-explain the whole question from scratch.
-
-Otherwise, diagnose the likely cause before rephrasing:
-- A sales-jargon term with no shared meaning (MEDDIC, BANT, ACV) → replace with plain language.
-- An ambiguous reference ("that deal," "it") → name the specific thing explicitly.
-- A compound question → drop to the single most important half.
-- Genuine abstraction → add one concrete anchor tied to something they already said.
+First check what that actually is:
+- A real, coherent clarification ask (a question about your question, a "do you mean X or Y") →
+  diagnose the likely cause before rephrasing:
+  - A sales-jargon term with no shared meaning (MEDDIC, BANT, ACV) → replace with plain language.
+  - An ambiguous reference ("that deal," "it") → name the specific thing explicitly.
+  - A compound question → drop to the single most important half.
+  - Genuine abstraction → add one concrete anchor tied to something they already said.
+  If it already isolates a specific fork, answer that fork directly — don't re-explain the
+  whole question from scratch.
+- Broken, muffled, or noise text — fragments, filler, cut off mid-word, not a real sentence (a
+  transcription/audio glitch, not something they actually said) → nothing to diagnose. Just ask
+  the same question again in simpler, shorter words. Don't quote or react to the garbled text,
+  don't guess what it meant, don't mention any audio/technical issue.
 
 Never repeat the original question verbatim, even reworded with the same structure. One short
-"sure" or "good question" is enough acknowledgment. Never narrate why the first phrasing failed.""",
+"sure" or "good question" is enough acknowledgment for a real clarification ask — skip it
+entirely for the noise case. Never narrate why the first phrasing failed.""",
     },
 
     "rephrase_request": {

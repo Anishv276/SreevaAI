@@ -135,7 +135,13 @@ export async function POST(request: Request) {
     try {
         const session = await getSession();
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-        if (session.orgId) {
+        if (!session.orgId) {
+            return NextResponse.json(
+                { error: "No organization associated with this session. Job creation requires an organization context." },
+                { status: 400 }
+            );
+        }
+        {
             const org = await prisma.organizationDetails.findUnique({
                 where: { id: session.orgId },
                 select: { orgStatus: true, maxActiveJobs: true }
@@ -219,7 +225,7 @@ export async function POST(request: Request) {
                 interviewMode: data.interviewMode || "ats",
                 interviewType: data.interviewType || "tech",
                 level: data.level || 2,
-                organizationId: session.orgId!,
+                organizationId: session.orgId,
                 createdByCredentialId: session.userId,
                 ...aiConfig,
             },

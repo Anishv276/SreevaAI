@@ -76,7 +76,7 @@ export async function POST(request: Request) {
         // Single call: generate questions directly from structured JD data
         const validated = await generateQuestions(jdExtractedDetails, level, model, resolvedInterviewType, numQuestions);
 
-        const qEntry = await priceLlmUsage(validated.usage as any);
+        const qEntry = await priceLlmUsage({ model, ...validated.usage });
         currentUsageCostUsd += qEntry.costUsd;
         currentUsageJson.questionBank = { runs: 1, llm: [qEntry] };
 
