@@ -39,29 +39,48 @@ _PROVIDER_DEFAULTS: dict[str, Any] = {
     # generation is a fixed per-turn cost, not a growing one.
     "sarvam_v3_sample_rate":   24000,
     "sarvam_v2_sample_rate":   24000,
-    # Codec switched mp3 -> wav (lossless PCM). mp3 is lossy, and LiveKit then
-    # Opus-encodes for transport -- mp3->Opus is two lossy re-encodes stacked,
-    # which is exactly what reads as "muffled" on synthesized speech (mp3's
-    # pre-echo/smearing on sibilants is more audible on TTS than on music).
-    # wav carries linear PCM straight through to the single Opus transport
-    # hop. Bitrate is meaningless for lossless PCM but the field is required
-    # by the plugin API regardless of codec, so it's left populated.
+    # Codec: linear16 (raw headerless PCM).
+    #
+    # History: mp3 -> wav -> linear16. mp3 was dropped because it is lossy and
+    # LiveKit re-encodes to Opus for transport, and stacking two lossy passes is
+    # what read as "muffled" on synthesized speech. wav fixed the muffling but
+    # broke multi-chunk streaming: Sarvam emits a SEPARATE self-contained WAV
+    # file (own 44-byte RIFF header) per synthesis chunk. LiveKit's WAV decoder
+    # only tolerates a new RIFF header at the start of a pushed buffer, and over
+    # a WebSocket those chunks split across frame boundaries -- so a RIFF header
+    # lands mid-buffer, the decoder parses audio payload as a header and raises
+    # "Invalid WAV file: missing RIFF/WAVE". Every frame for the turn is then
+    # discarded ("no audio frames were pushed") and the agent goes silent. That
+    # only surfaced once tts_node began pushing multiple sentences per turn;
+    # single-push turns produced exactly one WAV and never hit the boundary.
+    #
+    # linear16 is the same lossless PCM as wav but with NO container header, so
+    # concatenated chunks are unambiguous by construction and the framework
+    # routes it through its raw-PCM path (mime audio/pcm) instead of the
+    # container decoder. Keeps the anti-muffling win, removes the failure mode.
+    #
+    # Bitrate is meaningless for lossless PCM but the plugin API requires the
+    # field regardless of codec, so it stays populated.
     "sarvam_output_bitrate":   "128k",
-    "sarvam_output_codec":     "wav",
-    # min_buffer_size = chars before Sarvam starts processing (not frames/bytes).
-    # The plugin sends text to Sarvam WORD BY WORD over the WS (see word_stream in
-    # livekit-plugins-sarvam tts.py send_task) -- these two values are the ONLY
-    # server-side control over how many of those words get grouped into one
-    # synthesis/prosody unit. Too low = Sarvam cuts a chunk after a ~4-6 word
-    # fragment, giving each fragment its own prosody arc and producing the
-    # disjointed "word... [gap] ...word" delivery. Raised to the plugin's own max
-    # (200/500) so a full turn (already pushed as a single push_text() call, see
-    # tts_node's Sarvam branch in agent_runtime.py) is chunked as few times as
-    # possible server-side, minimizing prosody-reset boundaries within one turn.
-    "sarvam_min_buffer":       200,
-    # max_chunk_length = chars per chunk. Raised alongside min_buffer_size so Sarvam
-    # isn't forced to cut a clause short right after crossing the new buffer floor.
-    "sarvam_max_chunk":        500,
+    "sarvam_output_codec":     "linear16",
+    # min_buffer_size = chars Sarvam waits for before it starts synthesizing.
+    # This is a direct time-to-first-audio cost: nothing is spoken until this many
+    # characters have arrived. 200 (the plugin max) was chosen when tts_node pushed
+    # the entire turn in one call, where the text was already all present so the
+    # floor cost nothing. Now that tts_node streams sentence-by-sentence
+    # (see the Sarvam branch in agent_runtime.py) a 200-char floor would hold the
+    # first sentence hostage waiting for the third -- reintroducing exactly the
+    # startup lag the streaming change removes.
+    #
+    # 80 is the balance point: comfortably longer than a short fragment (so Sarvam
+    # still groups a full clause into one prosody unit rather than synthesizing
+    # 4-6 word snippets) but short enough that a typical opening sentence clears
+    # the floor on its own and audio starts immediately.
+    "sarvam_min_buffer":       80,
+    # max_chunk_length = max chars per synthesis chunk. Kept generous so Sarvam is
+    # never forced to cut a long sentence mid-clause; only the floor above needed
+    # lowering for latency.
+    "sarvam_max_chunk":        300,
     "sarvam_v2_pitch":         0.0,
     "sarvam_v2_loudness":      1.0,
     # Changed from 0.80. bulbul:v3 only, range 0.01-2.0, plugin default 0.6.

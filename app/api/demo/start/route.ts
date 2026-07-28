@@ -19,8 +19,8 @@ import { db } from "@/lib/prisma-demo";
 import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
 import { normalizeEmail } from "@/lib/email";
 import { apiErrorResponse } from "@/lib/slack-error-logger";
+import { getVoiceById } from "@/lib/constants/voices";
 
-const DEMO_DURATION_MINS = 5;
 const DEMO_KILL_SWITCH_SECS = 294; // 4.9 minutes
 
 export async function POST(request: Request) {
@@ -52,6 +52,14 @@ export async function POST(request: Request) {
         }
         if (!template.questionBankSnapshot) {
             return NextResponse.json({ error: "Demo template questions not yet generated" }, { status: 409 });
+        }
+
+        // Resolve the wizard-selected voice against the canonical registry, which
+        // is what tells us whether it is a Sarvam speaker or an ElevenLabs voice.
+        // An unknown/stale id resolves to undefined and is treated as "not set".
+        const demoVoice = template.voiceId ? getVoiceById(template.voiceId) : undefined;
+        if (template.voiceId && !demoVoice) {
+            console.warn(`[DEMO/START] Unknown voiceId ${template.voiceId} on template ${templateId} — using agent default`);
         }
 
         // --- Create the DemoSession ---
@@ -109,6 +117,27 @@ export async function POST(request: Request) {
                         // Standard interview fields (agent reads these)
                         candidateName: clientName.trim(),
                         roleLabel: template.roleTitle,
+                        // Voice/level/type chosen in the template creation wizard.
+                        // Without these the agent fell back to a hardcoded speaker
+                        // and ignored the admin's selection entirely.
+                        //
+                        // The wizard's two voice dropdowns (ElevenLabs + Sarvam)
+                        // write into one shared voiceId field, so the provider has
+                        // to be resolved FROM the voice -- sending a Sarvam speaker
+                        // to ElevenLabs (or an ElevenLabs UUID to Sarvam) makes the
+                        // agent reject the id and silently fall back to a default
+                        // voice, which is exactly the "voice we selected isn't
+                        // what plays" bug. Null voiceId leaves all three unset and
+                        // lets the agent apply its own default.
+                        ...(demoVoice
+                            ? {
+                                voiceId: demoVoice.id,
+                                ttsProvider: demoVoice.provider,
+                                ttsModel: demoVoice.model,
+                            }
+                            : {}),
+                        level: template.level,
+                        interviewType: template.interviewType,
                         timeLimitMins: DEMO_KILL_SWITCH_SECS / 60,
                         killSwitchSecs: DEMO_KILL_SWITCH_SECS,
                     }),

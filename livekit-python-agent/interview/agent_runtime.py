@@ -1440,6 +1440,13 @@ class InterviewAgent(Agent):
         # turn it was opened for -- see that function's finally block.
         self._pending_eval_turn: Optional[int] = None
         self._tts_text_characters: int = 0
+        # Text most recently handed to TTS, kept so the STT self-echo guard can
+        # compare an incoming "candidate" turn against what the agent is actually
+        # saying right now. _last_interviewer_question only gets populated for
+        # post-warmup interview turns, which left the greeting/warmup window with
+        # nothing to compare against -- precisely where self-ingestion was seen.
+        # Capped so this never grows unbounded over a long session.
+        self._recent_tts_text: str = ""
         # Cleared when a user turn arrives, set after directive is injected.
         # llm_node waits on this before generating the real interview question.
         self._directive_ready: asyncio.Event = asyncio.Event()
@@ -1568,6 +1575,15 @@ class InterviewAgent(Agent):
     def _record_tts_text(self, text: str) -> None:
         if text:
             self._tts_text_characters += len(text)
+            # Keep a rolling tail of what was actually spoken (see _recent_tts_text).
+            # 600 chars comfortably covers one agent turn, which is all the echo
+            # comparison needs, while bounding memory on a long session.
+            self._recent_tts_text = (self._recent_tts_text + " " + text)[-600:]
+
+    def reset_recent_tts_text(self) -> None:
+        """Clear the spoken-text tail once a turn is fully done, so a later
+        genuine answer can't be matched against stale audio from minutes ago."""
+        self._recent_tts_text = ""
     async def on_user_turn_completed(self, turn_ctx, new_message) -> None:
         """LiveKit calls this after end-of-turn, before generating the reply."""
         handler = self._completed_user_turn_handler
@@ -1910,32 +1926,55 @@ class InterviewAgent(Agent):
             is_sarvam = type(tts_engine).__module__.startswith("livekit.plugins.sarvam")
 
             if is_sarvam:
-                # SARVAM: accumulate the ENTIRE agent turn, then push once.
+                # SARVAM: stream incrementally, but only at sentence boundaries.
                 #
-                # Root cause of "I'm doing... [gap] ...well... [gap] ...how are you":
-                # Each push_text() call = one independent synthesis unit with its own
-                # prosody arc. The old loop pushed one sentence at a time, so every
-                # clause got synthesized separately with a reset-prosody gap between them.
+                # This balances two failure modes that pull in opposite directions:
                 #
-                # Fix: collect ALL cleaned chunks from the upstream transform stream into
-                # a single string, then push once. Sarvam receives the full text as one
-                # segment → synthesizes it as one continuous utterance with natural
-                # prosody from start to finish — identical to how session.say() works
-                # (which is why greeting/warmup always sounded perfect).
+                #   1. Pushing every raw LLM chunk gives each 4-6 word fragment its
+                #      own prosody arc -> the disjointed "word... [gap] ...word"
+                #      delivery.
+                #   2. Buffering the ENTIRE turn before pushing (the previous fix for
+                #      #1) means nothing is synthesized until the LLM has finished
+                #      generating. LLM latency and TTS latency stop overlapping and
+                #      stack instead -- seconds of dead air at the start of every
+                #      turn, which is the "lagging / long pause before it speaks"
+                #      symptom.
                 #
-                # Sarvam's own SentenceTokenizer and min_buffer_size/max_chunk_length
-                # still apply server-side: it handles commas, !, ?, and all other
-                # punctuation naturally without any client-side splitting.
-                full = ""
+                # Pushing on sentence boundaries fixes both: the first sentence goes
+                # to Sarvam as soon as it is complete (so audio starts while the LLM
+                # is still writing the rest), and each pushed unit is a full sentence,
+                # so prosody arcs land on natural clause boundaries instead of
+                # mid-phrase. Sarvam's server-side tokenizer and min_buffer_size then
+                # group these further.
+                #
+                # push_text() does NOT flush the segment -- the plugin's word_stream
+                # keeps one open segment until end_input(), so the whole turn is still
+                # a single synthesis segment. We are only controlling how early text
+                # is handed over, not fragmenting the segment.
+                buf = ""
+                pushed_chars = 0
                 async for chunk in text:
-                    full += chunk
-                if full.strip():
-                    pushed = full.strip()
-                    self._record_tts_text(pushed)
-                    tts_stream.push_text(pushed)
-                    n = 1
+                    buf += chunk
+                    while True:
+                        m = _TTS_SENT_END_RE.search(buf)
+                        if not m:
+                            break
+                        sentence = buf[:m.start() + 1].strip()
+                        buf = buf[m.end():]
+                        if sentence:
+                            pushed_text = sentence + " "
+                            self._record_tts_text(pushed_text)
+                            tts_stream.push_text(pushed_text)
+                            pushed_chars += len(pushed_text)
+                            n += 1
+                if buf.strip():
+                    pushed_text = buf.strip()
+                    self._record_tts_text(pushed_text)
+                    tts_stream.push_text(pushed_text)
+                    pushed_chars += len(pushed_text)
+                    n += 1
                 tts_stream.end_input()
-                logger.info("[TTS] Sarvam single-segment push: %d chars", len(full.strip()))
+                logger.info("[TTS] Sarvam streamed %d sentence(s), %d chars", n, pushed_chars)
                 return
 
             # ElevenLabs: push each cleaned chunk directly as it arrives.
@@ -2866,6 +2905,24 @@ async def entrypoint(ctx: JobContext):
             turn_detection="stt",
             interruption=InterruptionOptions(
                 enabled=True,
+                # 0.5 / 1 word -- back to the original sensitivity.
+                #
+                # These were briefly raised to 0.7 / 2 words to stop noise from
+                # cutting the agent off mid-sentence. That backfired badly: with
+                # min_words=2 the agent no longer yields to a candidate who starts
+                # answering, so it keeps talking over them. Its own audio then
+                # bleeds into the candidate's mic and Deepgram transcribes it as
+                # the CANDIDATE's turn -- which is what produced the reported
+                # "it started answering the question it had just asked".
+                #
+                # The STT self-echo guard further down would normally catch that,
+                # but it is gated on `warmup_complete`, so it cannot fire on the
+                # first question -- exactly where this was observed.
+                #
+                # Being too eager to stop talking is a far cheaper failure than
+                # talking over the candidate and then ingesting yourself, so the
+                # sensitive values stay and false triggers are handled by
+                # resume_false_interruption below instead.
                 min_duration=0.5,
                 min_words=1,
                 discard_audio_if_uninterruptible=True,
@@ -2876,7 +2933,16 @@ async def entrypoint(ctx: JobContext):
                 # off mid-sentence" symptom. True pauses briefly, then resumes speaking from
                 # where it left off once false_interruption_timeout confirms no real speech.
                 resume_false_interruption=True,
-                false_interruption_timeout=3.0,
+                # 1.2s (was 3.0s). This is how long the agent stays silent after a
+                # suspected interruption before concluding it was spurious and
+                # resuming. At 3.0s every false trigger produced a three-second
+                # hole in the middle of a sentence -- audible as the voice
+                # "breaking" even though it did eventually recover. 1.2s makes a
+                # false trigger register as a brief natural pause rather than a
+                # dropout, while still resuming quickly. This is the mechanism
+                # that makes the sensitive min_duration/min_words above safe:
+                # the agent stops eagerly, and anything spurious resumes fast.
+                false_interruption_timeout=1.2,
                 backchannel_boundary=(1.0, 3.5),
             ),
         ),
@@ -3741,6 +3807,26 @@ async def entrypoint(ctx: JobContext):
             # rephrase ever happening. Only on a real end-of-turn (not a partial) and only
             # once per question, so a candidate who legitimately quotes part of the
             # question back while answering isn't looped forever.
+            # Pre-warmup self-ingestion guard. The full echo path below needs
+            # _last_interviewer_question, which is only populated for post-warmup
+            # interview turns -- so during greeting/warmup the agent could hear
+            # its own audio, have it transcribed as the candidate, and generate a
+            # reply to itself (reported as "it started answering its own
+            # question"). Here we compare against what was actually just spoken
+            # instead, and simply DROP the turn rather than re-asking: during
+            # warmup there is no question to re-ask, and the agent is either still
+            # talking or about to hand over anyway.
+            if (
+                is_final_eot
+                and not warmup_complete
+                and _looks_like_interviewer_echo(content, agent._recent_tts_text)
+            ):
+                logger.warning(
+                    "[STT_ECHO] Pre-warmup turn %d looks like the agent's own audio "
+                    "fed back through the mic -- dropping. text=%r",
+                    turn_snapshot, content[:80],
+                )
+                return
             if (
                 is_final_eot
                 and warmup_complete

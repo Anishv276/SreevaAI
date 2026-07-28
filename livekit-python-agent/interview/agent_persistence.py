@@ -298,6 +298,25 @@ async def get_demo_interview_context(app_id: str, dispatch_metadata: dict) -> di
     role_title = str(dispatch_metadata.get("roleLabel") or "the role").strip()
     candidate_name = str(dispatch_metadata.get("candidateName") or "Guest").strip()
     mode = str(dispatch_metadata.get("mode") or "TECH").strip().upper()
+    # Voice chosen in the demo template wizard. Empty/None means "not set" --
+    # leave it as None so agent_runtime's shared fallback picks the default
+    # Sarvam speaker, rather than passing a blank string down to the plugin.
+    # Voice + its provider/model are resolved together by /api/demo/start against
+    # the voice registry. Treat them as a single unit: a voice without a known
+    # provider (stale id, older dispatch payload) is unusable, because the runtime
+    # would then look up an empty provider in _TTS_BUILDERS and raise. Falling back
+    # to None for all three instead routes cleanly into the existing missing-voice
+    # default (Sarvam / "priya") rather than failing the session.
+    _demo_voice_id = str(dispatch_metadata.get("voiceId") or "").strip() or None
+    _demo_tts_provider = str(dispatch_metadata.get("ttsProvider") or "").strip().upper() or None
+    _demo_tts_model = str(dispatch_metadata.get("ttsModel") or "").strip() or None
+    if not (_demo_voice_id and _demo_tts_provider):
+        if _demo_voice_id:
+            logger.warning(
+                "[DEMO_TTS] voiceId=%r arrived without a provider -- using default voice",
+                _demo_voice_id,
+            )
+        _demo_voice_id = _demo_tts_provider = _demo_tts_model = None
     return {
         "fullName":           candidate_name,
         "resumeText":         None,
@@ -313,7 +332,12 @@ async def get_demo_interview_context(app_id: str, dispatch_metadata: dict) -> di
         "orgName":            "Demo",
         "language":           "English",
         "timeLimit":          FIXED_INTERVIEW_DURATION_MINUTES,
-        "voiceId":              None,
+        # Voice selected in the demo template wizard (DemoTemplate.voiceId),
+        # passed through dispatch metadata. Falls back to the shared Sarvam
+        # default only when the template genuinely has no voice set --
+        # previously this was hardcoded None, which silently discarded the
+        # admin's selection and forced every demo onto the same speaker.
+        "voiceId":              _demo_voice_id,
         "aiName":               "Ishitha",
         "proctoringSignals":    None,
         "interviewStatus":      None,
@@ -322,17 +346,27 @@ async def get_demo_interview_context(app_id: str, dispatch_metadata: dict) -> di
         # DEMO-ONLY STT: flux-general (English). Real interviews use each org's
         # own sttModel from OrganizationDetails via get_interview_context().
         "sttModel":             "flux-general-en",
-        # DEMO-ONLY TTS: voiceId is always None for a demo session, which makes
-        # agent_runtime.py's Cartesia/missing-voice fallback fire -- provider
-        # and model always resolve to Sarvam bulbul:v3, speaker "priya" (same
-        # values production sessions get on that same fallback path).
-        "ttsProvider":          None,
-        "ttsModel":             None,
-        # DEMO-ONLY pace: 1.15 (brisk, professional -- Sarvam bulbul:v3 valid
-        # range is 0.5-2.0; Sarvam's own guidance recommends 1.0-1.1 for
-        # natural/brisk speech). Every other Sarvam param stays at its shared
-        # default in agent_providers.py -- only pace differs for the demo.
-        "ttsSpeed":             1.15,
+        # DEMO-ONLY TTS: provider/model are resolved from the wizard-selected voice
+        # by /api/demo/start (the voice registry knows which provider each id
+        # belongs to) and passed through dispatch metadata. When the template has
+        # no voice set, all three stay None and agent_runtime.py's missing-voice
+        # fallback fires as before -- Sarvam bulbul:v3 / "priya".
+        "ttsProvider":          _demo_tts_provider,
+        "ttsModel":             _demo_tts_model,
+        # DEMO-ONLY pace, provider-aware. This value is passed straight through as
+        # Sarvam's `pace` or ElevenLabs' `speed`, which are different scales -- a
+        # single number cannot be correct for both, and 1.15 is outside the range
+        # ElevenLabs accepts cleanly.
+        #
+        # Sarvam 1.15. Briefly lowered to 1.05 on the theory that a hurried pace
+        # was contributing to the "sounds like a bot" feel -- that was wrong, and
+        # it was reported back as the voice being too slow. Restored to the value
+        # that was in place before. Note this OVERRIDES sarvam_pace (1.2) in
+        # agent_providers.py, so it is the single source of demo pace; change it
+        # here, not there.
+        # ElevenLabs None: let build_elevenlabs_tts apply its own tuned 0.95
+        # (different scale -- 1.15 is out of range for ElevenLabs).
+        "ttsSpeed":             1.15 if _demo_tts_provider != "ELEVENLABS" else None,
         # DEMO-ONLY LLMs -- see function docstring: these never affect real interviews.
         "llmInterviewLive":     "gpt-4.1-mini",
         "llmInterviewEval":     "gpt-4.1-mini",

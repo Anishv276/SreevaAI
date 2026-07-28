@@ -60,8 +60,13 @@ export const ALL_VOICES = [
   { id: "dev",    name: "Dev",    provider: "SARVAM" as const, model: _SAR, gender: "male"   as const, description: "Warm & Grounded",            tags: ["Trustworthy"] },
   { id: "varun",  name: "Varun",  provider: "SARVAM" as const, model: _SAR, gender: "male"   as const, description: "Energetic Male",             tags: ["Social Media"] },
   { id: "kabir",  name: "Kabir",  provider: "SARVAM" as const, model: _SAR, gender: "male"   as const, description: "Professional Tone",          tags: ["Corporate"] },
-  { id: "tanya",  name: "Tanya",  provider: "SARVAM" as const, model: _SAR, gender: "female" as const, description: "Clear Female",              tags: ["Concise"] },
-  { id: "sunny",  name: "Sunny",  provider: "SARVAM" as const, model: _SAR, gender: "male"   as const, description: "Friendly Youth",            tags: ["Casual"] },
+  // "tanya" and "sunny" were listed here but are not Sarvam bulbul speakers --
+  // they are absent from _SARVAM_VALID_SPEAKERS in the agent's
+  // agent_providers.py, so selecting either passed validation in the UI and was
+  // then silently rejected at synthesis time and replaced with "priya". That
+  // presented as "the voice we picked is not the voice that plays". Removed so
+  // every voice offered here is one the agent can actually speak with; add them
+  // back only alongside the matching entry in the agent whitelist.
 ];
 
 export type LlmModelId = typeof LLM_MODELS[number]["id"];

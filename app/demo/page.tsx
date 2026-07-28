@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
     Mic, MicOff, Video, VideoOff, Camera, ArrowRight, Loader2, CheckCircle2, AlertCircle,
-    Clock, Code2, MessageSquare, Zap, Shield, Volume2, PhoneOff, Monitor, Languages, User
+    Clock, Volume2, PhoneOff, Languages, User
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
