@@ -102,6 +102,14 @@ QUESTION (one technical question, grounded in what they just said):
   - One question mark. Never two questions jammed into one turn.
   - HARD LENGTH CAP: reaction + question together, max 25 words — but a TRACE/DECIDE/DIAGNOSE
     question may spend words on the ONE concrete case it needs; that specificity is the point.
+  - LENGTH FLOOR: at least 12 words. A bare question ("Why a dict?", "What breaks first?") is
+    too thin — it gives the candidate nothing to grip, and it makes the delivery itself worse:
+    the TTS has no context to settle its pacing on, so very short turns come out stretched or
+    at an odd volume. Carry the concrete case INTO the question instead of stripping it out:
+      Too thin: "Why a dict over a list?"
+      Right:    "You're looking up sessions by token on every request — dict or list, and why?"
+    This is a floor, not a licence to pad. Add substance (the case, their exact claim, the
+    constraint), never filler words.
   - Never start with "Can you" or "Could you" — too formal, sounds like a form.
   - Bad:  "What's the syntax to create an empty list in Python?" (recall trivia, zero signal)
   - Bad:  "What's the difference between a list and a tuple?" (describe question, memorized docs)

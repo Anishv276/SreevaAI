@@ -67,3 +67,53 @@ def test_sentinel_and_empty_are_untouched():
 
 def test_question_with_no_declarative_lead_is_fine():
     assert not _flagged("What does the other variable see?")
+
+
+# --- length floor (delivery stability, added after live-session feedback) ---
+
+MIN_WORDS_VIOLATION = "below min_words"
+
+
+def _too_thin(text: str) -> bool:
+    return any(MIN_WORDS_VIOLATION in v for v in validate_spoken_question(text))
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Why a dict over a list?",
+        "What breaks first under load?",
+        "Hmm. Where would you check first?",
+        "And then what?",
+    ],
+)
+def test_thin_turns_are_flagged(text):
+    """Terse turns measured 1.94x speaking-rate spread and 2.10x level spread on
+    bulbul:v3 (vs 1.27x / 1.69x for long turns) -- they are the ones that come
+    out stretched or quiet."""
+    assert _too_thin(text), f"should have been flagged as thin: {text!r}"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "You're looking up sessions by token on every request, dict or list, and why?",
+        "You point two variables at the same list and append to one, what does the other see?",
+        "A three-table join suddenly got slow after the nightly batch, what's your first check?",
+    ],
+)
+def test_substantive_turns_pass_the_floor(text):
+    assert not _too_thin(text), f"false positive on: {text!r}"
+
+
+def test_floor_does_not_fire_on_sentinel_or_empty():
+    assert validate_spoken_question("") == []
+    assert validate_spoken_question("NO_FOLLOW_UP_NEEDED") == []
+
+
+def test_floor_and_cap_are_mutually_exclusive():
+    """A turn cannot be both too short and too long -- the cap uses elif."""
+    long_turn = " ".join(["word"] * 40) + "?"
+    vs = validate_spoken_question(long_turn)
+    assert any("exceeds max_words" in v for v in vs)
+    assert not any(MIN_WORDS_VIOLATION in v for v in vs)

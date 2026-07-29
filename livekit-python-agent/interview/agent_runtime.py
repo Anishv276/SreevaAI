@@ -911,9 +911,23 @@ def _looks_like_agent_answered_itself(stripped: str) -> bool:
     return len(declarative.split()) >= 5
 
 
-def validate_spoken_question(text: str, *, max_words: int = 30) -> list[str]:
+def validate_spoken_question(text: str, *, max_words: int = 30, min_words: int = 12) -> list[str]:
     """Returns a list of violation reasons (empty list = passes). Pure/sync so
-    it's trivially unit-testable without any LLM or audio dependency."""
+    it's trivially unit-testable without any LLM or audio dependency.
+
+    `min_words` exists for delivery quality as much as for interview quality.
+    Measured on bulbul:v3, short turns are markedly less stable than long ones:
+
+        turn length          sec/word spread   level spread
+        short (~30 chars)        1.94x            2.10x
+        long  (~230 chars)       1.27x            1.69x
+
+    A terse turn gives the synthesizer almost no context to settle its pacing
+    on, so the same short question can come back stretched or at a noticeably
+    different volume -- reported from live sessions as "that one felt like it
+    was reading" / "the voice went low". Requiring a real clause is the cheapest
+    fix, and it improves the question itself at the same time.
+    """
     violations: list[str] = []
     stripped = (text or "").strip()
     if not stripped or stripped == "NO_FOLLOW_UP_NEEDED":
@@ -931,6 +945,8 @@ def validate_spoken_question(text: str, *, max_words: int = 30) -> list[str]:
     word_count = len(stripped.split())
     if word_count > max_words:
         violations.append(f"word_count={word_count} exceeds max_words={max_words}")
+    elif word_count < min_words:
+        violations.append(f"word_count={word_count} below min_words={min_words} (turn too thin)")
 
     q_count = stripped.count("?")
     if q_count != 1:
@@ -989,15 +1005,20 @@ def validate_spoken_question(text: str, *, max_words: int = 30) -> list[str]:
 
 
 _STRICT_REGEN_SUFFIX = (
-    "\n\n[REGENERATION -- YOUR LAST OUTPUT VIOLATED THE HARD LENGTH/FORMAT CAP]\n"
+    "\n\n[REGENERATION -- YOUR LAST OUTPUT VIOLATED A HARD RULE]\n"
     "Your previous attempt broke one of these HARD rules: (1) reaction+question together "
-    "must be <= 30 words total, (2) EXACTLY ONE '?' in the entire output, (3) never stack a "
+    "must be between 12 and 30 words, (2) EXACTLY ONE '?' in the entire output, (3) never stack a "
     "second question after the first with 'and'/'or', (4) NEVER answer, explain, or teach the "
     "material -- you ask, the candidate answers, (5) NEVER ask permission to continue "
     "('shall we move on?', 'does that make sense?') -- you drive the interview. "
-    "Rewrite as ONE short reaction beat plus "
-    "ONE single question, under 30 words, with exactly one '?'. Keep any concrete case/input the "
-    "question needs, but cut all other setup/context -- ask the sharpest single thing directly."
+    "Rewrite as ONE short reaction beat plus ONE single question, 12-30 words, with exactly "
+    "one '?'.\n"
+    "If it was too LONG: keep the concrete case the question needs and cut the surrounding "
+    "setup -- ask the sharpest single thing directly.\n"
+    "If it was too SHORT: do not pad with filler. Pull the specific case, their exact claim, or "
+    "the constraint INTO the question so it stands on its own "
+    "(not \"Why a dict?\" but \"You're looking up sessions by token every request -- dict or "
+    "list, and why?\")."
 )
 
 
