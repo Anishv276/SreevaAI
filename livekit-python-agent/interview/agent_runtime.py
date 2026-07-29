@@ -1,9 +1,7 @@
-import array
 import asyncio
 import collections
 import difflib
 import json
-import math
 import os
 import time
 from typing import Optional, Any
@@ -331,7 +329,6 @@ from livekit.agents import (
 from livekit.agents.metrics import AgentSessionUsage
 from livekit.agents.voice import room_io
 from livekit.agents.voice.turn import InterruptionOptions
-from livekit import rtc
 from interview.tech.prompts import (
     build_voice_layer_prompt,
     build_evaluation_layer_prompt,
@@ -2131,55 +2128,29 @@ class InterviewAgent(Agent):
             is_sarvam = type(tts_engine).__module__.startswith("livekit.plugins.sarvam")
 
             if is_sarvam:
-                # SARVAM: stream incrementally, but only at sentence boundaries.
+                # SARVAM: accumulate the ENTIRE agent turn, then push once.
                 #
-                # This balances two failure modes that pull in opposite directions:
+                # Each push_text() call is one independent synthesis unit with its
+                # own prosody arc, so pushing sentence-by-sentence gives every
+                # clause a separate arc with a reset between them -- heard as
+                # "I'm doing... [gap] ...well... [gap] ...how are you".
                 #
-                #   1. Pushing every raw LLM chunk gives each 4-6 word fragment its
-                #      own prosody arc -> the disjointed "word... [gap] ...word"
-                #      delivery.
-                #   2. Buffering the ENTIRE turn before pushing (the previous fix for
-                #      #1) means nothing is synthesized until the LLM has finished
-                #      generating. LLM latency and TTS latency stop overlapping and
-                #      stack instead -- seconds of dead air at the start of every
-                #      turn, which is the "lagging / long pause before it speaks"
-                #      symptom.
-                #
-                # Pushing on sentence boundaries fixes both: the first sentence goes
-                # to Sarvam as soon as it is complete (so audio starts while the LLM
-                # is still writing the rest), and each pushed unit is a full sentence,
-                # so prosody arcs land on natural clause boundaries instead of
-                # mid-phrase. Sarvam's server-side tokenizer and min_buffer_size then
-                # group these further.
-                #
-                # push_text() does NOT flush the segment -- the plugin's word_stream
-                # keeps one open segment until end_input(), so the whole turn is still
-                # a single synthesis segment. We are only controlling how early text
-                # is handed over, not fragmenting the segment.
-                buf = ""
-                pushed_chars = 0
+                # Pushing the whole turn once makes Sarvam synthesize it as a
+                # single continuous utterance, which is exactly what session.say()
+                # does -- and why the scripted greeting always sounded right.
+                # Sarvam's own SentenceTokenizer plus min_buffer_size /
+                # max_chunk_length still segment it server-side, handling commas
+                # and terminal punctuation without any client-side splitting.
+                full = ""
                 async for chunk in text:
-                    buf += chunk
-                    while True:
-                        m = _TTS_SENT_END_RE.search(buf)
-                        if not m:
-                            break
-                        sentence = buf[:m.start() + 1].strip()
-                        buf = buf[m.end():]
-                        if sentence:
-                            pushed_text = sentence + " "
-                            self._record_tts_text(pushed_text)
-                            tts_stream.push_text(pushed_text)
-                            pushed_chars += len(pushed_text)
-                            n += 1
-                if buf.strip():
-                    pushed_text = buf.strip()
-                    self._record_tts_text(pushed_text)
-                    tts_stream.push_text(pushed_text)
-                    pushed_chars += len(pushed_text)
-                    n += 1
+                    full += chunk
+                if full.strip():
+                    pushed = full.strip()
+                    self._record_tts_text(pushed)
+                    tts_stream.push_text(pushed)
+                    n = 1
                 tts_stream.end_input()
-                logger.info("[TTS] Sarvam streamed %d sentence(s), %d chars", n, pushed_chars)
+                logger.info("[TTS] Sarvam single-segment push: %d chars", len(full.strip()))
                 return
 
             # ElevenLabs: push each cleaned chunk directly as it arrives.
@@ -2224,119 +2195,13 @@ class InterviewAgent(Agent):
                 n += 1
             tts_stream.end_input()
             logger.info("[TTS] Streamed %d chunk(s) via WebSocket", n)
-        # Per-turn loudness normalization (Sarvam only).
-        #
-        # bulbul:v3 returns materially different renditions of the SAME text on
-        # every call. Measured over 12 real question turns: voiced RMS ranged
-        # 1822..4279 (CV 21.3%, loudest turn 2.35x the quietest). That is what
-        # is heard as "the voice suddenly changed / became too low".
-        #
-        # This is NOT fixable server-side. Measured and ruled out: pace, codec,
-        # sample rate, min_buffer_size, max_chunk_length, temperature (swept
-        # 0.01-0.5; even near-deterministic sampling still swings), and the v3
-        # `loudness` parameter itself -- the API accepts loudness on v3 (the
-        # LiveKit plugin gates it to v2, so it has to be injected) but it does
-        # not reduce the spread at all (rms CV 15.2% -> 16.8%). The variance is
-        # generation-side, so it has to be corrected on our side.
-        #
-        # Applying ONE constant gain per turn normalizes level without touching
-        # prosody: relative dynamics inside the turn are preserved exactly,
-        # only the overall level moves. Measured result: RMS spread drops from
-        # 2.35x to 1.20x (CV 21.3% -> 4.7%).
-        #
-        # Speaking-RATE variance (words stretching) is a separate axis and is
-        # NOT addressed here -- no client-side transform fixes that without
-        # resampling, which would alter pitch.
-        _normalize_loudness = type(tts_engine).__module__.startswith("livekit.plugins.sarvam")
-        _TARGET_RMS = 3000.0   # ~ the mean level bulbul:v3 already produces
-        _MAX_GAIN, _MIN_GAIN = 4.0, 0.25
-        _PEAK_LIMIT = 30000    # headroom under int16 max, never clip
-
-        def _samples_of(frame):
-            data = frame.data
-            if getattr(data, "format", None) == "h":
-                return data
-            return memoryview(bytes(data)).cast("h")
-
-        def _turn_gain(frames) -> float:
-            """One gain for the whole turn, from voiced-only RMS."""
-            total_sq = 0
-            counted = 0
-            peak = 0
-            for f in frames:
-                try:
-                    s = _samples_of(f)
-                except (TypeError, ValueError):
-                    return 1.0
-                for i in range(0, len(s), 4):
-                    v = s[i]
-                    if v < 0:
-                        v = -v
-                    if v > peak:
-                        peak = v
-                    # Voiced-only: silence must not drag the average down, or a
-                    # turn with long pauses would be over-amplified.
-                    if v >= 300:
-                        total_sq += v * v
-                        counted += 1
-            if not counted or peak <= 0:
-                return 1.0
-            rms = math.sqrt(total_sq / counted)
-            if rms <= 0:
-                return 1.0
-            gain = max(_MIN_GAIN, min(_MAX_GAIN, _TARGET_RMS / rms))
-            # Never amplify into clipping.
-            if peak * gain > _PEAK_LIMIT:
-                gain = _PEAK_LIMIT / peak
-            return gain
-
-        def _apply_gain(frame, gain: float):
-            if abs(gain - 1.0) < 0.02:
-                return frame
-            try:
-                s = _samples_of(frame)
-            except (TypeError, ValueError):
-                return frame
-            out = array.array("h", s)
-            for i in range(len(out)):
-                v = int(out[i] * gain)
-                if v > 32767:
-                    v = 32767
-                elif v < -32768:
-                    v = -32768
-                out[i] = v
-            return rtc.AudioFrame(
-                data=out.tobytes(),
-                sample_rate=frame.sample_rate,
-                num_channels=frame.num_channels,
-                samples_per_channel=frame.samples_per_channel,
-            )
-
         try:
             if tts_engine.capabilities.streaming:
                 async with tts_engine.stream(conn_options=conn_options) as stream:
                     push_task = asyncio.create_task(_push_sentences(stream))
                     try:
-                        if not _normalize_loudness:
-                            async for ev in stream:
-                                yield ev.frame
-                        else:
-                            # Buffering the turn is required: the gain depends on
-                            # the whole turn's RMS, which is only known once every
-                            # frame has arrived. This costs latency equal to the
-                            # synthesis time of one turn -- acceptable because
-                            # Sarvam delivers ~3x faster than real time (measured
-                            # RTF ~0.31), so the audio is fully in hand well before
-                            # it would have finished playing anyway.
-                            _frames = [ev.frame async for ev in stream]
-                            _gain = _turn_gain(_frames)
-                            if abs(_gain - 1.0) >= 0.02:
-                                logger.info(
-                                    "[TTS] Sarvam loudness normalized: gain=%.2f over %d frame(s)",
-                                    _gain, len(_frames),
-                                )
-                            for _f in _frames:
-                                yield _apply_gain(_f, _gain)
+                        async for ev in stream:
+                            yield ev.frame
                     finally:
                         await push_task
             else:
@@ -3214,76 +3079,30 @@ async def entrypoint(ctx: JobContext):
             preemptive_generation={"enabled": False},
             # Flux STT jobs turn boundaries -- no separate endpointing detector needed.
             turn_detection="stt",
+            # Sensitivity restored from origin/main (0.5s / 1 word), which is the
+            # configuration the well-delivered branches ran. The mid-question
+            # pauses that prompted re-tuning these were traced to Sarvam's audio
+            # config instead -- see the mp3/22050 note in agent_providers.py.
+            #
+            # resume_false_interruption stays True, deliberately diverging from
+            # main. A "false interruption" is breathing, mic bleed or background
+            # speech that STT briefly reads as the candidate talking. With this
+            # False (main's value) the agent stops and NEVER speaks the rest of
+            # that sentence -- questions get truncated mid-way, which is the one
+            # behaviour here that actually breaks delivery. True pauses briefly
+            # and then continues from where it left off.
+            #
+            # The timeout is how long that pause lasts before the agent concludes
+            # nothing was really said. main's 3.0s is long enough to hear as the
+            # voice stalling; 1.0s reads as a natural beat while still recovering
+            # quickly. Nothing is dropped either way.
             interruption=InterruptionOptions(
                 enabled=True,
-                # 0.5 / 1 word -- back to the original sensitivity.
-                #
-                # These were briefly raised to 0.7 / 2 words to stop noise from
-                # cutting the agent off mid-sentence. That backfired badly: with
-                # min_words=2 the agent no longer yields to a candidate who starts
-                # answering, so it keeps talking over them. Its own audio then
-                # bleeds into the candidate's mic and Deepgram transcribes it as
-                # the CANDIDATE's turn -- which is what produced the reported
-                # "it started answering the question it had just asked".
-                #
-                # The STT self-echo guard further down would normally catch that,
-                # but it is gated on `warmup_complete`, so it cannot fire on the
-                # first question -- exactly where this was observed.
-                #
-                # Being too eager to stop talking is a far cheaper failure than
-                # talking over the candidate and then ingesting yourself, so the
-                # sensitive values stay and false triggers are handled by
-                # resume_false_interruption below instead.
-                # 0.8s of SUSTAINED speech, still 1 word.
-                #
-                # This is the greeting-vs-question discrepancy. The scripted
-                # greeting is spoken via session.say(allow_interruptions=False),
-                # so it bypasses this state machine entirely and always sounds
-                # fluent. Generated questions run with interruptions enabled, so
-                # a single word of echo, breathing or mic bleed stops the agent
-                # mid-sentence; it then waits false_interruption_timeout and
-                # resumes where it left off. That pause is the reported
-                # "list....and....tuple" -- it is NOT synthesis. Sarvam's raw PCM
-                # was measured clean across codec/rate/buffer/temperature and at
-                # every text-arrival cadence, so no TTS parameter could move it.
-                #
-                # min_words stays at 1: raising it to 2 previously stopped the
-                # agent yielding to a candidate who had genuinely started
-                # answering, so it talked over them and then ingested its own
-                # audio as the candidate's turn. min_duration is the safe knob --
-                # it demands the trigger be sustained rather than a blip, which
-                # filters noise without slowing a real barge-in.
-                min_duration=0.8,
+                min_duration=0.5,
                 min_words=1,
                 discard_audio_if_uninterruptible=True,
-                # True (SDK default) -- a "false interruption" is background noise/breathing/
-                # echo that STT briefly misreads as the candidate speaking. With this at False,
-                # the agent paused and then NEVER resumed, permanently dropping the rest of
-                # its sentence on every false trigger -- the exact "voice gets stuck / cuts
-                # off mid-sentence" symptom. True pauses briefly, then resumes speaking from
-                # where it left off once false_interruption_timeout confirms no real speech.
                 resume_false_interruption=True,
-                # 1.2s (was 3.0s). This is how long the agent stays silent after a
-                # suspected interruption before concluding it was spurious and
-                # resuming. At 3.0s every false trigger produced a three-second
-                # hole in the middle of a sentence -- audible as the voice
-                # "breaking" even though it did eventually recover. 1.2s makes a
-                # false trigger register as a brief natural pause rather than a
-                # dropout, while still resuming quickly. This is the mechanism
-                # that makes the sensitive min_duration/min_words above safe:
-                # the agent stops eagerly, and anything spurious resumes fast.
-                # 0.6s (was 1.2s, originally 3.0s). This is the LENGTH of the hole
-                # a false trigger punches into a question: the agent goes silent
-                # for this long before concluding nothing was said and resuming
-                # mid-sentence. 1.2s is well past the ~200ms of a natural speech
-                # pause, so it still reads as the voice stalling. 0.6s passes as
-                # phrasing.
-                #
-                # Safe only alongside the raised min_duration above: fewer false
-                # triggers fire at all, and the ones that do recover twice as
-                # fast. A genuine barge-in is unaffected -- real speech keeps the
-                # interruption latched, so this timeout never elapses.
-                false_interruption_timeout=0.6,
+                false_interruption_timeout=1.0,
                 backchannel_boundary=(1.0, 3.5),
             ),
         ),

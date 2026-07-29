@@ -32,37 +32,33 @@ _SARVAM_VALID_SPEAKERS = frozenset({
 })
 _PROVIDER_DEFAULTS: dict[str, Any] = {
     "sarvam_pace":             1.2,
-    # bulbul:v3 -- per Sarvam docs (https://docs.sarvam.ai/api-reference-docs/text-to-speech/stream)
-    # 24000 Hz over the 22050 Hz "streaming-recommended" default -- candidates
-    # reported the interviewer's voice sounding muffled, and mp3 @22050 is the
-    # softest-sounding combination this plugin allows. The slightly slower
-    # generation is a fixed per-turn cost, not a growing one.
-    "sarvam_v3_sample_rate":   24000,
-    "sarvam_v2_sample_rate":   24000,
-    # Codec: linear16 (raw headerless PCM).
+    # 22050 Hz + mp3 -- restored from origin/main and the pre-existing branches
+    # (JD_question_gen_and_architecture, brief_and_irrelevent_questions_fix,
+    # Testing-new-flow), which were reported as sounding markedly better and
+    # MEASURE better on both symptoms we care about.
     #
-    # History: mp3 -> wav -> linear16. mp3 was dropped because it is lossy and
-    # LiveKit re-encodes to Opus for transport, and stacking two lossy passes is
-    # what read as "muffled" on synthesized speech. wav fixed the muffling but
-    # broke multi-chunk streaming: Sarvam emits a SEPARATE self-contained WAV
-    # file (own 44-byte RIFF header) per synthesis chunk. LiveKit's WAV decoder
-    # only tolerates a new RIFF header at the start of a pushed buffer, and over
-    # a WebSocket those chunks split across frame boundaries -- so a RIFF header
-    # lands mid-buffer, the decoder parses audio payload as a header and raises
-    # "Invalid WAV file: missing RIFF/WAVE". Every frame for the turn is then
-    # discarded ("no audio frames were pushed") and the agent goes silent. That
-    # only surfaced once tts_node began pushing multiple sentences per turn;
-    # single-push turns produced exactly one WAV and never hit the boundary.
+    # A/B, interleaved, 3 questions x 4 reps per arm:
     #
-    # linear16 is the same lossless PCM as wav but with NO container header, so
-    # concatenated chunks are unambiguous by construction and the framework
-    # routes it through its raw-PCM path (mime audio/pcm) instead of the
-    # container decoder. Keeps the anti-muffling win, removes the failure mode.
+    #   config              rate slow/fast   loudness max/min
+    #   mp3   @ 22050          1.42x             1.39x
+    #   linear16 @ 24000       1.65x             1.77x
     #
-    # Bitrate is meaningless for lossless PCM but the plugin API requires the
-    # field regardless of codec, so it stays populated.
+    # i.e. the "upgrade" to lossless PCM at a higher rate made bulbul:v3
+    # noticeably LESS consistent -- more word-stretching and a wider loudness
+    # swing per turn. 22050 is also the rate Sarvam documents as
+    # streaming-recommended, which is the likely reason: it is the path their
+    # streaming stack is tuned for.
+    #
+    # The earlier switch to linear16 was made to fix a "muffled" report by
+    # avoiding mp3 -> Opus double-lossy encoding. That reasoning is sound in
+    # isolation, but it traded a small, arguable timbre gain for a large,
+    # measurable consistency regression -- and consistency is what was actually
+    # being complained about. If muffling returns, prefer raising the bitrate
+    # over changing the codec/rate again, and re-run the A/B before landing it.
+    "sarvam_v3_sample_rate":   22050,
+    "sarvam_v2_sample_rate":   22050,
     "sarvam_output_bitrate":   "128k",
-    "sarvam_output_codec":     "linear16",
+    "sarvam_output_codec":     "mp3",
     # min_buffer_size = chars Sarvam waits for before it starts synthesizing.
     # This is a direct time-to-first-audio cost: nothing is spoken until this many
     # characters have arrived. 200 (the plugin max) was chosen when tts_node pushed
@@ -77,10 +73,11 @@ _PROVIDER_DEFAULTS: dict[str, Any] = {
     # 4-6 word snippets) but short enough that a typical opening sentence clears
     # the floor on its own and audio starts immediately.
     "sarvam_min_buffer":       80,
-    # max_chunk_length = max chars per synthesis chunk. Kept generous so Sarvam is
-    # never forced to cut a long sentence mid-clause; only the floor above needed
-    # lowering for latency.
-    "sarvam_max_chunk":        300,
+    # max_chunk_length = max chars per synthesis chunk. 220 restored from
+    # origin/main alongside the mp3/22050 pair above -- these were the settings
+    # in the branches reported as sounding right, and they are kept together
+    # rather than mixed with the newer values.
+    "sarvam_max_chunk":        220,
     "sarvam_v2_pitch":         0.0,
     "sarvam_v2_loudness":      1.0,
     # Changed from 0.80. bulbul:v3 only, range 0.01-2.0, plugin default 0.6.
