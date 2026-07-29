@@ -635,7 +635,7 @@ def extract_code_card(text: str) -> tuple[str, str, str, str] | None:
     return spoken, code.strip(), question_type, language
 
 
-def validate_spoken_question(text: str, *, max_words: int = 30) -> list[str]:
+def validate_spoken_question(text: str, *, max_words: int = 40) -> list[str]:
     """Returns a list of violation reasons (empty list = passes). Pure/sync so
     it's trivially unit-testable without any LLM or audio dependency."""
     violations: list[str] = []
@@ -695,9 +695,9 @@ def validate_spoken_question(text: str, *, max_words: int = 30) -> list[str]:
 _STRICT_REGEN_SUFFIX = (
     "\n\n[REGENERATION -- YOUR LAST OUTPUT VIOLATED THE HARD LENGTH/FORMAT CAP]\n"
     "Your previous attempt broke one of these HARD rules: (1) reaction+question together "
-    "must be <= 30 words total, (2) EXACTLY ONE '?' in the entire output, (3) never stack a "
+    "must be <= 40 words total, (2) EXACTLY ONE '?' in the entire output, (3) never stack a "
     "second question after the first with 'and'/'or'. Rewrite as ONE short reaction beat plus "
-    "ONE single question, under 30 words, with exactly one '?'. Keep any concrete case/input the "
+    "ONE single question, under 40 words, with exactly one '?'. Keep any concrete case/input the "
     "question needs, but cut all other setup/context -- ask the sharpest single thing directly."
 )
 
@@ -860,7 +860,7 @@ def _build_probe_directive(
         parts_out += [
             "NOW: React to what they said (one short phrase), then ask your follow-up question.",
             "One question mark. Never two questions in one turn.",
-            "Reaction + question together: two sentences max, under 30 words -- as specified above.",
+            "Reaction + question together: two sentences max, under 40 words -- as specified above.",
             "Grounded in what they just told you. Never 'Can you' or 'Could you'. Never 'Great!' or 'Awesome!'.",
             "",
         ]
@@ -1745,32 +1745,6 @@ class InterviewAgent(Agent):
         # _generate_move_on_directive's own LLM call and this node just speaks a
         # directive built from it, not a fresh free-form question.
         _is_probe_turn = _has_next_turn_directive and not _has_moveon
-        if not _is_probe_turn:
-            # A MOVE_ON/anchor turn opens a NEW topic, and per
-            # question_bank_adapter.py a topic's opening question can legally be a
-            # code_trace/snippet_eval/query_trace question whose instructions tell
-            # the LLM to emit a fenced code block right here. Streaming raw chunks
-            # straight to TTS (the old behavior) spoke that fenced code aloud
-            # verbatim -- buffer the full text first so _speak_with_code_card_check
-            # can strip any fence before anything reaches TTS, same as PROBE turns.
-            _pieces: list[str] = []
-            _raw_chunks: list = []
-            async with activity.llm.chat(
-                chat_ctx=effective_ctx,
-                tools=tools,
-                tool_choice=tool_choice,
-                conn_options=conn_options,
-                extra_kwargs={"temperature": turn_temp},
-            ) as stream:
-                async for chunk in stream:
-                    _raw_chunks.append(chunk)
-                    delta = getattr(chunk, "delta", None)
-                    if delta is not None and delta.content:
-                        _pieces.append(delta.content)
-            _full_text = "".join(_pieces).strip()
-            async for _out_chunk in self._speak_with_code_card_check(_full_text, _raw_chunks):
-                yield _out_chunk
-            return
 
         async def _generate_full_text(extra_system: str = "") -> tuple[str, list]:
             _ctx = effective_ctx
@@ -1798,7 +1772,8 @@ class InterviewAgent(Agent):
             violations = validate_spoken_question(full_text)
             if violations:
                 logger.warning(
-                    "[VALIDATOR] PROBE question failed post-generation check: %s | text=%r",
+                    "[VALIDATOR] %s question failed post-generation check: %s | text=%r",
+                    "PROBE" if _is_probe_turn else "MOVE_ON",
                     "; ".join(violations), full_text[:200],
                 )
                 full_text, raw_chunks = await _generate_full_text(_STRICT_REGEN_SUFFIX)
@@ -2511,6 +2486,11 @@ async def entrypoint(ctx: JobContext):
         jd_skills=_jd_skills or [],
         custom_questions=_interview_questions or None,
         interview_brief=_interview_brief,
+        # The candidate's real background. Topics still come from the JD question
+        # bank; this is what lets each topic be framed as DIRECT MATCH / PARTIAL
+        # MATCH / GAP against what they've actually built, instead of every
+        # question landing as a cold definition quiz.
+        resume_json=structured_resume if isinstance(structured_resume, dict) else None,
     )
     # Consolidated interview context log
     _projects_str = " | ".join(_brief_projects[:4]) or "none"

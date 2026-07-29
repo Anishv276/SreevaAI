@@ -36,6 +36,7 @@ def build_interview_directive(
     jd_skills: list[str] | None = None,
     custom_questions: list[str] | None = None,
     interview_brief=None,  # InterviewBrief — when provided, overrides mechanical anchor/skills logic
+    resume_json: dict | None = None,  # accepted for call-site parity with the tech track; sales prompts already carry their own resume context
 ) -> str:
     """
     Build the single system prompt for the full-length sales interview.

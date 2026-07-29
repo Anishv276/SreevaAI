@@ -199,12 +199,15 @@ def test_validator_passes_a_compliant_question():
     assert validate_spoken_question(q) == []
 
 
-def test_validator_rejects_over_25_words():
+def test_validator_rejects_over_40_words():
     # Modeled on the ticket's tokenization question at 5:53 (2+ sentences of setup).
+    # Word cap raised 30 -> 40 to match validate_spoken_question's default, so this
+    # string needs to be genuinely over 40 words, not just over the old 30.
     q = (
         "A lot of teams run into trouble when documents get split into chunks "
-        "that are too large or too small for the embedding model, so what would "
-        "you check first in the chunking config?"
+        "that are too large or too small for the embedding model, and honestly "
+        "it can be hard to notice until retrieval quality quietly gets worse over "
+        "time, so what would you personally check first in the chunking config?"
     )
     violations = validate_spoken_question(q)
     assert any("word_count" in v for v in violations)

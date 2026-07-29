@@ -1,15 +1,24 @@
 """
-Interview phase helpers -- single unified 20-minute interview.
-Flow: greeting -> warmup -> unified interview stage (full 20min)
+Interview phase helpers -- single unified 20-minute technical interview.
 
-Skill-only interview: the single stage covers the skill pool (7+ common
-resume/JD skills, 3+ JD-required skills, 2 expert role topics) -- never the
-candidate's own projects or work history. Every question is a cold-reasoning
-prompt about the skill itself, not "tell me about a time you used X."
+ONE flow, used identically for every question in the session:
+
+    Look at the topic  ->  check the resume  ->  ask.
+      resume has something relevant  -> anchor the question in it
+      resume has nothing relevant    -> ask the JD question directly
+
+That is the whole logic. There is no separate anchor path, no separate move-on
+path, and no separate probe path -- the opening question is just the first
+question, and a follow-up is the same rule applied to what they just said.
 """
 from __future__ import annotations
+
+import json
 from typing import Any
+
 _BriefType = Any
+
+
 def build_greeting_text(candidate_name: str, ai_name: str) -> str:
     """Fixed greeting — natural, warm, consistent across all sessions."""
     name = (candidate_name or "").strip().split()[0] if candidate_name else "there"
@@ -17,265 +26,335 @@ def build_greeting_text(candidate_name: str, ai_name: str) -> str:
     return f"Hi {name}, this is {ai}, your interviewer for today. Good to connect with you. How are you doing?"
 
 
+# ---------------------------------------------------------------------------
+# Resume payload -- the candidate's real background, injected once.
+# ---------------------------------------------------------------------------
+def _trim(value: Any, limit: int) -> str:
+    return str(value or "").strip().replace("\n", " ")[:limit].rstrip()
+
+
+def build_candidate_payload(resume_json: dict | None) -> str:
+    """Compact JSON of what the candidate has actually built.
+
+    Projects and work history carry their descriptions -- that is what lets a
+    question say "your InsightRAG project, the wiki Q&A one" instead of just
+    naming a tech tag. Returns "" when there is no usable resume, and the
+    prompt then runs every topic as a plain JD question.
+    """
+    if not isinstance(resume_json, dict) or not resume_json:
+        return ""
+    try:
+        from interview.tech.brief_extraction import RawResumeJSON  # noqa: PLC0415
+        raw = RawResumeJSON.model_validate(resume_json)
+    except Exception:
+        return ""
+
+    payload: dict[str, Any] = {}
+
+    projects = []
+    for p in raw.get_projects()[:5]:
+        name = _trim(p.name or p.title, 80)
+        if not name:
+            continue
+        item: dict[str, Any] = {"name": name}
+        tech = [t.strip() for t in p.resolved_tech if t and t.strip()][:8]
+        if tech:
+            item["tech"] = tech
+        desc = _trim(p.description, 200) or _trim(" ".join(p.highlights), 200)
+        if desc:
+            item["description"] = desc
+        projects.append(item)
+    if projects:
+        payload["projects"] = projects
+
+    work = []
+    for w in raw.get_work_history()[:4]:
+        role, company = _trim(w.role, 80), _trim(w.company, 80)
+        if not role and not company:
+            continue
+        item = {k: v for k, v in (("role", role), ("company", company)) if v}
+        tech = [t.strip() for t in w.technologies_used if t and t.strip()][:8]
+        if tech:
+            item["tech"] = tech
+        desc = _trim(w.description, 200) or _trim(" ".join(w.responsibilities), 200)
+        if desc:
+            item["description"] = desc
+        work.append(item)
+    if work:
+        payload["work_history"] = work
+
+    skills = [s.name.strip() for s in raw.get_technical_skills() if s.name and s.name.strip()]
+    if skills:
+        payload["skills"] = skills[:25]
+
+    if not payload:
+        return ""
+    return "\nCANDIDATE RESUME:\n" + json.dumps(payload, ensure_ascii=False, indent=1) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# The one rule. Deliberately short: the previous version was ~3x this length
+# and the model began dropping the hard constraints (one question per turn,
+# no invented details) because they were buried. Every line here earns its place.
+# ---------------------------------------------------------------------------
+_QUESTION_RULE = """\
+━━━ HOW YOU INTERVIEW ━━━
+You are a senior engineer having a technical conversation, not a system reading
+out questions. The same judgment applies to the first question, a new topic, and
+a follow-up -- there is no separate mode for any of them.
+
+STEP 0 -- CHECK THE RESUME AGAINST THE TOPIC, BEFORE YOU WRITE ANYTHING
+Every single time, before composing the question, run this check silently against
+the CANDIDATE RESUME block above (or its absence) and the topic you're about to ask
+about. Do not skip it because the last topic's check already told you the resume
+exists -- the check is PER TOPIC, because relevance is per topic.
+
+  1. Read the topic's tech/subject. Scan resume projects, work_history, and skills
+     for that exact tech, or something a working engineer would call the same
+     family of problem (WebRTC and WebSockets are the same family; WebRTC and
+     Kubernetes are not -- judge this the way you'd judge it in a real hallway
+     conversation, not by string matching).
+  2. Classify what you found, out of exactly three outcomes:
+       FOUND DIRECTLY  -> the topic's tech, or the topic itself, is named in a
+                          project/role's description or tech list.
+       FOUND ADJACENT   -> nothing exact, but a named project/role used something
+                          close enough that real experience transfers.
+       NOT FOUND        -> nothing in the resume touches this topic at all, OR
+                          there is no CANDIDATE RESUME block above at all.
+  3. Only THEN decide how to ask, using the matching branch below. The classification
+     comes first and the question follows from it -- never the other way around.
+
+  FOUND DIRECTLY -> anchor the question in that specific project or role. Ask about
+    a real decision inside it, something only the person who did it could answer.
+
+  FOUND ADJACENT -> name what they actually did, say plainly it isn't the same
+    thing, then ask about the part that carries over. Never present an adjacent
+    technology as if it were an exact match -- a candidate notices immediately
+    when their experience is overclaimed, and it costs you their trust for the
+    rest of the interview.
+
+  NOT FOUND (resume exists but doesn't cover this topic) -> say so plainly, then
+    ask about their actual exposure. Do NOT reach for the nearest unrelated project
+    on the resume and assume this work happened inside it -- if they built
+    reporting APIs and the topic is CI/CD, "how did you automate deploys for those
+    APIs" invents a fact they never claimed. A gap is information, not a failure:
+    ask once, take whatever they give you, and move on.
+
+  NOT FOUND (no resume block at all) -> you know nothing about this person's
+    background. Ground the question in a concrete situation instead of a claimed
+    history ("say you're building X and Y happens...") -- that is the only source
+    of context you actually have.
+
+Only ever name a project, company, or technology that appears verbatim in the
+resume. Never attach a technology to a project that doesn't list it. When they
+describe work that isn't on the resume, refer to it in their own words rather
+than inventing a name for it.
+
+WHAT MAKES THE QUESTION WORTH ASKING
+A question earns its place when a memorised answer can't satisfy it. Anything
+answerable by reciting a definition tells you nothing about whether they can do
+the job -- and a strong candidate finds it insulting. Put them somewhere specific
+and make them decide, trace, or defend something.
+
+Ask one thing at a time. Two questions in a turn means they answer the easier one
+and you learn nothing about the harder one -- so ask the harder one and keep the
+other for later. This is spoken aloud, so it has to be short enough to say in one
+breath and to hold in their head without seeing it.
+
+FOLLOWING UP
+A follow-up should be impossible to ask without having heard their answer. Listen
+for what they left open and go at that: a claim with nothing underneath, work
+described as "we" where their own part is invisible, a complete answer that hasn't
+been tested under any real constraint. If they've genuinely closed the topic, move
+on -- manufacturing a question to fill the turn is worse than moving.
+
+When their part in something turns out to be small, take that answer and move.
+Most engineering is collective, so "we" is normal speech, not evasion -- you're
+locating their scope out of curiosity, and pressing twice makes it an accusation.
+
+React to what they said only when you have something specific to react to. A
+reaction that would fit any answer is filler and reads as not listening. If they
+answer from the wrong technology, acknowledge that what they raised is real, then
+steer back to what you asked -- that's what makes it feel collaborative instead
+of corrective.
+
+MOVING TO A NEW TOPIC
+When the last topic produced a real answer, open the next question by picking
+up the specific thing they said -- a claim, a number, a decision -- and pivot
+from it.
+
+When the last topic produced nothing (denial, "I don't know", silence), do not
+manufacture a link to it. A forced bridge out of nothing reads as mockery, not
+warmth. Ask the new question as a clean, standalone opener, the way you'd ask
+if this were the very first question of the interview: state the situation or
+topic and go straight to the question mark. No preamble referencing what they
+just failed to answer.
+
+Speak every transition the way a person talks mid-conversation, not the way a
+script announces a section change: state the new situation or topic and ask
+the question directly, in one breath, as if this were the natural next thing
+to wonder about. Say "you" and "your resume" only when quoting or paraphrasing
+something they actually told you this session -- otherwise speak in second
+person about a hypothetical ("say you're building...") with no claim of prior
+knowledge attached.
+"""
+
+
+_LEVEL_GUIDE: dict[int, str] = {
+    1: "LEVEL 1 (junior): a correct mechanism in their own words is a good answer. "
+       "2-3 follow-ups per topic. Skip scale/architecture tradeoffs -- no basis to answer.",
+    2: "LEVEL 2 (mid): correct mechanism is the floor; one real tradeoff or failure mode "
+       "makes it good. 3-4 follow-ups. On a textbook answer, ask what it costs.",
+    3: "LEVEL 3 (senior): mechanism is assumed -- the answer is only good if it carries "
+       "judgment (what they'd choose, against what, at what cost). 3-5 follow-ups, "
+       "one thread deep rather than many shallow.",
+    4: "LEVEL 4 (staff): a correct answer is the baseline. Push for second-order reasoning "
+       "-- what the choice costs the system or team over time. Press every tradeoff claim.",
+}
+
+
+_CODE_CARD_RULE = """\
+━━━ SHOWING CODE ━━━
+To show code, emit a real fenced block -- the tag renders it on their screen:
+  <spoken setup, under 12 words>
+  ```code_trace
+  <real runnable code>
+  ```
+Tags: code_trace (trace the output) / snippet_eval (find the bug) / query_trace (what
+does this query return). Only after at least one verbal question on the topic.
+
+Before sending: do your words point at something they must SEE ("here's", "this",
+"look at")? If yes and there's no fenced block, STOP -- you're pointing at a blank
+screen. Add the fence or rewrite the sentence. Otherwise, no fence at all.
+"""
+
+
+_EXIT_RULE = """\
+━━━ LEAVING A TOPIC ━━━
+Leave a topic once it stops producing information -- either you've got a real mechanism
+plus some judgment behind it, or two answers running have had no substance in them.
+Rephrasing a third time at someone who doesn't know the area produces nothing except
+panic, and a rattled candidate answers everything after it worse than they would have.
+
+When you leave a topic they struggled with, say nothing about the struggle itself --
+go straight into the next question as its own clean opener (see MOVING TO A NEW
+TOPIC above). Silence about the miss is what keeps them composed for the topics
+they do know; a face-saving line still draws attention to the thing that went wrong.
+"""
+
+
+# Non-negotiables, restated tight and placed LAST in the prompt. The reasoning above
+# (_QUESTION_RULE) explains WHY each of these matters, so the model isn't just told
+# "one question mark" -- it understands the cost of breaking it. But live testing
+# showed that reasoning alone, however well-argued, gets outvoted by the pull to sound
+# natural once the prompt runs long: these exact constraints were violated on 6/6 live
+# generations when they only appeared once, in prose, in the middle of the prompt.
+# Position is the fix, not more words -- trailing instructions get the most weight, so
+# the same four rules are repeated here as a hard checklist immediately before the
+# candidate's last message.
+_NON_NEGOTIABLES = """\
+━━━ BEFORE YOU SEND THIS -- CHECK ALL FIVE ━━━
+1. Did you run the STEP 0 resume check above for THIS topic, not reuse an earlier
+   topic's result? Relevance is per topic, every time.
+2. Exactly ONE question mark in the whole turn.
+3. 40 words or fewer, spoken.
+4. Every named project, company, or technology appears verbatim in CANDIDATE RESUME
+   above. If there is no resume block, the question is grounded in a hypothetical
+   situation, not in anything claimed about their history.
+5. If the last answer was a denial/blank, this turn opens clean -- states the new
+   situation or topic and asks the question, with no reference to what they just
+   missed.
+6. Not a bare definition question ("what is X", "difference between X and Y").
+If any of these fail, rewrite before sending -- don't send it anyway.
+"""
+
+
 def _build_custom_questions_block(custom_questions: list[str] | None) -> str:
     cqs = [q.strip() for q in (custom_questions or []) if q.strip()]
     if not cqs:
         return ""
-    items = "\n".join(f"  {i+1}. {q}" for i, q in enumerate(cqs))
-    return (
-        f"\nCUSTOM QUESTIONS (recruiter-mandated -- weave naturally into the conversation, "
-        f"but ALL must be asked before the interview ends):\n{items}\n"
-    )
-# ---------------------------------------------------------------------------
-# Unified Interview Stage -- full 20 minutes
-# Covers: skill pool only (common resume/JD skills, JD-required skills, expert
-# role topics). Never the candidate's own projects, work history, situational,
-# or behavioral material -- this is a pure technical-knowledge interview.
-# ---------------------------------------------------------------------------
+    items = "\n".join(f"  {i + 1}. {q}" for i, q in enumerate(cqs))
+    return f"\nRECRUITER QUESTIONS (weave in naturally; all must be asked before the end):\n{items}\n"
+
+
+def _build_topics_block(interview_brief: Any, jd_skills: list[str] | None) -> str:
+    if interview_brief is not None:
+        topics = [t for t in interview_brief.topic_pool if t.topic_type in ("skill", "role_topic")]
+        if topics:
+            lines = []
+            for t in topics:
+                line = f"  - {t.title}"
+                if t.full_description:
+                    line += f"\n      {t.full_description}"
+                if t.tech_stack:
+                    line += f"\n      TECH: {', '.join(t.tech_stack)}"
+                if t.probe_focus:
+                    line += f"\n      [probe: {t.probe_focus}]"
+                lines.append(line)
+            return "\nJD TOPICS TO COVER (in priority order):\n" + "\n".join(lines) + "\n"
+
+    jd_list = [str(s).strip() for s in (jd_skills or []) if str(s).strip()]
+    if jd_list:
+        return f"\nJD TOPICS TO COVER:\n  {', '.join(jd_list)}\n"
+    return ""
+
+
 def build_interview_directive(
     *,
     level: int,
-    resume_brief: _BriefType,
+    resume_brief: _BriefType = None,
     jd_skills: list[str] | None = None,
     custom_questions: list[str] | None = None,
-    interview_brief=None,  # InterviewBrief — when provided, overrides mechanical anchor/skills logic
+    interview_brief=None,
+    resume_json: dict | None = None,
 ) -> str:
+    """The single system prompt for the full interview.
+
+    resume_json: the candidate's resume. When present it becomes the CANDIDATE
+    RESUME block the LLM checks before every question. When absent, every topic
+    is asked as a plain JD question.
     """
-    Build the single system prompt for the full 20-minute skill-only interview.
-    Priority order:
-      1. Anchor skill -- open here with a cold-reasoning question (fundamentals/mechanics)
-      2. Remaining common skills (resume + JD overlap) -- depth per level
-      3. JD-required skills (not on resume) -- neutral exposure/reasoning probe
-      4. Expert role-knowledge topics
-      5. Custom recruiter questions (mandatory, woven in anytime)
-    No question may reference "your project," "your resume," "a time when," or any
-    company/project name -- every question stands alone as a cold-reasoning prompt.
-    """
-    # -- Opening move ---------------------------------------------------------
-    # anchor_topic is always a skill (never a project/work item) in a skill-only brief.
-    if interview_brief is not None:
-        anchor_name = interview_brief.anchor_topic.title
-        _brief_strategy_note = (
-            f"ROLE STRATEGY: {interview_brief.interview_strategy}\n"
-            f"ANCHOR SKILL CONTEXT: {interview_brief.anchor_topic.full_description}\n"
-            + (f"ANCHOR TECH: {', '.join(interview_brief.anchor_topic.tech_stack)}\n" if interview_brief.anchor_topic.tech_stack else "")
+    topics_block = _build_topics_block(interview_brief, jd_skills)
+    if not topics_block:
+        fallback = [str(s).strip() for s in (getattr(resume_brief, "skills", None) or []) if str(s).strip()]
+        if fallback:
+            topics_block = f"\nJD TOPICS TO COVER:\n  {', '.join(fallback)}\n"
+
+    # When there is no resume, state it as a fact up front rather than relying on a
+    # conditional buried in the rules. Tested: with only the in-rule instruction the
+    # model still opened with "I didn't see X on your resume" every time -- it will
+    # narrate looking at a resume unless told plainly that none exists.
+    resume_block = build_candidate_payload(resume_json)
+    if not resume_block:
+        resume_block = (
+            "\nNO RESUME AVAILABLE for this candidate -- you know nothing about their\n"
+            "background, and there is no document you have looked at. Saying 'I saw',\n"
+            "'you mentioned', 'your project', or 'I didn't see that on your resume' claims\n"
+            "knowledge you do not have, and it is obvious to the candidate. Ground your\n"
+            "questions in concrete situations instead of in their history.\n"
         )
-        if interview_brief.red_flags:
-            _brief_strategy_note += f"RED FLAGS TO PROBE: {', '.join(interview_brief.red_flags)}\n"
-    else:
-        anchor_name = "the strongest common skill for this role"
-        _brief_strategy_note = ""
-    _first_q_rule = {
-        1: (
-            f"FIRST QUESTION RULE: start with a DEFINITION or MECHANISM question on {anchor_name} — \n"
-            f"a basic distinction or a simple trace question. Ask for the difference between two \n"
-            f"commonly-confused concepts in {anchor_name}, or trace what happens for a simple input.\n"
-            f"Do NOT ask failure_mode or tradeoff_debate at level 1 -- easy code_trace/snippet_eval/query_trace\n"
-            f"is fine after the opener.\n"
-            f"Do not ask about tradeoffs, scale, or architecture yet."
-        ),
-        2: (
-            f"FIRST QUESTION RULE: start with a MECHANISM or DIFFERENCE question on {anchor_name} — \n"
-            f"how it actually works under the hood, or a concrete case where two things diverge.\n"
-            f"Do NOT ask a plain definition — assume fundamentals are solid at level 2.\n"
-            f"Easy-medium code_trace/snippet_eval/query_trace is available after the first verbal question.\n"
-            f"failure_mode is available after the first concept question."
-        ),
-        3: (
-            f"FIRST QUESTION RULE: start with a MECHANISM or FAILURE_MODE question on {anchor_name} — \n"
-            f"a concrete failure scenario with numbers, or tracing internals under a constraint.\n"
-            f"Do NOT start with a plain definition — push for the 'why' behind it immediately.\n"
-            f"code_trace, snippet_eval, and query_trace (harder than level 2) are available after the first\n"
-            f"verbal question on {anchor_name}."
-        ),
-        4: (
-            f"FIRST QUESTION RULE: start with a FAILURE_MODE or TRADEOFF_DEBATE question on {anchor_name} — \n"
-            f"a concrete, numbers-bearing scenario requiring real triage or tradeoff judgment.\n"
-            f"Do NOT start with basics or mechanics — go straight to a scenario with no single correct answer.\n"
-            f"code_trace, snippet_eval, and query_trace are available after the first verbal question."
-        ),
-    }.get(level, "FIRST QUESTION RULE: start with a fundamentals or core-mechanics question testing real understanding.")
-    opening = (
-        f"{_brief_strategy_note}"
-        f"Your ANALYST BRIEF (above) contains the exact OPENING ANGLE for this session.\n"
-        f"Follow it. Open on the skill: {anchor_name}.\n"
-        f"{_first_q_rule}\n"
-        f"HOW TO WRITE THE OPENING QUESTION:\n"
-        f"  1. This is a COLD-REASONING question about {anchor_name} itself -- it must be answerable by "
-        f"anyone who genuinely knows this skill, with zero reference to what the candidate has personally "
-        f"built or worked on. Never say 'your project,' 'your resume,' 'a time when,' or 'have you used' --\n"
-        f"  2. Ground the question in a concrete distinction, mechanism, or scenario specific to "
-        f"{anchor_name} -- never a generic 'what is X' or 'are you familiar with X' question.\n"
-        f"  3. Ask exactly ONE thing. Do not stack two questions into one turn.\n"
-        f"  4. The question should be answerable ONLY by someone who genuinely understands this skill "
-        f"cold -- if it could be answered by reciting a definition memorized without understanding, rewrite it.\n"
-        f"ONE question only. Stay on {anchor_name} until a [NEXT_TURN_DIRECTIVE] tells you to move."
-    )
-    cq_block = _build_custom_questions_block(custom_questions)
-    # Skills block -- when brief is available, use its skill TopicItems directly
-    # (richer: per-skill probe_focus, source, why_relevant). Fall back to
-    # resume_brief.skills + jd_skills when brief is not provided.
-    _skill_probe_style = {
-        1: (
-            "  QUESTION TYPES (Level 1 — mostly verbal, all code-card types allowed at EASY difficulty):\n"
-            "    definition | mechanism | difference | code_trace | snippet_eval | query_trace | followup\n"
-            "  HOW TO ASK: Basics and simple distinctions. 'What's the difference between X and Y?'\n"
-            "  PROBE: Accept partial answers — they're learning. Get one clear reasoning example, then move on.\n"
-            "  CODE CARDS: After the first verbal question, you may show a code_card. Timer: 45 seconds.\n"
-            "    code_trace: tiny — 3-6 lines, one obvious operation (a single loop, a print, basic\n"
-            "    arithmetic/string op). Output derivable by reading it once.\n"
-            "    snippet_eval: the bug is OBVIOUS on a skim — a clear typo, wrong operator, or missing return.\n"
-            "    query_trace: a single-table SELECT/WHERE/simple filter — no joins, no aggregation.\n"
-            "  No failure_mode, no tradeoff_debate, no scenario until later.\n"
-        ),
-        2: (
-            "  QUESTION TYPES (Level 2 — mostly verbal, all code-card types at EASY-MEDIUM, failure_mode unlocked):\n"
-            "    definition | mechanism | difference | failure_mode | scenario | code_trace | snippet_eval | query_trace | followup\n"
-            "  HOW TO ASK: Mechanics + one-constraint applied questions. 'What would you check first if X was slow?'\n"
-            "  PROBE: If they give a textbook answer with no reasoning, push: 'What's the tradeoff there?'\n"
-            "  CODE CARDS: After the first verbal question, you may show a code_card. Timer: 45 seconds.\n"
-            "    code_trace: one function, one clear behavior to trace (a loop with a running total, a simple\n"
-            "    conditional, basic list/dict mutation). No nested edge cases or multi-function chains.\n"
-            "    snippet_eval: the bug takes one careful read to spot (an off-by-one, a wrong comparison) but\n"
-            "    isn't hidden behind other logic.\n"
-            "    query_trace: one join or a basic GROUP BY -- still traceable in one pass, no subqueries.\n"
-            "  failure_mode available after first concept question.\n"
-        ),
-        3: (
-            "  QUESTION TYPES (Level 3 — code cards more frequent, harder snippets):\n"
-            "    mechanism | difference | code_trace | snippet_eval | query_trace | failure_mode | tradeoff_debate | scenario | followup\n"
-            "  HOW TO ASK: Applied questions with a genuine tradeoff. 'Why this approach over the alternative?'\n"
-            "  CODE CARDS: After the first verbal question, you may show a code_card. Candidate reads the card\n"
-            "    and speaks the answer -- no writing. Timer: 45 seconds.\n"
-            "    code_trace: a step up from level 2 — one function but with a real gotcha (a mutable default\n"
-            "    arg, a closure over a loop variable, an off-by-one, shared-reference mutation). Non-obvious on\n"
-            "    a skim, still solvable by tracing it once. Not staff-level, no multi-function chains.\n"
-            "    snippet_eval: a bug that takes real tracing to find — not visible from a skim, needs following\n"
-            "    execution through 2-3 steps.\n"
-            "    query_trace: a join plus a filter/aggregation where the result set takes actual reasoning,\n"
-            "    not just reading the WHERE clause.\n"
-            "  PROBE: A confident-but-shallow answer is a signal to probe deeper, not a pass.\n"
-        ),
-        4: (
-            "  QUESTION TYPES (Level 4 — all types available at HARDEST difficulty, code cards preferred for code skills):\n"
-            "    code_trace | snippet_eval | query_trace | failure_mode | tradeoff_debate | scenario | followup\n"
-            "  HOW TO ASK: Tradeoffs and systemic judgment. 'What breaks about that approach at scale?'\n"
-            "  CODE CARDS: After the first verbal question, prefer code_trace/snippet_eval to test real code reading.\n"
-            "    code_trace: multi-step gotcha combining two subtle behaviors (e.g. mutation + late binding).\n"
-            "    Not a single named pattern — candidate must trace through two interacting rules.\n"
-            "    snippet_eval: show a snippet with a SUBTLE bug — wrong by one condition, a stale reference,\n"
-            "    a race/ordering issue, an off-by-one -- nothing that jumps out on a skim. Candidate must reason\n"
-            "    it out, not just spot a typo.\n"
-            "    query_trace: for DB/query skills only. Advanced query — joins, aggregation, or a subquery —\n"
-            "    where the returned rows/values aren't obvious at a glance. Candidate explains what it actually\n"
-            "    returns and why, not just what it looks like it does.\n"
-            "  PROBE: Surface-level or textbook answers are a red flag — invert their assumption and press harder.\n"
-        ),
-    }.get(level, "  -> Ask a cold-reasoning question grounded in the skill itself, never 'do you know X?'\n")
-    _code_card_format_rule = (
-        "  HOW TO SHOW A CODE CARD: when you ask a code_trace/snippet_eval/query_trace question, you MUST\n"
-        "  output an actual markdown fenced code block -- never describe the snippet in words. The fence's\n"
-        "  language tag must be exactly one of code_trace / snippet_eval / query_trace, matching the type of\n"
-        "  question (this tag is machine-parsed downstream, not decoration). Example:\n"
-        "    <your spoken setup, under 12 words>\n"
-        "    ```code_trace\n"
-        "    <the code, real and runnable -- not pseudocode>\n"
-        "    ```\n"
-        "  (swap the fence tag for snippet_eval or query_trace to match what you're asking). A code question\n"
-        "  with no fence is broken -- the candidate sees nothing. Never include a fence for any other type.\n"
-    )
+
+    strategy = ""
     if interview_brief is not None:
-        _brief_skills = [t for t in interview_brief.topic_pool if t.topic_type in ("skill", "role_topic")]
-        if _brief_skills:
-            _skill_lines = []
-            for _st in _brief_skills:
-                _focus = _st.probe_focus or ""
-                _line = f"  - {_st.title}"
-                if _st.full_description:
-                    _line += f"\n      CONTEXT: {_st.full_description}"
-                if _st.tech_stack:
-                    _line += f"\n      TECH: {', '.join(_st.tech_stack)}"
-                if _focus:
-                    _line += f"\n      [probe: {_focus}]"
-                if _st.why_relevant:
-                    _line += f"\n      — {_st.why_relevant}"
-                _skill_lines.append(_line)
-            skills_block = (
-                f"\nSKILLS TO COVER (ordered by question bank priority):\n"
-                + "\n".join(_skill_lines) + "\n"
-                + f"{_skill_probe_style}"
-                + f"{_code_card_format_rule}"
-                + "  -> Every question about a skill must stand alone -- answerable cold, with no project/resume reference.\n"
-                + "  -> If the candidate can't answer a skill question, acknowledge once and move to the next skill.\n"
-            )
-        else:
-            skills_block = ""
-    else:
-        _resume_skills = [str(s).strip() for s in (getattr(resume_brief, "skills", None) or []) if str(s).strip()]
-        _jd_skill_list = [str(s).strip() for s in (jd_skills or []) if str(s).strip()]
-        if _resume_skills or _jd_skill_list:
-            skills_block = (
-                f"\nSKILLS TO COVER:\n"
-                f"  Resume skills: {', '.join(_resume_skills) or 'none listed'}\n"
-                f"  JD must-have skills: {', '.join(_jd_skill_list) or 'none listed'}\n"
-                f"{_skill_probe_style}"
-                f"{_code_card_format_rule}"
-                f"  -> Ask a cold-reasoning question about each skill itself -- never reference the candidate's "
-                f"projects, resume, or work history when asking.\n"
-            )
-        else:
-            skills_block = ""
-    # Level-aware follow-up pacing note. Coverage itself (which skills, in what
-    # order) comes from interview_brief.topic_pool and interview_strategy --
-    # both already role-specific, so it isn't re-derived generically here per level.
-    _pacing_note = {
-        1: "  -> BREADTH FIRST -- 2-3 follow-ups per skill. Move on when you have signal. Accept incomplete answers, they're learning.\n",
-        2: "  -> BALANCED -- 3-4 follow-ups per skill. Move on once reasoning (not just recall) is demonstrated.\n",
-        3: "  -> APPLIED DEPTH -- 3-5 follow-ups per skill. Push once on the 'why' before moving on.\n",
-        4: "  -> DEPTH ONLY -- 4-6 follow-ups on critical skills. Breadth is secondary. Press on every tradeoff claim.\n",
-    }.get(level, "  -> 3-4 follow-ups per skill. Move on when you have clear signal.\n")
-    _dry_run_questions = {
-        1: (
-            "  'What's a concept in this stack that's easy to get wrong at first -- and why?'\n"
-            "  'If two approaches to the same basic problem both work, how would you pick between them?'\n"
-            "  'What's something in this area that sounds simple but trips people up early on?'"
-        ),
-        2: (
-            "  'Where do people commonly cut corners with this that comes back to bite them later?'\n"
-            "  'If you had to explain the biggest gotcha in this area to a newer engineer, what would it be?'\n"
-            "  'What's a case where the textbook answer and the practical answer for this actually differ?'"
-        ),
-        3: (
-            "  'What's a tradeoff in this area where reasonable engineers disagree?'\n"
-            "  'When would you deliberately NOT use the textbook-recommended approach here?'\n"
-            "  'What's a constraint that would change your approach to this entirely?'"
-        ),
-        4: (
-            "  'Where do you think most engineers get this kind of tradeoff wrong?'\n"
-            "  'What's a widely-accepted best practice in this area you'd actually push back on?'\n"
-            "  'If you had to pick the single hardest thing to get right at scale here, what would it be?'"
-        ),
-    }.get(level, (
-        "  'What's a concept in this area that's genuinely tricky to explain to someone else?'\n"
-        "  'Where do you think most engineers get this kind of tradeoff wrong?'"
-    ))
+        strategy = f"ROLE STRATEGY: {interview_brief.interview_strategy}\n"
+        if interview_brief.red_flags:
+            strategy += f"WATCH FOR: {', '.join(interview_brief.red_flags)}\n"
+
     return (
-        f"[DO NOT SAY ALOUD]\n\n"
-        f"GOAL: In the next ~19 minutes, test how deep this candidate's technical knowledge actually goes --\n"
-        f"pure skill/technical reasoning, never their personal project or work history.\n\n"
-        f"HARD RULE: Never ask about 'your project,' 'your resume,' 'a time when you,' or any company/project "
-        f"name. Every question must be answerable cold by anyone who knows the skill -- not prep-able from a resume.\n\n"
-        f"IMPORTANT: If a [NEXT_TURN_DIRECTIVE] or [TOPIC_LOCK] appears in this context, follow it\n"
-        f"EXACTLY and IMMEDIATELY -- it is a real-time routing decision and overrides everything below.\n\n"
-        f"OPENING MOVE: {opening}\n\n"
-        f"{skills_block}"
-        f"{cq_block}\n"
-        f"HOW TO MOVE:\n"
-        f"  -> Always follow the [NEXT_TURN_DIRECTIVE] when present -- it overrides everything below.\n"
-        f"  -> Start with the anchor skill. Follow what they say -- a claim, a tradeoff, a gap in reasoning.\n"
-        f"{_pacing_note}"
-        f"  -> Do NOT wrap up or say goodbye until the system signals you to.\n\n"
-        f"IF TOPICS RUN DRY -- keep going with adaptive, skill-focused questions (pick what fits for LEVEL {level}):\n"
-        f"{_dry_run_questions}\n"
-        f"There is always something to ask. Never close early. Never fall back to asking about projects or work."
+        "[DO NOT SAY ALOUD]\n\n"
+        "You are running a real technical interview. Find out how deep this candidate's\n"
+        "knowledge actually goes by talking to them like a senior engineer would.\n\n"
+        "If a [NEXT_TURN_DIRECTIVE] or [TOPIC_LOCK] appears in this context, follow it\n"
+        "EXACTLY -- it is a live routing decision and overrides everything below.\n\n"
+        f"{strategy}"
+        f"{resume_block}"
+        f"{topics_block}"
+        f"\n{_QUESTION_RULE}"
+        f"\n{_LEVEL_GUIDE.get(level, _LEVEL_GUIDE[2])}\n"
+        f"\n{_CODE_CARD_RULE}"
+        f"\n{_EXIT_RULE}"
+        f"{_build_custom_questions_block(custom_questions)}"
+        "\nStart with the first JD topic above, using the same rule as every other question.\n"
+        "Then follow what they say rather than marching down the list. Never close early.\n"
+        f"\n{_NON_NEGOTIABLES}"
     )
