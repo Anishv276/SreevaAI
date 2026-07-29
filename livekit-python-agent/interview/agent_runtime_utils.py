@@ -252,19 +252,53 @@ class TextSanitizer:
         (re.compile(r"^\s*good\.\s+so\s+i['']?ll\s+be\s+conducting\b", re.I), "Doing well, packed with interviews today. I'll be conducting"),
     )
 
-    # TTS phonetic fixes (preserve speech flow for voice synthesis)
-    # Fixes for Sarvam: collapse em-dashes and ellipses it can't handle
+    # TTS phonetic fixes for Sarvam.
+    #
+    # Every pause-bearing character is normalised to an em-dash, because that is
+    # the cheapest break Sarvam renders. Measured on bulbul:v3 with identical
+    # wording and only the punctuation varied (4 renditions each):
+    #
+    #   punctuation     pauses/turn   total pause
+    #   em-dash             2.0          504ms
+    #   1 comma             1.8          646ms
+    #   3 commas            2.2          668ms
+    #   no punctuation      3.2          691ms
+    #   2 commas            3.0          927ms
+    #   ellipsis            4.0         1069ms
+    #
+    # Two things follow, and the second one matters more than it looks:
+    #
+    # 1. Ellipsis is the worst option and must never reach Sarvam. It used to be
+    #    rewritten to ", " -- i.e. the draggiest character became the second
+    #    draggiest. It now becomes an em-dash.
+    #
+    # 2. Comma count does NOT predict pause count (zero commas produced MORE
+    #    pauses than three). Sarvam decides its own phrasing and largely ignores
+    #    our punctuation, so stripping commas is not a lever and is not
+    #    attempted here. These rules only ensure that when a break IS taken, it
+    #    is the short kind. Do not "optimise" this further by deleting commas --
+    #    it was measured and it does not work.
     _TTS_PHONETIC_FIXES: tuple[tuple[re.Pattern, str], ...] = (
-        (re.compile(r"\s*[–—]\s*"), ", "),
-        (re.compile(r"\s*-{2,}\s*"), ", "),
+        (re.compile(r"\s*-{2,}\s*"), " — "),
+        # Spaced single hyphen used as a dash ("Right - so what happens?").
+        # Must run BEFORE the compound-word rule below, and requires the
+        # surrounding spaces, so "end-to-end" is untouched here.
+        (re.compile(r"\s+-\s+"), " — "),
         # Space, not "" -- stripping the hyphen entirely glued compound words into one
         # unspoken run-on ("end-to-end" -> "endtoend", "multi-channel" -> "multichannel"),
         # which Sarvam then mispronounces/garbles exactly like the word-glue bug fixed in
         # make_tts_sanitize_transform. A space keeps the words separate and readable.
         (re.compile(r"(?<=[a-zA-Z])-(?=[a-zA-Z])"), " "),
-        (re.compile(r"\.{2,}"), ", "),
+        # Ellipsis -> em-dash (was ", "). See the table above: ellipsis is the
+        # longest hold of any punctuation, comma the second longest.
+        (re.compile(r"\s*\.{2,}\s*"), " — "),
         (re.compile(r"[`*_~]"), ""),
-        (re.compile(r"\b(Hmm|Mm|Ah|Oh|Right|Yeah|So|Well|Okay)\b(?!\s*[,.\?!])"), r"\1,"),
+        # Punctuate a bare opening filler so it reads as a beat rather than
+        # running into the sentence. The negative lookahead now also covers the
+        # dash characters, so a filler that already precedes an em-dash is left
+        # alone instead of becoming "Right, —" (comma AND dash = a double pause,
+        # the worst case for drag).
+        (re.compile(r"\b(Hmm|Mm|Ah|Oh|Right|Yeah|So|Well|Okay)\b(?!\s*[,.\?!—–-])"), r"\1,"),
         (re.compile(r" {2,}"), " "),
     )
     # ElevenLabs-specific fixes: preserve em-dashes and ellipses (ElevenLabs uses them

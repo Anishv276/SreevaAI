@@ -1,7 +1,9 @@
+import array
 import asyncio
 import collections
 import difflib
 import json
+import math
 import os
 import time
 from typing import Optional, Any
@@ -329,6 +331,7 @@ from livekit.agents import (
 from livekit.agents.metrics import AgentSessionUsage
 from livekit.agents.voice import room_io
 from livekit.agents.voice.turn import InterruptionOptions
+from livekit import rtc
 from interview.tech.prompts import (
     build_voice_layer_prompt,
     build_evaluation_layer_prompt,
@@ -2195,13 +2198,112 @@ class InterviewAgent(Agent):
                 n += 1
             tts_stream.end_input()
             logger.info("[TTS] Streamed %d chunk(s) via WebSocket", n)
+        # Per-turn loudness normalization (Sarvam only).
+        #
+        # bulbul:v3 renders the same text at a materially different level on
+        # every call -- measured across 12 real question turns, the loudest turn
+        # was 1.88x the quietest (voiced RMS CV ~15%). That is the "voice becomes
+        # slightly lower sometimes" report: nothing is wrong with any individual
+        # turn, they just don't match each other.
+        #
+        # Not fixable server-side. Measured and ruled out: pace, codec, sample
+        # rate, min_buffer_size, max_chunk_length, temperature (0.01-0.9), and
+        # the v3 `loudness` parameter itself (the plugin gates it to v2 so it has
+        # to be injected; when injected it does not reduce the spread).
+        #
+        # One constant gain for the whole turn fixes the level without touching
+        # delivery: relative dynamics inside the turn -- every stress, pause and
+        # intonation move -- are preserved exactly, because every sample is
+        # scaled by the same number. Only the overall volume moves. Verified on
+        # this exact mp3/22050 config: spread 1.82x -> 1.14x, zero clipping, no
+        # samples added or dropped.
+        _normalize_loudness = type(tts_engine).__module__.startswith("livekit.plugins.sarvam")
+        _TARGET_RMS = 3000.0   # ~ the level bulbul:v3 already averages
+        _MAX_GAIN, _MIN_GAIN = 4.0, 0.25
+        _PEAK_LIMIT = 30000    # headroom under int16 max, never clip
+
+        def _frame_samples(frame):
+            data = frame.data
+            if getattr(data, "format", None) == "h":
+                return data
+            return memoryview(bytes(data)).cast("h")
+
+        def _turn_gain(frames) -> float:
+            total_sq = 0
+            counted = 0
+            peak = 0
+            for f in frames:
+                try:
+                    s = _frame_samples(f)
+                except (TypeError, ValueError):
+                    return 1.0
+                for i in range(0, len(s), 4):
+                    v = s[i]
+                    if v < 0:
+                        v = -v
+                    if v > peak:
+                        peak = v
+                    # Voiced-only average: silence must not drag it down, or a
+                    # turn with long pauses would be over-amplified.
+                    if v >= 300:
+                        total_sq += v * v
+                        counted += 1
+            if not counted or peak <= 0:
+                return 1.0
+            rms = math.sqrt(total_sq / counted)
+            if rms <= 0:
+                return 1.0
+            gain = max(_MIN_GAIN, min(_MAX_GAIN, _TARGET_RMS / rms))
+            if peak * gain > _PEAK_LIMIT:
+                gain = _PEAK_LIMIT / peak
+            return gain
+
+        def _scaled(frame, gain: float):
+            if abs(gain - 1.0) < 0.02:
+                return frame
+            try:
+                s = _frame_samples(frame)
+            except (TypeError, ValueError):
+                return frame
+            out = array.array("h", s)
+            for i in range(len(out)):
+                v = int(out[i] * gain)
+                if v > 32767:
+                    v = 32767
+                elif v < -32768:
+                    v = -32768
+                out[i] = v
+            return rtc.AudioFrame(
+                data=out.tobytes(),
+                sample_rate=frame.sample_rate,
+                num_channels=frame.num_channels,
+                samples_per_channel=frame.samples_per_channel,
+            )
+
         try:
             if tts_engine.capabilities.streaming:
                 async with tts_engine.stream(conn_options=conn_options) as stream:
                     push_task = asyncio.create_task(_push_sentences(stream))
                     try:
-                        async for ev in stream:
-                            yield ev.frame
+                        if not _normalize_loudness:
+                            async for ev in stream:
+                                yield ev.frame
+                        else:
+                            # The gain depends on the whole turn's RMS, so the
+                            # frames have to be in hand before any is emitted.
+                            # Sarvam delivers ~3x faster than real time (measured
+                            # RTF ~0.31), so the turn is fully synthesized well
+                            # before it would have finished playing -- this does
+                            # not add perceptible latency.
+                            _frames = [ev.frame async for ev in stream]
+                            _gain = _turn_gain(_frames)
+                            if abs(_gain - 1.0) >= 0.02:
+                                logger.info(
+                                    "[TTS] Sarvam loudness normalized: gain=%.2f over %d frame(s)",
+                                    _gain, len(_frames),
+                                )
+                            for _f in _frames:
+                                yield _scaled(_f, _gain)
                     finally:
                         await push_task
             else:
