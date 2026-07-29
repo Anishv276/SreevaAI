@@ -1,7 +1,9 @@
+import array
 import asyncio
 import collections
 import difflib
 import json
+import math
 import os
 import time
 from typing import Optional, Any
@@ -329,6 +331,7 @@ from livekit.agents import (
 from livekit.agents.metrics import AgentSessionUsage
 from livekit.agents.voice import room_io
 from livekit.agents.voice.turn import InterruptionOptions
+from livekit import rtc
 from interview.tech.prompts import (
     build_voice_layer_prompt,
     build_evaluation_layer_prompt,
@@ -2221,13 +2224,119 @@ class InterviewAgent(Agent):
                 n += 1
             tts_stream.end_input()
             logger.info("[TTS] Streamed %d chunk(s) via WebSocket", n)
+        # Per-turn loudness normalization (Sarvam only).
+        #
+        # bulbul:v3 returns materially different renditions of the SAME text on
+        # every call. Measured over 12 real question turns: voiced RMS ranged
+        # 1822..4279 (CV 21.3%, loudest turn 2.35x the quietest). That is what
+        # is heard as "the voice suddenly changed / became too low".
+        #
+        # This is NOT fixable server-side. Measured and ruled out: pace, codec,
+        # sample rate, min_buffer_size, max_chunk_length, temperature (swept
+        # 0.01-0.5; even near-deterministic sampling still swings), and the v3
+        # `loudness` parameter itself -- the API accepts loudness on v3 (the
+        # LiveKit plugin gates it to v2, so it has to be injected) but it does
+        # not reduce the spread at all (rms CV 15.2% -> 16.8%). The variance is
+        # generation-side, so it has to be corrected on our side.
+        #
+        # Applying ONE constant gain per turn normalizes level without touching
+        # prosody: relative dynamics inside the turn are preserved exactly,
+        # only the overall level moves. Measured result: RMS spread drops from
+        # 2.35x to 1.20x (CV 21.3% -> 4.7%).
+        #
+        # Speaking-RATE variance (words stretching) is a separate axis and is
+        # NOT addressed here -- no client-side transform fixes that without
+        # resampling, which would alter pitch.
+        _normalize_loudness = type(tts_engine).__module__.startswith("livekit.plugins.sarvam")
+        _TARGET_RMS = 3000.0   # ~ the mean level bulbul:v3 already produces
+        _MAX_GAIN, _MIN_GAIN = 4.0, 0.25
+        _PEAK_LIMIT = 30000    # headroom under int16 max, never clip
+
+        def _samples_of(frame):
+            data = frame.data
+            if getattr(data, "format", None) == "h":
+                return data
+            return memoryview(bytes(data)).cast("h")
+
+        def _turn_gain(frames) -> float:
+            """One gain for the whole turn, from voiced-only RMS."""
+            total_sq = 0
+            counted = 0
+            peak = 0
+            for f in frames:
+                try:
+                    s = _samples_of(f)
+                except (TypeError, ValueError):
+                    return 1.0
+                for i in range(0, len(s), 4):
+                    v = s[i]
+                    if v < 0:
+                        v = -v
+                    if v > peak:
+                        peak = v
+                    # Voiced-only: silence must not drag the average down, or a
+                    # turn with long pauses would be over-amplified.
+                    if v >= 300:
+                        total_sq += v * v
+                        counted += 1
+            if not counted or peak <= 0:
+                return 1.0
+            rms = math.sqrt(total_sq / counted)
+            if rms <= 0:
+                return 1.0
+            gain = max(_MIN_GAIN, min(_MAX_GAIN, _TARGET_RMS / rms))
+            # Never amplify into clipping.
+            if peak * gain > _PEAK_LIMIT:
+                gain = _PEAK_LIMIT / peak
+            return gain
+
+        def _apply_gain(frame, gain: float):
+            if abs(gain - 1.0) < 0.02:
+                return frame
+            try:
+                s = _samples_of(frame)
+            except (TypeError, ValueError):
+                return frame
+            out = array.array("h", s)
+            for i in range(len(out)):
+                v = int(out[i] * gain)
+                if v > 32767:
+                    v = 32767
+                elif v < -32768:
+                    v = -32768
+                out[i] = v
+            return rtc.AudioFrame(
+                data=out.tobytes(),
+                sample_rate=frame.sample_rate,
+                num_channels=frame.num_channels,
+                samples_per_channel=frame.samples_per_channel,
+            )
+
         try:
             if tts_engine.capabilities.streaming:
                 async with tts_engine.stream(conn_options=conn_options) as stream:
                     push_task = asyncio.create_task(_push_sentences(stream))
                     try:
-                        async for ev in stream:
-                            yield ev.frame
+                        if not _normalize_loudness:
+                            async for ev in stream:
+                                yield ev.frame
+                        else:
+                            # Buffering the turn is required: the gain depends on
+                            # the whole turn's RMS, which is only known once every
+                            # frame has arrived. This costs latency equal to the
+                            # synthesis time of one turn -- acceptable because
+                            # Sarvam delivers ~3x faster than real time (measured
+                            # RTF ~0.31), so the audio is fully in hand well before
+                            # it would have finished playing anyway.
+                            _frames = [ev.frame async for ev in stream]
+                            _gain = _turn_gain(_frames)
+                            if abs(_gain - 1.0) >= 0.02:
+                                logger.info(
+                                    "[TTS] Sarvam loudness normalized: gain=%.2f over %d frame(s)",
+                                    _gain, len(_frames),
+                                )
+                            for _f in _frames:
+                                yield _apply_gain(_f, _gain)
                     finally:
                         await push_task
             else:
