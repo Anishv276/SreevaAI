@@ -358,15 +358,24 @@ async def get_demo_interview_context(app_id: str, dispatch_metadata: dict) -> di
         # single number cannot be correct for both, and 1.15 is outside the range
         # ElevenLabs accepts cleanly.
         #
-        # Sarvam 1.15. Briefly lowered to 1.05 on the theory that a hurried pace
-        # was contributing to the "sounds like a bot" feel -- that was wrong, and
-        # it was reported back as the voice being too slow. Restored to the value
-        # that was in place before. Note this OVERRIDES sarvam_pace (1.2) in
-        # agent_providers.py, so it is the single source of demo pace; change it
-        # here, not there.
+        # Sarvam None -> agent_providers.py's sarvam_pace (1.2) applies.
+        #
+        # This used to hardcode 1.15, which OVERRODE the 1.2 default and was the
+        # only TTS difference between demo and /test: /test sends no ttsSpeed, so
+        # when the org row's ttsSpeed is NULL the kwarg is omitted entirely and
+        # Sarvam runs at 1.2. Demo forced 1.15. Same voice (priya), same model,
+        # different pace -- which is exactly the "demo voice is worse than /test"
+        # report, since measured mid-sentence gaps grow as pace drops:
+        #
+        #   pace 1.2 -> worst-gap avg 277ms, max 465ms
+        #   pace 1.0 -> worst-gap avg 485ms, max 690ms (lead-in silence doubles)
+        #
+        # Leaving this None keeps demo and /test on one code path, so a future
+        # pace change lands in agent_providers.py and applies to both instead of
+        # silently diverging again.
         # ElevenLabs None: let build_elevenlabs_tts apply its own tuned 0.95
         # (different scale -- 1.15 is out of range for ElevenLabs).
-        "ttsSpeed":             1.15 if _demo_tts_provider != "ELEVENLABS" else None,
+        "ttsSpeed":             None,
         # DEMO-ONLY LLMs -- see function docstring: these never affect real interviews.
         "llmInterviewLive":     "gpt-4.1-mini",
         "llmInterviewEval":     "gpt-4.1-mini",

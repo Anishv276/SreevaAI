@@ -431,7 +431,34 @@ def _looks_like_interviewer_echo(candidate_text: str, last_question: str) -> boo
     # or lightly STT-mangled playback) scores high on both at once, while a
     # genuine answer that happens to reuse question vocabulary typically only
     # trips one.
-    return ratio >= 0.85 or (ratio >= 0.55 and word_overlap >= 0.85)
+    if ratio >= 0.85 or (ratio >= 0.55 and word_overlap >= 0.85):
+        return True
+
+    # PARTIAL echo. The checks above compare whole utterances, so they only fire
+    # when the mic picked up substantially the ENTIRE agent turn. The common
+    # real-world bleed is a fragment -- typically the tail, because the
+    # candidate's mic opens as the agent is finishing ("...list or dict, and
+    # why?" transcribed as the candidate's answer). Against the full question
+    # such a fragment scores low on `ratio` (it is short relative to q), so it
+    # was treated as a genuine answer: the eval pipeline scored and probed on
+    # it, which surfaces as the agent responding to something the candidate
+    # never said, right after they finished speaking.
+    #
+    # Detect it as a long CONTIGUOUS verbatim run shared with the spoken text.
+    # Contiguity is what separates echo from ordinary overlap: a real answer
+    # reuses the question's vocabulary scattered through its own sentence
+    # structure, but essentially never reproduces a long unbroken span of the
+    # interviewer's exact wording. The bar is deliberately high (>=20 chars AND
+    # >=60% of the candidate text) so short answers and quoted key terms stay
+    # clear -- a false positive here re-asks a question the candidate just
+    # answered, which is worse than missing an echo.
+    match = difflib.SequenceMatcher(None, norm_q, norm_a).find_longest_match(
+        0, len(norm_q), 0, len(norm_a)
+    )
+    if match.size >= 20 and match.size / len(norm_a) >= 0.60:
+        return True
+
+    return False
 def _topic_short_title(topic: str) -> str:
     """Extract short title from full topic string (before ' - ')."""
     return (topic or "").split(" - ")[0].strip()
@@ -773,6 +800,114 @@ def extract_code_card(text: str) -> tuple[str, str, str, str] | None:
     return spoken, code.strip(), question_type, language
 
 
+# Turns that hand control of the interview to the candidate ("shall we move
+# on?") or fish for validation of the agent's own turn ("does that make
+# sense?").
+#
+# Deliberately narrow: each alternative requires the permission-seeking VERB
+# together with its object, so ordinary interview language is untouched.
+# Anchored on 'move on/ahead/to the next' rather than the bare word "move", so
+# "how would you move that computation off the hot path?" still passes.
+_PERMISSION_ASK_RE = re.compile(
+    r"(?:"
+    r"\b(?:shall|should|can|could|may)\s+(?:i|we)\b[^?]*\bmove\s+(?:on|ahead|to)\b"
+    r"|\b(?:shall|should)\s+(?:i|we)\s+(?:continue|proceed|go\s+on|keep\s+going)\b"
+    r"|\bdo\s+you\s+(?:want|wanna)\s+(?:me\s+)?to\s+move\s+(?:on|ahead|to)\b"
+    r"|\bwould\s+you\s+like\s+(?:me\s+)?to\s+(?:move\s+(?:on|ahead|to)|continue|proceed)\b"
+    r"|\b(?:are|r)\s+you\s+ready\s+for\s+(?:the\s+)?next\b"
+    r"|\bready\s+to\s+move\s+(?:on|ahead|to)\b"
+    r"|\bdoes\s+that\s+(?:make\s+sense|help|answer\s+(?:it|that|your))\b"
+    r"|\bis\s+that\s+(?:clear|ok|okay|fair|right)\b\s*\?"
+    r"|\bdid\s+that\s+(?:make\s+sense|help)\b"
+    r")",
+    re.I,
+)
+
+
+# Reaction beats that are ALLOWED to precede the question. A legitimate turn is
+# "<short reaction> <question>"; anything longer than one of these in front of
+# the '?' is the agent teaching the material rather than reacting to it.
+_ALLOWED_REACTION_RE = re.compile(
+    r"^(?:"
+    r"(?:umm+|hmm+|uhh+|ohh+|ah+|haha|right|okay|ok|got\s+it|i\s+see|sure|yeah|yep|"
+    r"nice|good|fair\s+enough|interesting|exactly|makes\s+sense|understood|alright|"
+    r"cool|wow|really|true|perfect|great)"
+    r"[\s,.!—-]*"
+    r")+$",
+    re.I,
+)
+
+# Content words that mark a declarative clause as an ANSWER rather than a
+# question's setup. A TRACE/DECIDE question legitimately states a concrete case
+# ("You append to one of two names pointing at the same list -- what does the
+# other see?"), which is scenario setup, not teaching. Explanatory connectives
+# are what separate the two: an answer explains WHY/BECAUSE/SO, a scenario just
+# describes a situation.
+_EXPLANATORY_RE = re.compile(
+    r"\b(?:because|since|therefore|so\s+that|which\s+means|that\s+means|the\s+reason|"
+    r"this\s+is\s+why|that\s+is\s+why|in\s+other\s+words|essentially|basically|"
+    r"the\s+answer\s+is|correct[,.]|that's\s+right|you're\s+right|exactly\s+right)\b",
+    re.I,
+)
+
+
+def _looks_like_agent_answered_itself(stripped: str) -> bool:
+    """True when the turn states the answer before asking the question.
+
+    Shape: "<declarative teaching clause>. <question>?" -- e.g. "A list is
+    mutable and a tuple is immutable. What happens if you modify a tuple?"
+    Passes every other check (short, one '?') but tells the candidate the
+    answer, so there is nothing left to assess.
+
+    A short reaction ("Got it.", "Right,") before the question is fine and is
+    what the prompt actually asks for; a substantive declarative clause is not.
+    """
+    q_idx = stripped.find("?")
+    if q_idx == -1:
+        return False
+    lead = stripped[:q_idx]
+    # Drop the final (question) sentence: everything before the last sentence
+    # boundary is the declarative lead-in.
+    parts = re.split(r"(?<=[.!])\s+", lead)
+    if len(parts) < 2:
+        return False
+    declarative = " ".join(parts[:-1]).strip()
+    if not declarative:
+        return False
+    if _ALLOWED_REACTION_RE.match(declarative):
+        return False
+    # Strip a leading short reaction ("Got it.", "Right,") so only the
+    # substantive remainder is judged.
+    _lead_react = re.match(
+        r"^(?:umm+|hmm+|uhh+|ohh+|ah+|haha|right|okay|ok|got\s+it|i\s+see|sure|yeah|yep|"
+        r"nice|good|fair\s+enough|interesting|exactly|understood|alright|cool|true)"
+        r"[\s,.!—-]+",
+        declarative, re.I,
+    )
+    if _lead_react:
+        declarative = declarative[_lead_react.end():].strip()
+        if not declarative:
+            return False
+    # An explanatory connective is a direct tell regardless of length.
+    if _EXPLANATORY_RE.search(declarative):
+        return True
+    # A scenario the candidate is placed INSIDE is question setup, not an
+    # answer: DIAGNOSE/DECIDE questions legitimately open with a situation
+    # ("A three-table join suddenly got slow." / "You look up 10k records by id
+    # constantly."). What distinguishes teaching is a third-person factual
+    # assertion about how the technology behaves. Second-person framing, or a
+    # narrative past/'-ing' situation, is setup -- leave it alone.
+    if re.search(r"\b(?:you|your|you're|you'd|imagine|suppose|say)\b", declarative, re.I):
+        return False
+    if re.search(r"\b(?:suddenly|just\s+started|keeps?|began|started|got\s+slow|"
+                 r"is\s+failing|are\s+failing|went\s+down|crashed|spiked?)\b",
+                 declarative, re.I):
+        return False
+    # Remaining shape: a standalone third-person claim about how something
+    # works, stated before the question -- that is the answer being given away.
+    return len(declarative.split()) >= 5
+
+
 def validate_spoken_question(text: str, *, max_words: int = 30) -> list[str]:
     """Returns a list of violation reasons (empty list = passes). Pure/sync so
     it's trivially unit-testable without any LLM or audio dependency."""
@@ -827,6 +962,26 @@ def validate_spoken_question(text: str, *, max_words: int = 30) -> list[str]:
                 )
                 break
 
+    # Permission-seeking / self-validating turns. The interviewer drives the
+    # session -- it never asks the candidate to approve the next step, and never
+    # asks whether its own turn landed. Observed in demo as the agent finishing
+    # an answer and then asking "shall we move on to the next question?", which
+    # hands control to the candidate and stalls the interview.
+    #
+    # Enforced here as well as in the prompt because the prompt rule alone is
+    # advisory -- a violation here routes into the existing regeneration path
+    # (see _STRICT_REGEN_SUFFIX) instead of being spoken.
+    if _PERMISSION_ASK_RE.search(stripped):
+        violations.append("permission-seeking turn (asks to move on / seeks validation)")
+
+    # The agent stating the answer before asking the question. Reported from the
+    # demo as "it's saying both the question and the answer". Every other check
+    # passes on these ("A list is mutable and a tuple is immutable. What happens
+    # if you modify a tuple?" is 18 words with one '?'), because none of them
+    # look at whether the declarative lead-in is a reaction or a lecture.
+    if _looks_like_agent_answered_itself(stripped):
+        violations.append("agent answered its own question (declarative lead-in states the answer)")
+
     return violations
 
 
@@ -834,7 +989,10 @@ _STRICT_REGEN_SUFFIX = (
     "\n\n[REGENERATION -- YOUR LAST OUTPUT VIOLATED THE HARD LENGTH/FORMAT CAP]\n"
     "Your previous attempt broke one of these HARD rules: (1) reaction+question together "
     "must be <= 30 words total, (2) EXACTLY ONE '?' in the entire output, (3) never stack a "
-    "second question after the first with 'and'/'or'. Rewrite as ONE short reaction beat plus "
+    "second question after the first with 'and'/'or', (4) NEVER answer, explain, or teach the "
+    "material -- you ask, the candidate answers, (5) NEVER ask permission to continue "
+    "('shall we move on?', 'does that make sense?') -- you drive the interview. "
+    "Rewrite as ONE short reaction beat plus "
     "ONE single question, under 30 words, with exactly one '?'. Keep any concrete case/input the "
     "question needs, but cut all other setup/context -- ask the sharpest single thing directly."
 )
@@ -1846,6 +2004,50 @@ class InterviewAgent(Agent):
                     if delta is not None and delta.content:
                         _pieces.append(delta.content)
             _full_text = "".join(_pieces).strip()
+            # Validate MOVE_ON/anchor turns too. These were previously exempt on
+            # the reasoning that they only "speak a directive built from" an
+            # earlier LLM call -- but the text IS generated live by the chat()
+            # call directly above, so it can break the same rules a PROBE turn
+            # can. This is the turn shape that fires right after the candidate
+            # answers (it opens the next topic), which is exactly where the
+            # reported "it says the question AND the answer" was heard: the
+            # model appended its own answer, and nothing checked it.
+            #
+            # Same one-shot regenerate contract as the PROBE path below: retry
+            # once with the strict suffix, and if that still fails, speak it
+            # anyway rather than risk silence.
+            if _full_text and _full_text != "NO_FOLLOW_UP_NEEDED":
+                _mo_violations = validate_spoken_question(_full_text)
+                if _mo_violations:
+                    logger.warning(
+                        "[VALIDATOR] MOVE_ON/anchor turn failed post-generation check: %s | text=%r",
+                        "; ".join(_mo_violations), _full_text[:200],
+                    )
+                    _ctx_retry = effective_ctx.copy()
+                    _ctx_retry.add_message(role="system", content=_STRICT_REGEN_SUFFIX)
+                    _r_pieces: list[str] = []
+                    _r_chunks: list = []
+                    async with activity.llm.chat(
+                        chat_ctx=_ctx_retry,
+                        tools=tools,
+                        tool_choice=tool_choice,
+                        conn_options=conn_options,
+                        extra_kwargs={"temperature": turn_temp},
+                    ) as _r_stream:
+                        async for _r_chunk in _r_stream:
+                            _r_chunks.append(_r_chunk)
+                            _r_delta = getattr(_r_chunk, "delta", None)
+                            if _r_delta is not None and _r_delta.content:
+                                _r_pieces.append(_r_delta.content)
+                    _retry_text = "".join(_r_pieces).strip()
+                    if _retry_text and _retry_text != "NO_FOLLOW_UP_NEEDED":
+                        if validate_spoken_question(_retry_text):
+                            logger.warning(
+                                "[VALIDATOR] MOVE_ON regeneration STILL failed -- speaking it anyway"
+                            )
+                        else:
+                            logger.info("[VALIDATOR] MOVE_ON regeneration passed on retry")
+                        _full_text, _raw_chunks = _retry_text, _r_chunks
             async for _out_chunk in self._speak_with_code_card_check(_full_text, _raw_chunks):
                 yield _out_chunk
             return
@@ -2923,7 +3125,26 @@ async def entrypoint(ctx: JobContext):
                 # talking over the candidate and then ingesting yourself, so the
                 # sensitive values stay and false triggers are handled by
                 # resume_false_interruption below instead.
-                min_duration=0.5,
+                # 0.8s of SUSTAINED speech, still 1 word.
+                #
+                # This is the greeting-vs-question discrepancy. The scripted
+                # greeting is spoken via session.say(allow_interruptions=False),
+                # so it bypasses this state machine entirely and always sounds
+                # fluent. Generated questions run with interruptions enabled, so
+                # a single word of echo, breathing or mic bleed stops the agent
+                # mid-sentence; it then waits false_interruption_timeout and
+                # resumes where it left off. That pause is the reported
+                # "list....and....tuple" -- it is NOT synthesis. Sarvam's raw PCM
+                # was measured clean across codec/rate/buffer/temperature and at
+                # every text-arrival cadence, so no TTS parameter could move it.
+                #
+                # min_words stays at 1: raising it to 2 previously stopped the
+                # agent yielding to a candidate who had genuinely started
+                # answering, so it talked over them and then ingested its own
+                # audio as the candidate's turn. min_duration is the safe knob --
+                # it demands the trigger be sustained rather than a blip, which
+                # filters noise without slowing a real barge-in.
+                min_duration=0.8,
                 min_words=1,
                 discard_audio_if_uninterruptible=True,
                 # True (SDK default) -- a "false interruption" is background noise/breathing/
@@ -2942,7 +3163,18 @@ async def entrypoint(ctx: JobContext):
                 # dropout, while still resuming quickly. This is the mechanism
                 # that makes the sensitive min_duration/min_words above safe:
                 # the agent stops eagerly, and anything spurious resumes fast.
-                false_interruption_timeout=1.2,
+                # 0.6s (was 1.2s, originally 3.0s). This is the LENGTH of the hole
+                # a false trigger punches into a question: the agent goes silent
+                # for this long before concluding nothing was said and resuming
+                # mid-sentence. 1.2s is well past the ~200ms of a natural speech
+                # pause, so it still reads as the voice stalling. 0.6s passes as
+                # phrasing.
+                #
+                # Safe only alongside the raised min_duration above: fewer false
+                # triggers fire at all, and the ones that do recover twice as
+                # fast. A genuine barge-in is unaffected -- real speech keeps the
+                # interruption latched, so this timeout never elapses.
+                false_interruption_timeout=0.6,
                 backchannel_boundary=(1.0, 3.5),
             ),
         ),
@@ -3827,11 +4059,21 @@ async def entrypoint(ctx: JobContext):
                     turn_snapshot, content[:80],
                 )
                 return
+            # Compare against BOTH the tracked question and the raw text actually
+            # handed to TTS. They differ: a spoken turn is "<reaction> <question>"
+            # (e.g. "Got it. Storing sessions you look up by token -- list or
+            # dict?"), while _last_interviewer_question holds only the question.
+            # A bleed that captured the reaction, or spanned the reaction/question
+            # boundary, matched neither well enough to fire and was scored as a
+            # real answer.
+            _echo_is_bleed = _looks_like_interviewer_echo(
+                content, _last_interviewer_question
+            ) or _looks_like_interviewer_echo(content, agent._recent_tts_text)
             if (
                 is_final_eot
                 and warmup_complete
                 and not agent.question_echo_rephrased_once
-                and _looks_like_interviewer_echo(content, _last_interviewer_question)
+                and _echo_is_bleed
             ):
                 agent.question_echo_rephrased_once = True
                 logger.warning(
