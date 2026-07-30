@@ -35,13 +35,17 @@ export async function POST(request: Request) {
         // test run (no live brief-generation fallback -- that path is retired
         // for tech interviews, see agent_runtime.py's tech branch).
         const interviewId = `test_${applicationId}_${Date.now()}`;
-        const isTechJob = application.job?.interviewType === "tech";
-        const questionBankFields = isTechJob
-            ? {
-                jdQuestionBankSnapshot: (application.job?.questionBank ?? null) as any,
-                jdQuestionBankVersionUsed: application.job?.questionBankVersion ?? null,
-            }
-            : {};
+        // Both tech and conversational jobs generate a question bank via the wizard
+        // now, and agent_runtime.py requires a snapshot for either type -- gating
+        // this on isTechJob left conversational test sessions with no snapshot and
+        // crashed the agent at startup ("No question_bank snapshot found").
+        // Mirrors app/api/interview/[id]/token/route.ts, which already does this
+        // for both types.
+        const questionBankFields = {
+            jdQuestionBankSnapshot: (application.job?.questionBank ?? null) as any,
+            jdQuestionBankVersionUsed: application.job?.questionBankVersion ?? null,
+        };
+
         const interview = await prisma.interview.upsert({
             where: { applicationId },
             create: {
@@ -94,8 +98,8 @@ export async function POST(request: Request) {
 
                 try {
                     const existing = await dispatchClient.listDispatch(roomName);
-                    for (const d of existing) await dispatchClient.deleteDispatch(d.id, roomName).catch(() => {});
-                } catch {}
+                    for (const d of existing) await dispatchClient.deleteDispatch(d.id, roomName).catch(() => { });
+                } catch { }
 
                 await dispatchClient.createDispatch(roomName, agentName, {
                     metadata: JSON.stringify({
