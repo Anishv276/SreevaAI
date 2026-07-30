@@ -1293,6 +1293,7 @@ def get_probe_context(
     resume_json: dict | None = None,
     topic_item: Any | None = None,
     provenance_out: dict | None = None,
+    used_project_skills: set[tuple[str, str]] | None = None,
 ) -> str:
     """
     Returns the probe context block injected into the directive.
@@ -1346,6 +1347,16 @@ def get_probe_context(
       from the SAME branch decision that actually built the directive -- recomputing
       it at the call site could disagree with what was really sent. Always populated
       with all three keys on a PROBE turn, including on the Branch B path.
+
+    used_project_skills: (project title, tested skill) pairs already asked about in
+      an earlier Branch A follow-up this interview (caller-maintained, session-
+      scoped, both lower-cased). Passed straight through to find_resume_match. The
+      SAME project may legitimately be named again for a genuinely different
+      skill -- only the exact project+skill combination is excluded, so a
+      candidate's one flagship project can still ground follow-ups on caching,
+      API design, and testing across three different topics without repeating any
+      one of those questions. Defaults to None (no exclusion, pre-existing
+      single-best-match behaviour).
     """
     lines: list[str] = []
     # Default provenance = Branch B. Every early return below leaves this as-is
@@ -1467,6 +1478,7 @@ def get_probe_context(
             resume_json=resume_json,
             tested_skill=_tested_skill,
             topic_item=topic_item,
+            used_project_skills=used_project_skills,
         )
         if _resume_match.is_match:
             if provenance_out is not None:

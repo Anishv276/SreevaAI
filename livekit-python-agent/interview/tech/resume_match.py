@@ -365,6 +365,7 @@ def find_resume_match(
     resume_json: dict | None,
     tested_skill: str,
     topic_item: Any | None = None,
+    used_project_skills: set[tuple[str, str]] | None = None,
 ) -> ResumeMatch:
     """Best genuine project match for the skill under test, or _NO_MATCH.
 
@@ -373,6 +374,18 @@ def find_resume_match(
     history is intentionally excluded, because Branch A must name a project
     title as it appears on the resume and "Backend Engineer at Acme" is a role,
     not a thing the candidate can be asked implementation questions about.
+
+    used_project_skills: (project title, tested skill) pairs already asked about
+    in an earlier Branch A follow-up this interview, both lower-cased. The SAME
+    project legitimately comes up more than once -- a candidate's one big project
+    can genuinely be the best evidence for caching AND API design AND testing,
+    and repeating the project name across topics is correct there, not a bug.
+    What must not repeat is the exact same project+skill combination, which would
+    just reword the same verification question a second time. A pair in this set
+    is skipped in favour of the next-best genuine match for the same skill; if
+    every eligible project for THIS skill has already been asked about under this
+    exact skill, the best one is reused rather than losing the resume-grounded
+    follow-up entirely (logged as REUSED).
     """
     if not isinstance(resume_json, dict) or not resume_json:
         return _NO_MATCH
@@ -389,7 +402,15 @@ def find_resume_match(
     if not skill_tokens and not skill_families:
         return _NO_MATCH
 
-    best = _NO_MATCH
+    _used_pairs = {
+        (p.strip().lower(), s.strip().lower())
+        for p, s in (used_project_skills or set())
+        if p and p.strip() and s and s.strip()
+    }
+    _tested_skill_lc = (tested_skill or "").strip().lower()
+
+    best = _NO_MATCH          # best match overall, used only if every candidate pair is already used
+    best_unused = _NO_MATCH   # best match whose (project, skill) pair hasn't been asked yet -- preferred
     for proj in raw.get_projects():
         title = str(proj.resolved_title or "").strip()
         if not title or title.lower() == "unnamed project":
@@ -418,13 +439,21 @@ def find_resume_match(
         )
         if cand.confidence > best.confidence:
             best = cand
+        _pair = (title.lower(), _tested_skill_lc)
+        if _pair not in _used_pairs and cand.confidence > best_unused.confidence:
+            best_unused = cand
 
-    if best.is_match:
+    chosen = best_unused if best_unused.is_match else best
+
+    if chosen.is_match:
+        _chosen_pair = (chosen.project_title.lower(), _tested_skill_lc)
         logger.info(
-            "[RESUME_MATCH] MATCH tier=%s conf=%.2f | skill=%r -> project=%r | evidence=%s",
-            best.tier, best.confidence, best.skill[:60], best.project_title, best.evidence,
+            "[RESUME_MATCH] MATCH tier=%s conf=%.2f | skill=%r -> project=%r | evidence=%s%s",
+            chosen.tier, chosen.confidence, chosen.skill[:60], chosen.project_title, chosen.evidence,
+            " | REUSED (project+skill already asked, no unused pair matched)"
+            if chosen is best and _chosen_pair in _used_pairs else "",
         )
-        return best
+        return chosen
 
     logger.info(
         "[RESUME_MATCH] no genuine match (best conf=%.2f tier=%s) | skill=%r -- Branch B",

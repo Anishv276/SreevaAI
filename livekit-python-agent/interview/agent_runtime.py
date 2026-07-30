@@ -725,6 +725,7 @@ def _build_probe_directive(
     topic_score_history: Optional[list] = None,
     resume_json: Optional[dict] = None,
     provenance_out: Optional[dict] = None,
+    used_project_skills: Optional[set] = None,
 ) -> str:
     """
     Builds the probe directive synchronously — no LLM call.
@@ -804,6 +805,7 @@ def _build_probe_directive(
                 "resume_json": resume_json,
                 "topic_item": topic_item,
                 "provenance_out": provenance_out,
+                "used_project_skills": used_project_skills,
             }
             if interview_type != "conversational"
             else {}
@@ -3143,6 +3145,14 @@ async def entrypoint(ctx: JobContext):
     answer_scores: list[dict] = []    # log of all answer quality scores for final DB save
     _active_topic: Optional[str] = None  # full context string for LLM; initialized after topic pools built
     _topic_states: dict[str, dict] = {}        # TopicState serialized per topic for saturation tracking
+    # (project title, tested skill) pairs already asked about in a Branch A follow-up
+    # (interview.tech.resume_match), session-wide across every topic. The SAME project
+    # legitimately grounds follow-ups on several different topics -- a candidate's one
+    # flagship project can be genuine evidence for caching, API design, and testing
+    # alike. What must not repeat is the exact project+skill combination, which would
+    # just reword the same verification question a second time. Populated after each
+    # PROBE turn whose provenance shows a resume-grounded match.
+    _referenced_project_skills: set[tuple[str, str]] = set()
     _topic_score_histories: dict[str, list] = {}   # per-topic overall score history (for latency detection)
     _topic_depth_histories: dict[str, list] = {}   # H2 fix: per-topic depth scores for follow_up_collapse
     # Cross-interview question-construction tracker (RECENT_QUESTION_PATTERNS /
@@ -4786,6 +4796,11 @@ async def entrypoint(ctx: JobContext):
                         # answer-drill behaviour.
                         resume_json=structured_resume if isinstance(structured_resume, dict) else None,
                         provenance_out=_follow_up_provenance,
+                        # Excludes (project, skill) pairs already asked about in an earlier
+                        # Branch A follow-up this interview -- the same project may still be
+                        # named again for a genuinely different skill, only the exact
+                        # project+skill repeat is avoided.
+                        used_project_skills=_referenced_project_skills,
                     )
                     if _teach_back_used:
                         # PROBLEM 3 hard cap: the no-jargon teach-back construction may
@@ -4816,12 +4831,23 @@ async def entrypoint(ctx: JobContext):
                     if _follow_up_provenance:
                         _qr.update(_follow_up_provenance)
                         if _follow_up_provenance.get("follow_up_source") == "resume_project":
+                            _referenced_project_title = _follow_up_provenance.get("referenced_project")
+                            _referenced_skill = _follow_up_provenance.get("skill_matched")
                             logger.info(
                                 "[FOLLOW_UP_SOURCE] turn=%d | resume_project | project=%r | skill=%r",
                                 turn_snapshot,
-                                _follow_up_provenance.get("referenced_project"),
-                                (_follow_up_provenance.get("skill_matched") or "")[:80],
+                                _referenced_project_title,
+                                (_referenced_skill or "")[:80],
                             )
+                            # Remember the (project, skill) pair so the NEXT Branch A match
+                            # (any topic) skips only this exact combination -- the same
+                            # project stays eligible for a different skill. See
+                            # used_project_skills on _build_probe_directive above.
+                            if _referenced_project_title and _referenced_skill:
+                                _referenced_project_skills.add((
+                                    _referenced_project_title.strip().lower(),
+                                    _referenced_skill.strip().lower(),
+                                ))
                     if _scoring_topic_log and _scoring_topic_log != "?":
                         _ts_for_rotation = _topic_states.get(_normalize_topic_key(_scoring_topic_log))
                         if isinstance(_ts_for_rotation, dict):
