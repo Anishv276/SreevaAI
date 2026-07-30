@@ -638,7 +638,36 @@ Rules for the card itself:
 - Keep it under 12 lines and self-contained -- they are reading it once, out loud, from memory.
 - Ask about something that REQUIRES reading it (a specific value, a bug, a returned row),
   never something answerable without looking.
-For every non-code question, do NOT emit a fenced block at all."""
+For every non-code question, do NOT emit a fenced block at all.
+
+CORRECTNESS IS NON-NEGOTIABLE -- trace it yourself before you emit it:
+- The snippet/query must be syntactically valid in the real language you tag it with, and it
+  must actually do what the surrounding question implies. A candidate who spots that the code
+  itself is broken (not the planted bug) loses trust in the interview instantly.
+- For code_trace: mentally execute it line by line for the exact input in your spoken setup.
+  If you cannot state the precise output with certainty, the snippet is too ambiguous -- fix it
+  or simplify it until the trace has exactly one correct answer.
+- For snippet_eval: there must be EXACTLY ONE real logic bug, and you must be able to name the
+  exact line and the exact wrong behavior it causes. No syntax errors, no missing imports, no
+  second accidental bug hiding near the first.
+- For query_trace: the query must be valid SQL (or the stated query language) against the
+  implied schema, and you must know the exact rows/values/NULLs it returns -- including
+  standard edge behavior (empty result set, NULL comparisons in WHERE, GROUP BY dropping
+  groups with no rows, a JOIN producing duplicate or zero rows). If the schema isn't given
+  explicitly, state the minimal table/column shape needed to make the query unambiguous, as a
+  one-line comment inside the fence -- never leave the candidate guessing what the tables are.
+- Never let a snippet depend on library version quirks, OS-specific behavior, or floating-point
+  rounding that even a strong candidate can't reason out from the code alone.
+
+FOLLOW-UPS ON A CODE CARD MUST STAY ANCHORED TO IT:
+- Once a card is on screen, every follow-up in that thread references something concrete IN
+  THAT SNIPPET -- the exact variable, line, returned value, or row -- never a generic "what
+  about edge cases in general?" A follow-up that could be asked without the card in front of
+  them has drifted off the card and should reconnect to it or close the topic instead.
+- Natural escalation path once they trace the base case correctly: change ONE concrete input
+  and ask again (empty input, zero, negative, duplicate keys, NULL, an empty table, a
+  self-join), or ask what in the snippet would need to change to fix/harden it. Each of these
+  must still resolve to one unambiguous correct answer you already know before you ask."""
 
 
 _QUESTION_GENERATION_TEMPLATE = """\
@@ -722,7 +751,7 @@ OPEN WITH A REACTION THAT FITS WHAT THEY SAID:
   banned in any tone.
 
 THEN ASK ONE QUESTION — HARD LENGTH CAP:
-- Reaction + question together: TWO sentences maximum AND under 30 words total. The ONLY thing
+- Reaction + question together: TWO sentences maximum AND under 40 words total. The ONLY thing
   that may use those extra words is a concrete case in a TRACE/OUTPUT/FALSIFY question (the actual
   input, snippet, or edge case they have to reason about) — that specificity is the point of the
   question, don't cut it. Everything else stays tight; cut setup and re-explanation first.
@@ -968,6 +997,26 @@ ALREADY-TESTED CONCEPTS (do not target any of these again):
 - Interviewer filler ("Got it", "Alright", "Makes sense") stays OUTSIDE question text.
 - Tests EXACTLY ONE concept from TAGGED CONCEPTS — never invent tangential concepts.
 - A follow-up must feel like a different angle on the same concept, not a verbatim repeat.
+
+━━━ CODE/QUERY CORRECTNESS — VERIFY BEFORE OUTPUT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+For code_trace / snippet_eval / query_trace, trace the snippet or query yourself before
+writing the JSON:
+- code_trace: know the exact printed/returned value for the input named in "prompt". If more
+  than one value is plausible depending on unstated details (mutable default state from a prior
+  call, dict ordering, float rounding), simplify the snippet until only one answer is possible.
+- snippet_eval: confirm there is exactly ONE real logic bug and you can name the exact line and
+  wrong behavior — never a syntax error, never two bugs stacked.
+- query_trace: confirm the query is valid SQL against a stated or clearly implied schema, and
+  know the exact rows/values/NULLs returned — including empty-result, NULL-comparison, and
+  JOIN/GROUP BY edge behavior. If the schema isn't obvious from TOPIC/TAGGED CONCEPTS, add the
+  minimal table/column shape as a one-line comment in "code" so it isn't ambiguous.
+A snippet/query you cannot personally resolve to one certain answer must not be sent — simplify
+it or pick a different type instead.
+
+A follow-up that targets a code/query card already on screen must reference something concrete
+in that exact snippet (a named variable, line, row) and, when escalating, change only ONE input
+(empty, zero, negative, duplicate, NULL) so the new answer is still unambiguous — never a
+generic "what about edge cases in general?"
 
 ━━━ OUTPUT FORMAT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Output ONLY a single JSON object. No preamble, no explanation.
@@ -1311,6 +1360,20 @@ def get_probe_context(
         and _signals_history[-1] == signal
         and _signals_history[-2] == signal
     )
+    # Signals whose own directive text already prescribes what to do the second time
+    # it fires (depth_shallow -> pivot to the failure-case variant; tradeoff_blind ->
+    # treat continued silence as the finding, don't probe a third time; off_topic and
+    # rephrase_request have their own "don't redirect/grant a third time" language;
+    # pure_denial is handled entirely by the earlier topic_denied branch and never
+    # reaches this point). For these, the generic ANGLE PIVOT block below would hand
+    # the model a second, conflicting instruction on the same turn -- "ignore their
+    # last answer, jump to an unrelated sub-concept" directly under a directive that
+    # just said "adjust the angle on THIS answer." Let the signal's own handling win;
+    # the pivot block only adds value for signals with no built-in repeat strategy.
+    _SELF_HANDLED_ON_REPEAT = frozenset({
+        "depth_shallow", "tradeoff_blind", "off_topic", "rephrase_request",
+    })
+    _same_signal_repeated = _same_signal_repeated and signal not in _SELF_HANDLED_ON_REPEAT
 
     # NO KEYWORD DENIAL FALLBACK.
     #

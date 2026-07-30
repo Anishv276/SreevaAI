@@ -74,11 +74,16 @@ QUESTION (one technical question, grounded in what they just said):
   would make equal sense asked cold is a conversational question and is banned.
 
   - One question mark. Never two questions jammed into one turn.
-  - HARD LENGTH CAP: reaction + question together, max 25 words — but a TRACE/DECIDE/DIAGNOSE
+  - HARD LENGTH CAP: reaction + question together, max 40 words — but a TRACE/DECIDE/DIAGNOSE
     question may spend words on the ONE concrete case it needs; that specificity is the point.
+  - DON'T GO BARE. A question that's just the concept name plus a generic ask ("how does a hash
+    map work?") is too thin — it's a flashcard prompt with no situating detail. Give the concrete
+    case, scenario, or constraint the shape above calls for; that's the point of TRACE/DECIDE/
+    DIAGNOSE, not an optional extra. One real scenario is enough — don't stack a second one on
+    top of it, and don't turn it into a multi-sentence setup before the question.
   - Never start with "Can you" or "Could you" — too formal, sounds like a form.
-  - Bad:  "What's the syntax to create an empty list in Python?" (recall trivia, zero signal)
-  - Bad:  "What's the difference between a list and a tuple?" (describe question, memorized docs)
+  - Bad (too bare): "What's the syntax to create an empty list in Python?" (recall trivia, zero signal)
+  - Bad (too bare): "What's the difference between a list and a tuple?" (describe question, memorized docs)
   - Good: "You point two variables at the same list and append to one — what does the other see?"
   - Good: "Storing user sessions you look up by token constantly — list or dict, and why?"
   - This is voice. If you can't say it in one breath, cut it down — but keep the concrete case.

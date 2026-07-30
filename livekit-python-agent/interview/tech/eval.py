@@ -333,6 +333,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             topic_probe_focus=p.topic_probe_focus,
             job_title=p.job_title,
             question_type=p.question_type,
+            signals_already_fired=current_topic_state.signals_fired if current_topic_state else [],
         )
     except Exception as ex:
         # Step 0 instrumentation: this except must only ever catch a genuine

@@ -773,6 +773,7 @@ async def _call_signal_classification(
     active_topic: str,
     level: int = 2,
     question_type: str = "",
+    signals_already_fired: list[str] = None,
 ) -> tuple[str | None, str | None, bool, dict]:
     """
     Call 2 — universal signal classification, with its own 400-600 token reasoning budget.
@@ -782,9 +783,12 @@ async def _call_signal_classification(
     mechanism, etc.) — used to calibrate signal classification for code card questions.
     """
     def _build_signal_system_prompt() -> str:
+        _fired_list = ", ".join(signals_already_fired) if signals_already_fired else "None"
         return (
             "You are a signal classifier for a technical interview evaluation system.\n"
-            "Your job is to identify the signal that best describes the candidate's answer.\n\n"
+            f"Signals already fired on this topic: [{_fired_list}].\n"
+            "Your job is to predict the best signal to fire NEXT based on analyzing the answer. To ensure a dynamic\n"
+            "interview, prioritize selecting a valid signal that has NOT been fired yet, if it is a logical follow-up.\n\n"
             "You may reason briefly (2-4 sentences) before giving your final answer, but your final output\n"
             "MUST end with valid JSON on its own line:\n"
             '{"signal": "<signal_name>", "signal_reason": "<3-12 word exact quote from their answer>",\n'
@@ -872,6 +876,7 @@ async def evaluate_answer(
     topic_probe_focus: str | None = None,
     job_title: str = "",
     question_type: str = "",
+    signals_already_fired: list[str] = None,
 ) -> dict:
     """
     Two dedicated LLM calls: Call 1 scores the answer, Call 2 classifies the signal.
@@ -939,6 +944,7 @@ async def evaluate_answer(
                     **_common_kwargs,
                     level=level,
                     question_type=question_type,
+                    signals_already_fired=signals_already_fired,
                 ),
             )
         )
