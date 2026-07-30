@@ -21,6 +21,7 @@ fires per turn, no staged/rung concept:
 from __future__ import annotations
 
 import re
+from typing import Any
 
 
 
@@ -304,6 +305,21 @@ One question, low-stakes in tone.""",
     },
 
 }
+
+# Signals that must NEVER take the resume-grounded follow-up branch (Branch A).
+#
+# These four turns are not depth follow-ups at all, so naming a resume project in
+# them is a non-sequitur regardless of how well the skill matches:
+#   clarification_request -- they asked what the question meant; re-ask it simpler.
+#   rephrase_request      -- they asked to redo their answer; grant the floor.
+#   off_topic             -- they answered something else; steer back.
+#   pure_denial           -- they don't know it; step DOWN to something easier.
+# pure_denial also returns before the gate is reached (see the topic_denied branch
+# in get_probe_context), so it is listed here for completeness and to keep the rule
+# true if that early return is ever restructured.
+_RESUME_INELIGIBLE_SIGNALS: frozenset[str] = frozenset({
+    "clarification_request", "rephrase_request", "off_topic", "pure_denial",
+})
 
 # Fallback probe when signal is null or unrecognised (mostly: eval call timed out,
 # errored, or returned unparseable JSON -- the universal signal classifier's
@@ -1225,6 +1241,9 @@ def get_probe_context(
     cross_cutting_signal: str | None = None,
     topic_score_history: list[float] | None = None,
     last_question_type: str = "",
+    resume_json: dict | None = None,
+    topic_item: Any | None = None,
+    provenance_out: dict | None = None,
 ) -> str:
     """
     Returns the probe context block injected into the directive.
@@ -1254,8 +1273,37 @@ def get_probe_context(
       (e.g. "code_trace", "snippet_eval", "query_trace", "mechanism", etc.).
       Used to inject code-type-specific follow-up guidance when the question
       was a code card. Defaults to empty string (no special guidance).
+
+    resume_json: the candidate's parsed resume (the same dict already used to
+      build the CANDIDATE RESUME block in interview.tech.phases). When it carries
+      a named project that genuinely exercises the skill under test, the topic's
+      FIRST follow-up (topic_follow_ups <= 1 -- see the ONCE PER TOPIC comment
+      above the gate for why 1, not 0) is sourced from that project (Branch A)
+      instead of from the candidate's last answer. Every later follow-up on the
+      same topic is always Branch B, regardless of the match -- one project
+      mention per topic, so a second follow-up doesn't reword the same "ask
+      about a decision/tradeoff/metric" prompt into a near-duplicate of the
+      first. Defaults to None, which keeps the pre-existing answer-drill
+      behaviour (Branch B) exactly as it was -- so every call site that does not
+      pass it is unchanged.
+
+    topic_item: the TopicItem for the active topic. Supplies probe_focus/title/
+      tech_stack, which is how the tested SKILL is identified (a competency, not a
+      keyword) before searching the resume. Optional for the same reason.
+
+    provenance_out: optional dict the caller passes in to receive this turn's
+      follow-up provenance (follow_up_source / referenced_project / skill_matched)
+      for logging and analytics. Written in place so the reported provenance comes
+      from the SAME branch decision that actually built the directive -- recomputing
+      it at the call site could disagree with what was really sent. Always populated
+      with all three keys on a PROBE turn, including on the Branch B path.
     """
     lines: list[str] = []
+    # Default provenance = Branch B. Every early return below leaves this as-is
+    # unless Branch A actually fires, so the field is never absent or stale.
+    if provenance_out is not None:
+        from interview.tech.resume_match import follow_up_provenance  # noqa: PLC0415
+        provenance_out.update(follow_up_provenance(None))
     _signals_history = signals_history or []
     _same_signal_repeated = (
         len(_signals_history) >= 2
@@ -1300,6 +1348,80 @@ def get_probe_context(
     probe = SIGNAL_PROBES.get(signal or "", None) if signal else None
     if probe is None:
         probe = _DEFAULT_PROBE
+
+    # -- BRANCH A GATE: resume-grounded follow-up ------------------------------
+    # When the skill under test is something the candidate claims to have BUILT,
+    # a verification question about that named project outranks another mechanism
+    # drill on their last sentence. Branch A replaces the signal's probe framing
+    # for this one turn (never appends to it -- see render_resume_grounded_probe).
+    #
+    # ONCE PER TOPIC. Branch A is eligible only on the topic's FIRST follow-up.
+    #
+    # topic_follow_ups is TopicState.follow_up_turns from eval.py, read AFTER
+    # add_contribution() has already incremented it for the turn being scored --
+    # so it is 1 (not 0) on the very first probe of a topic, 2 on the second, and
+    # so on. Gating on 0 (as an earlier version of this code did) meant the gate
+    # was never satisfied on any real turn, so Branch A silently never fired in
+    # production even though it worked correctly in tests that called
+    # get_probe_context directly with a hand-picked topic_follow_ups=0 -- a value
+    # the real runtime never actually produces. Confirmed against
+    # run_eval_and_build_directive (eval.py) and the read at agent_runtime.py's
+    # PROBE branch (_topic_follow_ups = ...follow_up_turns...), both of which see
+    # the post-increment count.
+    #
+    # Every follow-up after the first on this topic drills into what the
+    # candidate just said, same as before this feature existed. Without this
+    # gate, the same project keeps winning the match on every follow-up in the
+    # topic (nothing else about the topic changes turn to turn), so the
+    # directive gave the LLM the same "ask about a decision/metric/tradeoff/
+    # failure-mode" framing twice in a row and it produced two differently-
+    # worded versions of the same question -- e.g. "how did generators impact
+    # CPU during Celery tasks?" immediately followed by "what caused the high
+    # CPU when using generators?" on the same project. One project mention per
+    # topic is the point: ask it once, then let the conversation go wherever
+    # their answer actually leads.
+    #
+    # Only DEPTH signals are eligible. The response-shape signals and pure_denial
+    # are excluded by construction: those turns are "repeat the question", "let
+    # them redo it", "steer back on topic" and "step down to something easier" --
+    # naming a resume project in any of them is a non-sequitur, and pure_denial
+    # already returned above. resume_json=None (no resume, or matching disabled)
+    # short-circuits to Branch B, which is the pre-existing behaviour verbatim.
+    _resume_match = None
+    if resume_json and topic_follow_ups <= 1 and signal not in _RESUME_INELIGIBLE_SIGNALS:
+        from interview.tech.resume_match import (  # noqa: PLC0415
+            extract_tested_skill,
+            find_resume_match,
+            follow_up_provenance,
+            render_resume_grounded_probe,
+        )
+        _tested_skill = extract_tested_skill(
+            topic_item=topic_item,
+            active_topic=active_topic,
+            prev_question=prev_question,
+        )
+        _resume_match = find_resume_match(
+            resume_json=resume_json,
+            tested_skill=_tested_skill,
+            topic_item=topic_item,
+        )
+        if _resume_match.is_match:
+            if provenance_out is not None:
+                provenance_out.update(follow_up_provenance(_resume_match))
+            lines.append(f"SIGNAL: {signal or 'none'}")
+            if signal_reason:
+                lines.append(f"TRIGGER (their exact words): \"{signal_reason}\"")
+            lines.append(render_resume_grounded_probe(_resume_match, signal=signal))
+            lines.append(f"VOICE: {probe['voice_note']}")
+            lines.append(get_reaction_hint(signal, prev_answer, prev_question))
+            # The repetition/declined-fact blocks still apply -- a resume-grounded
+            # question can collide with an earlier opener just as easily, and a
+            # fact the candidate already couldn't produce stays off-limits even
+            # when it lives inside a project we just named.
+            _rep = render_repetition_blocks(recent_question_patterns, declined_facts)
+            if _rep:
+                lines.append(_rep)
+            return "\n".join(lines)
 
     # Fill the {original_question}/{off_topic_summary}/{continuation_excerpt}/
     # {clarification_request_text} placeholders that appear verbatim in some

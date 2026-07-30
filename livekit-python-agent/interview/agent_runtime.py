@@ -723,6 +723,8 @@ def _build_probe_directive(
     declined_facts: str = "(none yet)",
     cross_cutting_signal: Optional[str] = None,
     topic_score_history: Optional[list] = None,
+    resume_json: Optional[dict] = None,
+    provenance_out: Optional[dict] = None,
 ) -> str:
     """
     Builds the probe directive synchronously — no LLM call.
@@ -792,7 +794,20 @@ def _build_probe_directive(
         declined_facts=declined_facts,
         cross_cutting_signal=cross_cutting_signal,
         topic_score_history=topic_score_history,
-        **({"last_question_type": last_question_type} if interview_type != "conversational" else {}),
+        # Tech-track-only kwargs. The conversational probe module has its own
+        # signal set and its own get_probe_context signature, and resume-grounded
+        # follow-ups are a tech-interview feature -- passing these to it would be
+        # a TypeError.
+        **(
+            {
+                "last_question_type": last_question_type,
+                "resume_json": resume_json,
+                "topic_item": topic_item,
+                "provenance_out": provenance_out,
+            }
+            if interview_type != "conversational"
+            else {}
+        ),
     )
 
     # Filler guidance -- classify prev answer intent so Ishitha's reaction is connected.
@@ -4722,6 +4737,9 @@ async def entrypoint(ctx: JobContext):
                     _signals_history_this_topic = list(
                         (_new_topic_state_dict or {}).get("signals_fired", []) or []
                     )
+                    # Receives this turn's follow-up provenance (resume_project vs
+                    # concept_probe) from the branch that actually built the directive.
+                    _follow_up_provenance: dict = {}
                     _directive = _build_probe_directive(
                         signal=_eval_signal,
                         signal_reason=_eval_signal_reason,
@@ -4749,6 +4767,13 @@ async def entrypoint(ctx: JobContext):
                         topic_score_history=list(_topic_score_histories.get(
                             re.sub(r"[^a-z0-9]+", " ", (_active_topic or "").lower()).strip(), []
                         )),
+                        # Enables the resume-grounded follow-up branch: when the skill
+                        # being probed matches a named project here, the follow-up asks
+                        # a verification question about that project instead of drilling
+                        # further into their last answer. Falsy resume -> unchanged
+                        # answer-drill behaviour.
+                        resume_json=structured_resume if isinstance(structured_resume, dict) else None,
+                        provenance_out=_follow_up_provenance,
                     )
                     if _teach_back_used:
                         # PROBLEM 3 hard cap: the no-jargon teach-back construction may
@@ -4772,6 +4797,19 @@ async def entrypoint(ctx: JobContext):
                     remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
                     chat_ctx.add_message(role="system", content=_directive)
                     _qr["directive_text"] = _directive  # ponytail: debug report needs the literal injected text
+                    # Follow-up sourcing provenance for logging/analytics. Additive --
+                    # no existing field is removed or renamed. Always all three keys on
+                    # a PROBE turn, so a consumer never has to distinguish "concept
+                    # probe" from "field absent".
+                    if _follow_up_provenance:
+                        _qr.update(_follow_up_provenance)
+                        if _follow_up_provenance.get("follow_up_source") == "resume_project":
+                            logger.info(
+                                "[FOLLOW_UP_SOURCE] turn=%d | resume_project | project=%r | skill=%r",
+                                turn_snapshot,
+                                _follow_up_provenance.get("referenced_project"),
+                                (_follow_up_provenance.get("skill_matched") or "")[:80],
+                            )
                     if _scoring_topic_log and _scoring_topic_log != "?":
                         _ts_for_rotation = _topic_states.get(_normalize_topic_key(_scoring_topic_log))
                         if isinstance(_ts_for_rotation, dict):
