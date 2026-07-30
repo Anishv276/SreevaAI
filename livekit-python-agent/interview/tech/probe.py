@@ -514,21 +514,7 @@ def get_reaction_hint(
     return (
         f"REACTION TONE: {tone}.\n"
         f"  Their answer: \"{prev_answer[:160]}\" — to your question: \"{prev_question[:120]}\".\n"
-        f"  React to how that actually landed for you (surprised, unconvinced, curious, relieved) in "
-        f"your own words, 1-6 words, grounded in a SPECIFIC thing they said — a tool they named, a "
-        f"number, the claim they made. Compose it fresh; there is no phrase bank to pick from.\n"
-        f"  Default to NO filler word — a filler is the exception, not the norm. Only add one (umm, "
-        f"hmm, uhh, ohh, haha) when this specific answer genuinely surprised you, needs a beat to "
-        f"process, or the moment calls for warmth. Roughly 1 in 3 turns at most, never two in a row.\n"
-        f"  If a filler fits, it goes at a real planning boundary — turn-initial, at a clause break, or "
-        f"right before a word you're retrieving. NEVER mid-phrase inside an already-fused expression "
-        f"like 'pretty good' or 'makes sense'.\n"
-        f"  Never reuse a reaction word or phrasing from the last 2-3 turns of this interview.\n"
-        f"  Banned outright, in any tone: 'Great!', 'Awesome!', 'Impressive!', 'Solid!', 'Got it', "
-        f"'Right', 'That tracks', 'Makes sense', 'Spot on', 'Thanks for sharing', and a bare 'Mm'/'Hmm' "
-        f"used as the whole reaction.\n"
-        f"  The reaction and the question must read as ONE connected turn, not a reaction stapled to "
-        f"an unrelated question."
+        f"{REACTION_POLICY}"
     )
 
 
@@ -667,7 +653,22 @@ FOLLOW-UPS ON A CODE CARD MUST STAY ANCHORED TO IT:
 - Natural escalation path once they trace the base case correctly: change ONE concrete input
   and ask again (empty input, zero, negative, duplicate keys, NULL, an empty table, a
   self-join), or ask what in the snippet would need to change to fix/harden it. Each of these
-  must still resolve to one unambiguous correct answer you already know before you ask."""
+  must still resolve to one unambiguous correct answer you already know before you ask.
+
+THE SNIPPET IS A FABRICATED EXAMPLE -- NEVER A CLAIMED PROJECT:
+- You wrote this code/query yourself, this turn, to test their reasoning. The candidate never
+  claimed to have built it, used it, or seen it before this moment -- it is not evidence of
+  anything they did.
+- NEVER ask "where have you used this in your projects", "have you written something like
+  this before", "is this similar to what you built at X", or any variant that treats the
+  fabricated snippet as if it came from their real work. That question is unanswerable
+  honestly and, if it happens to land near a real project, invents a connection the
+  candidate never made.
+- This holds even when the topic's skill genuinely matches something on their resume. A
+  code-card follow-up stays inside the snippet (the trace, the bug, the query result) -- it
+  never redirects to "have you done this for real". If you want to verify their real project
+  experience on this skill, that is a DIFFERENT, later VERBAL question with no code card
+  attached, not a follow-up to what's on screen right now."""
 
 
 _QUESTION_GENERATION_TEMPLATE = """\
@@ -787,7 +788,61 @@ must contain nothing except what Ishitha would actually say out loud, plus the f
 """
 
 
-def render_question_generation_system(level: int = 2) -> str:
+# Step-down variant for signals whose directive explicitly forbids escalation/code-cards
+# (currently: pure_denial). The full template's FALSIFY/ESCALATE framework, wrong-frame
+# handling, and CODE_CARD_CONTRACT are all either irrelevant or directly contradictory to
+# a "step down to something easier, same concept, no code" instruction -- a step-down
+# turn can never legally open a code card (the code-card gate in get_probe_context
+# requires >=1 prior verbal question AND is never reached on a denial branch), so the
+# contract is dead weight there, not a safety-relevant inclusion. Only step-down signals
+# route here; every other signal still gets the full template with CODE_CARD_CONTRACT.
+_QUESTION_GENERATION_TEMPLATE_STEP_DOWN = """\
+You are Ishitha, a sharp and warm AI interviewer. You are conducting a real interview — not
+filling out a form.
+
+━━━ CALIBRATE TO THE CANDIDATE'S LEVEL ━━━
+{level_guide}
+This sets the BAR and how hard you push. It never changes how you react or how warm you are —
+a staff candidate and a junior get the same human on the other side of the call.
+
+YOUR JOB THIS TURN: the candidate could not answer. Accept it cleanly and ask ONE easier
+question on the SAME concept -- never escalate, never pivot to a harder or unrelated angle.
+
+EVIDENCE-SUFFICIENCY CHECK FIRST: if the candidate's last answer already closed the gap the
+PROBE DIRECTIVE describes, output exactly NO_FOLLOW_UP_NEEDED and nothing else.
+
+OPEN WITH A REACTION THAT FITS WHAT THEY SAID:
+- The PROBE DIRECTIVE includes a REACTION TONE. Open with a 2-4 word beat in that tone, but
+  the actual words must not match any opener in RECENT_QUESTION_PATTERNS.
+- Ground the reaction in a SPECIFIC word they used, if there is one to ground it in.
+- Never default to a bland 'Mm' or 'Hmm', and never reuse an opener template already in the
+  recent list, even with a different word plugged in.
+- Never say 'Great!', 'Awesome!', 'That's interesting!', 'Impressive!', 'Solid!' — hollow filler,
+  banned in any tone.
+
+THEN ASK ONE QUESTION — HARD LENGTH CAP:
+- Reaction + question together: TWO sentences maximum AND under 40 words total.
+- Never restate role context, company context, or "why this matters for the role" before asking.
+- EXACTLY ONE question mark in your entire output.
+- This is voice — write like you'd speak it out loud in under 8 seconds, not like you'd type a
+  paragraph.
+- Never say 'Can you' or 'Could you' — form-filler phrases.
+
+VARY THE CONSTRUCTION:
+The sentence construction must be one you have not used in RECENT_QUESTION_PATTERNS. If every
+construction already used is exhausted, invent a new one that still reads as a simpler, easier
+version of the same concept.
+
+OUTPUT FORMAT — READ CAREFULLY:
+Output ONLY the reaction + question (or exactly NO_FOLLOW_UP_NEEDED). Never a fenced code block on
+this turn -- a step-down question is always verbal. Do not show your reasoning, do not name the
+scaffold you picked, do not add any parenthetical note, meta-comment, or explanation before or
+after the question. Think before you answer, but the final message you produce must contain
+nothing except what Ishitha would actually say out loud.
+"""
+
+
+def render_question_generation_system(level: int = 2, signal: str | None = None) -> str:
     """The follow-up question-generation prompt, calibrated to the candidate's level.
 
     This prompt was previously a module constant that NOTHING injected at runtime --
@@ -796,9 +851,20 @@ def render_question_generation_system(level: int = 2) -> str:
     one-question-mark cap, the code-card fence contract) was therefore invisible to
     the live LLM generating the actual follow-up. It is now prepended to the probe
     directive by agent_runtime._build_probe_directive, so it ships with every probe.
+
+    signal: when "pure_denial" (step-down: accept the denial, ask something easier on the
+    SAME concept, never escalate), routes to the step-down template instead -- that
+    directive can never legally reach a code card or an escalation move, so the full
+    template's CODE_CARD_CONTRACT / FALSIFY-ESCALATE framework / wrong-frame section would
+    be dead weight at best and self-contradictory at worst (escalate vs. step-down).
+    Every other signal is unaffected and still gets the full template including the code
+    card contract.
     """
+    level_guide = _LEVEL_QUESTION_GUIDE.get(int(level or 2), _LEVEL_QUESTION_GUIDE[2])
+    if signal == "pure_denial":
+        return _QUESTION_GENERATION_TEMPLATE_STEP_DOWN.format(level_guide=level_guide)
     return _QUESTION_GENERATION_TEMPLATE.format(
-        level_guide=_LEVEL_QUESTION_GUIDE.get(int(level or 2), _LEVEL_QUESTION_GUIDE[2]),
+        level_guide=level_guide,
         code_card_contract=CODE_CARD_CONTRACT,
     )
 
@@ -1461,8 +1527,26 @@ def get_probe_context(
     # naming a resume project in any of them is a non-sequitur, and pure_denial
     # already returned above. resume_json=None (no resume, or matching disabled)
     # short-circuits to Branch B, which is the pre-existing behaviour verbatim.
+    #
+    # CODE/QUERY CARDS ARE ALWAYS FABRICATED EXAMPLES -- never eligible for Branch A.
+    # A code_trace/snippet_eval/query_trace card is a synthetic exercise built to test
+    # reasoning about a hypothetical snippet; it was never claimed as something the
+    # candidate built. If the candidate just answered one of these and Branch A still
+    # fires, the directive tells the LLM to ask a verification question about a REAL
+    # resume project on the SAME skill -- which reads to the candidate as "where have
+    # you used this in your projects?" about code they never wrote, because nothing in
+    # this branch's output distinguishes "the skill" from "the specific fabricated
+    # snippet you just read." Gate it out entirely rather than trying to thread that
+    # distinction through the wording: the candidate's own project is still fair game
+    # on a later VERBAL follow-up once the topic moves off the code card.
+    _lqt_gate = (last_question_type or "").strip().lower()
     _resume_match = None
-    if resume_json and topic_follow_ups <= 1 and signal not in _RESUME_INELIGIBLE_SIGNALS:
+    if (
+        resume_json
+        and topic_follow_ups <= 1
+        and signal not in _RESUME_INELIGIBLE_SIGNALS
+        and _lqt_gate not in ("code_trace", "snippet_eval", "query_trace")
+    ):
         from interview.tech.resume_match import (  # noqa: PLC0415
             extract_tested_skill,
             find_resume_match,

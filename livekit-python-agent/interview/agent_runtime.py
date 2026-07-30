@@ -753,7 +753,11 @@ def _build_probe_directive(
         )
     else:
         from interview.tech.probe import get_probe_context, render_question_generation_system
-        _question_gen_prompt = render_question_generation_system(level)
+        # signal=signal routes pure_denial to the trimmed step-down template (no
+        # code-card contract, no FALSIFY/ESCALATE framework) -- that directive can
+        # never legally reach a code card or an escalation move, so the full template
+        # would be dead weight there. Every other signal is unaffected.
+        _question_gen_prompt = render_question_generation_system(level, signal=signal)
 
     # probe_focus is now one descriptive paragraph per topic (not a rotating
     # list of sub-concepts) -- pass it straight through as probing guidance.
