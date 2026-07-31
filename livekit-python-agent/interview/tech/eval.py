@@ -22,6 +22,7 @@ Flow rules:
   rephrase_request → ACCEPT_REPHRASE (listen to redo), does not advance saturation
   weak_exit (turn 3/4) → MOVE_ON if sat is too low at those checkpoints
   dry_topic → 2 consecutive zero scores → MOVE_ON
+  depth_strong streak → 2 consecutive = saturated → MOVE_ON (even if score < threshold)
   saturated → MOVE_ON
 """
 from __future__ import annotations
@@ -80,6 +81,14 @@ class TopicState:
         self.consecutive_denials: int = 0
         self.closed_on_denials: bool = False
 
+        # depth_strong streak: 2 consecutive depth_strong answers saturate the topic
+        # outright, regardless of the accumulated saturation_score. Needed because the
+        # generic saturation formula doesn't always cross threshold on 2 strong answers
+        # alone at higher levels (e.g. level 4's 8.5 threshold vs. ~8.4 max credit from
+        # two perfect answers) -- see DECISION LOGIC rule 4 in probe.py, which promises
+        # the question-generation LLM that 2 strong answers can end a topic.
+        self.consecutive_depth_strong: int = 0
+
         # Response signal tracking: if clarification_request fires 3 times, escalate to MOVE_ON
         self.clarification_request_count = 0
 
@@ -103,16 +112,12 @@ class TopicState:
             return sat_pct < self._WEAK_EXIT_TURN3_PCT
         return self.follow_up_turns >= self._HARD_CAP_TURNS
 
-    # A topic closes as "dry" only after THREE consecutive true zeros, and only once
-    # the candidate has actually been asked a real follow-up. At two, a single
-    # misclassified answer plus one genuine "not sure" was enough to kill a topic
-    # before the interview had asked anything -- which is why every topic exited at
-    # sat=0.0 having asked one question. Three consecutive zeros is unambiguous;
-    # two is within the noise floor of the classifier.
-    _DRY_TOPIC_ZEROS: int = 3
+    # A topic closes as "dry" after TWO consecutive true zeros, and only once
+    # the candidate has actually been asked a real follow-up.
+    _DRY_TOPIC_ZEROS: int = 2
 
     def is_dry_topic(self) -> bool:
-        """THREE consecutive score-0 answers -> the candidate is genuinely stuck here."""
+        """TWO consecutive score-0 answers -> the candidate is genuinely stuck here."""
         return (
             self.consecutive_zero_scores >= self._DRY_TOPIC_ZEROS
             and self.follow_up_turns >= self._DRY_TOPIC_ZEROS
@@ -123,6 +128,15 @@ class TopicState:
         A single denial gets one easier step-down question first (see
         SIGNAL_PROBES["pure_denial"] in probe.py) instead of closing outright."""
         return self.consecutive_denials >= 2
+
+    _DEPTH_STRONG_SATURATION_STREAK: int = 2
+
+    def should_exit_on_depth_strong_streak(self) -> bool:
+        """Two CONSECUTIVE depth_strong answers -> saturate the topic outright.
+        Matches the "topic can end after 2 strong answers" rule given to the
+        question-generation LLM (probe.py DECISION LOGIC rule 4), which the
+        generic saturation_score formula doesn't always satisfy on its own."""
+        return self.consecutive_depth_strong >= self._DEPTH_STRONG_SATURATION_STREAK
 
 
     def add_contribution(self, weighted: float, signal: str | None, turn: int | None = None) -> None:
@@ -144,7 +158,14 @@ class TopicState:
             effective_base = 0.0
         self.saturation_score += effective_base + contribution
         self.follow_up_turns += 1
-        self.is_saturated = self.saturation_score >= self.saturation_threshold
+        if signal == "depth_strong":
+            self.consecutive_depth_strong += 1
+        else:
+            self.consecutive_depth_strong = 0
+        self.is_saturated = (
+            self.saturation_score >= self.saturation_threshold
+            or self.should_exit_on_depth_strong_streak()
+        )
         if weighted == 0.0:
             self.consecutive_zero_scores += 1
         else:
@@ -179,6 +200,7 @@ class TopicState:
             "consecutive_zero_scores": self.consecutive_zero_scores,
             "consecutive_denials": self.consecutive_denials,
             "closed_on_denials":   self.closed_on_denials,
+            "consecutive_depth_strong": self.consecutive_depth_strong,
             "probe_rotation_index": self.probe_rotation_index,
         }
 
@@ -199,6 +221,7 @@ class TopicState:
         obj.consecutive_zero_scores = int(d.get("consecutive_zero_scores", 0) or 0)
         obj.consecutive_denials = int(d.get("consecutive_denials", 0) or 0)
         obj.closed_on_denials   = bool(d.get("closed_on_denials", False))
+        obj.consecutive_depth_strong = int(d.get("consecutive_depth_strong", 0) or 0)
         obj.probe_rotation_index = int(d.get("probe_rotation_index", 0) or 0)
         if "saturation_threshold" in d:
             obj.saturation_threshold = float(d["saturation_threshold"])
@@ -419,7 +442,15 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     remaining = sat_threshold - sat_score
     pct_done = 100 * min(1.0, sat_score / sat_threshold) if sat_threshold > 0 else 0
 
-    if is_saturated:
+    _depth_strong_streak_exit = (
+        current_topic_state is not None and current_topic_state.should_exit_on_depth_strong_streak()
+    )
+    if is_saturated and _depth_strong_streak_exit and sat_score < sat_threshold:
+        logger.info(
+            "[SAT] SATURATED | reason=depth_strong_streak (2 consecutive) score=%.1f threshold=%.1f (%.0f%%)",
+            sat_score, sat_threshold, pct_done,
+        )
+    elif is_saturated:
         logger.info("[SAT] SATURATED | score=%.1f >= threshold=%.1f (%.0f%%)", sat_score, sat_threshold, pct_done)
     else:
         logger.info("[SAT] %.0f%% done | score=%.1f need %.1f more", pct_done, sat_score, remaining)

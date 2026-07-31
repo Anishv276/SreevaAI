@@ -1219,6 +1219,9 @@ def validate_topic_question_set(questions: list[dict], level: int = 2) -> list[s
     # -- Follow-up cap: at most 2 back-to-back follow-ups targeting the same
     # concept. A follow-up must declare is_followup_on, and it must match the
     # concept of the question it's following up on.
+    # _streak_len counts ONLY consecutive followup items (never seeded by the
+    # preceding non-followup's own concept) -- it must start at 0 so the first
+    # followup in a run lands on 1, not 2.
     _streak_concept: str | None = None
     _streak_len = 0
     for i, q in enumerate(questions):
@@ -1238,7 +1241,7 @@ def validate_topic_question_set(questions: list[dict], level: int = 2) -> list[s
             else:
                 _streak_concept = str(followup_on).strip() if followup_on else concept
                 _streak_len = 1
-            if _streak_len > 3:
+            if _streak_len > 2:
                 violations.append(
                     f"item {i}: more than 2 back-to-back follow-ups on the same concept "
                     f"({_streak_concept!r})"
@@ -1247,7 +1250,7 @@ def validate_topic_question_set(questions: list[dict], level: int = 2) -> list[s
             if q.get("is_followup_on"):
                 violations.append(f"item {i}: type {t!r} but is_followup_on is set (non-followup types must leave it null)")
             _streak_concept = concept
-            _streak_len = 1
+            _streak_len = 0
 
     # -- Concept repeat: a non-followup question must never re-target a
     # concept that a PRIOR non-followup question (i.e. already cleared or

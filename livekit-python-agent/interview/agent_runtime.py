@@ -197,6 +197,8 @@ class CoverageSource(str, Enum):
     EXPLICIT  = "explicit"    # agent explicitly moved on after probing
     AUTO_SKILL = "auto_skill" # skill inferred from a project's [tech] brackets
     CUSTOM_Q  = "custom_q"    # recruiter-supplied custom question was answered
+    AUTO_OVERLAP_DEDUP = "auto_overlap_dedup"  # heuristically judged a duplicate of an
+                                                # already-covered topic; never actually asked
 
 @dataclass
 class CoverageRecord:
@@ -943,6 +945,20 @@ async def _generate_move_on_directive(
         if topic_item.probe_avoid:
             parts.append(f"PROBE AVOID: {', '.join(topic_item.probe_avoid)}")
         _brief_context = "\n".join(parts)
+    # Does THIS topic actually need a code/query card on its opening turn? The bank
+    # adapter (question_bank_adapter._topic_item_for_question) stamps
+    # "This is a {code_trace|snippet_eval|query_trace} question" verbatim into
+    # full_description for snippet-type bank questions -- that's a deterministic,
+    # already-computed fact about the topic, not a guess. Every other topic
+    # (conceptual/scenario bank questions, and the fallback path with no topic_item)
+    # opens purely verbally: the MOVE_ON code-card gate (get_probe_context's
+    # CODE CARD GATE, >= 1 verbal question first) means a code card can never be the
+    # FIRST question of a fresh topic, only a later PROBE turn within it -- so
+    # CODE_CARD_CONTRACT is genuinely unreachable on a MOVE_ON turn unless the topic
+    # itself is explicitly one of the three code/query bank types.
+    _move_on_needs_code_card = bool(
+        re.search(r"\b(code_trace|snippet_eval|query_trace)\b", _brief_context, re.I)
+    )
     # Attribution guard: a STANDALONE / personal project must NEVER be tied to an
     # employer. The candidate's resume lists the project as standalone (the topic
     # string carries a [standalone] marker), so the brief's nearby company names
@@ -1358,11 +1374,17 @@ async def _generate_move_on_directive(
                 "\n\nOPENING REACTION: no previous answer to react to — skip the closing beat entirely "
                 "and open the new topic directly. Never manufacture a reaction to silence.\n"
             )
+        # CODE_CARD_CONTRACT only ships when this MOVE_ON's topic is actually a
+        # code/query bank question (see _move_on_needs_code_card above). Every other
+        # topic opens verbally and can structurally never reach a code card on its
+        # first turn, so the ~60-line fence contract would be dead weight sent to the
+        # LLM on every single topic change for no reason.
+        _code_card_block = ("\n\n" + CODE_CARD_CONTRACT + "\n") if _move_on_needs_code_card else "\n"
         directive = (
             "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
             + generated
             + _filler_instruction
-            + "\n\n" + CODE_CARD_CONTRACT + "\n"
+            + _code_card_block
             + memory_block
             + cross_ref_rule
         )
@@ -3284,12 +3306,14 @@ async def entrypoint(ctx: JobContext):
         Covered = completed, denied, skipped, or probed-to-saturation — all the same.
         """
         excluded_key = _topic_short_key(exclude or "")
-        # Full titles of topics already covered (exclude AUTO_SKILL -- those are
-        # inferred sub-skills, not standalone topics, and would over-match).
+        # Full titles of topics already covered (exclude AUTO_SKILL and
+        # AUTO_OVERLAP_DEDUP -- neither was ever actually asked about, so
+        # neither is a valid basis to fuzzy-match a THIRD topic against;
+        # only compare against topics genuinely discussed or explicitly answered).
         _covered_full_titles = [
             rec.display_title
             for rec in _covered_topic_keys._store.values()
-            if rec.source != CoverageSource.AUTO_SKILL
+            if rec.source not in (CoverageSource.AUTO_SKILL, CoverageSource.AUTO_OVERLAP_DEDUP)
         ]
         for t in _topic_pool:
             k = _topic_short_key(t)
@@ -3298,11 +3322,22 @@ async def entrypoint(ctx: JobContext):
             # Semantic overlap guard: skip a topic whose concept was already discussed
             # inside a prior topic (e.g. "LangGraph" skill when LangGraph was covered
             # inside "Internship"). Uses the existing _topics_overlap heuristic.
-            if any(_topics_overlap(t, covered) for covered in _covered_full_titles):
-                _covered_topic_keys.add(t)  # auto-mark so it never resurfaces
+            # NOTE: this is a fuzzy text-similarity heuristic, not a certainty -- record
+            # it under a distinct source (AUTO_OVERLAP_DEDUP) with the matched topic as
+            # via_topic, so a false-positive match is visibly distinguishable in the
+            # final report/coverage_rows() from a topic actually asked and discussed.
+            _overlap_match = next(
+                (covered for covered in _covered_full_titles if _topics_overlap(t, covered)),
+                None,
+            )
+            if _overlap_match is not None:
+                _covered_topic_keys.record(
+                    t, source=CoverageSource.AUTO_OVERLAP_DEDUP, via_topic=_overlap_match,
+                )
                 _topic_pool[:] = [x for x in _topic_pool if _topic_short_key(x) != k]
                 logger.info(
-                    "[DEDUP] topic %r auto-removed — concept overlaps an already-covered topic", k
+                    "[DEDUP] topic %r auto-removed — concept overlaps already-covered topic %r",
+                    k, _overlap_match,
                 )
                 continue
             return t
@@ -5748,6 +5783,20 @@ async def entrypoint(ctx: JobContext):
             return
         _closing_triggered = True
         logger.info("[CLOSING] Triggered at remaining=%.1fs", remaining)
+        # A code card may still be on-screen and un-answered when the hard time
+        # limit fires. Dismiss it the same way the candidate-answered path does
+        # (agent_runtime.py ~L3822) so the frontend doesn't keep showing a stale
+        # card after the session ends, and clear the last-type stamp so report
+        # generation doesn't read a code-card type for a turn that never scored.
+        if agent.code_card_active:
+            agent.code_card_active = False
+            agent.last_code_card_question_type = ""
+            try:
+                await ctx.room.local_participant.publish_data(
+                    json.dumps({"type": "code_card_dismiss"}).encode("utf-8"), reliable=True,
+                )
+            except Exception:
+                pass
         _name = candidate_first_name or candidate_name
         # Kept to one short sentence + sign-off so worst-case TTS speaking time stays
         # bounded and predictable -- see _goodbye_speak_secs measurement below.
