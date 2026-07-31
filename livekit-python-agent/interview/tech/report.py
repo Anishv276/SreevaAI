@@ -93,7 +93,9 @@ class LLMSkillEntry(BaseModel):
         try:
             return max(1, min(10, round(float(v))))
         except (TypeError, ValueError):
-            return 5
+            # An unparseable score means we have no evidence of ability, not average
+            # ability -- defaulting to 5 silently awarded "Competent" on a parse bug.
+            return 1
 
 
 class LLMSkillsResponse(BaseModel):
@@ -681,13 +683,14 @@ class AnswerIntegrityAnalyzer:
         "You are reviewing a candidate's SPOKEN answers in a TECHNICAL (engineering) interview for signs of "
         "answer integrity problems — AI-generated/read technical explanations, or claims about their own work "
         "that contradict each other across the conversation. "
-        "This is a SERIOUS accusation with real consequences for a real person, so you operate under a strict "
-        "standard of evidence.\n\n"
-        "════════ GOVERNING PRINCIPLE — PRESUMPTION OF INNOCENCE ════════\n"
-        "The default assumption is that the candidate answered honestly and on their own. A false accusation "
-        "is far worse than missing a weak signal — you prioritize PRECISION over recall. You only raise a "
-        "score into flag range when MULTIPLE independent, specific pieces of evidence converge and you can "
-        "quote them. A single stylistic impression is NEVER enough. When in doubt, score it LOW.\n\n"
+        "This is ADVISORY context for a human reviewer, not a verdict — it carries no scoring weight and is "
+        "read alongside other signals such as gaze deviation and trap questions. The hiring decision belongs "
+        "to the company.\n\n"
+        "════════ GOVERNING PRINCIPLE — BALANCED EVIDENCE ════════\n"
+        "Weigh precision and recall together. A missed read-aloud answer defeats the purpose of the "
+        "interview; a false flag costs a reviewer a few minutes of checking against the transcript. Raise a "
+        "score into flag range when you can point to specific, quotable structural evidence in the body of "
+        "an answer. You do not need proof beyond doubt — you need a defensible reason a reviewer can verify.\n\n"
         "════════ CRITICAL BIAS WARNING (this overrides everything below) ════════\n"
         "Automated 'AI writing' detection is known to be unreliable and to falsely flag non-native English "
         "speakers at very high rates — the same formal, careful, well-structured phrasing that fluent "
@@ -696,22 +699,30 @@ class AnswerIntegrityAnalyzer:
         "articulate delivery, or a rehearsed personal story are NOT evidence of AI or dishonesty — on their "
         "own they mean nothing. Being well-spoken is not a crime.\n\n"
         "You are given the full transcript (speech-to-text, so disfluencies and rough grammar are normal).\n\n"
-        "──── DIMENSION 1 — PHRASING (does an answer read as AI-generated, not spoken?) ────\n"
-        "This is the WEAKER, more error-prone dimension — treat it with heavy skepticism. Do NOT score it high "
-        "on impression alone. Genuine phrasing concern requires SEVERAL of these together, quoted from the "
-        "transcript, in the SAME answer or pattern:\n"
-        "- Multiple distinct stock-LLM tells ('it's worth noting that', 'in today's fast-paced environment', "
-        "'plays a crucial role', 'delve into', 'leverage synergies') — one alone is nothing.\n"
-        "- Written-essay cadence spoken aloud ('firstly... secondly... in conclusion') that no one uses live.\n"
-        "- A hard register mismatch WITHIN this same candidate: long answers that are suddenly, unnaturally "
-        "polished and structured compared to how THEY themselves speak in casual moments (greeting, small "
-        "talk, clarifying questions) elsewhere in the transcript — the internal contrast is the signal, not "
-        "the formality itself.\n"
-        "- Total absence of ANY natural speech marker across a long, detailed answer AND suspiciously perfect "
-        "organization, together.\n"
-        "NOT a phrasing signal (score these near 0): articulate/well-spoken candidate, correct technical "
-        "jargon, rehearsed stories, non-native English quirks, formal-but-human style, or any answer too "
-        "short to judge. If your only evidence is 'sounds too polished', the score is LOW.\n\n"
+        "──── DIMENSION 1 — READ-ALOUD / GENERATED ANSWER CONTENT ────\n"
+        "Detect answers whose CONTENT and STRUCTURE show the candidate is reading or reciting generated text "
+        "rather than answering from their own knowledge. Judge the BODY of the answer, never its opening "
+        "words: someone reading off a screen still starts with a natural filler ('so', 'yeah', 'I mean', "
+        "'umm') and then reads. Fillers at the start of a turn do NOT clear an answer, and speech-to-text "
+        "noise around a read answer does not clear it either.\n"
+        "Score HIGH when several of these converge:\n"
+        "- EXHAUSTIVE COVERAGE: enumerates every relevant case, caveat and alternative in a complete, balanced "
+        "way nobody produces unprepared in live speech. Real spoken answers are partial and lopsided — they "
+        "cover what the person happens to remember, not the full space.\n"
+        "- TEXTBOOK COMPLETENESS: definitions delivered with dictionary precision, terminology used correctly "
+        "and consistently throughout, no approximation, no 'sort of' or 'something like that'.\n"
+        "- ENUMERATED STRUCTURE: several distinct points in clean order, no backtracking, no reordering, no "
+        "'oh and also' additions. Spoken reasoning loops back on itself; read text does not.\n"
+        "- NO THINKING ARTIFACTS INSIDE THE BODY: no mid-answer self-correction, no 'wait, actually', no "
+        "trailing off, no change of direction once started. A filler at the start followed by a flawless "
+        "uninterrupted paragraph is a STRONG signal — the disfluency is at the seam, not in the content.\n"
+        "- DEPTH THAT APPEARS AND VANISHES: an answer shows mastery the same candidate contradicts elsewhere "
+        "— stalling on a simpler follow-up, or saying 'I don't know' to something easier than what they just "
+        "answered completely. This internal mismatch is the single strongest tell available.\n"
+        "NOT a signal (score near 0): accent, grammar errors, non-native phrasing, formal register, correct "
+        "jargon, a rehearsed personal story, or a candidate who is simply articulate and well-prepared. "
+        "Fluency is NOT evidence. The signal is structural completeness that outruns live cognition — never "
+        "how polished or formal the speech sounds.\n\n"
         "──── DIMENSION 2 — CONSISTENCY (do claims across turns factually contradict?) ────\n"
         "This is the STRONGER, more defensible dimension — factual self-contradiction is hard to explain "
         "innocently and is not language-biased. Look across ALL turns for genuine contradictions about the "
@@ -729,9 +740,10 @@ class AnswerIntegrityAnalyzer:
         "76-100: Strong, repeated, unambiguous pattern you can prove with several direct quotes.\n"
         "Do not award 51+ unless you can cite the concrete converging evidence in your reason and quotes.\n\n"
         "Output ONLY valid JSON matching the schema exactly. No markdown.\n"
-        "- phrasing_score: integer 0-100 per Dimension 1 (biased/weak — keep low unless strongly proven).\n"
+        "- phrasing_score: integer 0-100 per Dimension 1. Score on the STRUCTURE and CONTENT of the answer "
+        "body, never on how fluent or formal the delivery sounds.\n"
         "- phrasing_reason: one paragraph. If low, say plainly why it's NOT a concern. If elevated, quote the "
-        "several specific tells. Never justify a high score with a single impression.\n"
+        "specific structural evidence — what the answer covered, and why that coverage is implausible live.\n"
         "- consistency_score: integer 0-100 per Dimension 2.\n"
         "- consistency_reason: one paragraph. If contradictions exist, name the specific claims and turns. If "
         "not, say so plainly.\n"
@@ -800,20 +812,20 @@ class AnswerIntegrityAnalyzer:
             # flag threshold: still recorded and visible to a human, but it cannot solo-fire
             # the flag. Phrasing only reaches flag range when a real consistency signal
             # (>=40) corroborates it — two independent problems, per the multi-signal rule.
-            _PHRASING_SOLO_CAP = _ANSWER_INTEGRITY_FLAG_THRESHOLD - 1  # 59
-            corroborated = consistency_score >= 40
-            effective_phrasing = phrasing_score if corroborated else min(phrasing_score, _PHRASING_SOLO_CAP)
-            overall_score = max(effective_phrasing, consistency_score)
-            driver = "consistency" if consistency_score >= effective_phrasing else "phrasing"
-            _capped_note = (
-                " (phrasing capped below flag threshold — not corroborated by a consistency signal, "
-                "and phrasing alone is not reliable enough to accuse)"
-                if (not corroborated and phrasing_score > _PHRASING_SOLO_CAP) else ""
-            )
+            # Phrasing fires on its own. The previous solo cap required a consistency
+            # corroborator, which made this signal unfirable in practice: a candidate
+            # reading generated answers is internally consistent by construction, so
+            # there is nothing to contradict. Dimension 1 now scores structural
+            # evidence (coverage, completeness, absence of live-thinking artifacts)
+            # rather than style, which is what survives being read aloud through STT.
+            # This signal carries 0.0 score weight (see _NEG) -- advisory context for a
+            # reviewer alongside gaze deviation, so recall matters more than precision.
+            overall_score = max(phrasing_score, consistency_score)
+            driver = "consistency" if consistency_score >= phrasing_score else "phrasing"
             overall_reason = (
                 f"Phrasing {phrasing_score}/100: {phrasing_reason} "
                 f"Consistency {consistency_score}/100: {consistency_reason} "
-                f"Overall driven by the {driver} dimension.{_capped_note}"
+                f"Overall driven by the {driver} dimension."
             ).strip()
             result = {
                 "phrasing_score":      phrasing_score,
@@ -1302,7 +1314,8 @@ broader skill (fold "Redux" into "Frontend", "Postgres indexing" into "Data & Da
 ════════════════════════════════════════════════════════════════════════════
 SCORING — 1-10, anchored to observable proficiency (Dreyfus-style progression)
 ════════════════════════════════════════════════════════════════════════════
-Score the candidate's DEMONSTRATED ability in each skill, using the full range. Do NOT cluster at 5-7.
+Score the candidate's DEMONSTRATED ability in each skill, using the full range. Do NOT cluster at 4-7.
+A score is a claim about evidence you actually saw — absence of evidence scores 1, never a middling number.
 The anchors describe progression from surface recall to deep, intuitive command:
   1-2  Novice: could not explain even the basics when asked. Named the area but no working understanding.
   3-4  Advanced beginner: knows the terminology but can't explain mechanics; recall without application.
@@ -1316,8 +1329,12 @@ The anchors describe progression from surface recall to deep, intuitive command:
 Ground the score in the strongest AND weakest evidence across all topics for that skill — a candidate who
 was strong on React basics but fell apart on React performance is Competent (5-6), not Proficient.
 
-Sanity caps (apply after choosing a band):
-- Said "I don't know" or denied the whole skill area when asked → cap at 2.
+Sanity caps (apply after choosing a band, in order — the FIRST match wins):
+- MOST answers in this skill area were "I don't know" / "I'm not sure" / silence / non-answers → score 1.
+  Count the turns for THIS skill. This does NOT require the candidate to have denied an entire area in
+  one breath — denials spread across several topics still mean nothing was demonstrated. If you cannot
+  point to a single specific thing they got right in this skill, it is 1, however many topics it spanned.
+- Answers were attempted but none contained a correct, specific technical claim → cap at 2.
 - Only vague, generality-level answers with no specifics even under probing → cap at 4.
 - Answered confidently AND held up to at least one genuine follow-up probe → do not score below 6.
 

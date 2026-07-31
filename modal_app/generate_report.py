@@ -86,6 +86,18 @@ image = (
         "livekit-python-agent/interview/agent_runtime_utils.py",
         remote_path="/root/interview/agent_runtime_utils.py",
     )
+    # tech/probe.py imports _strip_leaked_meta from here; without it the whole
+    # report import chain (report_worker -> debug_report -> tech -> probe) fails
+    # with ModuleNotFoundError before any report work starts.
+    .add_local_file(
+        "livekit-python-agent/interview/agent_runtime_helpers.py",
+        remote_path="/root/interview/agent_runtime_helpers.py",
+    )
+    .add_local_file(
+        "livekit-python-agent/interview/__init__.py",
+        remote_path="/root/interview/__init__.py",
+    )
+
     .add_local_file(
         "livekit-python-agent/interview/__init__.py",
         remote_path="/root/interview/__init__.py",

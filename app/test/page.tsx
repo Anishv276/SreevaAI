@@ -84,7 +84,7 @@ type TestEvent = {
 };
 
 // --- Simulation Viewer ----------------------------------------------------------
-function SimulationViewer({ 
+function SimulationViewer({
     lines, events, elapsedSeconds, isConnected, timerStarted, sessionEnded
 }: {
     lines: TranscriptLine[]; events: TestEvent[]; elapsedSeconds: number; isConnected: boolean; timerStarted: boolean; sessionEnded: boolean;
@@ -167,14 +167,14 @@ function SimulationViewer({
 
                             const eventColor = (type: string) =>
                                 type === "response_received" ? "text-emerald-600" :
-                                type === "eval_start" ? "text-blue-500" :
-                                type === "eval_done" ? "text-blue-700" :
-                                type === "probe" ? "text-amber-600" :
-                                type === "saturate" ? "text-orange-600" :
-                                type === "move_on" ? "text-purple-600" :
-                                type === "signal_fired" ? "text-red-600" :
-                                type === "session_ended" ? "text-red-500 bg-red-50" :
-                                type === "llm_generating" ? "text-cyan-600" : "text-cyan-700";
+                                    type === "eval_start" ? "text-blue-500" :
+                                        type === "eval_done" ? "text-blue-700" :
+                                            type === "probe" ? "text-amber-600" :
+                                                type === "saturate" ? "text-orange-600" :
+                                                    type === "move_on" ? "text-purple-600" :
+                                                        type === "signal_fired" ? "text-red-600" :
+                                                            type === "session_ended" ? "text-red-500 bg-red-50" :
+                                                                type === "llm_generating" ? "text-cyan-600" : "text-cyan-700";
 
                             const baselineTs = lines.length > 0 ? lines[0].ts : (events.length > 0 ? events[0].timestamp : Date.now());
                             const fmtTs = (ts: number) => {
@@ -182,7 +182,7 @@ function SimulationViewer({
                                 const totalSeconds = Math.floor(elapsedMs / 1000);
                                 const mins = Math.floor(totalSeconds / 60);
                                 const secs = totalSeconds % 60;
-                                return `${mins.toString().padStart(2,"0")}:${secs.toString().padStart(2,"0")}`;
+                                return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
                             };
 
                             const EventRow = ({ event, j, prefix }: { event: TestEvent; j: number; prefix: string }) => (
@@ -404,7 +404,7 @@ function TestPageContent({ testKey }: { testKey: string }) {
     const { logout } = useAuth();
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
     const [isLoggingOut, setIsLoggingOut] = useState(false);
-    
+
     const [orgs, setOrgs] = useState<Org[]>([]);
     const [jobs, setJobs] = useState<Job[]>([]);
     const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -607,7 +607,7 @@ function TestPageContent({ testKey }: { testKey: string }) {
                     metadata: metadata && Object.keys(metadata).length > 0 ? metadata : undefined,
                 }],
             }),
-        }).catch(() => {});
+        }).catch(() => { });
     }, [selectedCandidate, interviewToken, enableCamera]);
 
     const handleFaceViolation = useCallback((
@@ -691,7 +691,7 @@ function TestPageContent({ testKey }: { testKey: string }) {
                     interviewToken: interviewToken || "",
                     events: [{ eventType: kind, severity, timestamp: Date.now(), reason }],
                 }),
-            }).catch(() => {});
+            }).catch(() => { });
             setFocusSignalCounts(prev => ({ ...prev, [kind]: prev[kind] + 1 }));
             setFocusViolationElapsed(elapsedLabel());
             setActiveFocusViolation(kind);
@@ -771,7 +771,7 @@ function TestPageContent({ testKey }: { testKey: string }) {
 
     return (
         <div className="flex flex-col min-h-screen bg-white" style={{ background: "linear-gradient(180deg, #FFFFFF 0%, #FAFAFC 45%, #F5F3FF 100%)" }}>
-            
+
             {/* LOGOUT CONFIRMATION MODAL */}
             {showLogoutConfirm && (
                 <div className="fixed inset-0 z-[1000] flex items-center justify-center p-6">
@@ -830,8 +830,8 @@ function TestPageContent({ testKey }: { testKey: string }) {
 
                     <div className="flex items-center gap-3">
                         <div className="w-[180px]">
-                            <Select 
-                                value={selectedOrg?.id || ""} 
+                            <Select
+                                value={selectedOrg?.id || ""}
                                 onValueChange={val => {
                                     const org = orgs.find(o => o.id === val);
                                     if (org) {
@@ -852,8 +852,8 @@ function TestPageContent({ testKey }: { testKey: string }) {
                         </div>
 
                         <div className="w-[180px]">
-                            <Select 
-                                value={selectedJob?.id || ""} 
+                            <Select
+                                value={selectedJob?.id || ""}
                                 onValueChange={val => {
                                     const job = jobs.find(d => d.id === val);
                                     if (job) {
@@ -873,8 +873,8 @@ function TestPageContent({ testKey }: { testKey: string }) {
                         </div>
 
                         <div className="w-[200px]">
-                            <Select 
-                                value={selectedCandidate?.id || ""} 
+                            <Select
+                                value={selectedCandidate?.id || ""}
                                 onValueChange={val => {
                                     const candidate = candidates.find(c => c.id === val);
                                     if (candidate) setSelectedCandidate(candidate);
@@ -920,7 +920,7 @@ function TestPageContent({ testKey }: { testKey: string }) {
                         <div className="w-px h-5 bg-gray-200"></div>
 
                         {!isActive ? (
-                            <button 
+                            <button
                                 onClick={handleStart}
                                 disabled={!selectedCandidate || starting}
                                 className="inline-flex items-center gap-2 h-8 px-4 rounded-xl text-[12px] font-bold text-white transition-all shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
@@ -930,7 +930,7 @@ function TestPageContent({ testKey }: { testKey: string }) {
                                 {starting ? "Starting..." : "Start"}
                             </button>
                         ) : (
-                            <button 
+                            <button
                                 onClick={handleEnd}
                                 className="inline-flex items-center gap-2 h-8 px-4 rounded-xl text-[12px] font-bold text-white bg-red-500 hover:bg-red-600 transition-colors shadow-sm"
                             >
@@ -939,7 +939,7 @@ function TestPageContent({ testKey }: { testKey: string }) {
                             </button>
                         )}
                     </div>
-                    
+
                     <button
                         onClick={() => setShowLogoutConfirm(true)}
                         className="flex items-center justify-center w-8 h-8 rounded-xl text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all border border-transparent hover:border-red-100"
@@ -1006,7 +1006,7 @@ function TestPageContent({ testKey }: { testKey: string }) {
                                     animate={{ opacity: 1, y: 0, scale: 1 }}
                                     exit={{ opacity: 0, y: -16, scale: 0.97 }}
                                     transition={{ duration: 0.2 }}
-                                    className="absolute top-24 left-1/2 -translate-x-1/2 z-[70] w-[min(640px,90vw)] pointer-events-none"
+                                    className="fixed top-24 left-1/2 -translate-x-1/2 z-[70] w-[min(640px,90vw)] pointer-events-none"
                                 >
                                     <div className="rounded-2xl border border-zinc-200/70 bg-white/95 backdrop-blur-md shadow-[0_20px_60px_rgba(0,0,0,0.15)] overflow-hidden">
                                         {/* Timer only in the header -- the question belongs BELOW the
