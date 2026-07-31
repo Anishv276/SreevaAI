@@ -96,92 +96,277 @@ RESPONSE_SIGNALS = {
 # ---------------------------------------------------------------------------
 CONTENT_SIGNAL_DEFINITIONS: dict[str, dict] = {
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # CEILING — fires when the answer is essentially complete.
+    # ─────────────────────────────────────────────────────────────────────────
     "depth_strong": {
-        "trigger": "CORRECT + APPLIED depth. Mechanism (HOW), tradeoff or failure mode (WHY it breaks), AND judgment about when to use it vs alternatives — all present and accurate. Survives a 'what breaks this' push. The judgment may be demonstrated EITHER abstractly (they can defend the choice against a named alternative) OR through a grounded real instance ('50k reads/sec, Redis TTL=30s, we hit cache stampede, fixed it with probabilistic early expiration'). Both routes reach the same ceiling. For code/query questions: correctly traces the execution AND explains WHY the code behaves that way (scope rule, evaluation order, NULL semantics) — not just the output.",
-        "pattern": "A practitioner's answer, not a textbook one: traces the internals, names the failure cases, defends a real judgment call. This is the ceiling — reserve it.",
+        "trigger": (
+            "CORRECT + APPLIED. The answer contains all three independently: (1) the MECHANISM — "
+            "how the thing actually works internally, not just what it does; (2) the COST — a real "
+            "tradeoff, failure mode, or constraint it imposes; (3) JUDGMENT — a stated position on "
+            "when to use it vs. a named alternative, OR a grounded instance ('50k reads/sec, Redis "
+            "TTL=30s, we hit cache stampede, fixed it with probabilistic early expiration'). The "
+            "judgment may be abstract or grounded — both paths reach the ceiling. Survives a "
+            "'what breaks this?' push because the failure mode is already named."
+        ),
+        "pattern": (
+            "Reserve strictly. This is the answer that stops the follow-up because there is nothing "
+            "left to ask. A practitioner's answer, not a textbook one."
+        ),
         "examples": [
-            "For DB indexing: 'A B-tree keeps keys sorted so range scans walk leaf nodes in order — that's why BETWEEN is fast. But a low-cardinality column like a boolean flag, the planner ignores the index and does a seq scan anyway because the index isn't selective. I'd only index it if it's part of a composite with a selective leading column.'",
-            "For caching (grounded route): '50k reads/sec on our catalog, Redis TTL=30s. On expiry we hit cache stampede — every miss slammed Postgres at once. Fixed it with probabilistic early expiration. Traded staler reads for not taking the DB down.'",
-            "For a code_trace: correctly says output is '[1, 2]' AND explains that list slicing creates a new list so the original is unchanged — traces the memory model, not just the output",
+            "DB indexing: 'A B-tree keeps keys sorted so range scans walk leaf nodes — that's why "
+            "BETWEEN is fast. But on a low-cardinality boolean column the planner ignores the index "
+            "and does a seq scan anyway because selectivity is too low. I'd only add it as the "
+            "trailing column of a composite where the leading column is selective.'",
+            "Caching (grounded route): '50k reads/sec on our catalog, Redis TTL=30s. On expiry we "
+            "hit stampede — every miss slammed Postgres at once. Fixed it with probabilistic early "
+            "expiration. Traded staler reads for not taking the DB down.'",
         ],
-        "not_this": "NOT this if any dimension (mechanism/tradeoff/judgment) is missing → depth_clear, or → tradeoff_blind if specifically the cost/alternative is the missing piece. NOT this if any specific claim is factually WRONG, however fluent → depth_misconception. NOT this if the answer is right but visibly guessed → confident_uncertain. NOT this if the work is real but the candidate's own scope in it is invisible → scope_diffuse.",
+        "not_this": (
+            "NOT this if any one of (mechanism / cost / judgment) is missing — that is depth_clear "
+            "or tradeoff_blind. NOT this if any specific claim is false → depth_misconception. NOT "
+            "this if the answer is right but visibly guessed → confident_uncertain. NOT this if the "
+            "work is real but the candidate's scope inside it is invisible → scope_diffuse."
+        ),
     },
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # STRONG PARTIAL — correct mechanism present, ONE layer missing.
+    # ─────────────────────────────────────────────────────────────────────────
     "depth_clear": {
-        "trigger": "CORRECT + MECHANISM depth. Everything stated is accurate and they genuinely explain HOW it works or trace the concrete case — real understanding, not a label — but one layer is missing (no tradeoff, or no failure mode, or no 'when NOT to use it'). For code/query questions: states the correct output or result AND traces at least one step of the execution (e.g. 'because the list is modified in place'), but doesn't explain the full evaluation order or edge cases.",
-        "pattern": "Solid, correct, mechanism-level. One targeted push (a tradeoff, a failure case, a harder input) away from mastered. This is the expected 'good answer' floor for a competent candidate.",
+        "trigger": (
+            "CORRECT + MECHANISM, but INCOMPLETE. Everything stated is accurate. The candidate "
+            "explains HOW the thing works (traces the internal steps, the data flow, or the "
+            "concrete case). But exactly ONE dimension is missing. CRITICALLY: if the SPECIFIC "
+            "missing piece is the cost/tradeoff — fire tradeoff_blind, not depth_clear. depth_clear "
+            "fires when the gap is anything else: missing failure mode, missing 'when not to use "
+            "this', missing boundary behavior, missing second-order consequence."
+        ),
+        "pattern": (
+            "The expected floor for a competent candidate. One targeted push away from mastery. "
+            "Do not withhold this signal because the answer is not perfect."
+        ),
         "examples": [
-            "For hashing: 'Two keys can hash to the same bucket — a collision — so it chains them in a list at that slot and walks the list on lookup. Worst case all keys collide and it degrades to O(n).' — correct mechanism, but didn't mention resize/load factor or how a real impl mitigates it.",
-            "For a code_trace: 'It prints 4 because the loop runs n-1 times, not n.' — correct output with correct reason, but didn't explain what happens at the boundary condition",
-            "For a query_trace: 'It returns nothing because the LEFT JOIN on orders filters to only users WITH orders — wait, no, the WHERE on orders.id IS NOT NULL is doing that.' — traced the right issue, missed explaining why NULL propagation causes it",
+            "Hashing: 'Two keys can hash to the same bucket — a collision — so it chains them in "
+            "a list and walks the list on lookup. Worst case all keys collide and it degrades to "
+            "O(n).' — correct mechanism AND a failure mode named, but no mention of load factor "
+            "or when to resize. The gap is a missing operational detail, not a missing cost.",
+            "Code trace: 'It prints 4 because the loop runs n-1 times, not n.' — correct output "
+            "with the right reason. The boundary at n=0 was not addressed but the mechanism is real.",
         ],
-        "not_this": "NOT this if a tradeoff AND judgment are also present and accurate → depth_strong. NOT this if the missing layer is SPECIFICALLY the cost/alternative → tradeoff_blind. NOT this if it's just a correct-sounding label with no real mechanism traced → depth_shallow. NOT this if any claim is wrong → depth_misconception.",
+        "not_this": (
+            "NOT this if a tradeoff AND judgment are also present → depth_strong. NOT this if "
+            "the SPECIFIC missing layer is the cost/alternative → tradeoff_blind (that distinction "
+            "is what earns tradeoff_blind its own slot — the probe is fundamentally different). "
+            "NOT this if it is a correct-sounding label with no mechanism traced → depth_shallow. "
+            "NOT this if any claim is wrong → depth_misconception."
+        ),
     },
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # COST-BLIND — the sharpest junior/senior discriminator.
+    # ─────────────────────────────────────────────────────────────────────────
     "tradeoff_blind": {
-        "trigger": "CORRECT MECHANISM, ZERO COST AWARENESS. They explain how their approach works and it is accurate — but they cannot name what it COSTS, when it would be the wrong call, or what they'd compare it against. Every technique is presented as strictly good. Fires specifically when the missing layer is the tradeoff/alternative, and pushing on it produces more of the same benefit list rather than a cost.",
-        "pattern": "The single sharpest junior-vs-senior discriminator. Juniors learn what a tool DOES; seniors learn what it COSTS and when not to reach for it. An engineer who cannot name the downside of their own choice has not made a choice — they have applied a default. Distinct from depth_clear (which is any missing layer) because the probe is different: depth_clear gets 'what else', this gets a FORCED CHOICE under a constraint.",
+        "trigger": (
+            "CORRECT MECHANISM, ZERO COST AWARENESS. The candidate explains the mechanism "
+            "accurately — they are not guessing — but presents their approach as having no "
+            "downside, no alternative worth comparing, and no case where it would be the wrong "
+            "call. Pushing on 'what's the downside?' produces another benefit list, not a cost. "
+            "The mechanism must be present and correct for this to fire. A hollow answer that "
+            "also names no cost is depth_shallow, not this."
+        ),
+        "pattern": (
+            "The single sharpest junior/senior discriminator. Juniors learn what a tool DOES; "
+            "seniors learn what it COSTS and when not to reach for it. The probe for this signal "
+            "is ALWAYS a forced choice under a specific constraint — never 'what are the tradeoffs?'"
+        ),
         "examples": [
-            "For indexing: 'Indexes make queries fast, so I'd add one on every column we filter by.' — correct that indexes speed reads, no awareness of write amplification, storage, or planner selectivity.",
-            "For caching: 'Redis in front of the DB, that solves the latency.' — no mention of invalidation, staleness, or what happens on a cold cache.",
-            "For microservices: accurately describes service isolation and independent deploys, names no cost at all — not network latency, not distributed transactions, not operational overhead.",
+            "Indexing: 'Indexes make queries fast, so I'd add one on every column we filter by.' "
+            "— correct that indexes speed reads, zero awareness of write amplification, storage "
+            "cost, or planner selectivity behavior.",
+            "Caching: 'Redis in front of the DB solves the latency.' — no mention of "
+            "invalidation, staleness, cold-cache behavior, or memory pressure.",
+            "Microservices: accurately describes service isolation and independent deploys, names "
+            "no cost — not latency, not distributed transactions, not operational overhead.",
         ],
-        "not_this": "NOT this if they DO name a cost or alternative, even briefly → depth_clear or depth_strong. NOT this if the mechanism itself is absent or hollow → depth_shallow (they must have earned the mechanism for this to be the interesting gap). NOT this if any claim is wrong → depth_misconception. NOT this if it's an ungrounded best-practice checklist → depth_generic.",
+        "not_this": (
+            "NOT this if they name a cost or alternative, even briefly → depth_clear or "
+            "depth_strong. NOT this if the mechanism itself is absent or hollow → depth_shallow. "
+            "NOT this if any claim is wrong → depth_misconception. NOT this if it is an "
+            "ungrounded best-practice checklist → depth_generic."
+        ),
     },
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # OWNERSHIP GAP — real work, invisible contribution.
+    # ─────────────────────────────────────────────────────────────────────────
     "scope_diffuse": {
-        "trigger": "REAL WORK, INVISIBLE OWNERSHIP. They describe a specific, credible thing that actually happened — a real system, a real migration, a real incident — but their OWN contribution is collective, passive, or unstated: 'we decided', 'the team moved to', 'it was migrated', 'we ended up choosing'. The work is real; the candidate's personal scope inside it is not yet visible.",
-        "pattern": "A PROBE TARGET, NOT A DEDUCTION — this is the single most common shape of a TRUE answer, because most real engineering is collective and most engineers describe it that way by default. It is not evasion and must never be scored as one. It fires so the next question can ask what THEIR call was; if that probe lands, the answer often converts straight to depth_strong.",
+        "trigger": (
+            "REAL WORK, INVISIBLE OWNERSHIP. The candidate describes a specific, credible "
+            "instance — a real system, a real migration, a real incident — but their personal "
+            "contribution is collectively described, passive, or unstated. Markers: 'we decided', "
+            "'the team moved to', 'it was migrated', 'we ended up choosing'. The work is real; "
+            "the candidate's individual scope inside it is not yet visible. This signal reads "
+            "ONLY the ownership language — it never infers that 'we' means they didn't do it."
+        ),
+        "pattern": (
+            "A PROBE TARGET, NOT A DEDUCTION. This is the most common shape of a TRUE answer "
+            "because most real engineering is collective and most engineers describe it that way "
+            "by default. It is not evasion. It fires so the next question can locate their "
+            "specific call. If that probe lands, the answer often converts straight to depth_strong."
+        ),
         "examples": [
-            "'We moved off the monolith and split out the payments service, and we chose gRPC for the internal calls.' — real migration, real decision, zero indication of what this person did.",
-            "'The team was seeing timeouts under load so it was rearchitected with a queue.' — passive voice throughout, no actor named at all.",
+            "'We moved off the monolith and split out the payments service, choosing gRPC for "
+            "the internal calls.' — real migration, real architectural decision, zero indication "
+            "of what this specific person did.",
+            "'The team was seeing timeouts under load so it was rearchitected with a queue.' "
+            "— passive voice throughout, no actor named.",
         ],
-        "not_this": "NOT this if their personal decision or action IS identified ('I benchmarked both and picked gRPC because...') → score on depth alone. NOT this if there's no real instance at all, just a hypothetical ('you'd want a queue there') → depth_generic. NOT this if the described work is vague rather than specific → depth_shallow. Ownership language is the ONLY thing this signal reads — never infer that a 'we' means they didn't do the work.",
+        "not_this": (
+            "NOT this if their personal decision or action IS identified ('I benchmarked both "
+            "and picked gRPC because...') → score on depth alone. NOT this if there is no real "
+            "instance, just a hypothetical → depth_generic. NOT this if the described work is "
+            "vague rather than specific → depth_shallow."
+        ),
     },
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # FLUENCY BIAS GUARD — correct but clearly guessed.
+    # ─────────────────────────────────────────────────────────────────────────
     "confident_uncertain": {
-        "trigger": "RIGHT ANSWER, VISIBLY GUESSED. The technical content lands correct, but the delivery shows they do not actually know it — hedging stacked on hedging ('I think... maybe... probably... not sure but'), an upward questioning intonation on the fact itself, immediately offering a contradictory alternative, or explicitly flagging it as a guess. The correctness may be genuine recall under low confidence, or it may be luck; this signal exists to find out which.",
-        "pattern": "Grading FLUENCY instead of SUBSTANCE is the best-documented failure in interview scoring, and it runs in BOTH directions. The confident-and-wrong direction is already handled (depth_misconception outranks fluency). This is the mirror: a hesitant candidate who is actually right must not be marked down for sounding unsure, and a lucky guess must not be credited as knowledge. Neither depth_clear (over-credits the guess) nor depth_shallow (under-credits real knowledge) can express this, which is why it needs its own probe: re-ask the SAME fact from a different direction — a guess flips, real knowledge holds.",
+        "trigger": (
+            "RIGHT ANSWER, VISIBLY GUESSED. The technical content is correct, but the delivery "
+            "shows the candidate does not actually know it: hedging stacked on hedging ('I "
+            "think... maybe... probably... not sure but...'), an upward questioning intonation on "
+            "the fact itself, offering a contradictory alternative immediately after ('or maybe "
+            "it's the other way'), or explicitly flagging a guess ('I'm not sure but I'll say "
+            "O(log n)?'). The answer must be CORRECT for this to fire. A hedged wrong answer "
+            "is depth_misconception."
+        ),
+        "pattern": (
+            "Grading FLUENCY instead of SUBSTANCE is the best-documented failure in interview "
+            "scoring, and it runs in both directions. depth_misconception guards the "
+            "confident-and-wrong direction; this guards the hesitant-but-right direction. "
+            "The probe: re-ask the SAME fact from a different angle. A guess flips. Real "
+            "knowledge holds."
+        ),
         "examples": [
-            "'I think it's... maybe O(log n)? Could be O(n), I'm not really sure.' — the right answer is in there, stated as a coin flip.",
-            "'Probably because the index isn't selective enough? Something like that anyway.' — correct reasoning, offered as a question.",
+            "'I think it's... maybe O(log n)? Could be O(n), I'm not really sure.' — the right "
+            "answer is in there, stated as a coin flip.",
+            "'Probably because the index isn't selective enough? Something like that anyway.' "
+            "— correct reasoning, offered as a question to the interviewer.",
         ],
-        "not_this": "NOT this for ordinary mild hedging around a confidently-held answer ('I'd say it's O(log n) because the tree is balanced') → grade on depth normally; a single 'I think' is not uncertainty. NOT this if the answer is actually WRONG → depth_misconception, regardless of how hedged. NOT this if they hedge and then never land on anything → depth_shallow or pure_denial. The answer must be CORRECT for this to fire.",
+        "not_this": (
+            "NOT this for ordinary mild hedging around a confidently-held answer ('I'd say "
+            "O(log n) because the tree is balanced') → grade on depth normally; a single 'I "
+            "think' is not uncertainty. NOT this if the answer is actually WRONG → "
+            "depth_misconception, regardless of how hedged. NOT this if they hedge and never "
+            "land on anything → depth_shallow or pure_denial."
+        ),
     },
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # MEMORIZATION DETECTED — correct label, hollow internals.
+    # ─────────────────────────────────────────────────────────────────────────
     "depth_shallow": {
-        "trigger": "CORRECT LABEL, NO MECHANISM. Names the right concept or restates its effect but cannot open the box — no internal steps, no trace, no 'how'. Exactly what a memorized label produces: right word, hollow underneath. Would NOT survive 'trace it for this input'. For code/query questions: states the right output label or result name but cannot explain why the code produces it or trace through the execution.",
-        "pattern": "The most common real-interview failure mode, and the one that separates recall from understanding. Correct at the surface, empty below it. Grade the substance under the label — the label alone is worth little.",
+        "trigger": (
+            "CORRECT LABEL, NO MECHANISM. Names the right concept or restates its effect but "
+            "cannot open the box: no internal steps, no data flow, no trace, no HOW. This is "
+            "exactly what a memorized label produces: right word, hollow underneath. The "
+            "memorization test: would NOT survive 'trace it for this concrete input'. A correct "
+            "one-word answer like 'O(log n)' without any explanation of why is depth_shallow. "
+            "For code/query questions: states the right output label but cannot explain why the "
+            "code produces it."
+        ),
+        "pattern": (
+            "The most common real-interview failure mode. Correct at the surface, empty below "
+            "it. The probe is ALWAYS to open the box: 'walk me through what happens step by "
+            "step for this one specific input' — that question cannot be answered by reciting "
+            "the label."
+        ),
         "examples": [
-            "For hash maps: 'It makes lookups fast, that's the whole point.'",
-            "For generators: 'They're memory efficient and lazy.'",
-            "For an index: 'It speeds up the query.'",
-            "For a code_trace: 'It prints 3.' (correct output, but zero explanation of how the recursion/closure/mutation arrived there)",
-            "For a query_trace: 'It returns the users.' (right direction, no tracing of the JOIN or NULL behavior)",
+            "Hash maps: 'It makes lookups fast, that's the whole point.'",
+            "Generators: 'They're memory efficient and lazy.'",
+            "An index: 'It speeds up the query.'",
+            "Code trace: 'It prints 3.' — correct output, zero explanation of how the recursion "
+            "or closure arrived there.",
         ],
-        "not_this": "NOT this if any real mechanism is actually traced, even partially → depth_clear. NOT this if the claim is actively WRONG → depth_misconception. NOT this if it's a generic best-practice checklist rather than a hollow label → depth_generic. NOT this if it's a flat non-attempt → pure_denial.",
+        "not_this": (
+            "NOT this if any real mechanism is traced, even partially → depth_clear. NOT this "
+            "if the claim is actively WRONG → depth_misconception. NOT this if it is a generic "
+            "best-practice checklist → depth_generic. NOT this if it is a flat non-attempt with "
+            "no content → pure_denial. depth_shallow is NARROW — a correct label with truly "
+            "nothing underneath it. Do not use it as a catch-all for weak answers."
+        ),
     },
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # ACTIVE CONFUSION — a specific false claim was stated.
+    # ─────────────────────────────────────────────────────────────────────────
     "depth_misconception": {
-        "trigger": "INCORRECT claim, stated as if true. ANY affirmatively FALSE technical claim — a wrong mechanism, an inversion, a swapped property, OR a wrong how-to/wrong syntax/wrong name for a thing (naming the wrong construct, wrong keyword, wrong function). For code/query questions: states a WRONG output value, a wrong diagnosis of a bug, or a wrong explanation of what a query returns. It does not need to be delivered confidently — a hesitant wrong claim ('umm, we create a list using def?') is still a wrong claim. What matters is that a specific stated thing is FALSE, not how sure they sounded.",
-        "pattern": "The single most important signal to get right: a wrong answer must score BELOW a hesitant right one and below a flat 'I don't know'. Silence is a gap; a wrong claim is active confusion that would ship a bug. This is a COMMON case, not a rare one — do not shy away from it and default to depth_shallow just because the answer was short.",
+        "trigger": (
+            "INCORRECT CLAIM, STATED AS FACT. Any affirmatively false technical claim: a wrong "
+            "mechanism, an inversion, a swapped property, or a wrong syntax/name for a construct. "
+            "For code/query questions: states a WRONG output value, wrong bug diagnosis, or wrong "
+            "description of what a query returns. It does NOT need to be delivered confidently — "
+            "a hesitant wrong claim ('umm, we create a list using def?') is still a wrong claim. "
+            "What matters is that a specific stated thing is FALSE, not how sure they sounded. "
+            "COMMON CASE: do not shy away from this signal and default to depth_shallow just "
+            "because the answer was short."
+        ),
+        "pattern": (
+            "The single most important signal to classify correctly. A wrong answer must score "
+            "BELOW a hesitant right one and BELOW a flat 'I don't know'. Silence is a gap; a "
+            "wrong claim is active confusion that would ship a bug. The probe: do NOT correct "
+            "them. Ask a Socratic question that only makes sense IF their wrong claim were true, "
+            "forcing them to discover the contradiction themselves."
+        ),
         "examples": [
-            "For hash maps: 'Hash maps keep everything in sorted order.' (false — that's a tree)",
-            "For generators: 'Generators run in a separate thread.' (false — same thread, suspended frame)",
-            "For Python: 'We create a list using def / using diff.' (false — that's a function / that's not a thing; a list is [] )",
-            "For SQL: 'LEFT JOIN is faster than INNER because it returns fewer rows.' (false on both counts)",
-            "For a code_trace: candidate says the output is '5' when the actual output is '4' (wrong value, not just vague)",
-            "For a snippet_eval: candidate identifies the wrong line as the bug, or invents a bug that isn't there",
-            "For a query_trace: candidate says the query returns all rows when it actually returns nothing due to an unmatched JOIN",
+            "Hash maps: 'Hash maps keep everything in sorted order.' (false — that is a BST)",
+            "Generators: 'Generators run in a separate thread.' (false — same thread, suspended "
+            "frame at yield)",
+            "Python: 'We create a list using def.' (false — that is a function definition)",
+            "SQL: 'LEFT JOIN is faster than INNER because it returns fewer rows.' (false on both "
+            "counts)",
+            "Code trace: candidate says output is '5' when the actual output is '4'",
+            "Snippet eval: candidate identifies the wrong line as the bug",
         ],
-        "not_this": "NOT this if the answer is merely thin/vague but nothing in it is actually WRONG → depth_shallow. NOT this if it's mostly right with a missing piece → depth_clear. NOT this if it's a complete non-attempt with no claim at all ('I don't know') → pure_denial. Fires whenever a specific stated claim is FALSE.",
+        "not_this": (
+            "NOT this if the answer is merely thin or vague but nothing in it is actually WRONG "
+            "→ depth_shallow. NOT this if it is mostly right with a missing piece → depth_clear. "
+            "NOT this if it is a complete non-attempt with no claim at all → pure_denial. Fires "
+            "whenever a specific stated claim is FALSE."
+        ),
     },
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # PREPARED SCRIPT — fluent framework, no substance.
+    # ─────────────────────────────────────────────────────────────────────────
     "depth_generic": {
-        "trigger": "PLAUSIBLE BUT UNGROUNDED. A memorized best-practice checklist that could apply to almost any question — technically not-wrong, but with zero reasoning tied to THIS specific problem. Someone who never did the work could say the exact same thing.",
-        "pattern": "The prepared-candidate failure mode: fluent frameworks, no substance. Distinct from depth_shallow (which is a hollow LABEL) — this is a hollow PROCESS. 'I'd check logs, look at metrics, optimize' fits every performance question ever asked.",
-        "examples": ["For a slow query: 'I'd check the logs, look at metrics, monitor performance, and optimize based on findings.'", "For DB choice: 'It depends on the use case — I'd gather requirements and pick the best tool.'"],
-        "not_this": "NOT this if there's a real reason specific to THIS question → depth_clear. NOT this if it's a hollow one-word label rather than a checklist → depth_shallow. NOT this if it's grounded in a specific real instance → depth_strong (or scope_diffuse if the instance is real but their own role in it is invisible).",
+        "trigger": (
+            "PLAUSIBLE BUT UNGROUNDED. A memorized best-practice checklist that could apply to "
+            "almost any question on this topic — technically not-wrong, but with zero reasoning "
+            "tied to THIS specific problem. Someone who never did the work could say the exact "
+            "same thing. Distinct from depth_shallow (which is a hollow LABEL) — this is a "
+            "hollow PROCESS or framework. 'I'd check logs, look at metrics, optimize based on "
+            "findings' fits every performance question ever asked."
+        ),
+        "pattern": (
+            "The prepared-candidate failure mode: fluent frameworks, no substance. The probe is "
+            "ALWAYS to force a specific: 'which exact thing in the logs tells you it is THIS "
+            "cause and not GC pressure?'"
+        ),
+        "examples": [
+            "Slow query: 'I'd check the logs, look at metrics, monitor performance, and optimize "
+            "based on findings.'",
+            "DB choice: 'It depends on the use case — I'd gather requirements and pick the best "
+            "tool for the job.'",
+        ],
+        "not_this": (
+            "NOT this if there is a real reason specific to THIS question → depth_clear. NOT "
+            "this if it is a hollow one-word label rather than a checklist → depth_shallow. NOT "
+            "this if it is grounded in a specific real instance → depth_strong or scope_diffuse."
+        ),
     },
 
     "pure_denial": {
@@ -426,83 +611,84 @@ def _build_content_signal_prompt_block(level: int, question_type: str = "") -> s
 
 {_level_context}
 {_code_q_note}
-RESOLVE TWO AXES FIRST, THEN MAP TO THE SIGNAL (do this before picking a name):
+━━━ RESOLVE AXES FIRST — MAP TO SIGNAL SECOND ━━━
+Before picking any signal name, explicitly resolve EACH axis below in sequence.
+Skipping an axis is how depth_shallow and pure_denial attract lazy classification.
 
-  AXIS 1 — CORRECTNESS: Is the specific technical claim right?
-    correct  — everything stated is accurate
-    partial  — mostly right, one piece missing or imprecise
-    wrong    — a specific claim is affirmatively FALSE: an inversion, a swap, a wrong
-               mechanism, OR a wrong how-to / wrong syntax / wrong name for a construct
-               (e.g. "create a list with def" — that's a function, not a list). A wrong
-               claim is 'wrong' whether stated confidently or hesitantly.
-    none     — no claim attempted at all
+  AXIS 1 — CORRECTNESS (resolve this first, always):
+    correct  — every stated technical claim is accurate
+    wrong    — at least one stated claim is affirmatively FALSE (wrong mechanism,
+               inversion, swapped property, wrong syntax, wrong output value, wrong
+               bug diagnosis). A wrong claim is 'wrong' whether stated confidently
+               or hesitantly.
+    none     — no claim attempted at all (apply the pure_denial mechanical test)
   Judge correctness on SUBSTANCE, never on fluency. A confident, well-spoken WRONG
   answer is still wrong. A hesitant, rambly RIGHT answer is still right. Voice
   transcription is messy — grade what they MEAN, not how cleanly they said it.
 
-  AXIS 2 — DEPTH: How far past a memorized label did they get?
-    label_only — names the concept / restates the effect, but no HOW. Would NOT
-                 survive "trace it for this input". This is the memorization tell.
-    mechanism  — actually explains HOW / traces the concrete case
-    applied    — real tradeoff + judgment, ideally from a grounded real instance
+  AXIS 2 — DEPTH (resolve only if AXIS 1 = correct):
+    label_only — names the concept or restates its effect, but no HOW.
+                 Would NOT survive 'trace it for this concrete input'.
+    mechanism  — explains HOW / traces internal steps / traces a concrete case
+    applied    — mechanism + a real tradeoff AND judgment about when to use it
 
-  Then map:
-    correct + applied                    → depth_strong
-    correct + mechanism, no cost named   → tradeoff_blind
-    correct + mechanism, other gap       → depth_clear
-    correct + label_only                 → depth_shallow
-    correct but visibly guessed          → confident_uncertain
-    real instance, ownership invisible   → scope_diffuse
-    plausible-but-ungrounded checklist   → depth_generic
-    wrong (any depth)                    → depth_misconception
-    none                                 → pure_denial
+  AXIS 3 — STANCE (resolve only if AXIS 1 = correct AND AXIS 2 >= mechanism):
+    cost_blind — mechanism is correct, but zero cost/downside/alternative named
+    diffuse    — real instance described, candidate's own scope invisible ('we')
+    guessed    — correct answer, but visibly hedged/guessed (stacked uncertainty)
+    fluent     — no anomaly in how the answer is held
 
-  ORDER OF RESOLUTION when more than one could fit (first match wins):
-    0. NOTHING remains after stripping hedges → pure_denial (run the mechanical test in its
-       definition FIRST; it is the narrowest signal here, not the default landing spot)
-    1. wrong claim anywhere                 → depth_misconception (correctness dominates)
-    2. correct but visibly guessed          → confident_uncertain (the guess is the story)
-    3. real instance, ownership invisible   → scope_diffuse (ask whose call it was)
-    4. mechanism present, no cost named     → tradeoff_blind
-    5. otherwise map on the two axes above
+  Then map (first match wins):
+    none                              → run pure_denial mechanical test
+    wrong                             → depth_misconception
+    correct + guessed                 → confident_uncertain
+    correct + diffuse                 → scope_diffuse
+    correct + cost_blind              → tradeoff_blind
+    correct + applied + fluent        → depth_strong
+    correct + mechanism + other gap   → depth_clear
+    correct + label_only              → depth_shallow
+    plausible checklist, no substance → depth_generic
 
-  ANTI-LOOP RULE — pure_denial and depth_shallow are the two signals that attract lazy
-  classification, because they are the easiest to justify for a weak answer. If EITHER has
-  already fired twice on this topic, treat a third as a red flag on your own reasoning and
-  re-read the answer specifically hunting for content you skipped: a mangled technical term,
-  a comparison, a partial mechanism, a wrong claim worth naming. A candidate producing three
-  identical signals in a row usually means the classifier stopped reading, not that the
-  candidate stopped answering. Only repeat the signal if the mechanical test genuinely still
-  fails on this specific answer.
+  PRIORITY ORDER when more than one fires (first wins):
+    0. none — apply pure_denial mechanical test FIRST
+    1. wrong claim anywhere            → depth_misconception
+    2. correct + visibly guessed       → confident_uncertain
+    3. real instance + scope invisible → scope_diffuse
+    4. mechanism present + no cost     → tradeoff_blind
+    5. otherwise map on axes above
+
+  ANTI-LOOP RULE: If pure_denial or depth_shallow has already fired TWICE on this
+  topic, do NOT pick it a third time without re-reading the answer specifically
+  hunting for content you may have skipped: a garbled technical term, a partial
+  mechanism, a wrong claim worth naming. Three identical signals in a row usually
+  means the classifier stopped reading, not that the candidate stopped answering.
 
 {_gates_block}
 
-CRITICAL ordering rules:
-1. CORRECTNESS DOMINATES. A wrong claim is depth_misconception no matter how fluent or
-   detailed — it must never be scored as depth_clear/mastered just because it was
-   articulate. Confident-and-wrong scores BELOW hesitant-and-right and BELOW "I don't know".
-2. LABEL ≠ UNDERSTANDING. A correct-sounding label with no mechanism traced is depth_shallow,
-   NOT depth_clear. Do not credit the keyword — credit only the substance under it.
-3. scope_diffuse: fires on a SPECIFIC real instance whose OWNERSHIP is collective or passive. It is
-   a PROBE TARGET, not a deduction — never read a "we" as evidence they didn't do the work. If
-   there is no real instance at all (just a hypothetical or a habit), this is not it.
-4. tradeoff_blind: requires the mechanism to be PRESENT and correct — it is the COST that's
-   missing, not the understanding. A hollow answer that also names no cost is depth_shallow.
-5. confident_uncertain: the answer must be CORRECT. A hedged WRONG answer is depth_misconception,
-   and a hedge that never lands on anything is depth_shallow or pure_denial.
-6. pure_denial is ONLY for a complete non-attempt. ANY attempt — even wrong — is a different signal.
+CRITICAL ORDERING RULES:
+1. CORRECTNESS DOMINATES. A wrong claim is depth_misconception however fluent —
+   it must never be scored as depth_clear just because it was articulate.
+   Confident-and-wrong scores BELOW hesitant-and-right and BELOW "I don't know".
+2. LABEL ≠ UNDERSTANDING. A correct label with no mechanism traced is depth_shallow.
+   Do not credit the keyword — credit only the substance under it.
+3. scope_diffuse fires on a SPECIFIC real instance with invisible ownership.
+   It is a PROBE TARGET, not a deduction. A 'we' is never evidence they didn't do it.
+4. tradeoff_blind requires the mechanism to be PRESENT — it is the COST that's missing.
+   A hollow answer that also names no cost is depth_shallow, not tradeoff_blind.
+5. confident_uncertain: the answer must be CORRECT. A hedged WRONG answer is
+   depth_misconception; a hedge that never lands on anything is depth_shallow.
+6. pure_denial is ONLY for a complete non-attempt. ANY attempt — even wrong — is
+   a different signal. Apply the mechanical test before picking it.
 
-FALLBACK RULE (no null ever, but do NOT use this as a shortcut): Before ever landing on
-depth_shallow, you MUST re-walk the two axes explicitly:
-  - Is any specific claim actually FALSE? → depth_misconception, not depth_shallow.
-  - Is it a real, if imperfect, mechanism trace (even one step)? → depth_clear, not depth_shallow.
-  - Is it a fluent checklist/best-practice recital with no claim tied to THIS question? → depth_generic, not depth_shallow.
-  - Is it grounded in a specific real instance with a constraint and outcome? → depth_strong, or
-    scope_diffuse if that instance's ownership is collective. Not depth_shallow.
-  - Is it a complete non-attempt with nothing said? → pure_denial, not depth_shallow.
-depth_shallow is a narrow, specific cell — a correct label with truly nothing underneath it —
-not a default resting place for uncertainty. Reaching it requires ruling out all five alternatives
-above, not just failing to be sure which one applies.\
+FALLBACK RULE (no null ever, but do NOT use as a shortcut): Before landing on
+depth_shallow, re-walk ALL axes explicitly:
+  - Is any specific claim FALSE? → depth_misconception.
+  - Is there a real mechanism trace, even one step? → depth_clear.
+  - Is it a fluent checklist with no claim tied to THIS question? → depth_generic.
+  - Is it a specific real instance with collective ownership? → scope_diffuse.
+  - Is it a complete non-attempt with nothing said? → pure_denial.
+depth_shallow is NARROW — a correct label with truly nothing underneath it —
+not a default resting place. Reaching it requires ruling out all five alternatives.\
 """
 
 
@@ -773,7 +959,7 @@ async def _call_signal_classification(
     active_topic: str,
     level: int = 2,
     question_type: str = "",
-    signals_already_fired: list[str] = None,
+    signals_already_fired: list[str] | None = None,
 ) -> tuple[str | None, str | None, bool, dict]:
     """
     Call 2 — universal signal classification, with its own 400-600 token reasoning budget.
@@ -876,7 +1062,7 @@ async def evaluate_answer(
     topic_probe_focus: str | None = None,
     job_title: str = "",
     question_type: str = "",
-    signals_already_fired: list[str] = None,
+    signals_already_fired: list[str] | None = None,
 ) -> dict:
     """
     Two dedicated LLM calls: Call 1 scores the answer, Call 2 classifies the signal.
@@ -975,7 +1161,7 @@ async def evaluate_answer(
                 + grounding * 0.25
             )
 
-        signal = str(raw_signal).strip() if raw_signal else None
+        signal = raw_signal.strip() if raw_signal else None
 
         action = "PROBE"
         forced_action = False
@@ -1026,7 +1212,7 @@ async def evaluate_answer(
             signal = "depth_shallow"
             logger.info("[EVAL] signal still None after fallback — using depth_shallow default")
 
-        signal_reason = str(signal_reason or "").strip() or None
+        signal_reason = (signal_reason or "").strip() or None
 
         reason = str(data.get("reason", ""))[:120]
 

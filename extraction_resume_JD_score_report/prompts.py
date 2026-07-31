@@ -319,77 +319,25 @@ Return ONLY valid JSON:
 """
 
 # -- Reporter ------------------------------------------------------------------
+#
+# REPORTER_SYSTEM carries the ENTIRE static instruction spec (formerly re-sent
+# every call inside the user prompt). It is byte-identical across every
+# candidate scored against any job, which lets OpenAI's automatic prompt
+# caching discount it (cached_input rate, ~10x cheaper) on the 2nd+ candidate
+# scored in the same rolling cache window -- system messages are always the
+# stable prefix of the request. The user prompt (build_reporter_prompt) now
+# carries ONLY per-candidate data: locked score, evidence, JD/resume specifics.
 
-REPORTER_SYSTEM = (
-    "You are a Principal Technical Recruiter producing candidate evaluation reports. "
-    "EVIDENCE DISCIPLINE: every factual claim MUST cite a specific company name, tool, project, or metric "
-    "from the provided evidence library using its [EV-xxx] citation ID. "
-    "FORBIDDEN in all output: 'strong background', 'passionate', 'experienced in', 'has worked with', "
-    "'demonstrates proficiency', score numbers in narrative text. "
-    "BIAS: zero tolerance — no inference from name, nationality, gender, age, or education prestige. "
-    "Output ONLY valid JSON. No markdown. No code fences."
-)
+REPORTER_SYSTEM = """You are a Principal Technical Recruiter producing candidate evaluation reports.
+EVIDENCE DISCIPLINE: every factual claim MUST cite a specific company name, tool, project, or metric
+from the provided evidence library using its [EV-xxx] citation ID.
+FORBIDDEN in all output: 'strong background', 'passionate', 'experienced in', 'has worked with',
+'demonstrates proficiency', score numbers in narrative text.
+BIAS: zero tolerance — no inference from name, nationality, gender, age, or education prestige.
+Output ONLY valid JSON. No markdown. No code fences.
 
-def build_reporter_prompt(
-    jd_raw_text: str,
-    resume_raw_text: str,
-    resume_data: dict,
-    score_result: dict,
-    evidence_blocks: list[str],
-    criteria_breakdown: list[dict],
-    screening_criteria: dict | None = None,
-) -> str:
-    candidate_name = resume_data.get("full_name", "the candidate")
-    matched = score_result["skill_matching"]["matched_must"]
-    missing = score_result["skill_matching"]["missing_must"]
-    matched_good = score_result["skill_matching"]["matched_good"]
-    status = score_result["status"]
-    total = score_result["score"]
-    breakdown = score_result["breakdown"]
-    candidate_years = score_result["candidate_years"]
-    jd_min_years = score_result["jd_min_years"]
-    exp_status = score_result["exp_status"]
-    work_history = resume_data.get("work_history", [])
-    domain_skills = resume_data.get("skills", {}).get("domain_skills", [])
-    projects = resume_data.get("projects", [])
-
-    return f"""The deterministic scoring engine has LOCKED the final score and status.
+The deterministic scoring engine in the user message has LOCKED the final score and status.
 Your ONLY job: write sharp, evidence-grounded human-readable analysis. You CANNOT change scores.
-
-━━━ LOCKED SCORING RESULTS (READ ONLY) ━━━
-Candidate      : {candidate_name}
-Final Score    : {total}/100  (Base: {score_result["base_score"]}, Human adj: {score_result["human_layer"].get("human_adjustment", 0)})
-Status         : {status}
-Criteria Match : {breakdown["skills_score"]}/{breakdown["skills_max"]} pts
-Experience     : {breakdown["exp_score"]}/{breakdown["exp_max"]} pts
-Career Quality : {breakdown["career_score"]}/{breakdown["career_max"]} pts
-Good-to-have   : {breakdown["good_score"]}/{breakdown["good_max"]} pts
-Domain Fit     : {breakdown.get("domain_score", 0)}/{breakdown.get("domain_max", 10)} pts
-Must matched   : {json.dumps(matched)}
-Must missing   : {json.dumps(missing)}
-Good hits      : {json.dumps(matched_good)}
-Exp status     : {exp_status} ({candidate_years} yrs | required: {jd_min_years} yrs)
-{f"HARD REJECTION: {json.dumps(score_result['rejection_reasons'])}" if score_result["hard_rejected"] else "No hard rejection."}
-Human summary  : {score_result["human_layer"].get("summary", "")}
-
-━━━ CRITERIA EVIDENCE TRACE ━━━
-{json.dumps(criteria_breakdown, indent=2)}
-
-━━━ EVIDENCE LIBRARY (cite by [EV-id] in your output) ━━━
-{chr(10).join(evidence_blocks) if evidence_blocks else "No high-quality evidence items extracted."}
-
-━━━ JOB DESCRIPTION ━━━
-{jd_raw_text[:3000]}
-
-━━━ RESUME RAW TEXT ━━━
-{resume_raw_text[:4000]}
-
-━━━ STRUCTURED RESUME ━━━
-WORK HISTORY: {json.dumps(work_history, indent=2)}
-PROJECTS: {json.dumps(projects, indent=2)}
-DOMAIN SKILLS: {json.dumps(domain_skills)}
-CORE CLAIMS: {json.dumps(resume_data.get("core_claims", []), indent=2)}
-{f"SCREENING CRITERIA: {json.dumps(screening_criteria)}" if screening_criteria else ""}
 
 ━━━ OUTPUT INSTRUCTIONS ━━━
 
@@ -531,47 +479,118 @@ skill_match_rows (6–12 items — JD-relevant skills only, technical skills onl
 - evidence_note: ONE phrase ≤ 60 chars. e.g. "3 yrs at Razorpay, prod scale" or "Personal project only" or "Skills section only"
 
 skill_matching:
-- matched_must: COPY verbatim from LOCKED SCORING RESULTS above.
-- missing_must: COPY verbatim from LOCKED SCORING RESULTS above.
-- matched_good: COPY verbatim from LOCKED SCORING RESULTS above.
+- matched_must: COPY verbatim from LOCKED SCORING RESULTS in the user message.
+- missing_must: COPY verbatim from LOCKED SCORING RESULTS in the user message.
+- matched_good: COPY verbatim from LOCKED SCORING RESULTS in the user message.
 - must_have_details: For each skill in matched_must, add one entry:
   - name: skill name (must match matched_must entry exactly)
   - evidence: 1 sentence — WHERE in the resume this skill is proven and HOW (company + role + outcome/scale). ≤ 140 chars.
     Example: "Built REST APIs at Razorpay using Node.js, serving 10M daily requests [EV-002]."
 
-━━━ SECTION 7 — OTHER FIELDS ━━━
+━━━ SECTION 7 — EXPERIENCE ASSESSMENT ━━━
 
-recruiter_snapshot (string — 3 sentences):
-S1: What they can do TODAY — deepest skill + strongest role + best evidence [EV-id].
-S2: How they match THIS role — must-haves matched/missed specifically.
-S3: Biggest gap OR strongest differentiator.
-
-experience_assessment: {{"years": {candidate_years}, "vs_required": "{candidate_years} yrs vs {jd_min_years} yrs required"}}
-
-candidate_potential: {{"for_this_role": "High"|"Medium"|"Low"}}
+experience_assessment: {"years": <candidate_years from LOCKED SCORING RESULTS>, "vs_required": "<candidate years> yrs vs <jd_min_years> yrs required"}
 
 Return ONLY valid JSON:
-{{
-  "recruiter_snapshot": "string",
-  "fit_radar": {{"role_fit": 0, "tech_depth": 0, "proven_impact": 0, "hire_risk": 0, "growth_velocity": 0}},
-  "fit_radar_notes": {{"role_fit": "string", "tech_depth": "string", "proven_impact": "string", "hire_risk": "string", "growth_velocity": "string"}},
-  "skill_match_rows": [{{"name":"string","stars":0,"evidence_note":"string"}}],
-  "skill_matching": {{
+{
+  "fit_radar": {"role_fit": 0, "tech_depth": 0, "proven_impact": 0, "hire_risk": 0, "growth_velocity": 0},
+  "fit_radar_notes": {"role_fit": "string", "tech_depth": "string", "proven_impact": "string", "hire_risk": "string", "growth_velocity": "string"},
+  "skill_match_rows": [{"name":"string","stars":0,"evidence_note":"string"}],
+  "skill_matching": {
     "matched_must": ["string"],
     "missing_must": ["string"],
     "matched_good": ["string"],
-    "must_have_details": [{{"name":"string","evidence":"string"}}]
-  }},
-  "experience_assessment": {{"years": {candidate_years}, "vs_required": "string"}},
-  "work_history_annotated": [{{"company":"string","role":"string","start_date":"string","end_date":"string","duration_months":0,"is_current":false,"recruiter_summary":"string","technologies_used":["string"],"ownership_level":"string","impact_strength":"string"}}],
-  "candidate_potential": {{"for_this_role": "string"}},
+    "must_have_details": [{"name":"string","evidence":"string"}]
+  },
+  "experience_assessment": {"years": 0, "vs_required": "string"},
+  "work_history_annotated": [{"company":"string","role":"string","start_date":"string","end_date":"string","duration_months":0,"is_current":false,"recruiter_summary":"string","technologies_used":["string"],"ownership_level":"string","impact_strength":"string"}],
   "decision_reason": "string",
-  "strengths": [{{"label":"string","body":"string"}},{{"label":"string","body":"string"}},{{"label":"string","body":"string"}}],
-  "weaknesses": [{{"label":"string","body":"string"}},{{"label":"string","body":"string"}},{{"label":"string","body":"string"}}],
+  "strengths": [{"label":"string","body":"string"},{"label":"string","body":"string"},{"label":"string","body":"string"}],
+  "weaknesses": [{"label":"string","body":"string"},{"label":"string","body":"string"},{"label":"string","body":"string"}],
   "ai_summary": [
-    {{"label":"Executive Summary","body":"string","tone":"emerald|amber|rose"}},
-    {{"label":"JD Alignment","body":"string","tone":"emerald|amber|rose"}},
-    {{"label":"Primary Risk","body":"string","tone":"rose"}}
+    {"label":"Executive Summary","body":"string","tone":"emerald|amber|rose"},
+    {"label":"JD Alignment","body":"string","tone":"emerald|amber|rose"},
+    {"label":"Primary Risk","body":"string","tone":"rose"}
   ]
-}}
+}
+"""
+
+
+def build_reporter_prompt(
+    resume_data: dict,
+    score_result: dict,
+    evidence_blocks: list[str],
+    criteria_breakdown: list[dict],
+    screening_criteria: dict | None = None,
+) -> str:
+    """Per-candidate data only. All static instructions live in REPORTER_SYSTEM
+    (see comment above it) so they're sent once as a cacheable system message
+    instead of being re-serialized into every candidate's user prompt.
+
+    jd_raw_text/resume_raw_text and the full work_history/projects JSON dumps
+    were dropped: every field the output schema needs is already grounded by
+    criteria_breakdown + the evidence library below (evidence blocks ARE the
+    curated raw text — verbatim quotes tied to a citable [EV-id]), and the
+    career-timeline section only consumes company/role/dates/duration/tech,
+    which timeline_entries carries directly instead of a full JSON re-dump.
+    """
+    candidate_name = resume_data.get("full_name", "the candidate")
+    matched = score_result["skill_matching"]["matched_must"]
+    missing = score_result["skill_matching"]["missing_must"]
+    matched_good = score_result["skill_matching"]["matched_good"]
+    status = score_result["status"]
+    total = score_result["score"]
+    breakdown = score_result["breakdown"]
+    candidate_years = score_result["candidate_years"]
+    jd_min_years = score_result["jd_min_years"]
+    exp_status = score_result["exp_status"]
+    domain_skills = resume_data.get("skills", {}).get("domain_skills", [])
+
+    # Only the fields work_history_annotated's schema actually consumes --
+    # bullet_points/impact_signals/business_domain are already covered by the
+    # evidence library above, which quotes them verbatim with a citable [EV-id].
+    timeline_entries = [
+        {
+            "company": job.get("company"),
+            "role": job.get("role"),
+            "start_date": job.get("start_date"),
+            "end_date": job.get("end_date"),
+            "duration_months": job.get("duration_months"),
+            "is_current": job.get("is_current", False),
+            "technologies_used": (job.get("technologies_used") or [])[:6],
+        }
+        for job in resume_data.get("work_history", [])
+    ]
+
+    return f"""━━━ LOCKED SCORING RESULTS (READ ONLY) ━━━
+Candidate      : {candidate_name}
+Final Score    : {total}/100  (Base: {score_result["base_score"]}, Human adj: {score_result["human_layer"].get("human_adjustment", 0)})
+Status         : {status}
+Criteria Match : {breakdown["skills_score"]}/{breakdown["skills_max"]} pts
+Experience     : {breakdown["exp_score"]}/{breakdown["exp_max"]} pts
+Career Quality : {breakdown["career_score"]}/{breakdown["career_max"]} pts
+Good-to-have   : {breakdown["good_score"]}/{breakdown["good_max"]} pts
+Domain Fit     : {breakdown.get("domain_score", 0)}/{breakdown.get("domain_max", 10)} pts
+Must matched   : {json.dumps(matched)}
+Must missing   : {json.dumps(missing)}
+Good hits      : {json.dumps(matched_good)}
+Exp status     : {exp_status} ({candidate_years} yrs | required: {jd_min_years} yrs)
+{f"HARD REJECTION: {json.dumps(score_result['rejection_reasons'])}" if score_result["hard_rejected"] else "No hard rejection."}
+Human summary  : {score_result["human_layer"].get("summary", "")}
+
+━━━ CRITERIA EVIDENCE TRACE ━━━
+{json.dumps(criteria_breakdown)}
+
+━━━ EVIDENCE LIBRARY (cite by [EV-id] in your output) ━━━
+{chr(10).join(evidence_blocks) if evidence_blocks else "No high-quality evidence items extracted."}
+
+━━━ WORK HISTORY TIMELINE ━━━
+{json.dumps(timeline_entries)}
+
+━━━ DOMAIN SKILLS ━━━
+{json.dumps(domain_skills)}
+
+━━━ CORE CLAIMS ━━━
+{json.dumps(resume_data.get("core_claims", []))}
+{f"SCREENING CRITERIA: {json.dumps(screening_criteria)}" if screening_criteria else ""}
 """

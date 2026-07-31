@@ -73,7 +73,7 @@ def _verify_grounding(report: dict, resume_data: dict) -> list[str]:
         if job.get("company")
     }
     warnings = []
-    for field in ["recruiter_snapshot", "decision_reason"]:
+    for field in ["decision_reason"]:
         text = report.get(field, "")
         # Find "At Company" or "at Company" patterns
         cited = re.findall(r"\bAt ([A-Z][a-zA-Z0-9\s&\.]+?)(?:,|\.|\sâ€”|\sand\s)", text)
@@ -87,10 +87,7 @@ def _verify_grounding(report: dict, resume_data: dict) -> list[str]:
 
 
 def generate_report(
-    jd_data: dict,
     resume_data: dict,
-    jd_raw_text: str,
-    resume_raw_text: str,
     score_result: dict,
     client: Any,
     report_model: str,
@@ -101,14 +98,16 @@ def generate_report(
 
     Returns (report_dict, usage_dict).
     score_result is mutated to add grounding_warnings.
+
+    jd_data/jd_raw_text/resume_raw_text were dropped from the signature: the
+    prompt never needed the raw JD/resume text (evidence_blocks + criteria_
+    breakdown already ground every output field), and jd_data was unused here.
     """
     evidence_items = resume_data.get("evidence_items", []) or []
     evidence_blocks = _build_evidence_blocks(evidence_items)
     criteria_breakdown = _build_criteria_breakdown(score_result.get("criteria_results", []))
 
     prompt = build_reporter_prompt(
-        jd_raw_text=jd_raw_text,
-        resume_raw_text=resume_raw_text,
         resume_data=resume_data,
         score_result=score_result,
         evidence_blocks=evidence_blocks,

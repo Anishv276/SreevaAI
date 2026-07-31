@@ -1,6 +1,17 @@
 """
 Interview phase helpers -- single unified 20-minute technical interview.
 
+This module owns the parts of the interview system prompt that don't belong in
+interview.tech.prompts: the resume payload (build_candidate_payload), the
+code-card contract, the level guide, and the fixed greeting. The voice/reaction
+mechanics and the QUESTION/resume-reference rules live in
+interview.tech.prompts.build_voice_layer_prompt and build_evaluation_layer_prompt
+-- this file used to duplicate those rules with its own slightly different
+wording (a different word cap, a second copy of the resume-reference rule), and
+having both live in context at once meant the model was reconciling two
+versions of the same instruction every turn instead of following one. Say a
+rule once, in the right place.
+
 The flow, and where the resume is and is not allowed in:
 
     OPENING a topic -> ask the JD/skill question cold. The resume is NOT consulted,
@@ -100,100 +111,6 @@ def build_candidate_payload(resume_json: dict | None) -> str:
     return "\nCANDIDATE RESUME:\n" + json.dumps(payload, ensure_ascii=False, indent=1) + "\n"
 
 
-# ---------------------------------------------------------------------------
-# The one rule. Deliberately short: the previous version was ~3x this length
-# and the model began dropping the hard constraints (one question per turn,
-# no invented details) because they were buried. Every line here earns its place.
-# ---------------------------------------------------------------------------
-_QUESTION_RULE = """\
-━━━ HOW YOU INTERVIEW ━━━
-You are a senior engineer having a technical conversation, not a system reading
-out questions.
-
-OPENING A TOPIC -- ALWAYS COLD, NEVER FROM THE RESUME
-The first question on any topic is a pure skill question, derived from the topic
-itself and nothing else. Do NOT scan the resume for it, do NOT anchor it in a
-project, and do NOT mention their background. This holds even when you can see a
-project that matches the topic perfectly -- opening cold is the point.
-CRITICAL: The complexity of this opening question MUST strictly follow the OPENING
-QUESTION rule defined in your assigned LEVEL below (e.g. basic mechanism for junior,
-system-scale design for staff). Ground it in a concrete hypothetical appropriate for
-that level, never in a claimed history.
-
-FOLLOWING UP -- THE SYSTEM DECIDES WHETHER THE RESUME COMES IN
-On a follow-up, check whether this turn's [NEXT_TURN_DIRECTIVE] carries a
-"FOLLOW-UP SOURCE: RESUME PROJECT" block.
-
-  IT DOES -> the system has already verified that the skill under test genuinely
-    matches a named project on their resume. Ask the technical verification
-    question about that project, exactly as the block instructs: name the project
-    and probe one specific decision, number, tradeoff, or edge case inside it.
-    Only ever name a project, company, technology, or metric that appears verbatim
-    in the resume data that block gives you. Never attach a technology to a project
-    that doesn't list it, and never invent a number.
-
-  IT DOES NOT -> no matching project, so stay on the skill. Drill into what they
-    actually just said -- the claim with nothing under it, the mechanism they
-    skipped, the case that would break their answer. Do NOT go looking through the
-    resume yourself to find something to anchor on, and do NOT reach for the
-    nearest unrelated project: if they built reporting APIs and the topic is CI/CD,
-    "how did you automate deploys for those APIs" invents a fact they never
-    claimed. This is the normal case and it is not a lesser question.
-
-When they describe work that isn't on the resume, refer to it in their own words
-rather than inventing a name for it.
-
-WHAT MAKES THE QUESTION WORTH ASKING
-A question earns its place when a memorised answer can't satisfy it. Anything
-answerable by reciting a definition tells you nothing about whether they can do
-the job -- and a strong candidate finds it insulting. Put them somewhere specific
-and make them decide, trace, or defend something.
-
-Ask one thing at a time. Two questions in a turn means they answer the easier one
-and you learn nothing about the harder one -- so ask the harder one and keep the
-other for later. This is spoken aloud, so it has to be short enough to say in one
-breath and to hold in their head without seeing it.
-
-FOLLOWING UP
-A follow-up should be impossible to ask without having heard their answer. Listen
-for what they left open and go at that: a claim with nothing underneath, work
-described as "we" where their own part is invisible, a complete answer that hasn't
-been tested under any real constraint. If they've genuinely closed the topic, move
-on -- manufacturing a question to fill the turn is worse than moving.
-
-When their part in something turns out to be small, take that answer and move.
-Most engineering is collective, so "we" is normal speech, not evasion -- you're
-locating their scope out of curiosity, and pressing twice makes it an accusation.
-
-React to what they said only when you have something specific to react to. A
-reaction that would fit any answer is filler and reads as not listening. If they
-answer from the wrong technology, acknowledge that what they raised is real, then
-steer back to what you asked -- that's what makes it feel collaborative instead
-of corrective.
-
-MOVING TO A NEW TOPIC
-When the last topic produced a real answer, open the next question by picking
-up the specific thing they said -- a claim, a number, a decision -- and pivot
-from it.
-
-When the last topic produced nothing (denial, "I don't know", silence), do not
-manufacture a link to it. A forced bridge out of nothing reads as mockery.
-Ask the new question as a clean opener: state the situation or topic and go 
-straight to the question mark. No preamble referencing what they missed.
-
-IMPORTANT FOR NEW TOPICS: Reframe and extend the opening question by adding 
-specific details and context to the scenario. Do not just ask a bare question. 
-Give them a slightly detailed, concrete situation to anchor their answer. 
-However, keep it concise (under 40 words total).
-
-Speak every transition the way a person talks mid-conversation, not the way a
-script announces a section change: state the new detailed situation and ask
-the question directly, in one breath. Say "you" and "your resume" only when 
-quoting or paraphrasing something they actually told you this session -- otherwise 
-speak in second person about a hypothetical with no claim of prior knowledge.
-"""
-
-
 _LEVEL_GUIDE: dict[int, str] = {
     1: "LEVEL 1 (junior): OPENING QUESTION must be a straightforward mechanism or implementation question. "
        "For evaluation: a correct mechanism in their own words is a good answer. "
@@ -250,42 +167,9 @@ Rephrasing a third time at someone who doesn't know the area produces nothing ex
 panic, and a rattled candidate answers everything after it worse than they would have.
 
 When you leave a topic they struggled with, say nothing about the struggle itself --
-go straight into the next question as its own clean opener (see MOVING TO A NEW
-TOPIC above). Silence about the miss is what keeps them composed for the topics
-they do know; a face-saving line still draws attention to the thing that went wrong.
-"""
-
-
-# Non-negotiables, restated tight and placed LAST in the prompt. The reasoning above
-# (_QUESTION_RULE) explains WHY each of these matters, so the model isn't just told
-# "one question mark" -- it understands the cost of breaking it. But live testing
-# showed that reasoning alone, however well-argued, gets outvoted by the pull to sound
-# natural once the prompt runs long: these exact constraints were violated on 6/6 live
-# generations when they only appeared once, in prose, in the middle of the prompt.
-# Position is the fix, not more words -- trailing instructions get the most weight, so
-# the same four rules are repeated here as a hard checklist immediately before the
-# candidate's last message.
-_NON_NEGOTIABLES = """\
-━━━ BEFORE YOU SEND THIS -- CHECK ALL SIX ━━━
-1. Is this the OPENING question on a topic? Then it references no project, no
-   employer, and no resume detail at all -- it is a cold skill question, even if a
-   matching project is sitting right there in front of you. Its complexity MUST strictly
-   match the OPENING QUESTION rule of your assigned LEVEL.
-2. Is this a FOLLOW-UP? Then you may name a project ONLY if this turn's directive
-   carries a "FOLLOW-UP SOURCE: RESUME PROJECT" block. No block means you stay on
-   the skill and drill into what they just said.
-3. Exactly ONE question mark in the whole turn.
-4. 40 words or fewer, spoken.
-5. Every named project, company, technology, or metric appears verbatim in the
-   resume data. Never invent one, and never cite a number the resume doesn't state.
-   With no resume detail available, the question is grounded in a hypothetical
-   situation, not in anything claimed about their history.
-6. If the last answer was a denial/blank, this turn opens clean -- states the new
-   situation or topic and asks the question, with no reference to what they just
-   missed.
-7. Not a bare definition question ("what is X", "difference between X and Y"), and
-   never a behavioural "tell me about a time" prompt.
-If any of these fail, rewrite before sending -- don't send it anyway.
+go straight into the next question as its own clean opener. Silence about the miss is
+what keeps them composed for the topics they do know; a face-saving line still draws
+attention to the thing that went wrong.
 """
 
 
@@ -328,13 +212,13 @@ def build_interview_directive(
     interview_brief=None,
     resume_json: dict | None = None,
 ) -> str:
-    """The single system prompt for the full interview.
+    """Second system message, injected once warmup completes (see agent_runtime.py).
 
-    resume_json: the candidate's resume, rendered as the CANDIDATE RESUME block.
-    It is reference data for the ONE case that may use it -- a follow-up whose
-    [NEXT_TURN_DIRECTIVE] carries a verified resume-project match (see
-    interview.tech.resume_match). Opening questions never consult it: they are
-    cold, JD-derived skill questions regardless of what the resume contains.
+    Carries what build_voice_layer_prompt/build_evaluation_layer_prompt don't:
+    the actual resume data, the code-card contract, and the level guide. The
+    QUESTION-phrasing and resume-reference RULES live in interview.tech.prompts
+    -- this only supplies the reference data and the code-card/level mechanics,
+    so there's no second copy of the same rule to go stale relative to the first.
     """
     topics_block = _build_topics_block(interview_brief, jd_skills)
     if not topics_block:
@@ -371,12 +255,10 @@ def build_interview_directive(
         f"{strategy}"
         f"{resume_block}"
         f"{topics_block}"
-        f"\n{_QUESTION_RULE}"
         f"\n{_LEVEL_GUIDE.get(level, _LEVEL_GUIDE[2])}\n"
         f"\n{_CODE_CARD_RULE}"
         f"\n{_EXIT_RULE}"
         f"{_build_custom_questions_block(custom_questions)}"
         "\nStart with the first JD topic above, using the same rule as every other question.\n"
         "Then follow what they say rather than marching down the list. Never close early.\n"
-        f"\n{_NON_NEGOTIABLES}"
     )

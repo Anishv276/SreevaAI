@@ -219,8 +219,6 @@ class DocumentParser:
         if isinstance(resume_data, str):
             resume_data = json.loads(resume_data) if resume_data else {}
 
-        jd_raw_text = raw.get("jd_raw_text", "")
-        resume_raw_text = raw.get("resume_raw_text", "")
         threshold = int(raw.get("threshold", 70))
         screening_criteria = raw.get("screening_criteria") or {}
 
@@ -235,8 +233,7 @@ class DocumentParser:
         report_model = model
         try:
             report, report_usage = generate_report(
-                jd_data, resume_data, jd_raw_text, resume_raw_text,
-                score_result, client, report_model, screening_criteria,
+                resume_data, score_result, client, report_model, screening_criteria,
             )
 
             # Strip keys that MUST come from scorer, not LLM
