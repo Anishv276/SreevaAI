@@ -92,7 +92,7 @@ def _probe(**kw):
     """
     prov: dict = {}
     base = dict(
-        signal="depth_shallow",
+        signal="shallow_label",
         signal_reason="named LSTM but gave no internal detail",
         level=2,
         topic_follow_ups=1,
@@ -313,9 +313,9 @@ def test_branch_a_does_not_blend_in_the_answer_drill_probe():
     out, _ = _probe(resume_json=RESUME, topic_item=topic)
 
     # The depth_shallow answer-drill instructions must be absent entirely.
-    assert "MECHANISM DEEP-DIVE" not in out
+    assert "MECHANISM TRACE" not in out
     assert "DIRECTIVE (verbatim framing instructions for this signal)" not in out
-    assert "walk through what happens STEP BY STEP" not in out
+    assert "walk me through step by step what happens" not in out
     # ...while the Branch A instructions are the only question guidance present.
     assert "FOLLOW-UP SOURCE: RESUME PROJECT" in out
 
@@ -339,7 +339,7 @@ def test_branch_b_directive_is_identical_with_and_without_a_resume():
 def test_branch_b_keeps_the_signals_own_probe_framing():
     topic = _topic("Kubernetes autoscaling", ["Kubernetes"], focus="pod autoscaling")
     out, _ = _probe(resume_json=RESUME, topic_item=topic)
-    assert "MECHANISM DEEP-DIVE" in out
+    assert "MECHANISM TRACE" in out
     assert "FOLLOW-UP SOURCE: RESUME PROJECT" not in out
 
 
@@ -406,7 +406,7 @@ def test_branch_a_never_fires_again_later_in_the_same_topic(topic_follow_ups):
     assert prov["follow_up_source"] == "concept_probe"
     assert prov["referenced_project"] is None
     assert "FOLLOW-UP SOURCE: RESUME PROJECT" not in out
-    assert "MECHANISM DEEP-DIVE" in out
+    assert "MECHANISM TRACE" in out
 
 
 def test_branch_a_second_followup_directive_matches_plain_branch_b():

@@ -1,28 +1,33 @@
 """
 eval_pipeline.py
 Scores the candidate's answer on the current topic.
-Returns: scores, one signal + reason, saturation state, action (PROBE/MOVE_ON).
+Returns: scores, signal(s) + reason, saturation state, action (PROBE/MOVE_ON).
 
 Architecture:
-  evaluate_answer()   — two parallel LLM calls: scores answer, detects ONE signal with reason
+  evaluate_answer()   — two parallel LLM calls: scores answer, detects up to 2 signals
+                        against the 10-Dimension Holistic Rubric
   TopicState          — per-topic saturation tracking (NO ladder, level-based thresholds)
   run_eval_and_build_directive() — orchestrates everything, returns result dict to agent
 
-Signal taxonomy (universal, 8 content + 3 response shape — see scoring.py):
+Signal taxonomy (10-Dimension Holistic Rubric + 3 response shape — see scoring.py):
   Response-shape: clarification_request, rephrase_request, off_topic
-  Content (positive): depth_strong, depth_clear
-  Content (gap, but not failure): tradeoff_blind, scope_diffuse, confident_uncertain
-  Content (gap): depth_shallow, depth_generic
-  Content (negative): depth_misconception, pure_denial
+  Hard Technical: factual_error, shallow_label, cost_blind, edge_case_blind
+  Situational/Execution: ambiguity_unchecked, impact_disconnected
+  Behavioral/Leadership: ownership_diffuse, conflict_avoidant, growth_deflected
+  Ceiling: mastery_demonstrated
+  Fluency-bias guard: confident_uncertain
+  Non-attempt: pure_denial
+  All state machinery below (streaks, saturation) is driven by the PRIMARY signal
+  (result["signal"], first entry of result["signals"]) — unchanged shape from before.
 
 Flow rules:
-  pure_denial streak → 2 consecutive = MOVE_ON (topic_floor_reached)
+  pure_denial streak → 1 consecutive = MOVE_ON (topic_floor_reached)
   off_topic → REDIRECT (re-ask), does not advance saturation
   clarification_request → REPHRASE (re-ask clearer), does not advance saturation
   rephrase_request → ACCEPT_REPHRASE (listen to redo), does not advance saturation
   weak_exit (turn 3/4) → MOVE_ON if sat is too low at those checkpoints
   dry_topic → 2 consecutive zero scores → MOVE_ON
-  depth_strong streak → 2 consecutive = saturated → MOVE_ON (even if score < threshold)
+  mastery_demonstrated streak → 2 consecutive = saturated → MOVE_ON (even if score < threshold)
   saturated → MOVE_ON
 """
 from __future__ import annotations
@@ -77,11 +82,11 @@ class TopicState:
         self.last_score = None
         self.consecutive_zero_scores = 0
 
-        # pure_denial streak: 2 consecutive pure_denial signals close the topic
+        # pure_denial streak: 1 consecutive pure_denial signal closes the topic
         self.consecutive_denials: int = 0
         self.closed_on_denials: bool = False
 
-        # depth_strong streak: 2 consecutive depth_strong answers saturate the topic
+        # mastery_demonstrated streak: 2 consecutive mastery answers saturate the topic
         # outright, regardless of the accumulated saturation_score. Needed because the
         # generic saturation formula doesn't always cross threshold on 2 strong answers
         # alone at higher levels (e.g. level 4's 8.5 threshold vs. ~8.4 max credit from
@@ -124,10 +129,8 @@ class TopicState:
         )
 
     def should_exit_on_denials(self) -> bool:
-        """Two CONSECUTIVE pure_denial signals -> close the topic.
-        A single denial gets one easier step-down question first (see
-        SIGNAL_PROBES["pure_denial"] in probe.py) instead of closing outright."""
-        return self.consecutive_denials >= 2
+        """Exit the topic if the candidate explicitly denies knowledge (e.g. 'I don't know')."""
+        return self.consecutive_denials >= 1
 
     _DEPTH_STRONG_SATURATION_STREAK: int = 2
 
@@ -158,7 +161,7 @@ class TopicState:
             effective_base = 0.0
         self.saturation_score += effective_base + contribution
         self.follow_up_turns += 1
-        if signal == "depth_strong":
+        if signal == "mastery_demonstrated":
             self.consecutive_depth_strong += 1
         else:
             self.consecutive_depth_strong = 0
@@ -176,10 +179,10 @@ class TopicState:
         if turn is not None:
             self.updated_turn = turn
 
-        # pure_denial streak: two consecutive -> close topic (first gets a step-down probe)
+        # pure_denial streak: one consecutive -> close topic
         if signal in DENIAL_SIGNALS:
             self.consecutive_denials += 1
-            if self.consecutive_denials >= 2:
+            if self.consecutive_denials >= 1:
                 self.closed_on_denials = True
         else:
             self.consecutive_denials = 0
@@ -246,7 +249,7 @@ def _score_to_contribution(weighted: float) -> float:
 
 
 def _normalize_topic_key(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).strip()
+    return re.sub(r"[^a-z0-9]+", " ", (text or "").lower()).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -404,6 +407,11 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     _forced_response_signal = forced_action and action in ("MOVE_ON", "REPHRASE", "REDIRECT", "ACCEPT_REPHRASE")
 
     signal: str | None = str(raw["signal"]) if raw.get("signal") is not None else None
+    _raw_signals = raw.get("signals")
+    signals: list[str] = (
+        [str(s) for s in _raw_signals] if isinstance(_raw_signals, list)
+        else ([signal] if signal else [])
+    )
     signal_reason: str | None = str(raw["signal_reason"]) if raw.get("signal_reason") is not None else None
 
     depth_signal = "DEEP" if _weighted >= 7.0 else "SPECIFIC" if _weighted >= 5.0 else "SURFACE"
@@ -415,8 +423,8 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     )
     logger.info("[EVAL] turn=%d action=%s signal=%s weighted=%.2f",
                 p.turn, action, signal, _weighted)
-    if signal:
-        logger.info("[SIGNAL] %s | reason=%r", signal, signal_reason)
+    if signals:
+        logger.info("[SIGNALS FIRED] %s | reason=%r", signals, signal_reason)
 
     # -- Track response signal patterns -----------------------------------------------
     # If clarification_request fires 3 times in a row, escalate to MOVE_ON (question is
@@ -430,7 +438,8 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
 
     # -- Update saturation state ----------------------------------------------
     if current_topic_state:
-        current_topic_state.add_contribution(_weighted, signal, turn=p.turn)
+        if signal != 'clarification_request':
+            current_topic_state.add_contribution(_weighted, signal, turn=p.turn)
 
     is_saturated = current_topic_state.is_saturated if current_topic_state else False
     _weak_exit = current_topic_state is not None and current_topic_state.is_weak_candidate_exit()
@@ -501,6 +510,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         "grounding":               quality["grounding"],
         "overall":                 _weighted,
         "signal":                  signal,
+        "signals":                 signals,
         "signal_reason":           signal_reason,
         "topic":                   p.active_topic or "general",
         "topic_saturation_score":  sat_score,
@@ -537,6 +547,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     return {
         "action":        action,
         "signal":        signal,
+        "signals":       signals,
         "signal_reason": signal_reason,
         "quality_record":quality_record,
         "depth_signal":  depth_signal,
@@ -553,3 +564,4 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         "turn":    p.turn,
         "app_id":  p.app_id,
     }
+

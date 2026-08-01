@@ -476,102 +476,6 @@ def _build_cross_ref_rule(source_tag: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# PROBLEM 3 fix: real cross-interview RECENT_QUESTION_PATTERNS state.
-#
-# QUESTION_GENERATION_SYSTEM (interview/tech/probe.py) has always claimed a
-# global scaffold-collision check, but no caller ever built or passed real
-# recent_question_patterns/declined_facts state -- get_probe_context() silently
-# used its "(none yet)" default on every single turn. The functions below build
-# that real state: a rolling opener+construction log, a permanent "no-jargon
-# teach-back" one-shot flag, and rendering helpers for the two prompt blocks.
-# ---------------------------------------------------------------------------
-_NO_JARGON_TEACHBACK_RE = re.compile(
-    r"\b(no jargon|without (?:using )?jargon|explain(?:ing)? .{0,40}to someone (?:who|that)|"
-    r"in plain english|like i'?m five|like i'?m new|to a complete beginner|"
-    r"never touched (?:it|this|that))\b",
-    re.I,
-)
-
-
-def _classify_question_construction(question_text: str, signal: str | None) -> str:
-    """Cheap, deterministic scaffold fingerprint for a spoken question -- used
-    to detect repeated CONSTRUCTIONS (not just repeated literal openers). This
-    is the missing half of the "global RECENT_QUESTION_PATTERNS collision
-    check" QUESTION_GENERATION_SYSTEM's docstring claims exists: previously
-    nothing computed a scaffold at all, so the LLM-facing collision check had
-    no real data to compare against.
-
-    Returns a short label, e.g. "no_jargon_teachback", "first_thing_check",
-    "what_would_you_check", "generic". Not exhaustive -- good enough to catch
-    the exact repeat-offender constructions seen in production transcripts.
-    """
-    q = (question_text or "").strip().lower()
-    if not q:
-        return "empty"
-    if _NO_JARGON_TEACHBACK_RE.search(q):
-        return "no_jargon_teachback"
-    if re.search(r"\bfirst thing you\W+d (check|do|look at)\b", q):
-        return "first_thing_check"
-    if re.search(r"\bwhat would you check\b", q):
-        return "what_would_you_check"
-    if re.search(r"\bwhat('?s| is) the first\b", q):
-        return "whats_the_first"
-    if re.search(r"\bwalk me through\b", q):
-        return "walk_me_through"
-    if re.search(r"\bwhat (broke|breaks|goes wrong)\b", q):
-        return "failure_case"
-    if re.search(r"\bwhy (this|that|.+) over\b", q):
-        return "why_this_over"
-    return "generic"
-
-
-def _extract_question_opener(question_text: str, n_words: int = 4) -> str:
-    words = (question_text or "").strip().split()
-    return " ".join(words[:n_words]).lower()
-
-
-def is_no_jargon_teachback(question_text: str) -> bool:
-    """True if this question is the 'explain it with no jargon / to someone who's
-    never touched it' teach-back construction -- Problem 3's overused fallback."""
-    return bool(_NO_JARGON_TEACHBACK_RE.search((question_text or "").lower()))
-
-
-def record_question_pattern(
-    patterns_log: "collections.deque",
-    question_text: str,
-    signal: str | None,
-) -> None:
-    """Append this turn's opener+construction fingerprint to the running
-    RECENT_QUESTION_PATTERNS log. Call once per spoken question, at the same
-    point _asked_questions_log is appended to."""
-    if not (question_text or "").strip():
-        return
-    patterns_log.append({
-        "opener": _extract_question_opener(question_text),
-        "construction": _classify_question_construction(question_text, signal),
-        "signal": signal or "",
-    })
-
-
-def render_recent_question_patterns(patterns_log: "collections.deque") -> str:
-    """Render the running pattern log into the string get_probe_context()
-    injects into QUESTION_GENERATION_SYSTEM's RECENT_QUESTION_PATTERNS block."""
-    if not patterns_log:
-        return "(none yet)"
-    lines = [
-        f'  - opener: "{p["opener"]}..."  scaffold: {p["construction"]}  (fired by: {p["signal"] or "none"})'
-        for p in patterns_log
-    ]
-    return "\n".join(lines)
-
-
-def render_declined_facts(declined_facts_log: list[str]) -> str:
-    if not declined_facts_log:
-        return "(none yet)"
-    return "\n".join(f"  - {f}" for f in declined_facts_log)
-
-
-# ---------------------------------------------------------------------------
 # PROBLEM 4 fix: hard post-generation validator for spoken question turns.
 #
 # QUESTION_GENERATION_SYSTEM has always specified a 25-word / one-'?' / two-
@@ -708,6 +612,7 @@ def _build_probe_directive(
     *,
     signal: Optional[str],
     signal_reason: Optional[str],
+    signals: Optional[list] = None,
     level: int,
     active_topic: str,
     topic_item: Optional[Any],
@@ -721,8 +626,7 @@ def _build_probe_directive(
     signals_history: list[str] | None = None,
     interview_type: str = "tech",
     last_question_type: str = "",
-    recent_question_patterns: str = "(none yet)",
-    declined_facts: str = "(none yet)",
+
     cross_cutting_signal: Optional[str] = None,
     topic_score_history: Optional[list] = None,
     resume_json: Optional[dict] = None,
@@ -786,6 +690,19 @@ def _build_probe_directive(
 
     _asked = "\n".join(f"  - {q}" for q in asked_questions_log[-6:])
 
+    # Tech-track-only kwargs. The conversational probe module has its own
+    # signal set and its own get_probe_context signature, and resume-grounded
+    # follow-ups are a tech-interview feature -- passing these to it would be
+    # a TypeError.
+    import typing
+    _tech_kwargs = typing.cast(typing.Any, {
+        "signals": signals or [],
+        "last_question_type": last_question_type,
+        "topic_item": topic_item,
+        "provenance_out": provenance_out,
+        "used_project_skills": used_project_skills,
+    } if interview_type != "conversational" else {})
+
     # Full probe context from probe_strategy -- what fired, what to do, what to skip
     _probe_ctx = get_probe_context(
         signal=signal,
@@ -797,25 +714,10 @@ def _build_probe_directive(
         signals_history=signals_history or [],
         active_topic=active_topic,
         prev_question=prev_question,
-        recent_question_patterns=recent_question_patterns,
-        declined_facts=declined_facts,
+
         cross_cutting_signal=cross_cutting_signal,
         topic_score_history=topic_score_history,
-        # Tech-track-only kwargs. The conversational probe module has its own
-        # signal set and its own get_probe_context signature, and resume-grounded
-        # follow-ups are a tech-interview feature -- passing these to it would be
-        # a TypeError.
-        **(
-            {
-                "last_question_type": last_question_type,
-                "resume_json": resume_json,
-                "topic_item": topic_item,
-                "provenance_out": provenance_out,
-                "used_project_skills": used_project_skills,
-            }
-            if interview_type != "conversational"
-            else {}
-        ),
+        **_tech_kwargs,
     )
 
     # Filler guidance -- classify prev answer intent so Ishitha's reaction is connected.
@@ -1180,7 +1082,9 @@ async def _generate_move_on_directive(
     _system = (
         "You are writing an internal directive for an AI interviewer named Ishitha. "
         "This directive is NEVER spoken aloud — it is a private instruction she reads and acts on silently.\n\n"
-        "Your job: write the [NEXT_TURN_DIRECTIVE] block for a MOVE_ON moment. "
+        "Your job: write the [NEXT_TURN_DIRECTIVE] block for a MOVE_ON moment. \\n"\
+        "ADAPTIVE REFRAMING: Never generate a copy-pasted or robotic question. Adapt the question to flow naturally from the candidate's last answer, changing the angle slightly so it feels like an organic conversation rather than a rigid list.\\n"
+
         "You will be given the new topic, its source tag, the analyst brief, and the candidate's last answer. "
         "From all of this, tell Ishitha exactly what she should find out and how to open — not what to say.\n\n"
 
@@ -1824,7 +1728,8 @@ class InterviewAgent(Agent):
 
         full_text, raw_chunks = await _generate_full_text()
         if full_text and full_text != "NO_FOLLOW_UP_NEEDED":
-            violations = validate_spoken_question(full_text)
+            _max_words = 40 if _is_probe_turn else 60
+            violations = validate_spoken_question(full_text, max_words=_max_words)
             if violations:
                 logger.warning(
                     "[VALIDATOR] %s question failed post-generation check: %s | text=%r",
@@ -1833,7 +1738,7 @@ class InterviewAgent(Agent):
                 )
                 full_text, raw_chunks = await _generate_full_text(_STRICT_REGEN_SUFFIX)
                 if full_text and full_text != "NO_FOLLOW_UP_NEEDED":
-                    _revalidation = validate_spoken_question(full_text)
+                    _revalidation = validate_spoken_question(full_text, max_words=_max_words)
                     if _revalidation:
                         logger.warning(
                             "[VALIDATOR] regeneration STILL failed check: %s | text=%r -- speaking it anyway "
@@ -2307,10 +2212,16 @@ async def entrypoint(ctx: JobContext):
         )
         return
     evaluation_signal_toggles = _extract_evaluation_signal_toggles(ctx_data.proctoringSignals)
+    if dispatch_metadata and dispatch_metadata.get("disableProctoring"):
+        evaluation_signal_toggles = _extract_evaluation_signal_toggles({})
     extracted_details = _coerce_jsonish(ctx_data.extractedDetails or "{}")
     if not extracted_details:
         extracted_details = _coerce_jsonish(ctx_data.screeningCriteria or "{}")
     structured_resume = _coerce_jsonish(ctx_data.resumeData or "{}")
+    if isinstance(structured_resume, dict):
+        _allowed_keys = {"work", "work_experience", "projects", "skills", "experience", "skill", "project"}
+        structured_resume = {k: v for k, v in structured_resume.items() if k.lower() in _allowed_keys}
+
     # Extract basic context info early for logging
     candidate_name = ctx_data.fullName
     candidate_first_name = first_name_from_full_name(candidate_name)
@@ -3181,15 +3092,7 @@ async def entrypoint(ctx: JobContext):
     _referenced_project_skills: set[tuple[str, str]] = set()
     _topic_score_histories: dict[str, list] = {}   # per-topic overall score history (for latency detection)
     _topic_depth_histories: dict[str, list] = {}   # H2 fix: per-topic depth scores for follow_up_collapse
-    # Cross-interview question-construction tracker (RECENT_QUESTION_PATTERNS /
-    # DECLINED_FACTS). QUESTION_GENERATION_SYSTEM has always claimed this collision
-    # check exists, but no caller ever built or threaded real state into
-    # get_probe_context()'s recent_question_patterns/declined_facts params -- they
-    # silently defaulted to the literal string "(none yet)" every single turn.
-    # This is the actual running state, appended to at the same point questions are
-    # recorded into _asked_questions_log (see turn-completion block below).
-    _recent_question_patterns: collections.deque = collections.deque(maxlen=8)  # each: {"opener":str,"construction":str,"signal":str}
-    _declined_facts_log: list[str] = []  # facts the candidate explicitly could not produce (persists all interview)
+    _topic_depth_histories: dict[str, list] = {}   # H2 fix: per-topic depth scores for follow_up_collapse
     _teach_back_used: bool = False  # the no-jargon teach-back construction (used for mechanism_shallow/definition_partial etc.) -- at most ONCE per interview, not once per topic (see PROBLEM 3 fix)
     _last_depth_decay_turn: int = -999           # turn when depth_decay last fired; -999 = never
     _last_applied_eval_turn: int = 0             # monotonic guard against stale eval results
@@ -3593,6 +3496,18 @@ async def entrypoint(ctx: JobContext):
                         "[PROCTORING_SIGNAL] Received real-time signal=%s severity=%s | current_live_score=%d",
                         event_type, severity, agent.live_trap_score,
                     )
+                    
+                    if not evaluation_signal_toggles.get("camera_disabled", False):
+                        asyncio.create_task(ctx.room.local_participant.publish_data(
+                            json.dumps({
+                                "type": "live_trap_score",
+                                "score": agent.live_trap_score,
+                                "last_event": event_type,
+                                "severity": severity
+                            }).encode("utf-8"),
+                            reliable=True
+                        ))
+
                     if trap_fired:
                         logger.warning(
                             "[TRAP_ACTIVATED] Live trap score reached %d -- next turn will ask a trap question.",
@@ -4312,6 +4227,7 @@ async def entrypoint(ctx: JobContext):
                 _eval_result_inline: dict = await run_eval_and_build_directive(payload, _eval_openai_client)
                 # -- Unpack eval result ----------------------------------------
                 _eval_signal        = _eval_result_inline.get("signal")         # str | None
+                _eval_signals       = _eval_result_inline.get("signals") or []  # list[str] -- tech-track only
                 _eval_cross_cutting = _eval_result_inline.get("cross_cutting_signal")  # str | None
                 _eval_signal_reason = _eval_result_inline.get("signal_reason")  # str | None
                 _saturation   = _eval_result_inline.get("saturation") or {}
@@ -4804,6 +4720,7 @@ async def entrypoint(ctx: JobContext):
                     _directive = _build_probe_directive(
                         signal=_eval_signal,
                         signal_reason=_eval_signal_reason,
+                        signals=_eval_signals,
                         level=int(payload.get("level") or candidate_level or 2),
                         active_topic=_active_topic or "",
                         topic_item=_probe_brief_item,
@@ -4822,8 +4739,6 @@ async def entrypoint(ctx: JobContext):
                         # tech.probe's whole CODE PROBE GUIDANCE block never fires and
                         # a code-card follow-up gets the same directive as a verbal one.
                         last_question_type=str(payload.get("question_type") or ""),
-                        recent_question_patterns=render_recent_question_patterns(_recent_question_patterns),
-                        declined_facts=render_declined_facts(_declined_facts_log),
                         cross_cutting_signal=_eval_cross_cutting,
                         topic_score_history=list(_topic_score_histories.get(
                             re.sub(r"[^a-z0-9]+", " ", (_active_topic or "").lower()).strip(), []
@@ -5346,7 +5261,7 @@ async def entrypoint(ctx: JobContext):
                             turn_count,
                         )
                     # Track asked questions for duplicate prevention (keep last 6).
-                    # EC-3: _asked_questions_log is now a deque(maxlen=6) so append
+            # EC-3: _asked_questions_log is now a deque(maxlen=6) so append
                     # is a single atomic operation -- no separate pop() needed, no
                     # IndexError possible, no lock required in this sync callback.
                     if _last_interviewer_question and _first_interview_question_asked:
@@ -5356,16 +5271,7 @@ async def entrypoint(ctx: JobContext):
                         # duplicate-question prevention). Skip secondary/soft "general" phases.
                         if _last_question_topic not in ("general", "general conversation", None, ""):
                             _current_topic_questions.append(_last_interviewer_question[:120])
-                        # PROBLEM 3 fix: record the real opener+construction fingerprint so
-                        # RECENT_QUESTION_PATTERNS is no longer permanently "(none yet)", and
-                        # latch the one-shot no-jargon-teachback flag the moment it's actually
-                        # spoken (not just requested by a directive that might get rephrased).
-                        # No signal is threaded in here -- this callback (on_conversation_item_added)
-                        # runs independently of _process_user_conversation_item's local _eval_signal,
-                        # and the construction classifier doesn't need it to do its job.
-                        record_question_pattern(_recent_question_patterns, _last_interviewer_question, None)
-                        if is_no_jargon_teachback(_last_interviewer_question):
-                            _teach_back_used = True
+
                     # First interview question just fired -- seal the opening move so the LLM
                     # cannot re-ask it. The base system prompt says "Open by asking about X"
                     # which conflicts with PROBE directives on subsequent turns. This message
@@ -6101,7 +6007,7 @@ async def entrypoint(ctx: JobContext):
             "candidateName": candidate_name,
             "llmInterviewReport": str(ctx_data.llmInterviewReport).strip(),
             "isTest": _is_test_session,
-            "skipReport": _is_test_session and _skip_report,
+            "skipReport": not evaluation_signal_toggles.get("enable_report") if _is_test_session else False,
             "answerIntegrityEnabled": bool(evaluation_signal_toggles.get("answer_integrity")),
             "transcriptLines": list(transcript_lines),
             "answerScores": list(answer_scores),
@@ -6129,6 +6035,31 @@ async def entrypoint(ctx: JobContext):
                 "coveredTopics": _covered_topic_keys.coverage_rows(),
             },
         }
+        
+        if _is_test_session:
+            logger.info("[DEBUG_REPORT] Test session — spawning debug PDF worker...")
+            try:
+                from interview.debug_report import generate_and_send_debug_report
+                
+                async def _run_debug_report_bg():
+                    try:
+                        await generate_and_send_debug_report(
+                            app_id=app_id,
+                            candidate_name=candidate_name,
+                            job_title=job_title,
+                            answer_scores=list(answer_scores),
+                            topic_pool=list(_interview_brief.topic_pool),
+                            covered_topics=_covered_topic_keys.coverage_rows(),
+                            topic_records=list(_topic_records),
+                            interview_type=interview_type,
+                        )
+                    except Exception as e:
+                        logger.error(f"[DEBUG_REPORT] Background worker failed: {e}")
+                        
+                spawn_background_task(_run_debug_report_bg(), "debug_report_worker")
+            except Exception as e:
+                logger.error(f"[DEBUG_REPORT] Failed to initialize debug report worker: {e}")
+        
         await _enqueue_report_job(app_id, _report_payload)
     # Cancel any leftover fire-and-forget work so job teardown is instant.
     if background_tasks:

@@ -82,25 +82,9 @@ async def _run(payload: dict) -> None:
         from interview.tech.report import generate_interview_report, generate_interview_summary
     logger.info("[REPORT] interview_type=%s app_id=%s", interview_type, app_id)
 
-    # Slack debug PDF goes FIRST for test sessions so it lands immediately, before
-    # the ~300s report/summary/billing tail below even starts. Independent of
-    # everything else -- its own try/except contains any failure locally.
-    if is_test:
-        logger.info("[DEBUG_REPORT] Test session — sending debug PDF to Slack before report generation...")
-        debug_report = payload.get("debugReport") or {}
-        try:
-            await generate_and_send_debug_report(
-                app_id=app_id,
-                candidate_name=candidate_name,
-                job_title=job_title,
-                answer_scores=list(answer_scores),
-                topic_pool=_namespace_topic_pool(debug_report.get("topicPool")),
-                covered_topics=debug_report.get("coveredTopics"),
-                topic_records=list(topic_records),
-                interview_type=interview_type,
-            )
-        except Exception as pdf_err:
-            logger.error("[DEBUG_REPORT] Outer exception sending debug PDF: %s", pdf_err, exc_info=True)
+    # Slack debug PDF generation has been moved out of the modal worker and into
+    # a background worker in agent_runtime.py (gated by enable_report) to avoid
+    # blocking operations and ensure it runs early.
 
     # skipReport ("Enable Report Eval" off on the /test page) skips ONLY the
     # report/summary LLM generation below -- the debug PDF above and the
@@ -153,23 +137,6 @@ async def _run(payload: dict) -> None:
     usage = payload.get("usage") or {}
     eval_usages = usage.get("evalUsages") or []
     llmgen_usages = usage.get("llmgenUsages") or []
-
-    # Real and test sessions take the SAME path: eval/llmgen LLM usage is
-    # upserted into the interview:{app} UsageEvent row (via PendingBuffer ->
-    # flush), just flagged isTest so test spend is distinguishable but never
-    # written to a separate table/blob. The session's TTS/STT are recorded from
-    # agent_runtime.py's save_org_usage_metrics call (same is_test flag).
-    _ctx_base = {"applicationId": app_id, "jobTitle": job_title, "candidateName": candidate_name, "isTest": is_test}
-    for u in eval_usages:
-        u["context"] = {**_ctx_base, "ledgerFeature": "interviewEval", "eventId": f"interview:{app_id}:eval"}
-        await persist_org_manual_billing_usage(org_id, "interview", u)
-    for u in llmgen_usages:
-        u["context"] = {**_ctx_base, "eventId": f"interview:{app_id}:llmgen"}
-        await persist_org_manual_billing_usage(org_id, "interviewLLMGeneration", u)
-    try:
-        await flush_pending_manual_billing(org_id)
-    except Exception as e:
-        logger.error(f"[USAGE] flush_pending_manual_billing failed for {app_id}: {e}")
 
 
 def main() -> None:

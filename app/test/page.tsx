@@ -286,7 +286,7 @@ function CameraDisplay() {
 }
 
 // --- Interview Room ----------------------------------------------------------
-function InterviewRoom({ applicationId, onUpdate, timerStartedAtRef, enableCamera, testKey }: { applicationId: string; onUpdate: (state: any) => void; timerStartedAtRef: React.MutableRefObject<number | null>; enableCamera: boolean; testKey: string }) {
+function InterviewRoom({ applicationId, onUpdate, timerStartedAtRef, enableProctoring, testKey }: { applicationId: string; onUpdate: (state: any) => void; timerStartedAtRef: React.MutableRefObject<number | null>; enableProctoring: boolean; testKey: string }) {
     const connectionState = useConnectionState();
     const lines = useLiveTranscript();
     // timerStartedAtRef is owned by the parent (SimulationTestPage), which stays
@@ -418,7 +418,7 @@ function TestPageContent({ testKey }: { testKey: string }) {
     const [loadingCandidates, setLoadingCandidates] = useState(false);
 
     const [enableReport, setEnableReport] = useState(false);
-    const [enableCamera, setEnableCamera] = useState(false);
+    const [enableProctoring, setEnableProctoring] = useState(false);
     const [starting, setStarting] = useState(false);
     const [livekitToken, setLivekitToken] = useState<string | null>(null);
     const [livekitUrl, setLivekitUrl] = useState<string | null>(null);
@@ -553,7 +553,7 @@ function TestPageContent({ testKey }: { testKey: string }) {
             setInterviewToken(data.interviewToken || null);
             setProctoringSignals(normalizeProctoringSignals(data.proctoringSignals));
             interviewStartedAtRef.current = Date.now();
-            if (enableCamera) await requestFullscreenMode();
+            if (enableProctoring) await requestFullscreenMode();
         } catch (e) {
             setError(e instanceof Error ? e.message : "Unknown error");
         } finally {
@@ -592,7 +592,7 @@ function TestPageContent({ testKey }: { testKey: string }) {
         severity: "low" | "medium" | "high" = "high",
         metadata?: Record<string, unknown>,
     ) => {
-        if (!selectedCandidate || !enableCamera) return;
+        if (!selectedCandidate || !enableProctoring) return;
         fetch("/api/interview/proctoring", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -608,7 +608,7 @@ function TestPageContent({ testKey }: { testKey: string }) {
                 }],
             }),
         }).catch(() => { });
-    }, [selectedCandidate, interviewToken, enableCamera]);
+    }, [selectedCandidate, interviewToken, enableProctoring]);
 
     const handleFaceViolation = useCallback((
         eventType: string,
@@ -636,12 +636,12 @@ function TestPageContent({ testKey }: { testKey: string }) {
     // Live fullscreen state -- jobs the persistent "return to fullscreen" banner below,
     // independent of the one-shot violation modal (which only fires once per exit and can
     // be dismissed, leaving no other way back in otherwise).
-    // Gated on enableCamera for the same reason every other proctoring path is: with
+    // Gated on enableProctoring for the same reason every other proctoring path is: with
     // the camera off we never request fullscreen (see requestFullscreenMode below), so
     // isFullscreen stays false forever and the "return to fullscreen" banner shows over
     // a session that was never supposed to be proctored at all.
     useEffect(() => {
-        if (!isActive || !enableCamera) { setIsFullscreen(false); return; }
+        if (!isActive || !enableProctoring) { setIsFullscreen(false); return; }
         const check = () => {
             const doc = document as any;
             setIsFullscreen(!!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement));
@@ -657,7 +657,7 @@ function TestPageContent({ testKey }: { testKey: string }) {
             document.removeEventListener("mozfullscreenchange", check);
             document.removeEventListener("MSFullscreenChange", check);
         };
-    }, [isActive, enableCamera]);
+    }, [isActive, enableProctoring]);
 
     // Tab-switch / fullscreen-exit / window-focus-loss detection -- mirrors the real
     // interview page's proctoring logic 1:1, gated by the same org-configured toggles.
@@ -666,7 +666,7 @@ function TestPageContent({ testKey }: { testKey: string }) {
         const isFullscreenExitEnabled = Boolean(proctoringSignals.fullscreen_exit);
         const isWindowFocusLossEnabled = Boolean(proctoringSignals.window_focus_loss);
         const anyFocusSignalEnabled = isTabSwitchEnabled || isFullscreenExitEnabled || isWindowFocusLossEnabled;
-        if (!isActive || !selectedCandidate || !anyFocusSignalEnabled || !enableCamera) return;
+        if (!isActive || !selectedCandidate || !anyFocusSignalEnabled || !enableProctoring) return;
 
         const applicationId = selectedCandidate.id;
         let focusEventInFlight = false;
@@ -767,7 +767,7 @@ function TestPageContent({ testKey }: { testKey: string }) {
             document.removeEventListener("mozfullscreenchange", onFullscreenChange);
             document.removeEventListener("MSFullscreenChange", onFullscreenChange);
         };
-    }, [isActive, selectedCandidate, proctoringSignals, interviewToken, enableCamera]);
+    }, [isActive, selectedCandidate, proctoringSignals, interviewToken, enableProctoring]);
 
     return (
         <div className="flex flex-col min-h-screen bg-white" style={{ background: "linear-gradient(180deg, #FFFFFF 0%, #FAFAFC 45%, #F5F3FF 100%)" }}>
@@ -908,12 +908,12 @@ function TestPageContent({ testKey }: { testKey: string }) {
                         <div className="w-px h-5 bg-gray-200"></div>
 
                         <button
-                            onClick={() => setEnableCamera(!enableCamera)}
+                            onClick={() => setEnableProctoring(!enableProctoring)}
                             className="flex items-center gap-2 cursor-pointer group transition-all hover:opacity-80 disabled:opacity-50"
                             disabled={isActive}>
                             <span className="text-[12px] font-semibold text-gray-600 group-hover:text-gray-900 transition-colors">Enable Camera</span>
-                            <div className="flex items-center transition-colors duration-300" style={{ color: enableCamera ? "#10B981" : "#EF4444" }}>
-                                {enableCamera ? <ToggleRight className="w-6 h-6" strokeWidth={1.5} /> : <ToggleLeft className="w-6 h-6" strokeWidth={1.5} />}
+                            <div className="flex items-center transition-colors duration-300" style={{ color: enableProctoring ? "#10B981" : "#EF4444" }}>
+                                {enableProctoring ? <ToggleRight className="w-6 h-6" strokeWidth={1.5} /> : <ToggleLeft className="w-6 h-6" strokeWidth={1.5} />}
                             </div>
                         </button>
 
@@ -949,7 +949,7 @@ function TestPageContent({ testKey }: { testKey: string }) {
                 </div>
             </div>
 
-            {isActive && enableCamera && (
+            {isActive && enableProctoring && (
                 <>
                     <FaceProctoring
                         isActive={isActive}
@@ -974,7 +974,7 @@ function TestPageContent({ testKey }: { testKey: string }) {
                     serverUrl={livekitUrl!}
                     connect={true}
                     audio={true}
-                    video={enableCamera}
+                    video={enableProctoring}
                     onDisconnected={handleEnd}
                     className="flex-1 flex flex-col"
                 >
@@ -1045,7 +1045,7 @@ function TestPageContent({ testKey }: { testKey: string }) {
                         </AnimatePresence>
 
                         {/* Camera Preview - Top Right Corner (proctoring view only, not recorded) */}
-                        {enableCamera && (
+                        {enableProctoring && (
                             <div className="absolute top-4 right-4 z-50 flex flex-col items-end gap-2">
                                 <div className="flex items-center gap-2 bg-violet-600 text-white px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider shadow-lg">
                                     <div className="w-2 h-2 bg-violet-300 rounded-full animate-pulse"></div>
@@ -1120,7 +1120,7 @@ function TestPageContent({ testKey }: { testKey: string }) {
                         {/* Persistent return-to-fullscreen banner -- stays up the whole time the
                             session is out of fullscreen, so there's always a way back in even
                             after the one-shot violation modal above has been dismissed. */}
-                        {enableCamera && !isFullscreen && !activeFocusViolation && displayState.timerStarted && (
+                        {enableProctoring && !isFullscreen && !activeFocusViolation && displayState.timerStarted && (
                             <div className="fixed inset-0 z-[290] bg-zinc-950/95 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-200">
                                 <div className="max-w-sm w-full bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-2xl text-center space-y-5">
                                     <div className="mx-auto w-16 h-16 rounded-2xl flex items-center justify-center bg-violet-500/10">
@@ -1142,7 +1142,7 @@ function TestPageContent({ testKey }: { testKey: string }) {
                             </div>
                         )}
                     </div>
-                    <InterviewRoom applicationId={selectedCandidate?.id || ""} onUpdate={handleUpdate} timerStartedAtRef={timerStartedAtRef} enableCamera={enableCamera} testKey={testKey} />
+                    <InterviewRoom applicationId={selectedCandidate?.id || ""} onUpdate={handleUpdate} timerStartedAtRef={timerStartedAtRef} enableProctoring={enableProctoring} testKey={testKey} />
                 </LiveKitRoom>
             )}
 

@@ -413,11 +413,11 @@ _SIGNAL_TONES: dict[str, str] = {
 }
 
 def get_reaction_hint(signal: str | None, prev_answer: str, prev_question: str = "") -> str:
-    """Delegates to the tech track's reaction hint so both tracks share ONE filler
-    policy -- only the per-signal TONE differs (sales signals vs. depth signals)."""
-    from interview.tech.probe import get_reaction_hint as _tech_hint  # single source of truth
-
-    return _tech_hint(signal, prev_answer, prev_question, tone=_SIGNAL_TONES.get(signal or ""))
+    """Provides a reaction tone hint based on the sales signal."""
+    tone = _SIGNAL_TONES.get(signal or "")
+    if tone:
+        return f"REACTION TONE: {tone}"
+    return "REACTION TONE: lightly curious and acknowledging"
 
 
 QUESTION_GENERATION_SYSTEM = """\
@@ -430,11 +430,9 @@ EVIDENCE-SUFFICIENCY CHECK FIRST: if the candidate's last answer already closed 
 PROBE DIRECTIVE describes, output exactly NO_FOLLOW_UP_NEEDED and nothing else.
 
 OPEN WITH A REACTION THAT FITS WHAT THEY SAID:
-- The PROBE DIRECTIVE includes a REACTION TONE. Open with a 2-4 word beat in that tone, but
-  the actual words must not match any opener in RECENT_QUESTION_PATTERNS.
+- The PROBE DIRECTIVE includes a REACTION TONE. Open with a 2-4 word beat in that tone.
 - Ground the reaction in a SPECIFIC word they used — a deal, a tool, a client, a number.
-- Never default to a bland 'Mm' or 'Hmm', never reuse an opener template that already appears
-  in the recent list.
+- Never default to a bland 'Mm' or 'Hmm'.
 - Never say 'Great!', 'Awesome!', 'That's interesting!', 'Impressive!', 'Solid!' — hollow filler.
 
 THEN ASK ONE QUESTION — HARD LENGTH CAP:
@@ -445,10 +443,9 @@ THEN ASK ONE QUESTION — HARD LENGTH CAP:
 - This is voice — write like you'd speak it out loud in under 8 seconds.
 - Never say 'Can you' or 'Could you' — form-filler phrases.
 
-MATCH THE QUESTION TYPE, VARY THE CONSTRUCTION:
+MATCH THE QUESTION TYPE:
 The PROBE DIRECTIVE tells you the gap detected, the goal, and the QUESTION TYPE. Your question
-must match that type, but the sentence construction must be one you have not used in
-RECENT_QUESTION_PATTERNS.
+must match that type.
 
 OUTPUT FORMAT — READ CAREFULLY:
 Output ONLY the reaction + question (or exactly NO_FOLLOW_UP_NEEDED). Do not show your
@@ -468,8 +465,7 @@ def get_probe_context(
     signals_history: list[str] | None = None,
     active_topic: str = "",
     prev_question: str = "",
-    recent_question_patterns: str = "(none yet)",
-    declined_facts: str = "(none yet)",
+
     cross_cutting_signal: str | None = None,
     topic_score_history: list[float] | None = None,
 ) -> str:
@@ -552,12 +548,5 @@ def get_probe_context(
             f"  This is a fresh general question, not a follow-up.",
         ]
 
-    # Same wiring as the tech track: this module's QUESTION_GENERATION_SYSTEM also
-    # references RECENT_QUESTION_PATTERNS, so the block has to actually be injected.
-    from interview.tech.probe import render_repetition_blocks  # single source of truth
-
-    _repetition = render_repetition_blocks(recent_question_patterns, declined_facts)
-    if _repetition:
-        lines.append(_repetition)
 
     return "\n".join(lines)

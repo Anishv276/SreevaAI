@@ -8,7 +8,7 @@ import { apiErrorResponse } from "@/lib/slack-error-logger";
 
 export async function POST(request: Request) {
     try {
-        const { applicationId, skipReport = false, key } = await request.json();
+        const { applicationId, skipReport = false, key, disableProctoring = false } = await request.json();
 
         if (!(await isTestAccessAuthorized(key))) {
             return NextResponse.json({ error: "Invalid test key" }, { status: 403 });
@@ -106,6 +106,7 @@ export async function POST(request: Request) {
                         isTest: true,
                         skipReport,
                         testEventKey: key,
+                        disableProctoring,
                     }),
                 });
             } catch (e) {

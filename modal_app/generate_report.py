@@ -165,8 +165,8 @@ async def generate_report_endpoint(
     x_api_key: str | None = Header(default=None),
 ):
     _check_api_key(x_api_key)
-    call = await generate_report.spawn.aio(payload)
-    return {"call_id": call.object_id}  # async: return call ID immediately
+    result = await generate_report.remote.aio(payload)
+    return result
 
 
 @app.local_entrypoint()

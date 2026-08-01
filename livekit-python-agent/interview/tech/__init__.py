@@ -11,10 +11,7 @@ from interview.tech.scoring import (
     ALL_SIGNALS,
 )
 from interview.tech.probe import (
-    SIGNAL_PROBES,
-    QUESTION_GENERATION_SYSTEM,
     get_probe_context,
-    get_reaction_hint,
 )
 from interview.tech.eval import TopicState, run_eval_and_build_directive
 from interview.tech.brief import (
@@ -47,10 +44,7 @@ __all__ = [
     "RESPONSE_SIGNALS",
     "CONTENT_SIGNAL_DEFINITIONS",
     "ALL_SIGNALS",
-    "SIGNAL_PROBES",
-    "QUESTION_GENERATION_SYSTEM",
     "get_probe_context",
-    "get_reaction_hint",
     "TopicState",
     "run_eval_and_build_directive",
     "InterviewBrief",

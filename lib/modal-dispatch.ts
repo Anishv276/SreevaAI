@@ -436,22 +436,75 @@ export async function processInterviewReportViaModal(job: Job, token: string | u
   if (!appId) throw new Error("Missing appId in interview-report-modal job");
   console.log(`[MODAL-DISPATCH] Job ${job.id} picked up for ${appId} (interview-report)`);
 
-  const outcome = await withModalOrgSlot(
-    "interviewReport",
-    orgId,
-    MODAL_ORG_CONCURRENCY.interviewReport,
-    async () => {
-      console.log(`[MODAL-DISPATCH] Slot acquired for org=${orgId}, dispatching report generation for ${appId}`);
-      const result = await callModalJsonEndpoint(MODAL_ENDPOINTS.interviewReport, payload, 30_000);
-      console.log(`[MODAL-DISPATCH] Report generation dispatched (async) for ${appId}, call_id=${result?.call_id}`);
-      return result;
-    },
-  );
+  const skipReport = Boolean(payload.skipReport);
+  let outcomeResult = null;
 
-  if (outcome.queued === true) {
-    console.log(`[MODAL-DISPATCH] Org=${orgId} at capacity (${MODAL_ORG_CONCURRENCY.interviewReport}), re-queueing ${appId} in ${RETRY_DELAY_MS}ms`);
-    await job.moveToDelayed(Date.now() + RETRY_DELAY_MS, token);
-    throw new DelayedError();
+  if (!skipReport) {
+    const outcome = await withModalOrgSlot(
+      "interviewReport",
+      orgId,
+      MODAL_ORG_CONCURRENCY.interviewReport,
+      async () => {
+        console.log(`[MODAL-DISPATCH] Slot acquired for org=${orgId}, dispatching report generation for ${appId}`);
+        // Now synchronous, so wait up to 600,000ms (10m) for completion
+        const result = await callModalJsonEndpoint(MODAL_ENDPOINTS.interviewReport, payload, 600_000);
+        console.log(`[MODAL-DISPATCH] Report generation completed for ${appId}`);
+        return result;
+      },
+    );
+
+    if (outcome.queued === true) {
+      console.log(`[MODAL-DISPATCH] Org=${orgId} at capacity (${MODAL_ORG_CONCURRENCY.interviewReport}), re-queueing ${appId} in ${RETRY_DELAY_MS}ms`);
+      await job.moveToDelayed(Date.now() + RETRY_DELAY_MS, token);
+      throw new DelayedError();
+    }
+    outcomeResult = (outcome as { queued: false; result: any }).result;
+  } else {
+    console.log(`[MODAL-DISPATCH] skipReport=true for ${appId}, skipping report generation and running billing directly.`);
   }
-  return (outcome as { queued: false; result: any }).result;
+
+  const usage = payload.usage || {};
+  const evalUsages = usage.evalUsages || [];
+  const llmgenUsages = usage.llmgenUsages || [];
+  const isTest = Boolean(payload.isTest);
+  const jobTitle = payload.jobTitle || "";
+  const candidateName = payload.candidateName || "";
+  const ctxBase = { applicationId: appId, jobTitle, candidateName, isTest };
+
+  if (orgId) {
+    if (evalUsages.length > 0) {
+      await Promise.all(evalUsages.map((u: any) =>
+        recordBillingWithRetry({
+          orgId,
+          feature: "interview",
+          usage: {
+            model: u.model,
+            inputTokens: u.inputTokens || 0,
+            outputTokens: u.outputTokens || 0,
+            cachedInputTokens: u.cachedInputTokens || 0,
+            eventId: `interview:${appId}:eval`,
+            context: { ...ctxBase, ledgerFeature: "interviewEval", eventId: `interview:${appId}:eval` },
+          },
+        }, "interviewEval")
+      ));
+    }
+    if (llmgenUsages.length > 0) {
+      await Promise.all(llmgenUsages.map((u: any) =>
+        recordBillingWithRetry({
+          orgId,
+          feature: "interview",
+          usage: {
+            model: u.model,
+            inputTokens: u.inputTokens || 0,
+            outputTokens: u.outputTokens || 0,
+            cachedInputTokens: u.cachedInputTokens || 0,
+            eventId: `interview:${appId}:llmgen`,
+            context: { ...ctxBase, ledgerFeature: "interviewLLMGeneration", eventId: `interview:${appId}:llmgen` },
+          },
+        }, "interviewLLMGeneration")
+      ));
+    }
+  }
+
+  return outcomeResult || { success: true, appId, skippedReport: true };
 }
