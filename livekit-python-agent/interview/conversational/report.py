@@ -81,13 +81,7 @@ class SalesBehavioralAnalyzer(BehavioralAnalyzer):
         "This is NOT a sales-skills/knowledge assessment and NOT a general summary — those are covered "
         "elsewhere in the report. Your ONLY job is to describe HOW the candidate behaved and communicated, "
         "not WHAT they knew about selling or whether a given answer was 'correct'.\n\n"
-        "You have the full Q&A transcript, per-turn behavioral signals, and answer-quality scores.\n\n"
-        "PER-TURN SIGNALS you may see (each is an observed moment, already detected during the interview):\n"
-        "- ownership_ambiguous: said 'we/they' instead of 'I'. Unclear personal role in the deal.\n"
-        "- answer_hollow: said WHAT happened, not HOW or WHY. No real deal detail.\n"
-        "- example_evaded: asked for a real deal/story, gave theory or 'usually I do X' instead.\n"
-        "- functional_claim_unverified: named a tool/method/motion vaguely, couldn't prove hands-on use.\n"
-        "- claim_not_demonstrated: made a strong self-claim with no evidence behind it.\n\n"
+        "You have the full Q&A transcript and answer-quality scores.\n\n"
         "METHOD — describe OBSERVABLE BEHAVIOR, never personality traits.\n"
         "Report only what was observed in THIS interview (a specific reaction, a shift, an exact phrasing). "
         "Behavioral evaluation rests on observable indicators, not character labels: write 'stayed warm and "
@@ -243,7 +237,7 @@ dimension you produce THREE things, in this order, and you do not move on until 
             you observed, where it was strong, where it broke down. Cite specific deals/objections/moments.
   2. "s"  — the score (0-100) that your reasoning in "r" leads to. The number follows the reasoning, not
             the other way around. If "r" describes a weak performance, "s" cannot be high.
-  3. "ev" — ONE sharp evidence sentence, anchored to a specific action or near-quote from the interview,
+  3. "ev" — ONE sharp evidence sentence, tied to a specific action or near-quote from the interview,
             that a recruiter could verify by reading the transcript. No generic praise.
 
 Only AFTER all five dimensions are finalized do you write strengths ("str") and weaknesses ("con"), and you
@@ -274,7 +268,7 @@ First infer the candidate's level from the JD's stated seniority and the transcr
     not closed-quota scale.
   MID (1-4 yr): has carried a quota under a manager's coaching.
   EXPERIENCED (4+ yr): owns territory/accounts, closes independently — held to the highest bar everywhere.
-"Good" means different things at each level; the anchors below tell you how.
+"Good" means different things at each level; the baselines below tell you how.
 
 Universal band meaning (applies to every dimension's 0-100 score):
   0-20   Blank, evasive, or pure filler. No usable signal.
@@ -449,11 +443,11 @@ Do NOT create a category with no real interview evidence. Fewer, well-evidenced 
 fragmented ones.
 
 ════════════════════════════════════════════════════════════════════════════
-SCORING — 1-10, anchored to observable selling proficiency (novice → expert)
+SCORING — 1-10, mapped to observable selling proficiency (novice → expert)
 ════════════════════════════════════════════════════════════════════════════
 Score the candidate's DEMONSTRATED selling ability in each category, using the full range. Do NOT cluster
 at 4-7. A score is a claim about evidence you actually saw — absence of evidence scores 1, never a
-middling number. The anchors describe progression from script-following to strategic command:
+middling number. The baselines describe progression from script-following to strategic command:
   1-2  Developing: could not explain even the basics when asked; leans on scripts, no real deal behind it.
   3-4  Functional (recall only): knows the terminology but can't explain mechanics of a real deal.
   5-6  Competent: executes the standard motion and has clearly done it, but has gaps and needs probing to
@@ -556,7 +550,7 @@ experienced sales leader weighs strong and weak evidence rather than averaging a
 judgment combines the structured evidence with reasoning; it is not a fixed weighted sum.
 
 A computed weighted score MAY be provided as ONE reference data point. Treat it as a sanity check, NOT as an
-anchor you must stay within — score above or below it when the evidence justifies it (e.g. a fabricated or
+baseline you must stay within — score above or below it when the evidence justifies it (e.g. a fabricated or
 unverifiable track record should pull the score down hard even if other areas look fine; genuinely strong,
 verifiable deal command can pull it up). Explain any large divergence in your reasoning.
 
@@ -1161,7 +1155,7 @@ async def generate_interview_summary(
         f"Behavioral signals: {signal_summary}\n"
         f"REFERENCE WEIGHTED SCORE: {computed_overall if computed_overall is not None else 'Not available'}/100 "
         f"(a deterministic weighted average of the dimension scores, provided as ONE reference data point "
-        f"only — NOT an anchor. The verdict determines the final score through holistic judgment and may "
+        f"only — NOT a hard baseline. The verdict determines the final score through holistic judgment and may "
         f"diverge from this when the evidence justifies it.)\n\n"
         f"DIMENSION SCORES + EVIDENCE:\n{dimension_block}\n\n"
         f"SKILL BREAKDOWN:\n{skill_block}\n\n"

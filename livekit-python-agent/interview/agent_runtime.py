@@ -13,14 +13,7 @@ from interview.agent_utils import (
     parse_dispatch_metadata,
     first_name_from_full_name,
 )
-from interview.tech.phases import (
-    build_greeting_text,
-    build_interview_directive,
-)
-from interview.tech.brief import (
-    TopicItem,
-)
-from interview.tech.question_bank_adapter import build_brief_from_question_bank
+
 from interview.agent_runtime_utils import token_limit_kwarg, llm_metadata
 from interview.live_trap_score import LiveTrapScore
 from interview.agent_providers import (
@@ -513,7 +506,7 @@ def extract_code_card(text: str) -> tuple[str, str, str, str] | None:
 
     language (for syntax highlighting on the frontend) is read from an optional
     "LANG: <language>" annotation line immediately after the type-tag fence line
-    (see question_bank_adapter.py, which embeds this for stored anchor
+    (see question_bank_adapter.py, which embeds this for stored topics
     questions where the real language is already known). Falls back to a
     plain-language tag if one was used instead of the type tag, else "".
     """
@@ -613,6 +606,8 @@ def _build_probe_directive(
     signal: Optional[str],
     signal_reason: Optional[str],
     signals: Optional[list] = None,
+    points: Optional[list] = None,
+    avoid: Optional[list] = None,
     level: int,
     active_topic: str,
     topic_item: Optional[Any],
@@ -626,32 +621,14 @@ def _build_probe_directive(
     signals_history: list[str] | None = None,
     interview_type: str = "tech",
     last_question_type: str = "",
-
     cross_cutting_signal: Optional[str] = None,
     topic_score_history: Optional[list] = None,
     resume_json: Optional[dict] = None,
     provenance_out: Optional[dict] = None,
     used_project_skills: Optional[set] = None,
+    matched_resume_project: Optional[str] = None,
 ) -> str:
-    """
-    Builds the probe directive synchronously — no LLM call.
-    All inputs come from the eval result + topic brief already in memory.
-    The interview LLM (Ishitha) reads this and generates her own question.
-
-    Eliminates the middle directive LLM call, collapsing 3 calls/turn → 2.
-
-    cross_cutting_signal: Part B's optional cross-cutting signal (verbal_disfluency/
-    buzzword_without_substance/self_correction_recovery/internal_contradiction/
-    pure_denial) fired alongside the primary stage signal this turn, if any.
-
-    interview_type: routes to interview.tech.probe or interview.conversational.probe
-    for the signal-specific probe directive (different signal sets per module).
-    """
-    # The question-generation prompt ships WITH the directive. It used to be a module
-    # constant nothing injected, so its rules (inherit from their answer, make them do
-    # rather than describe, one question mark, the code-card fence contract) never
-    # reached the LLM that actually writes the follow-up -- the directive arrived with
-    # no instructions on how to turn it into a question.
+    """Sync directive from eval points/route — speaking LLM writes the question."""
     if interview_type == "conversational":
         from interview.conversational.probe import (
             get_probe_context,
@@ -659,16 +636,11 @@ def _build_probe_directive(
         )
     else:
         from interview.tech.probe import get_probe_context, render_question_generation_system
-        # signal=signal routes pure_denial to the trimmed step-down template (no
-        # code-card contract, no FALSIFY/ESCALATE framework) -- that directive can
-        # never legally reach a code card or an escalation move, so the full template
-        # would be dead weight there. Every other signal is unaffected.
-        _question_gen_prompt = render_question_generation_system(level, signal=signal)
+        _question_gen_prompt = render_question_generation_system(
+            level, signal=signal, last_question_type=last_question_type,
+        )
 
-    # probe_focus is now one descriptive paragraph per topic (not a rotating
-    # list of sub-concepts) -- pass it straight through as probing guidance.
     _focus_text: str = (topic_item.probe_focus or "") if topic_item else ""
-
     if topic_item is not None:
         parts = [f"TOPIC: {topic_item.title}"]
         if topic_item.full_description:
@@ -683,27 +655,23 @@ def _build_probe_directive(
     else:
         _topic_ctx = f"TOPIC: {active_topic}"
 
-    # Last N lines of the conversation thread
     _thread = "\n".join(topic_transcript[-8:]) if topic_transcript else (
         f"Interviewer: {prev_question}\nCandidate: {prev_answer}"
     )
-
     _asked = "\n".join(f"  - {q}" for q in asked_questions_log[-6:])
 
-    # Tech-track-only kwargs. The conversational probe module has its own
-    # signal set and its own get_probe_context signature, and resume-grounded
-    # follow-ups are a tech-interview feature -- passing these to it would be
-    # a TypeError.
     import typing
     _tech_kwargs = typing.cast(typing.Any, {
+        "points": points or [],
+        "avoid": avoid or [],
         "signals": signals or [],
         "last_question_type": last_question_type,
         "topic_item": topic_item,
+        "resume_json": resume_json,
         "provenance_out": provenance_out,
         "used_project_skills": used_project_skills,
     } if interview_type != "conversational" else {})
 
-    # Full probe context from probe_strategy -- what fired, what to do, what to skip
     _probe_ctx = get_probe_context(
         signal=signal,
         signal_reason=signal_reason,
@@ -714,9 +682,9 @@ def _build_probe_directive(
         signals_history=signals_history or [],
         active_topic=active_topic,
         prev_question=prev_question,
-
         cross_cutting_signal=cross_cutting_signal,
         topic_score_history=topic_score_history,
+        matched_resume_project=matched_resume_project,
         **_tech_kwargs,
     )
 
@@ -1506,7 +1474,7 @@ class InterviewAgent(Agent):
 
     async def _speak_with_code_card_check(self, full_text: str, raw_chunks: list):
         """Shared by every llm_node branch that can legally open with a code/query
-        question (PROBE turns AND plain MOVE_ON/anchor turns -- a new topic's
+        question (PROBE turns AND plain MOVE_ON turns -- a new topic's
         opening question is just as likely to be a code_trace/snippet_eval/query_trace
         question as a PROBE follow-up is). Detects a fenced code block in full_text,
         publishes it to the frontend as a code_card overlay, and yields ONLY the
@@ -1653,7 +1621,7 @@ class InterviewAgent(Agent):
         effective_ctx = self._chat_ctx
         # MOVE_ON guard: if a MOVE_ON directive is present, strip ALL user+assistant
         # messages from context before the LLM generates. This prevents the candidate's
-        # last answer (added by LiveKit pipeline AFTER our history wipe) from anchoring
+        # last answer (added by LiveKit pipeline AFTER our history wipe) from grounding
         # the LLM back to the old topic. The MOVE_ON + TOPIC_LOCK system messages are
         # the only context the LLM needs to open a new topic question.
         _ctx_items = getattr(effective_ctx, "items", None)
@@ -2221,6 +2189,9 @@ async def entrypoint(ctx: JobContext):
     if isinstance(structured_resume, dict):
         _allowed_keys = {"work", "work_experience", "projects", "skills", "experience", "skill", "project"}
         structured_resume = {k: v for k, v in structured_resume.items() if k.lower() in _allowed_keys}
+    
+    from interview.tech.phases import build_candidate_payload
+    _resume_context_str = build_candidate_payload(structured_resume if isinstance(structured_resume, dict) else None)
 
     # Extract basic context info early for logging
     candidate_name = ctx_data.fullName
@@ -2391,15 +2362,20 @@ async def entrypoint(ctx: JobContext):
         "[QUESTION_BANK] Building brief from stored snapshot | candidate=%s role=%s version=%s",
         candidate_first_name or candidate_name, job_title, ctx_data.questionBankVersionUsed,
     )
-    _interview_brief = build_brief_from_question_bank(
+    if interview_type == "conversational":
+        from interview.conversational.question_bank_adapter import build_brief_from_question_bank as _build_brief
+    else:
+        from interview.tech.question_bank_adapter import build_brief_from_question_bank as _build_brief
+
+    _interview_brief = _build_brief(
         _stored_bank_dict,
         level=_level_seed,
         must_have_skills=_jd_skills,
     )
+
     logger.info(
-        "[QUESTION_BANK] ✓ Built | level=%s | anchor=%r | topics=%d",
+        "[QUESTION_BANK] ✓ Built | level=%s | topics=%d",
         _interview_brief.level,
-        _interview_brief.anchor_topic.title,
         len(_interview_brief.topic_pool),
     )
     # Level is fixed and admin-selected -- the brief always echoes back _level_seed.
@@ -2411,13 +2387,7 @@ async def entrypoint(ctx: JobContext):
     _brief_skills    = [t.title for t in _interview_brief.topic_pool if t.topic_type == "skill"]
     _brief_projects  = [t.title for t in _interview_brief.topic_pool if t.topic_type == "project"]
     _brief_work      = [t.title for t in _interview_brief.topic_pool if t.topic_type == "work"]
-    _anchor_title    = _interview_brief.anchor_topic.title
-    _anchor_topic_item = _interview_brief.anchor_topic
-    _anchor_full = (
-        f"{_anchor_topic_item.title} - {_anchor_topic_item.full_description}"
-        + (f" | Tech: {', '.join(_anchor_topic_item.tech_stack)}" if _anchor_topic_item.tech_stack else "")
-    )
-    _anchor_type     = _interview_brief.anchor_topic.topic_type
+
     # Coverage items for TTS phonetic processor
     base_coverage_items = list(dict.fromkeys([
         *_brief_skills[:6],
@@ -2431,9 +2401,8 @@ async def entrypoint(ctx: JobContext):
         *(_jd_nice or []),
     ]))
     logger.info(
-        "[QUESTION_BANK] Loaded from snapshot | level=%s | anchor=%r | topics=%d",
+        "[QUESTION_BANK] Loaded from snapshot | level=%s | topics=%d",
         _interview_brief.level,
-        _interview_brief.anchor_topic.title,
         len(_interview_brief.topic_pool),
     )
     logger.info("[QUESTION_BANK] strategy: %s", _interview_brief.interview_strategy[:120])
@@ -2448,7 +2417,6 @@ async def entrypoint(ctx: JobContext):
     # Compact text block for eval layer prompt
     interview_directive_cached = build_interview_directive(
         level=candidate_level,
-        resume_brief=None,
         jd_skills=_jd_skills or [],
         custom_questions=_interview_questions or None,
         interview_brief=_interview_brief,
@@ -2486,10 +2454,9 @@ async def entrypoint(ctx: JobContext):
         _context_block = (
             _fetch_summary_block
             + f"SKILL BRIEF:\n"
-            f"  Anchor: {_anchor_full[:120]} (type: {_anchor_type})\n"
             f"  Skills: {_skills_str}\n"
             f"\n"
-            f"INTERVIEW PLAN: 20 min, skill-only. Open with: '{_anchor_title}'. "
+            f"INTERVIEW PLAN: 20 min, skill-only. "
             f"Level={_level}: {_level_note}. "
             f"Must cover: common resume/JD skills, JD-required skills, expert role topics -- no project/work references."
         )
@@ -2497,13 +2464,11 @@ async def entrypoint(ctx: JobContext):
         _context_block = (
             _fetch_summary_block
             + f"RESUME BRIEF:\n"
-            f"  Anchor: {_anchor_full[:120]} (type: {_anchor_type})\n"
             f"  Skills: {_skills_str}\n"
             f"  Projects: {_projects_str}\n"
             f"  Work History: {_work_str}\n"
             f"\n"
             f"INTERVIEW PLAN: 20 min covering resume ownership, JD skills, situational, behavioural. "
-            f"Open with: '{_anchor_title}'. "
             f"Level={_level}: {_level_note}. "
             f"Must cover: resume projects, work history, JD must-have skills, at least 1 situational, at least 1 behavioural."
         )
@@ -2527,7 +2492,7 @@ async def entrypoint(ctx: JobContext):
     )
     chat_ctx = llm.ChatContext()
     chat_ctx.add_message(role="system", content=system_prompt)
-    # interview_directive_cached (anchor topic, resume/JD content) is intentionally
+    # interview_directive_cached (first topic, resume/JD content) is intentionally
     # NOT added here. Adding it before warmup completes gives the LLM interview
     # question material to draw on during greeting/warmup, which lets it jump
     # straight to a resume-specific question instead of waiting for the candidate's
@@ -3143,13 +3108,13 @@ async def entrypoint(ctx: JobContext):
         """
         Build unified topic pool from InterviewBrief.
         Every topic from the brief enters the pool — RESUME_TOPIC, JD_TOPIC, ROLE_TOPIC.
-        Anchor always first. Each entry: "Title - Description [tech1, tech2] |TAG=RESUME_TOPIC"
+        Each entry: "Title - Description [tech1, tech2] |TAG=RESUME_TOPIC"
         The |TAG= suffix lets directive builders know how to frame the question without
         a separate lookup into the brief every time.
         Covered topics are removed from this list on MOVE_ON so len(_topic_pool) always
         reflects how many topics remain to be asked.
         """
-        def _item_to_full_str(item: "TopicItem") -> str:
+        def _item_to_full_str(item: Any) -> str:
             desc = item.full_description.strip()
             tech = ", ".join(item.tech_stack) if item.tech_stack else ""
             base = f"{item.title} - {desc}" if desc else item.title
@@ -3159,17 +3124,8 @@ async def entrypoint(ctx: JobContext):
 
         seen: set[str] = set()
         pool: list[str] = []
-        anchor_key = _topic_short_key_for_ordering(_interview_brief.anchor_topic.title)
 
-        # Anchor always first
-        for item in _interview_brief.topic_pool:
-            k = _topic_short_key_for_ordering(item.title)
-            if k == anchor_key and k not in seen:
-                pool.append(_item_to_full_str(item))
-                seen.add(k)
-                break
-
-        # All other topics in brief order (LLM already sorted by relevance)
+        # All topics in brief order (LLM already sorted by relevance)
         for item in _interview_brief.topic_pool:
             k = _topic_short_key_for_ordering(item.title)
             if k and k not in seen:
@@ -3184,19 +3140,15 @@ async def entrypoint(ctx: JobContext):
 
 
 
-    # Initialize _active_topic with the anchor from the brief
+    # Initialize _active_topic with the first topic from the pool
     def _init_active_topic() -> Optional[str]:
         if _topic_pool:
             return _topic_pool[0]
-        td = _interview_brief.anchor_topic
-        tech = ", ".join(td.tech_stack) if td.tech_stack else ""
-        if tech:
-            return f"{td.title} - {td.full_description} [{tech}]"
-        return f"{td.title} - {td.full_description}" if td.full_description else td.title
+        return None
 
     _active_topic = _init_active_topic()
     logger.info(
-        "[ANCHOR] First topic set | %r  (pool_size=%d)",
+        "[TOPIC] First topic set | %r  (pool_size=%d)",
         (_active_topic or "")[:80], len(_topic_pool),
     )
 
@@ -3943,8 +3895,12 @@ async def entrypoint(ctx: JobContext):
             # --- Background Async Linguistic Teleprompter Analyzer ---
             # Gated by the super-admin "live_integrity_monitoring" toggle -- off means
             # this never runs, so no linguistic events and no trap questions can fire.
+            _should_run_ling = bool(evaluation_signal_toggles.get("live_integrity_monitoring"))
+            if _is_test_session:
+                _should_run_ling = bool(dispatch_metadata.get("enableProctoring"))
+
             if (
-                evaluation_signal_toggles.get("live_integrity_monitoring")
+                _should_run_ling
                 and warmup_complete and content.strip() and len(content.strip().split()) >= 15
             ):
                 _ling_turn = turn_snapshot
@@ -4152,16 +4108,17 @@ async def entrypoint(ctx: JobContext):
                         # Agent tells eval exactly which topic to score -- no topic selection in eval
                         "active_topic": _scoring_topic,
                         "active_topic_state": active_topic_state,
-                        "anchor_item": _anchor_title,
                         # Brief-derived topic metadata for accurate scoring calibration
                         "topic_tag": _active_brief_item.tag if _active_brief_item else "RESUME_TOPIC",
                         "topic_probe_focus": _active_brief_item.probe_focus if _active_brief_item else "",
                         "topic_why_relevant": _active_brief_item.why_relevant if _active_brief_item else "",
 
+                        "resume_context": _resume_context_str,
                         "job_title": job_title,
                         "remaining_seconds": _remaining_total_seconds_now(),
                         "level": candidate_level,
                         "ai_question_this_turn": (_last_interviewer_question or "").strip(),
+                        "asked_so_far": list(_asked_questions_log),
                     }
                 # -- INLINE EVAL -----------------------------------------------
                 # Agent calls eval to SCORE the answer on the current topic.
@@ -4226,10 +4183,12 @@ async def entrypoint(ctx: JobContext):
                 # The agent therefore has NO fallback path -- it trusts eval's return.
                 _eval_result_inline: dict = await run_eval_and_build_directive(payload, _eval_openai_client)
                 # -- Unpack eval result ----------------------------------------
-                _eval_signal        = _eval_result_inline.get("signal")         # str | None
-                _eval_signals       = _eval_result_inline.get("signals") or []  # list[str] -- tech-track only
-                _eval_cross_cutting = _eval_result_inline.get("cross_cutting_signal")  # str | None
-                _eval_signal_reason = _eval_result_inline.get("signal_reason")  # str | None
+                _eval_signal        = _eval_result_inline.get("signal")
+                _eval_signals       = _eval_result_inline.get("signals") or []
+                _eval_cross_cutting = _eval_result_inline.get("cross_cutting_signal")
+                _eval_signal_reason = _eval_result_inline.get("signal_reason")
+                _eval_points        = list(_eval_result_inline.get("points") or [])
+                _eval_avoid         = list(_eval_result_inline.get("avoid") or [])
                 _saturation   = _eval_result_inline.get("saturation") or {}
                 # H5 fix: read rotation index from TopicState and advance it so
                 # consecutive PROBE turns on the same topic cycle through different
@@ -4282,7 +4241,12 @@ async def entrypoint(ctx: JobContext):
                 _eval_action = _eval_result_inline.get("action") or "PROBE"
                 _action = "MOVE_ON" if _eval_action == "MOVE_ON" else "PROBE"
                 spawn_background_task(
-                    log_test_event(app_id, "eval_done", f"Eval complete | action={_eval_action}"),
+                    log_test_event(
+                        app_id,
+                        "eval_done",
+                        f"Eval complete | action={_eval_action}",
+                        {"points": _qr.get("points", [])}
+                    ),
                     "test_event_eval_done"
                 )
                 logger.info(
@@ -4316,7 +4280,12 @@ async def entrypoint(ctx: JobContext):
                     )
                 else:
                     spawn_background_task(
-                        log_test_event(app_id, "probe", f"Probing further | sat={_sat_after:.1f}/{_sat_thresh:.1f}"),
+                        log_test_event(
+                            app_id,
+                            "probe",
+                            f"Probing further | sat={_sat_after:.1f}/{_sat_thresh:.1f}",
+                            {"points": _qr.get("points", [])}
+                        ),
                         "test_event_probe"
                     )
                 # Log scores
@@ -4721,6 +4690,8 @@ async def entrypoint(ctx: JobContext):
                         signal=_eval_signal,
                         signal_reason=_eval_signal_reason,
                         signals=_eval_signals,
+                        points=_eval_points,
+                        avoid=_eval_avoid,
                         level=int(payload.get("level") or candidate_level or 2),
                         active_topic=_active_topic or "",
                         topic_item=_probe_brief_item,
@@ -4733,27 +4704,13 @@ async def entrypoint(ctx: JobContext):
                         topic_transcript=_topic_thread_lines,
                         signals_history=_signals_history_this_topic,
                         interview_type=interview_type,
-                        # Type of the code card the candidate just answered, if any.
-                        # Snapshotted into the payload by _build_eval_payload before
-                        # agent.last_code_card_question_type is cleared. Without this,
-                        # tech.probe's whole CODE PROBE GUIDANCE block never fires and
-                        # a code-card follow-up gets the same directive as a verbal one.
                         last_question_type=str(payload.get("question_type") or ""),
                         cross_cutting_signal=_eval_cross_cutting,
                         topic_score_history=list(_topic_score_histories.get(
                             re.sub(r"[^a-z0-9]+", " ", (_active_topic or "").lower()).strip(), []
                         )),
-                        # Enables the resume-grounded follow-up branch: when the skill
-                        # being probed matches a named project here, the follow-up asks
-                        # a verification question about that project instead of drilling
-                        # further into their last answer. Falsy resume -> unchanged
-                        # answer-drill behaviour.
-                        resume_json=structured_resume if isinstance(structured_resume, dict) else None,
+                        matched_resume_project=_eval_result_inline.get("matched_resume_project"),
                         provenance_out=_follow_up_provenance,
-                        # Excludes (project, skill) pairs already asked about in an earlier
-                        # Branch A follow-up this interview -- the same project may still be
-                        # named again for a genuinely different skill, only the exact
-                        # project+skill repeat is avoided.
                         used_project_skills=_referenced_project_skills,
                     )
                     if _teach_back_used:
@@ -5034,9 +4991,9 @@ async def entrypoint(ctx: JobContext):
             remove_system_messages(chat_ctx, "[WARMUP PHASE]")
             remove_system_messages(chat_ctx, "[PHASE_STATUS]")
             # Fix #1: Inject the first interview question directive immediately -- no intermediate acknowledgement.
-            # The LLM will open with the anchor topic on the next turn.
+            # The LLM will open with the first topic on the next turn.
             chat_ctx.add_message(role="system", content=interview_directive_cached)
-            logger.info("[WARMUP] First interview directive injected at turn=%d | ready to ask anchor topic", turn_snapshot)
+            logger.info("[WARMUP] First interview directive injected at turn=%d | ready to ask first topic", turn_snapshot)
             agent._waiting_for_eval = False
             agent._directive_ready.set()
         elif turn_snapshot == 2 and len(_content_lc.split()) <= 2:
@@ -5932,31 +5889,7 @@ async def entrypoint(ctx: JobContext):
         int(plugin_tts_characters or 0),
         int(getattr(agent, "_tts_text_characters", 0) or 0),
     )
-    if billable_tts_characters and billable_tts_characters != plugin_tts_characters:
-        logger.info(
-            "[USAGE] Using TTS text fallback for billing chars provider_metrics=%d text_chars=%d",
-            plugin_tts_characters,
-            billable_tts_characters,
-        )
-    if not _is_demo_session:
-        await persist_org_usage_metrics(
-            org_id,
-            latest_session_usage or session.usage,
-            tts_provider=org_tts_provider,
-            tts_model=org_tts_model,
-            stt_provider="DEEPGRAM",
-            stt_model=str(ctx_data.sttModel),
-            plugin_tts_characters=billable_tts_characters,
-            plugin_tts_audio_seconds=plugin_tts_audio_seconds,
-            plugin_stt_audio_seconds=plugin_stt_audio_seconds,
-            # Per-event ledger attribution for interviewSession STT/TTS rows.
-            app_id=app_id,
-            job_id=ctx_data.jobId,
-            candidate_name=candidate_name,
-            job_title=job_title,
-            is_test=_is_test_session,
-        )
-    else:
+    if _is_demo_session:
         # DEMO: no OrganizationDetails row to bill against (persist_org_usage_metrics
         # requires org_id) -- write to DemoSession.usageJson instead. Every live-agent
         # turn is directive-driven and its LLM usage is already captured per-turn by
@@ -6035,30 +5968,6 @@ async def entrypoint(ctx: JobContext):
                 "coveredTopics": _covered_topic_keys.coverage_rows(),
             },
         }
-        
-        if _is_test_session:
-            logger.info("[DEBUG_REPORT] Test session — spawning debug PDF worker...")
-            try:
-                from interview.debug_report import generate_and_send_debug_report
-                
-                async def _run_debug_report_bg():
-                    try:
-                        await generate_and_send_debug_report(
-                            app_id=app_id,
-                            candidate_name=candidate_name,
-                            job_title=job_title,
-                            answer_scores=list(answer_scores),
-                            topic_pool=list(_interview_brief.topic_pool),
-                            covered_topics=_covered_topic_keys.coverage_rows(),
-                            topic_records=list(_topic_records),
-                            interview_type=interview_type,
-                        )
-                    except Exception as e:
-                        logger.error(f"[DEBUG_REPORT] Background worker failed: {e}")
-                        
-                spawn_background_task(_run_debug_report_bg(), "debug_report_worker")
-            except Exception as e:
-                logger.error(f"[DEBUG_REPORT] Failed to initialize debug report worker: {e}")
         
         await _enqueue_report_job(app_id, _report_payload)
     # Cancel any leftover fire-and-forget work so job teardown is instant.

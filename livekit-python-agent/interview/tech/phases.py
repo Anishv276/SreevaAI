@@ -35,7 +35,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-_BriefType = Any
+
 
 
 def build_greeting_text(candidate_name: str, ai_name: str) -> str:
@@ -63,7 +63,7 @@ def build_candidate_payload(resume_json: dict | None) -> str:
     if not isinstance(resume_json, dict) or not resume_json:
         return ""
     try:
-        from interview.tech.brief_extraction import RawResumeJSON  # noqa: PLC0415
+        from interview.resume import RawResumeJSON  # noqa: PLC0415
         raw = RawResumeJSON.model_validate(resume_json)
     except Exception:
         return ""
@@ -112,17 +112,17 @@ def build_candidate_payload(resume_json: dict | None) -> str:
 
 
 _LEVEL_GUIDE: dict[int, str] = {
-    1: "LEVEL 1 (junior): OPENING QUESTION must be a straightforward mechanism or implementation question. "
+    1: "LEVEL 1 (junior): FOR NEW TOPICS, question must be a straightforward mechanism or implementation question. "
        "For evaluation: a correct mechanism in their own words is a good answer. "
        "2-3 follow-ups per topic. Skip scale/architecture tradeoffs -- no basis to answer.",
-    2: "LEVEL 2 (mid): OPENING QUESTION must be a scenario requiring structural choices or basic tradeoffs. "
+    2: "LEVEL 2 (mid): FOR NEW TOPICS, question must be a scenario requiring structural choices or basic tradeoffs. "
        "For evaluation: correct mechanism is the floor; one real tradeoff or failure mode "
        "makes it good. 3-4 follow-ups. On a textbook answer, ask what it costs.",
-    3: "LEVEL 3 (senior): OPENING QUESTION must be a complex scenario requiring architectural judgment. "
+    3: "LEVEL 3 (senior): FOR NEW TOPICS, question must be a complex scenario requiring architectural judgment. "
        "For evaluation: mechanism is assumed -- the answer is only good if it carries "
        "judgment (what they'd choose, against what, at what cost). 3-5 follow-ups, "
        "one thread deep rather than many shallow.",
-    4: "LEVEL 4 (staff): OPENING QUESTION must be a system-scale design problem or a deep structural tradeoff. "
+    4: "LEVEL 4 (staff): FOR NEW TOPICS, question must be a system-scale design problem or a deep structural tradeoff. "
        "For evaluation: a correct answer is the baseline. Push for second-order reasoning "
        "-- what the choice costs the system or team over time. Press every tradeoff claim.",
 }
@@ -206,7 +206,7 @@ def _build_topics_block(interview_brief: Any, jd_skills: list[str] | None) -> st
 def build_interview_directive(
     *,
     level: int,
-    resume_brief: _BriefType = None,
+
     jd_skills: list[str] | None = None,
     custom_questions: list[str] | None = None,
     interview_brief=None,
@@ -222,9 +222,7 @@ def build_interview_directive(
     """
     topics_block = _build_topics_block(interview_brief, jd_skills)
     if not topics_block:
-        fallback = [str(s).strip() for s in (getattr(resume_brief, "skills", None) or []) if str(s).strip()]
-        if fallback:
-            topics_block = f"\nJD TOPICS TO COVER:\n  {', '.join(fallback)}\n"
+        pass  # Rely purely on interview_brief topics
 
     # When there is no resume, state it as a fact up front rather than relying on a
     # conditional buried in the rules. Tested: with only the in-rule instruction the

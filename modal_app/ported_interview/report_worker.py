@@ -49,10 +49,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("report-worker")
 
-from interview.debug_report import generate_and_send_debug_report
+
 from billing.billing import (
     flush_billing as flush_pending_manual_billing,
     record_manual_usage as persist_org_manual_billing_usage,
+    save_org_usage,
+    deduct_interview_quota,
 )
 
 
@@ -82,10 +84,38 @@ async def _run(payload: dict) -> None:
         from interview.tech.report import generate_interview_report, generate_interview_summary
     logger.info("[REPORT] interview_type=%s app_id=%s", interview_type, app_id)
 
-    # Slack debug PDF generation has been moved out of the modal worker and into
-    # a background worker in agent_runtime.py (gated by enable_report) to avoid
-    # blocking operations and ensure it runs early.
-
+    # Slack debug PDF generation has been moved to this Modal worker so the LiveKit
+    # agent can shut down immediately without blocking on Slack uploads.
+    if is_test:
+        try:
+            logger.info("[DEBUG_REPORT] Generating debug PDF...")
+            debug_report_data = payload.get("debugReport") or {}
+            
+            if interview_type == "conversational":
+                from interview.conversational.debug import generate_and_send_debug_report
+                await generate_and_send_debug_report(
+                    app_id=app_id,
+                    candidate_name=candidate_name,
+                    job_title=job_title,
+                    answer_scores=list(answer_scores),
+                    topic_pool=debug_report_data.get("topicPool") or [],
+                    covered_topics=debug_report_data.get("coveredTopics") or [],
+                    topic_records=list(topic_records),
+                )
+            else:
+                from interview.tech.debug import generate_and_send_debug_report
+                await generate_and_send_debug_report(
+                    app_id=app_id,
+                    candidate_name=candidate_name,
+                    job_title=job_title,
+                    answer_scores=list(answer_scores),
+                    topic_pool=debug_report_data.get("topicPool") or [],
+                    covered_topics=debug_report_data.get("coveredTopics") or [],
+                    topic_records=list(topic_records),
+                    interview_type=interview_type,
+                )
+        except Exception as e:
+            logger.error(f"[DEBUG_REPORT] Failed: {e}")
     # skipReport ("Enable Report Eval" off on the /test page) skips ONLY the
     # report/summary LLM generation below -- the debug PDF above and the
     # eval/llmGeneration billing flush below both still run unconditionally.
@@ -137,6 +167,28 @@ async def _run(payload: dict) -> None:
     usage = payload.get("usage") or {}
     eval_usages = usage.get("evalUsages") or []
     llmgen_usages = usage.get("llmgenUsages") or []
+    
+    # Run the final session billing flush and quota deduction
+    billing_data = payload.get("billing") or {}
+    session_usage = billing_data.get("sessionUsage")
+    if org_id and session_usage and not app_id.startswith("demo_"):
+        try:
+            logger.info("[BILLING] Running final session billing for %s", app_id)
+            await save_org_usage(
+                org_id=org_id,
+                session_summary=session_usage,
+                tts_provider=billing_data.get("ttsProvider"),
+                tts_model=billing_data.get("ttsModel"),
+                stt_provider=billing_data.get("sttProvider"),
+                stt_model=billing_data.get("sttModel"),
+                app_id=app_id,
+                candidate_name=candidate_name,
+                job_title=job_title,
+                is_test=is_test,
+            )
+            await deduct_interview_quota(app_id, billing_data.get("durationSeconds"))
+        except Exception as e:
+            logger.error(f"[BILLING] Final session billing failed: {e}")
 
 
 def main() -> None:

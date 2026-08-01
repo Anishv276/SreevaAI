@@ -54,12 +54,15 @@ class TopicState:
         self.last_score = None
         self.consecutive_zero_scores = 0
         self.consecutive_denials = 0
+        self.consecutive_depth_strong = 0
         self.closed_on_denials = False
         self.clarification_request_count = 0
         self.probe_rotation_index = 0
 
     _WEAK_EXIT_TURN3_PCT: float = 0.50
     _HARD_CAP_TURNS: int = 5
+    _DRY_TOPIC_ZEROS: int = 2
+    _DEPTH_STRONG_SATURATION_STREAK: int = 2
 
     def is_weak_candidate_exit(self) -> bool:
         if self.saturation_threshold <= 0:
@@ -72,11 +75,17 @@ class TopicState:
         return self.follow_up_turns >= self._HARD_CAP_TURNS
 
     def is_dry_topic(self) -> bool:
-        return self.consecutive_zero_scores >= 2
+        return (
+            self.consecutive_zero_scores >= self._DRY_TOPIC_ZEROS
+            and self.follow_up_turns >= self._DRY_TOPIC_ZEROS
+        )
 
     def should_exit_on_denials(self) -> bool:
         """Single pure_denial signal -> close the topic."""
         return self.consecutive_denials >= 1
+
+    def should_exit_on_depth_strong_streak(self) -> bool:
+        return self.consecutive_depth_strong >= self._DEPTH_STRONG_SATURATION_STREAK
 
     _NON_FOLLOWUP_SIGNALS = frozenset({
         "clarification_request",
@@ -99,7 +108,14 @@ class TopicState:
             effective_base = 0.0
         self.saturation_score += effective_base + contribution
         self.follow_up_turns += 1
-        self.is_saturated = self.saturation_score >= self.saturation_threshold
+        if signal == "mastery_demonstrated":
+            self.consecutive_depth_strong += 1
+        else:
+            self.consecutive_depth_strong = 0
+        self.is_saturated = (
+            self.saturation_score >= self.saturation_threshold
+            or self.should_exit_on_depth_strong_streak()
+        )
         if weighted == 0.0:
             self.consecutive_zero_scores += 1
         else:
@@ -134,6 +150,7 @@ class TopicState:
             "consecutive_zero_scores": self.consecutive_zero_scores,
             "consecutive_denials": self.consecutive_denials,
             "closed_on_denials":   self.closed_on_denials,
+            "consecutive_depth_strong": self.consecutive_depth_strong,
             "probe_rotation_index": self.probe_rotation_index,
         }
 
@@ -154,6 +171,7 @@ class TopicState:
         obj.consecutive_zero_scores = int(d.get("consecutive_zero_scores", 0) or 0)
         obj.consecutive_denials = int(d.get("consecutive_denials", 0) or 0)
         obj.closed_on_denials   = bool(d.get("closed_on_denials", False))
+        obj.consecutive_depth_strong = int(d.get("consecutive_depth_strong", 0) or 0)
         obj.probe_rotation_index = int(d.get("probe_rotation_index", 0) or 0)
         if "saturation_threshold" in d:
             obj.saturation_threshold = float(d["saturation_threshold"])
@@ -178,7 +196,7 @@ def _score_to_contribution(weighted: float) -> float:
 
 
 def _normalize_topic_key(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).strip()
+    return re.sub(r"[^a-z0-9]+", " ", (text or "").lower()).strip()
 
 
 class EvaluationPayload(BaseModel):
@@ -196,7 +214,6 @@ class EvaluationPayload(BaseModel):
     llm_model: str
     active_topic: Optional[str] = None
     active_topic_state: Optional[Dict[str, Any]] = None
-    anchor_item: Optional[str] = None
     job_title: str = "the role"
     remaining_seconds: float = 999.0
     candidate_name: str = "?"
@@ -208,6 +225,9 @@ class EvaluationPayload(BaseModel):
     topic_tag: str = "RESUME_TOPIC"
     topic_probe_focus: str = ""
     topic_why_relevant: str = ""
+    question_type: str = "mechanism"
+    asked_so_far: List[str] = Field(default_factory=list)
+    resume_context: str = ""
     model_config = {"extra": "allow"}
 
 
@@ -276,11 +296,14 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
                 active_topic=p.active_topic or "",
                 topic_probe_focus=p.topic_probe_focus,
                 job_title=p.job_title,
+                question_type=p.question_type,
                 signals_already_fired=current_topic_state.signals_fired if current_topic_state else [],
+                asked_so_far=p.asked_so_far or [],
+                resume_context=p.resume_context,
             ),
             timeout=60.0,
         )
-    except (asyncio.TimeoutError, Exception) as ex:
+    except Exception as ex:
         logger.error("[EVAL:sales] turn=%d | scoring %s — recovery decision",
                      p.turn, "timed out" if isinstance(ex, asyncio.TimeoutError) else f"failed: {ex}")
         try:
@@ -297,9 +320,12 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             pass
         raw = {
             "clarity": 2.0, "depth": 1.0, "specificity": 1.0, "grounding": 1.0, "overall": 1.3,
-            "action": "PROBE", "signal": "deal_metrics_missing",
+            "action": "PROBE", "signal": "probe", "signals": ["probe"],
             "signal_reason": "eval recovery — answer was too thin to score",
+            "points": ["Stay on topic; one concrete follow-up on what they said"],
+            "avoid": [],
             "reason": "eval recovery",
+            "is_eval_recovery": True,
         }
 
     quality = {k: raw.get(k, 0.0) for k in ("clarity", "depth", "specificity", "grounding")}
@@ -311,8 +337,20 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     forced_action = bool(raw.get("forced_action"))
     _forced_response_signal = forced_action and action in ("MOVE_ON", "REPHRASE", "REDIRECT", "ACCEPT_REPHRASE")
 
-    signal: str | None = raw.get("signal")
-    signal_reason: str | None = raw.get("signal_reason")
+    signal: str | None = str(raw["signal"]) if raw.get("signal") is not None else None
+    
+    _raw_signals = raw.get("signals")
+    if not isinstance(_raw_signals, list):
+        _raw_signals = [signal] if signal else []
+    signals = [str(s) for s in _raw_signals]
+    
+    signal_reason = str(raw["signal_reason"]) if raw.get("signal_reason") is not None else None
+    
+    _raw_points = raw.get("points")
+    points = [str(x) for x in _raw_points if str(x).strip()] if isinstance(_raw_points, list) else []
+    
+    _raw_avoid = raw.get("avoid")
+    avoid = [str(x) for x in _raw_avoid if str(x).strip()] if isinstance(_raw_avoid, list) else []
 
     depth_signal = "DEEP" if _weighted >= 7.0 else "SPECIFIC" if _weighted >= 5.0 else "SURFACE"
 
@@ -321,8 +359,8 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         p.turn, quality["clarity"], quality["depth"],
         quality["specificity"], quality["grounding"], _weighted, depth_signal,
     )
-    logger.info("[EVAL:sales] turn=%d action=%s signal=%s weighted=%.2f",
-                p.turn, action, signal, _weighted)
+    logger.info("[EVAL:sales] turn=%d action=%s signal=%s points=%d weighted=%.2f",
+                p.turn, action, signal, len(points), _weighted)
     if signal:
         logger.info("[SIGNAL:sales] %s | reason=%r", signal, signal_reason)
 
@@ -394,7 +432,10 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         "grounding":               quality["grounding"],
         "overall":                 _weighted,
         "signal":                  signal,
+        "signals":                 signals,
         "signal_reason":           signal_reason,
+        "points":                  points,
+        "avoid":                   avoid,
         "topic":                   p.active_topic or "general",
         "topic_saturation_score":  sat_score,
         "topic_saturation_threshold": sat_threshold,
@@ -406,6 +447,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         "weak_exit":               _weak_exit,
         "dry_topic":               _dry_topic,
         "topic_follow_ups":        _follow_up_count,
+        "is_eval_recovery":        bool(raw.get("is_eval_recovery")),
     }
 
     logger.info("[RESULT:sales] turn=%d action=%s quality=%.2f/%s signal=%s sat=%.1f/%.1f",
@@ -415,7 +457,10 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     return {
         "action":        action,
         "signal":        signal,
+        "signals":       signals,
         "signal_reason": signal_reason,
+        "points":        points,
+        "avoid":         avoid,
         "quality_record":quality_record,
         "depth_signal":  depth_signal,
         "saturation": {
@@ -430,4 +475,5 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         "eval_llm_usages": list(_captured_usage),
         "turn":    p.turn,
         "app_id":  p.app_id,
+        "matched_resume_project": raw.get("matched_resume_project"),
     }

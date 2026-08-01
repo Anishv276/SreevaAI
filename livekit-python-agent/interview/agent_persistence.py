@@ -153,12 +153,12 @@ class _SafeJSONEncoder(json.JSONEncoder):
     """Handles Decimal and datetime types that asyncpg may return from DB reads.
     Without this, json.dumps raises TypeError and the entire DB write is silently dropped (EC-10).
     """
-    def default(self, obj: object) -> object:
-        if isinstance(obj, decimal.Decimal):
-            return float(obj)
-        if isinstance(obj, (datetime.datetime, datetime.date)):
-            return obj.isoformat()
-        return super().default(obj)
+    def default(self, o: object) -> object:
+        if isinstance(o, decimal.Decimal):
+            return float(o)
+        if isinstance(o, (datetime.datetime, datetime.date)):
+            return o.isoformat()
+        return super().default(o)
 def _safe_json_dumps(obj: object) -> str:
     """Serialize to JSON with safe type handling. Validates round-trip before returning
     so any remaining non-serializable type surfaces immediately, not silently in the DB write."""
@@ -840,8 +840,6 @@ async def update_interview_status(app_id: str, duration_seconds: Optional[float]
                     int(duration_seconds), int(duration_seconds), app_id,
                 )
         logger.info(f"[INTERVIEW] App {app_id} marked as COMPLETED (dur={duration_seconds}s)")
-        from billing.billing import deduct_interview_quota  # noqa: PLC0415
-        await deduct_interview_quota(app_id, duration_seconds)
     except Exception as e:
         logger.error(f"[INTERVIEW] Failed to update interview status for {app_id}: {e}")
 # ===============================================================================

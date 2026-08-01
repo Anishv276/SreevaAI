@@ -49,7 +49,7 @@ from typing_extensions import TypedDict
 from interview.agent_utils import truncate_to_tokens
 from interview.agent_runtime_support import logger, DATABASE_URL
 from interview.agent_runtime_utils import token_limit_kwarg, llm_metadata
-from interview.tech.brief_extraction import RawResumeJSON, ResumeExtractor
+from interview.resume import RawResumeJSON
 
 from billing.billing import record_external_billing_usage as _persist_billing
 from interview.slack_error_logger import log_llm_error
@@ -1068,9 +1068,7 @@ async def _answer_integrity_noop() -> tuple[dict, list[dict]]:
 def _build_resume_claims_block(resume_json: dict) -> str:
     """Turn raw resume JSON into a checkable claims list for the eval prompt.
 
-    Reuses the same deterministic ResumeExtractor the interview brief pipeline
-    uses (interview/brief_extraction.py) -- zero extra LLM cost. A flat JSON
-    dump truncated by char count risks cutting off the project/impact fields
+    A flat JSON dump truncated by char count risks cutting off the project/impact fields
     that actually matter for Resume Credibility scoring; extracting only
     projects/work_history/skills into short claim lines keeps every concrete,
     checkable claim (tech, duration, impact numbers) inside the token budget.
@@ -1080,7 +1078,9 @@ def _build_resume_claims_block(resume_json: dict) -> str:
 
     try:
         raw = RawResumeJSON.model_validate(resume_json)
-        projects, work, skills = ResumeExtractor().extract(raw)
+        projects = raw.get_projects()
+        work = raw.get_work_history()
+        skills = raw.get_technical_skills()
     except Exception:
         return "Resume provided but could not be parsed — score Resume Credibility based on self-reported claims in the transcript only."
 
@@ -1089,12 +1089,12 @@ def _build_resume_claims_block(resume_json: dict) -> str:
 
     lines: list[str] = []
     for w in work[:6]:
-        tech = ", ".join(w.tech) or "—"
+        tech = ", ".join(w.technologies_used) or "—"
         lines.append(f"WORK: {w.title} ({w.duration or 'duration unknown'}) — {w.description[:300]} [tech: {tech}]")
     for p in projects[:6]:
-        tech = ", ".join(p.tech) or "—"
+        tech = ", ".join(p.resolved_tech) or "—"
         impact = f" — impact claimed: {p.impact}" if p.impact else ""
-        lines.append(f"PROJECT: {p.title} ({p.duration or 'duration unknown'}) — {p.description[:300]} [tech: {tech}]{impact}")
+        lines.append(f"PROJECT: {p.resolved_title} ({p.duration or 'duration unknown'}) — {p.description[:300]} [tech: {tech}]{impact}")
     if skills:
         lines.append("SKILLS CLAIMED: " + ", ".join(s.name for s in skills[:20]))
 
@@ -1122,7 +1122,7 @@ things, in this order, and you do not move to the next dimension until all three
             what you observed, where it was strong, where it broke down. Cite specific moments.
   2. "s"  — the score (0-100) that your reasoning in "r" leads to. The number must follow the reasoning,
             not the other way around. If "r" describes a weak performance, "s" cannot be high.
-  3. "ev" — ONE sharp evidence sentence, anchored to a specific action or near-quote from the interview,
+  3. "ev" — ONE sharp evidence sentence, tied to a specific action or near-quote from the interview,
             that a recruiter could verify by reading the transcript. No generic praise.
 
 Only AFTER all five dimensions are finalized do you write strengths ("str") and weaknesses ("con"), and
@@ -1151,7 +1151,7 @@ First infer the candidate's level from the JD's stated seniority and the transcr
   FRESHER (0-1 yr / student): judge potential, reasoning, and project authenticity — not production scale.
   MID (1-4 yr): some production exposure, works with guidance.
   EXPERIENCED (4+ yr): owns decisions, production systems — held to the highest bar on every dimension.
-"Good" means different things at each level; the anchors below tell you how.
+"Good" means different things at each level; the baselines below tell you how.
 
 Universal band meaning (applies to every dimension's 0-100 score):
   0-20   Blank, wrong, evasive, or pure filler. No usable signal.
@@ -1312,11 +1312,11 @@ fragmented ones. Avoid naming a single tool/library as its own category when it'
 broader skill (fold "Redux" into "Frontend", "Postgres indexing" into "Data & Databases").
 
 ════════════════════════════════════════════════════════════════════════════
-SCORING — 1-10, anchored to observable proficiency (Dreyfus-style progression)
+SCORING — 1-10, mapped to observable proficiency (Dreyfus-style progression)
 ════════════════════════════════════════════════════════════════════════════
 Score the candidate's DEMONSTRATED ability in each skill, using the full range. Do NOT cluster at 4-7.
 A score is a claim about evidence you actually saw — absence of evidence scores 1, never a middling number.
-The anchors describe progression from surface recall to deep, intuitive command:
+The baselines describe progression from surface recall to deep, intuitive command:
   1-2  Novice: could not explain even the basics when asked. Named the area but no working understanding.
   3-4  Advanced beginner: knows the terminology but can't explain mechanics; recall without application.
   5-6  Competent: explains core concepts correctly and has clearly done it hands-on, but has gaps and
@@ -1438,7 +1438,7 @@ experienced hiring manager weighs strong and weak evidence rather than averaging
 hiring judgment combines the structured evidence with reasoning; it is not a fixed weighted sum.
 
 A computed weighted score MAY be provided as ONE reference data point. Treat it as a sanity check, NOT as
-an anchor you must stay within — you are free to score above or below it when the evidence justifies it
+a baseline you must stay within — you are free to score above or below it when the evidence justifies it
 (e.g. one disqualifying gap in a role-critical skill should pull the score down even if the average looks
 fine; exceptional depth in what matters most can pull it up). Explain any large divergence in your reasoning.
 
@@ -2288,7 +2288,7 @@ async def generate_interview_summary(
         f"Behavioral signals: {signal_summary}\n"
         f"REFERENCE WEIGHTED SCORE: {computed_overall if computed_overall is not None else 'Not available'}/100 "
         f"(a deterministic weighted average of the dimension scores, provided as ONE reference data point "
-        f"only — NOT an anchor. The verdict determines the final score through holistic judgment and may "
+        f"only — NOT a hard baseline. The verdict determines the final score through holistic judgment and may "
         f"diverge from this when the evidence justifies it.)\n\n"
         f"DIMENSION SCORES + EVIDENCE:\n{dimension_block}\n\n"
         f"SKILL BREAKDOWN:\n{skill_block}\n\n"

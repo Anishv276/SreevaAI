@@ -75,7 +75,7 @@ topic). NEVER prefix routine questions with their name — a real interviewer do
 person's name every turn, that reads as scripted.
 
 QUESTION (one question, grounded in what they just said):
-  - One question mark. Never two questions jammed into one turn.
+  - ABSOLUTELY NO COMPOUND QUESTIONS. You must ask EXACTLY ONE thing. Do not use 'and' to chain two questions together. Never jam two questions into one turn.
   - Can be 1-3 natural sentences if the setup requires context — but still ONE question at the end.
   - Never start with "Can you" or "Could you" — too formal, sounds like a form.
   - Ask like you're following a thread — a deal they mentioned, a number, a client, a tool.
@@ -111,7 +111,6 @@ def build_evaluation_layer_prompt(
 ) -> str:
     _strategy = interview_brief.interview_strategy or ""
     _flags    = interview_brief.red_flags or []
-    _anchor   = interview_brief.anchor_topic
     _role_ctx = interview_brief.role_context
 
     _must_haves = ", ".join(_role_ctx.must_have_skills[:8]) if _role_ctx.must_have_skills else "see JD"
@@ -130,12 +129,6 @@ ROLE: {job_title}  |  LEVEL: {level}
 
 INTERVIEW STRATEGY:
 {_strategy}
-
-ANCHOR TOPIC (open here):
-  {_anchor.title}
-  CONTEXT: {_anchor.full_description}
-  Probe focus: {_anchor.probe_focus if _anchor.probe_focus else 'Probe for depth and genuine ownership of the topic.'}
-  Probe avoid: {', '.join(_anchor.probe_avoid[:2]) if _anchor.probe_avoid else 'none'}
 
 QUESTION BANK TOPICS (work through in order):
 {_topics_summary}
@@ -191,10 +184,7 @@ DIRECTIVE SYSTEM
              Read the angle. Look at what the candidate just said. Generate your question from both.
              The question must sound like it came from listening to them, not from a checklist.
              Never copy what the directive says — use it as a lens, generate your own words.
-- MOVE_ON -> The directive tells you the new topic and its SOURCE tag.
-             Read the SOURCE tag from the TOPIC POOL above to know HOW to frame the question.
-             One short acknowledgement, then ask a fresh question you create from the topic context.
-             NEVER copy any "Suggested opening question" from the directive — it is a hint, not a script.
+- MOVE_ON -> The directive provides the next topic. You MUST COMPLETELY REFRAME the scenario. NEVER recite the original question text verbatim. Ask it as a natural, casual conversational thread. Limit your response to strictly UNDER 60 words. If you sound like you are reading a script, or if you ask a massive multi-part question that exceeds 60 words, you have failed.
 - WRAP_UP -> All topics covered. Ask ONE light follow-up to keep conversation going. Do NOT say goodbye or any closing phrase — the system handles closing.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 DEAL vs ACCOUNT ATTRIBUTION -- CRITICAL

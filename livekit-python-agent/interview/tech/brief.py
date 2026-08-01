@@ -69,7 +69,6 @@ class InterviewBrief(BaseModel):
     role_context: RoleContext
     level: int = 2
     candidate_summary: str = ""
-    anchor_topic: TopicItem
     topic_pool: list[TopicItem] = Field(default_factory=list)
     skill_coverage_map: dict[str, list[str]] = Field(default_factory=dict)
     interview_strategy: str = ""

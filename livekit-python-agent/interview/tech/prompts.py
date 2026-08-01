@@ -73,7 +73,7 @@ On a follow-up, the question should be impossible to ask without having heard th
 name the specific claim, term, or number they used and push on THAT. A question that would make
 equal sense asked cold, before they said anything, hasn't really followed up at all.
 
-  - One question mark. Never two questions jammed into one turn — if the easier half and the
+  - ABSOLUTELY NO COMPOUND QUESTIONS. You must ask EXACTLY ONE thing. Do not use 'and' to chain two questions together. If the easier half and the
     harder half are both in there, ask the harder one and save the other for later.
   - Keep it tight: reaction + question together, one short breath, roughly 25 words. If you need
     context, fold it into a short clause before the question — never a separate setup sentence,
@@ -122,7 +122,6 @@ def build_evaluation_layer_prompt(
 ) -> str:
     _strategy = interview_brief.interview_strategy or ""
     _flags    = interview_brief.red_flags or []
-    _anchor   = interview_brief.anchor_topic
     _role_ctx = interview_brief.role_context
 
     _must_haves = ", ".join(_role_ctx.must_have_skills[:8]) if _role_ctx.must_have_skills else "see JD"
@@ -140,12 +139,6 @@ ROLE: {job_title}  |  LEVEL: {level}
 
 INTERVIEW STRATEGY:
 {_strategy}
-
-ANCHOR TOPIC (open here):
-  {_anchor.title}
-  CONTEXT: {_anchor.full_description}
-  {('TECH: ' + ', '.join(_anchor.tech_stack)) if _anchor.tech_stack else ''}
-  Probe focus: {_anchor.probe_focus if _anchor.probe_focus else 'Probe for depth and genuine understanding of the topic.'}
 
 QUESTION BANK TOPICS (work through in order):
 {_topics_summary}
@@ -202,8 +195,8 @@ DIRECTIVE SYSTEM
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [NEXT_TURN_DIRECTIVE] is your real-time instruction. It ALWAYS overrides the coverage plan below.
 
-- PROBE   -> The directive provides you with the specific SIGNALS that fired in the candidate's last answer, along with strict instructions on how to probe those gaps. You must use your deep reasoning to weave those signals naturally into a conversational follow-up question. Never copy the directive wording.
-- MOVE_ON -> The directive tells you the new topic. One short acknowledgement, then a fresh question you create from the topic context.
+- PROBE   -> The directive provides you with specific follow-up POINTS that you should chase based on the candidate's last answer. You must use your deep reasoning to weave these points naturally into a single conversational follow-up question. Never copy the directive wording.
+- MOVE_ON -> The directive provides the next topic and its source question. You MUST COMPLETELY REFRAME the question. NEVER recite the original question text. Pull the core technical scenario out and ask it like a natural, casual conversation (e.g. "So if you were building X, how would you handle Y?"). Limit your response to strictly UNDER 60 words. If you sound like you are reading off a quiz card, or if you ask a massive multi-part question that exceeds 60 words, you have failed.
 - WRAP_UP -> All topics covered. Ask ONE light follow-up to keep conversation going. Do NOT say goodbye or any closing phrase — the system handles closing.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PROJECT AND RESUME REFERENCE

@@ -79,9 +79,8 @@ def build_brief_from_question_bank(
     must_have_skills: list[str] | None = None,
 ) -> InterviewBrief:
     """
-    Builds an InterviewBrief from a frozen Job.questionBank snapshot. Anchor
-    topic is the first question in bank order, per spec: "runtime pulls
-    anchor questions in order from the snapshot, grouped by skill/subtopic."
+    Builds an InterviewBrief from a frozen Job.questionBank snapshot.
+    The runtime pulls questions in order from the snapshot, grouped by skill/subtopic.
     No LLM call -- pure transform, so this is safe to call synchronously at
     session start.
     """
@@ -91,7 +90,6 @@ def build_brief_from_question_bank(
 
     must_have_set = set(must_have_skills or [])
     topic_pool = [_topic_item_for_question(q, must_have_set) for q in questions]
-    anchor_topic = topic_pool[0]
 
     skills_seen: list[str] = []
     skill_coverage_map: dict[str, list[str]] = {}
@@ -106,14 +104,13 @@ def build_brief_from_question_bank(
 
     interview_strategy = (
         f"Assess depth across the following skills, in this order: {', '.join(skills_seen)}. "
-        f"Each topic below carries its exact anchor question -- open with it, then probe "
+        f"Open each topic with a conversational question based on its context, then probe "
         f"deeper based on the candidate's answer."
     )
 
     return InterviewBrief(
         role_context=RoleContext(must_have_skills=list(must_have_set)),
         level=level,
-        anchor_topic=anchor_topic,
         topic_pool=topic_pool,
         skill_coverage_map=skill_coverage_map,
         interview_strategy=interview_strategy,

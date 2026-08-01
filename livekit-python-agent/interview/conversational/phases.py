@@ -7,12 +7,12 @@ substance (architecture, tradeoffs, systems).
 """
 from __future__ import annotations
 from typing import Any
-_BriefType = Any
+
 def build_greeting_text(candidate_name: str, ai_name: str) -> str:
     """Fixed greeting — natural, warm, consistent across all sessions."""
     name = (candidate_name or "").strip().split()[0] if candidate_name else "there"
     ai = (ai_name or "").strip() or "your interviewer"
-    return f"Hi {name}, this is {ai}. Good to connect with you today — how are you doing?"
+    return f"Hi {name}, this is {ai}, your interviewer for today. Good to connect with you. How are you doing?"
 
 
 def _build_custom_questions_block(custom_questions: list[str] | None) -> str:
@@ -32,72 +32,30 @@ def _build_custom_questions_block(custom_questions: list[str] | None) -> str:
 def build_interview_directive(
     *,
     level: int,
-    resume_brief: _BriefType,
+
     jd_skills: list[str] | None = None,
     custom_questions: list[str] | None = None,
-    interview_brief=None,  # InterviewBrief — when provided, overrides mechanical anchor/skills logic
+    interview_brief=None,  # InterviewBrief — when provided, overrides mechanical skills logic
     resume_json: dict | None = None,  # accepted for call-site parity with the tech track; sales prompts already carry their own resume context
 ) -> str:
     """
     Build the single system prompt for the full-length sales interview.
     Priority order:
-      1. Resume anchor deal/role -- open here, probe personal ownership
-      2. Other resume roles, deals, accounts
-      3. Resume skills + JD skills -- probe real usage depth (tools, methodology)
+      1. Resume roles, deals, accounts
+      2. Resume skills + JD skills -- probe real usage depth (tools, methodology)
       4. Situational question (at least 1, woven naturally)
       5. Behavioral/customer story question (at least 1, woven naturally)
       6. Custom recruiter questions (mandatory, woven in anytime)
     """
+    _brief_strategy_note = ""
     if interview_brief is not None:
-        anchor_name = interview_brief.anchor_topic.title
-        _brief_strategy_note = (
-            f"ROLE STRATEGY: {interview_brief.interview_strategy}\n"
-            f"ANCHOR CONTEXT: {interview_brief.anchor_topic.full_description}\n"
-        )
+        if interview_brief.interview_strategy:
+            _brief_strategy_note += f"ROLE STRATEGY: {interview_brief.interview_strategy}\n"
         if interview_brief.red_flags:
             _brief_strategy_note += f"RED FLAGS TO PROBE: {', '.join(interview_brief.red_flags)}\n"
-    else:
-        if hasattr(resume_brief, "anchor_item"):
-            anchor_name = (resume_brief.anchor_item or "their most recent role").split(" - ")[0].strip()
-        else:
-            anchor_name = resume_brief.get("anchor_item", "their most recent role").split(" - ")[0].strip()
-        _brief_strategy_note = ""
-    _first_q_rule = {
-        1: (
-            f"FIRST QUESTION RULE: stay surface-level -- establish the basics of what they actually did, "
-            f"not deal strategy or negotiation theory.\n"
-            f"Follow the concrete-detail rule below; do not fall back to generic 'what did you sell' framing."
-        ),
-        2: (
-            f"FIRST QUESTION RULE: ask what they personally owned and what decisions were theirs on a real deal.\n"
-            f"Do NOT open with generic 'walk me through your role' -- anchor to a specific thing in their story."
-        ),
-        3: (
-            f"FIRST QUESTION RULE: go straight to a key deal decision or negotiation tradeoff.\n"
-            f"Do NOT ask 'what did you sell' -- you know what they sold. Ask WHY they made a specific call."
-        ),
-        4: (
-            f"FIRST QUESTION RULE: open peer-level. Ask about a strategic judgment call or a high-stakes deal outcome.\n"
-            f"Do NOT start with basics -- probe the WHY behind their biggest number immediately."
-        ),
-    }.get(level, "FIRST QUESTION RULE: ask what they personally owned and what decisions were theirs.")
+
     opening = (
         f"{_brief_strategy_note}"
-        f"Your ANALYST BRIEF (above) contains the exact OPENING ANGLE for this session.\n"
-        f"Follow it. Open on: {anchor_name}.\n"
-        f"{_first_q_rule}\n"
-        f"HOW TO WRITE THE OPENING QUESTION:\n"
-        f"  1. Read the ANCHOR CONTEXT description above and find ONE concrete detail in it — a "
-        f"specific deal, a specific number/quota, a specific account type, a specific objection or "
-        f"win it involved. Generic role-shaped questions ('where did you start', 'what did you own', "
-        f"'walk me through it') are BANNED — they fit any sales role and produce a small, low-content "
-        f"answer, which is exactly the failure mode you must avoid.\n"
-        f"  2. Build the question around that ONE concrete detail. {anchor_name} is a reference for "
-        f"you to identify the topic — mention it naturally in the question so they know what you're asking about.\n"
-        f"  3. Ask exactly ONE thing. Do not stack two questions into one turn.\n"
-        f"  4. The question should be answerable ONLY by someone who actually carried that quota or "
-        f"ran that account — if the same question could open literally any sales interview, rewrite it.\n"
-        f"ONE question only. Stay on {anchor_name} until a [NEXT_TURN_DIRECTIVE] tells you to move."
     )
     cq_block = _build_custom_questions_block(custom_questions)
     _skill_probe_style = {
@@ -153,9 +111,26 @@ def build_interview_directive(
         else:
             skills_block = ""
     else:
-        _resume_skills = [str(s).strip() for s in (getattr(resume_brief, "skills", None) or []) if str(s).strip()]
-        _jd_skill_list = [str(s).strip() for s in (jd_skills or []) if str(s).strip()]
-        _work_history = [str(w).strip() for w in (getattr(resume_brief, "work_history", None) or []) if str(w).strip()]
+        # No structured brief: build the skill list from the resume payload (if
+        # present) plus JD skills. Previously referenced an undefined
+        # `resume_brief` here (NameError); resume_json is what the call site
+        # actually passes -- parse it the same way tech does so raw dict
+        # entries become readable text.
+        _resume_dict = resume_json or {}
+        try:
+            from interview.resume import RawResumeJSON  # noqa: PLC0415
+            _raw = RawResumeJSON.model_validate(_resume_dict)
+            _resume_skills = [s.name.strip() for s in _raw.get_technical_skills()
+                              if s.name and s.name.strip()]
+            _work_history = [
+                (f"{w.role} at {w.company}".strip() or w.title).strip()
+                for w in _raw.get_work_history()
+                if w.role or w.company
+            ]
+        except Exception:
+            _resume_skills = []
+            _work_history = []
+        _jd_skill_list = [s.strip() for s in (jd_skills or []) if s.strip()]
         if _resume_skills or _jd_skill_list:
             _work_ctx = ""
             if _work_history:
@@ -221,7 +196,7 @@ def build_interview_directive(
         f"{cq_block}\n"
         f"HOW TO MOVE:\n"
         f"  -> Always follow the [NEXT_TURN_DIRECTIVE] when present -- it overrides everything below.\n"
-        f"  -> Start with the anchor. Follow what they say -- a deal, a number, a client, an objection.\n"
+        f"  -> Start with a topic. Follow what they say -- a deal, a number, a client, an objection.\n"
         f"{_pacing_note}"
         f"  -> When a skill comes up naturally in a deal story, drill into it right there -- no need to wait.\n"
         f"  -> Do NOT wrap up or say goodbye until the system signals you to.\n\n"
