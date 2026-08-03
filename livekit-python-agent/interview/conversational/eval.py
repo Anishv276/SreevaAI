@@ -243,6 +243,9 @@ class EvaluationPayload(BaseModel):
     question_type: str = "mechanism"
     asked_so_far: List[str] = Field(default_factory=list)
     resume_context: str = ""
+    # (account/employer, topic) pairs already used to ground a follow-up on an EARLIER
+    # topic. List-of-pairs rather than a set of tuples so the payload stays JSON-safe.
+    used_project_skills: List[List[str]] = Field(default_factory=list)
     model_config = {"extra": "allow"}
 
 
@@ -315,6 +318,10 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
                 signals_already_fired=current_topic_state.signals_fired if current_topic_state else [],
                 asked_so_far=p.asked_so_far or [],
                 resume_context=p.resume_context,
+                used_project_skills={
+                    (pair[0], pair[1])
+                    for pair in (p.used_project_skills or []) if len(pair) >= 2
+                },
             ),
             timeout=60.0,
         )

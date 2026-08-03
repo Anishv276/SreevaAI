@@ -303,6 +303,22 @@ never "tell me about X". Pick the angle that fits what they just said:
   STANDARDS   — whether their approach there matches how it is normally done, and why
                 they diverged if they did.
 
+EVERY TOPIC GETS A DIFFERENT PROJECT QUESTION:
+The same project will legitimately match several topics — one real system touches
+databases, APIs, error handling, and deployment all at once. That is fine. What is NOT
+fine is asking about the same PART of it twice. Check "PROJECTS ALREADY USED ON EARLIER
+TOPICS" in the user message: if this project appears there, your point must go after a
+different piece of that system — the piece the CURRENT topic is actually about.
+
+  Good: InsightRAG used for "vector search" (how they chose the index), then later for
+        "error handling" (what happens when the embedding service times out).
+  Bad:  InsightRAG used for "vector search", then for "error handling" but the question
+        is still about the retrieval pipeline. Same ground, new label.
+
+The active topic decides which part of the project you ask about — never the other way
+around. If you cannot find a genuinely different angle on the project for THIS topic,
+output null for matched_resume_project and write ordinary points instead.
+
 Rules:
   - Ground follow-ups in the project repeatedly across a topic when it keeps producing
     good questions — not just once. Each one must open a NEW angle from the list above.
@@ -327,12 +343,21 @@ async def _call_probe_points(
     topic_probe_focus: str | None = None,
     asked_so_far: list[str] | None = None,
     resume_context: str = "",
+    used_project_skills: set[tuple[str, str]] | None = None,
 ) -> tuple[str, str | None, list[str], list[str], bool, dict, str | None]:
     """
     Returns (route, reason, points, avoid, self_corrected, usage, matched_resume_project).
     """
     _asked = "\n".join(f"- {q}" for q in (asked_so_far or [])[-8:]) or "(none yet)"
     _focus = topic_probe_focus or "(none)"
+    # Projects already used on EARLIER topics. asked_so_far is cleared on every topic
+    # change, so without this the points call has no way to know it already grounded a
+    # question in this project -- and every topic would reach for the same project detail.
+    _used_pairs = sorted({
+        f"{proj} (for: {skill})" for proj, skill in (used_project_skills or set())
+        if proj and skill and skill != (active_topic or "").strip().lower()
+    })
+    _used_block = "\n".join(f"- {u}" for u in _used_pairs) or "(none yet)"
     system = _POINTS_SYSTEM.format(
         level=level,
         active_topic=active_topic,
@@ -343,6 +368,8 @@ async def _call_probe_points(
         f"ACTIVE TOPIC: {active_topic or 'general'}\n"
         f"TOPIC PROBE FOCUS: {_focus}\n"
         f"ALREADY ASKED ON THIS TOPIC:\n{_asked}\n\n"
+        f"PROJECTS ALREADY USED ON EARLIER TOPICS (ask a DIFFERENT angle on these):\n"
+        f"{_used_block}\n\n"
         f"QUESTION: {last_question}\n\n"
         f"ANSWER: {candidate_answer}\n\n"
         f"RECENT CONVERSATION:\n{recent_context}"
@@ -440,6 +467,7 @@ async def evaluate_answer(
     signals_already_fired: list[str] | None = None,  # kept for call-site compat; unused
     asked_so_far: list[str] | None = None,
     resume_context: str = "",
+    used_project_skills: set[tuple[str, str]] | None = None,
 ) -> dict:
     """
     Parallel: score + probe-points. Returns scores, route/signal, points, action.
@@ -503,6 +531,7 @@ async def evaluate_answer(
                 topic_probe_focus=topic_probe_focus,
                 asked_so_far=asked_so_far,
                 resume_context=resume_context,
+                used_project_skills=used_project_skills,
             ),
         )
         usages = [scoring_usage, points_usage]

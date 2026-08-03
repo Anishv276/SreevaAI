@@ -97,15 +97,16 @@ def get_probe_context(
 ) -> str:
     """
     Build WHAT TO PROBE from points (+ route-specific framing).
-    Answer-driven only -- no resume-project grounding (sales module).
+
+    Follow-ups may be grounded in the candidate's real work when the points call
+    returns matched_resume_project; used_project_skills keeps each topic's grounded
+    question distinct from the ones already asked about that same account/employer.
     """
-    # resume_json / provenance_out / used_project_skills / topic_item are
-    # accepted for signature parity with interview.tech.probe, but the sales
-    # module is answer-driven only -- no resume-project grounding (see
-    # agent_runtime._build_probe_directive, which never passes resume_json
-    # for conversational interviews).
+    # resume_json / topic_item are accepted for signature parity with
+    # interview.tech.probe -- the sales module takes its background from
+    # matched_resume_project (decided in scoring.py) rather than raw resume JSON.
     _ = (signals, signals_history, cross_cutting_signal, level,
-         resume_json, provenance_out, used_project_skills, topic_item)  # compat / reserved
+         resume_json, topic_item)  # compat / reserved
     lines: list[str] = []
 
     pts = [p for p in (points or []) if p]
@@ -165,9 +166,35 @@ def get_probe_context(
     # Resume grounding applies to FOLLOW-UPS only -- the opening question on a topic is
     # asked cold (that path is MOVE_ON, which never reaches get_probe_context).
     if matched_resume_project and topic_follow_ups >= 1:
+        # Provenance keys must match what agent_runtime reads back so the
+        # (account, topic) pair lands in used_project_skills -- that is what keeps the
+        # NEXT topic's grounded question different from this one.
+        if provenance_out is not None:
+            provenance_out.update({
+                "follow_up_source": "resume_project",
+                "referenced_project": matched_resume_project,
+                "skill_matched": active_topic or "",
+                "matched_project": matched_resume_project,
+            })
+
+        _spent = sorted({
+            skill for proj, skill in (used_project_skills or set())
+            if proj == matched_resume_project.strip().lower()
+            and skill and skill != (active_topic or "").strip().lower()
+        })
+
         lines += [
             f"REAL WORK: {matched_resume_project} — they did this. You already know that.",
+            f"ACTIVE TOPIC: {active_topic or '(unknown)'} — this is what the question must test.",
             "Ask a substantive question about the ACTIVE TOPIC, set inside that work.",
+        ]
+        if _spent:
+            lines += [
+                "ALREADY USED THIS FOR: " + ", ".join(_spent),
+                "This topic is different, so the question must go after a different part of"
+                " that work — not the same story with a new label.",
+            ]
+        lines += [
             "PICK ONE ANGLE not already used on this topic:",
             "  METRICS   — the real number there: quota, ACV, cycle length, win rate",
             "  OWNERSHIP — what THEY personally did, when the answer is all \"we\"",

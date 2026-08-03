@@ -2203,12 +2203,22 @@ async def entrypoint(ctx: JobContext):
     if not extracted_details:
         extracted_details = _coerce_jsonish(ctx_data.screeningCriteria or "{}")
     structured_resume = _coerce_jsonish(ctx_data.resumeData or "{}")
-    if isinstance(structured_resume, dict):
-        _allowed_keys = {"work", "work_experience", "projects", "skills", "experience", "skill", "project"}
-        structured_resume = {k: v for k, v in structured_resume.items() if k.lower() in _allowed_keys}
-    
+    # NO key allow-list here. resumeParsedData is stored as {"source": {...},
+    # "parsed": {...}} by every writer (lib/modal-dispatch.ts, the resume-screening
+    # route, admin/add-candidate), and an allow-list applied at THIS level stripped
+    # both keys before anything could unwrap the envelope -- leaving {}, an empty
+    # resume_context, and a matched_resume_project that was permanently null, so no
+    # follow-up was ever grounded in a project. RawResumeJSON._normalise_keys already
+    # unwraps {source,parsed} / {resumeData:...}, maps every casing variant, and ignores
+    # unknown fields, so filtering here only ever destroyed data it could have read.
     from interview.tech.phases import build_candidate_payload
     _resume_context_str = build_candidate_payload(structured_resume if isinstance(structured_resume, dict) else None)
+    logger.info(
+        "[RESUME] parsed_keys=%s | resume_context=%d chars%s",
+        list(structured_resume.keys())[:8] if isinstance(structured_resume, dict) else "n/a",
+        len(_resume_context_str),
+        "" if _resume_context_str else "  <-- EMPTY: no project-grounded follow-ups this session",
+    )
 
     # Extract basic context info early for logging
     candidate_name = ctx_data.fullName
@@ -4136,6 +4146,13 @@ async def entrypoint(ctx: JobContext):
                         "level": candidate_level,
                         "ai_question_this_turn": (_last_interviewer_question or "").strip(),
                         "asked_so_far": list(_asked_questions_log),
+                        # (project, skill) pairs already spent on EARLIER topics, so the
+                        # points call can pick a DIFFERENT angle on a project it has
+                        # already used. asked_so_far resets on every topic change and
+                        # cannot carry this.
+                        "used_project_skills": [
+                            [proj, skill] for proj, skill in _referenced_project_skills
+                        ],
                     }
                 # -- INLINE EVAL -----------------------------------------------
                 # Agent calls eval to SCORE the answer on the current topic.

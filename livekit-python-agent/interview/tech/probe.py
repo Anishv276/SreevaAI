@@ -114,7 +114,10 @@ def get_probe_context(
 ) -> str:
     """
     Build WHAT TO PROBE from points (+ route-specific framing).
-    Branch A resume grounding still applies on the first follow-up when eligible.
+
+    Branch A (resume grounding) applies to FOLLOW-UPS on any topic, and uses
+    used_project_skills to keep each topic's project question distinct from the ones
+    already asked about that project on earlier topics.
     """
     _ = (signals, signals_history, cross_cutting_signal, level)  # compat / reserved
     lines: list[str] = []
@@ -183,16 +186,48 @@ def get_probe_context(
         and signal not in _RESUME_INELIGIBLE
         and matched_resume_project
     ):
+        # Provenance keys must match what agent_runtime reads back (follow_up_source /
+        # referenced_project / skill_matched) -- it uses them to record the
+        # (project, skill) pair in used_project_skills so the SAME project is never
+        # asked about from the SAME angle twice. Writing only "matched_project" here
+        # left that set permanently empty and the de-duplication dead.
         if provenance_out is not None:
-            provenance_out.update({"matched_project": matched_resume_project})
+            provenance_out.update({
+                "follow_up_source": "resume_project",
+                "referenced_project": matched_resume_project,
+                "skill_matched": active_topic or "",
+                "matched_project": matched_resume_project,  # back-compat for existing consumers
+            })
+
+        # Angles already spent on THIS project in earlier topics. The pair is
+        # (project, skill), so the same project stays fully eligible for a new topic --
+        # it just has to be approached from a different side than last time.
+        _spent_skills = sorted({
+            skill for proj, skill in (used_project_skills or set())
+            if proj == matched_resume_project.strip().lower()
+            and skill and skill != (active_topic or "").strip().lower()
+        })
 
         lines += [
             f"ROUTE: resume_grounded_probe",
             f"PROJECT: {matched_resume_project} — they built this. You already know that.",
+            f"ACTIVE TOPIC: {active_topic or '(unknown)'} — this is what the question must test.",
             "",
             "Ask a TECHNICAL question about the active topic, set inside this project.",
             "Shape: \"on <project>, how did you <topic-specific technical thing>?\"",
             "",
+        ]
+
+        if _spent_skills:
+            lines += [
+                "ALREADY USED THIS PROJECT FOR: " + ", ".join(_spent_skills),
+                "This topic is different, so the project question must be different too — a new",
+                "part of that system, a different decision inside it. Reusing the same detail",
+                "you already discussed makes the whole interview feel like one recycled question.",
+                "",
+            ]
+
+        lines += [
             "PICK ONE ANGLE — whichever their last answer left most open, and one you have",
             "not already used on this topic (check AVOID / already-asked below):",
             "  METRICS     — scale, latency, throughput, volume, error rate they actually hit",
