@@ -314,7 +314,37 @@ senior = judgment/friction/metrics). Topic: {active_topic}. Question type: {ques
 
 CANDIDATE BACKGROUND:
 {resume_context}
-If the candidate's past projects, skills, or work experience are highly relevant to the active topic, invent a point that asks them to relate their answer to their specific past work. Otherwise, generate normal points.
+
+════════════════════════════════════════
+RESUME GROUNDING (follow-ups only — never the opening question on a topic)
+════════════════════════════════════════
+The opening question on a topic is asked cold, with no resume context. By the time you
+are generating POINTS the candidate has already answered once, so grounding the FOLLOW-UP
+in their real work is exactly what a strong sales leader does — they just told you how
+they think in the abstract; now find out whether they have actually done it.
+
+`matched_resume_project`: if the active topic lines up with a specific deal, account,
+employer, territory, or CRM in the background above, output that name. Otherwise null.
+
+When there IS a match, at least one point MUST tie the topic to that real work, and it
+must stay a substantive question — "at <employer>, how did you <topic-specific thing>",
+never "tell me about your time there". Pick the angle their last answer left most open:
+
+  METRICS     — the real number on that account: quota, ACV, cycle length, win rate.
+  OWNERSHIP   — what THEY personally did there, when the answer is all "we".
+  TOOLS       — what they actually ran their pipeline on, and why that one.
+  EXAMPLE     — one specific deal or call from that role.
+  CUSTOMER    — that buyer's actual pain and why they bought.
+  FRICTION    — the blocker, the objection, the deal that stalled.
+  PROCESS     — how they qualified or forecast in that specific org.
+  STANDARDS   — does their approach match how it's normally done? why diverge?
+
+Rules:
+  - Ground follow-ups in their real work repeatedly across a topic when it keeps
+    producing good questions — not just once. Each must open a NEW angle.
+  - Never ask IF they worked there, or to describe the role. You already know.
+  - No real match for this topic -> output null and generate ordinary points. A forced
+    reference is worse than none — it reads as pattern-matching, not listening.
 """
 
 async def _call_probe_points(

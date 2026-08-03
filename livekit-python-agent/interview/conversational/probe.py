@@ -162,14 +162,25 @@ def get_probe_context(
     if signal_reason:
         lines.append(f"TRIGGER: \"{signal_reason}\"")
         
-    if matched_resume_project:
+    # Resume grounding applies to FOLLOW-UPS only -- the opening question on a topic is
+    # asked cold (that path is MOVE_ON, which never reaches get_probe_context).
+    if matched_resume_project and topic_follow_ups >= 1:
         lines += [
-            f"RESUME MATCH: They mentioned {matched_resume_project} on their resume.",
-            "Ask them to relate their answer specifically to this project/deal.",
-            "Focus on:",
-            "  - DEAL STRATEGY (How did they break into this specific account?)",
-            "  - QUOTA METRICS (How did they hit that number on this deal?)",
-            "  - FRICTION / OBJECTIONS (What went wrong in this specific cycle?)",
+            f"REAL WORK: {matched_resume_project} — they did this. You already know that.",
+            "Ask a substantive question about the ACTIVE TOPIC, set inside that work.",
+            "PICK ONE ANGLE not already used on this topic:",
+            "  METRICS   — the real number there: quota, ACV, cycle length, win rate",
+            "  OWNERSHIP — what THEY personally did, when the answer is all \"we\"",
+            "  TOOLS     — what they ran the pipeline on, and why that one",
+            "  EXAMPLE   — one specific deal or call from it",
+            "  CUSTOMER  — that buyer's real pain, and why they bought",
+            "  FRICTION  — the blocker, the objection, the deal that stalled",
+            "  PROCESS   — how they qualified or forecast in that org",
+            "  STANDARDS — does their approach match the norm? why diverge?",
+            "HARD RULES:",
+            "  - Never ask IF they worked there, or to describe the role.",
+            "  - Never say \"your resume\" / \"I saw\" — name the account or employer directly.",
+            "  - Stay on the ACTIVE TOPIC. Their work is the setting, not a new subject.",
         ]
 
     if pts:

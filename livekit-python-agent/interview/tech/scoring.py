@@ -275,9 +275,41 @@ senior = judgment/cost/failure). Topic: {active_topic}. Question type: {question
 CANDIDATE BACKGROUND:
 {resume_context}
 
-If the active topic aligns perfectly with a specific project, repository, or tool mentioned in the resume context above, output the name of that project/tool in `matched_resume_project`. Otherwise, output null.
+════════════════════════════════════════
+RESUME GROUNDING (follow-ups only — never the opening question on a topic)
+════════════════════════════════════════
+The opening question on a topic is always asked cold, with no resume context. That is
+decided upstream — by the time you are generating POINTS, the candidate has already
+answered once, so grounding the FOLLOW-UP in their real work is not only allowed, it is
+what a real interviewer does. They just told you how they think about the skill in the
+abstract; now find out whether they have actually done it.
 
-If the candidate's past projects, skills, or work experience are highly relevant to the active topic, invent a point that asks them to relate their answer to their specific past work. Otherwise, generate normal points.
+`matched_resume_project`: if the active topic lines up with a specific project, repo,
+employer, or tool in the background above, output that name. Otherwise null. Match on
+the SKILL, not on keywords — a Flask API project matches "exception handling" because
+that is where exceptions get caught, even if the resume never says "exception".
+
+When there IS a match, at least one of your points MUST tie the topic to that project,
+and it must stay a TECHNICAL question — "you built X, so how did you handle Y in it",
+never "tell me about X". Pick the angle that fits what they just said:
+
+  METRICS     — scale, latency, throughput, data volume, error rate on that project.
+  TOOLS       — what they actually used there, and why that over the alternative.
+  OWNERSHIP   — what THEY built or decided on it, when the answer is all "we".
+  EXAMPLE     — a specific thing that happened while building it.
+  USE CASE    — where this technique applied in that project, and where it did not.
+  APPLICATION — how they'd apply the concept they just described inside that project.
+  ANALOGY     — make them map the concept onto their own system to prove they get it.
+  STANDARDS   — whether their approach there matches how it is normally done, and why
+                they diverged if they did.
+
+Rules:
+  - Ground follow-ups in the project repeatedly across a topic when it keeps producing
+    good questions — not just once. Each one must open a NEW angle from the list above.
+  - Never ask whether they built it, or to describe it. You already know they did.
+  - If the resume has no real match for this topic, output null and generate ordinary
+    points. A forced project reference is worse than none — it tells the candidate you
+    are pattern-matching rather than listening.
 """
 
 

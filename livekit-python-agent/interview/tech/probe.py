@@ -168,28 +168,60 @@ def get_probe_context(
             lines += [f"  - {a}" for a in av]
         return "\n".join(lines)
 
-    # Branch A — resume project (once per topic)
+    # Branch A — resume-grounded follow-up.
+    #
+    # Eligible on ANY follow-up, not just the first: once the candidate has answered the
+    # cold opening question, tying the topic to something they actually built is the
+    # strongest follow-up available, and a topic that supports three good project-grounded
+    # questions should get three. The dimension rotation (below, and in scoring.py's
+    # points call) is what keeps them from repeating.
+    #
+    # Never fires on the opening question of a topic -- topic_follow_ups is 0 there, and
+    # the cold-open rule in prompts.py owns that turn.
     if (
-        topic_follow_ups <= 1
+        topic_follow_ups >= 1
         and signal not in _RESUME_INELIGIBLE
         and matched_resume_project
     ):
         if provenance_out is not None:
             provenance_out.update({"matched_project": matched_resume_project})
-        
+
         lines += [
-            f"RESUME MATCH: They mentioned {matched_resume_project} on their resume.",
-            "Ask them to relate their answer specifically to this project or tool.",
-            "Focus on:",
-            "  - ARCHITECTURE (How did they design or integrate this?)",
-            "  - TRADEOFFS (What scale or constraints forced this choice?)",
-            "  - FAILURES (What broke, or what were the hard edges of this project?)",
+            f"ROUTE: resume_grounded_probe",
+            f"PROJECT: {matched_resume_project} — they built this. You already know that.",
+            "",
+            "Ask a TECHNICAL question about the active topic, set inside this project.",
+            "Shape: \"on <project>, how did you <topic-specific technical thing>?\"",
+            "",
+            "PICK ONE ANGLE — whichever their last answer left most open, and one you have",
+            "not already used on this topic (check AVOID / already-asked below):",
+            "  METRICS     — scale, latency, throughput, volume, error rate they actually hit",
+            "  TOOLS       — what they reached for there, and why that over the alternative",
+            "  OWNERSHIP   — what THEY decided or built, when their answer is all \"we\"",
+            "  EXAMPLE     — one specific thing that happened while building it",
+            "  USE CASE    — where this applied in that project, and where it did not",
+            "  APPLICATION — how the concept they just described lands inside that system",
+            "  ANALOGY     — make them map the concept onto their own system to prove it",
+            "  STANDARDS   — does their approach match how it's normally done? why diverge?",
+            "",
+            "HARD RULES:",
+            "  - Never ask IF they built it, or to describe it. Straight to the technical ask.",
+            "  - Never say \"your resume\" / \"I saw\" / \"it says here\". Name the project directly.",
+            "  - Stay on the ACTIVE TOPIC. The project is the setting, not a new subject.",
         ]
-        
+
         if pts:
             lines.append("")
-            lines.append("SECONDARY POINTS (only if they fit the project question naturally):")
-            lines += [f"  - {p}" for p in pts[:2]]
+            lines.append("POINTS from this turn's analysis (fold the top one into the project question):")
+            lines += [f"  {i}. {p}" for i, p in enumerate(pts, 1)]
+        if av:
+            lines.append("")
+            lines.append("AVOID (already covered / do not re-ask):")
+            lines += [f"  - {a}" for a in av]
+
+        trend = _render_score_trend(topic_score_history)
+        if trend:
+            lines.append(f"SCORE TREND: {trend}")
         return "\n".join(lines)
 
     # Default: points-driven probe
