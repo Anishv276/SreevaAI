@@ -45,11 +45,20 @@ export async function POST(request: Request) {
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
+        // Upload to R2 first, then enqueue a reference to it -- the extraction
+        // job must never receive the raw buffer directly (BullMQ serializes
+        // job data as JSON over Redis, which corrupts binary buffers).
+        const bucket = process.env.R2_JDS_BUCKET || "jds";
+        const fileName = `demo/JDs/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_').toLowerCase()}`;
+        const { putObject } = await import("@/lib/s3");
+        await putObject(bucket, fileName, buffer, file.type);
+
         // Enqueue the jd-extraction job (worker runs locally now — no Modal)
         const jdJobId = await enqueueJdExtraction({
             kind: "file",
             fileName: file.name,
-            buffer,
+            bucket,
+            key: fileName,
             orgOpenAIModel: "gpt-4.1-mini",
         });
 
