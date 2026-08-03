@@ -435,6 +435,23 @@ def _topic_short_key_for_ordering(topic: str) -> str:
     short = _topic_short_title(topic)
     return re.sub(r"[^a-z0-9]+", " ", short.lower()).strip()
 
+def _probe_focus_items(probe_focus: Any) -> list[str]:
+    """probe_focus as a list of distinct sub-concepts.
+
+    TopicItem.probe_focus is a STRING (see interview/tech/brief.py), but several call
+    sites treated it as a list -- `list(pf)` on a string yields single CHARACTERS, so
+    the sub-concept rotation was cycling 'e','x','c',... and one directive was injecting
+    "probe: e; x; c" into the prompt. Split on the separators question banks actually
+    use instead, and tolerate a real list if a producer ever supplies one.
+    """
+    if not probe_focus:
+        return []
+    if isinstance(probe_focus, (list, tuple)):
+        return [str(p).strip() for p in probe_focus if str(p).strip()]
+    parts = re.split(r"[;\n|]+|(?<!\w)[-•]\s+|,(?=\s)", str(probe_focus))
+    return [p.strip(" .-•\t") for p in parts if len(p.strip(" .-•\t")) > 2]
+
+
 def _build_cross_ref_rule(source_tag: str) -> str:
     """Cross-reference rule for a MOVE_ON directive, keyed on the topic TAG.
     Tells Ishitha how to treat a topic the candidate may already have touched.
@@ -4503,7 +4520,7 @@ async def entrypoint(ctx: JobContext):
                         _topic_short_key(_old_topic or ""),
                         _topic_short_key(_active_topic or ""),
                         _next_brief_item.topic_type if _next_brief_item else "?",
-                        ",".join((_next_brief_item.probe_focus or [])[:3]) if _next_brief_item else "-",
+                        ",".join(_probe_focus_items(_next_brief_item.probe_focus)[:3]) if _next_brief_item else "-",
                     )
                     logger.info(
                         "[MOVE_ON] covered so far: %s",
@@ -4571,7 +4588,7 @@ async def entrypoint(ctx: JobContext):
                     if not _directive:
                         _full_ctx = _active_topic or _new_topic_title
                         if _new_topic_item and _new_topic_item.full_description:
-                            _probe_hints = "; ".join((_new_topic_item.probe_focus or [])[:3])
+                            _probe_hints = "; ".join(_probe_focus_items(_new_topic_item.probe_focus)[:3])
                             _full_ctx = (
                                 f"{_new_topic_item.title} — {_new_topic_item.full_description}"
                                 + (f" | probe: {_probe_hints}" if _probe_hints else "")
@@ -4770,7 +4787,7 @@ async def entrypoint(ctx: JobContext):
                             # sub-concept instead of pivoting to an unrelated one.
                             if _should_rotate_subconcept:
                                 _ts_for_rotation["probe_rotation_index"] = _rotation_idx + 1
-                    _sub_concepts_all = list((_probe_brief_item.probe_focus or [])) if _probe_brief_item else []
+                    _sub_concepts_all = _probe_focus_items(_probe_brief_item.probe_focus) if _probe_brief_item else []
                     _sub_concept_this_turn = (
                         _sub_concepts_all[_rotation_idx % len(_sub_concepts_all)]
                         if _sub_concepts_all else "-"

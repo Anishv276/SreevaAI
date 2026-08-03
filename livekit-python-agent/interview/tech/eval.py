@@ -35,6 +35,12 @@ class TopicState:
     _HARD_CAP_TURNS: int = 5
     _DRY_TOPIC_ZEROS: int = 2
     _DEPTH_STRONG_SATURATION_STREAK: int = 2
+    # A near-zero answer counts as "stalled". Two in a row and the topic is going
+    # nowhere — bail. Exact 0.0 (_DRY_TOPIC_ZEROS) almost never repeats, because a
+    # vague answer typically scores 0.5-2.0, so without this a mush-answering
+    # candidate could hold one topic until the hard cap.
+    _STALL_SCORE_CEILING: float = 2.0
+    _STALL_TURNS: int = 2
 
     def __init__(self, topic_name: str, updated_turn: int = 0, level: int = 2):
         self.topic_name = topic_name
@@ -50,6 +56,7 @@ class TopicState:
         self.signals_fired: list[str] = []
         self.last_score = None
         self.consecutive_zero_scores = 0
+        self.consecutive_stalled_turns: int = 0
         self.consecutive_denials: int = 0
         self.closed_on_denials: bool = False
         self.consecutive_depth_strong: int = 0
@@ -69,6 +76,10 @@ class TopicState:
             self.consecutive_zero_scores >= self._DRY_TOPIC_ZEROS
             and self.follow_up_turns >= self._DRY_TOPIC_ZEROS
         )
+
+    def is_stalled_topic(self) -> bool:
+        """Two consecutive near-zero answers — the topic is not producing signal."""
+        return self.consecutive_stalled_turns >= self._STALL_TURNS
 
     def should_exit_on_denials(self) -> bool:
         return self.consecutive_denials >= 1
@@ -103,6 +114,10 @@ class TopicState:
             self.consecutive_zero_scores += 1
         else:
             self.consecutive_zero_scores = 0
+        if weighted <= self._STALL_SCORE_CEILING:
+            self.consecutive_stalled_turns += 1
+        else:
+            self.consecutive_stalled_turns = 0
         if signal:
             self.signals_fired.append(signal)
         self.last_score = weighted
@@ -130,6 +145,7 @@ class TopicState:
             "last_score": self.last_score,
             "clarification_request_count": self.clarification_request_count,
             "consecutive_zero_scores": self.consecutive_zero_scores,
+            "consecutive_stalled_turns": self.consecutive_stalled_turns,
             "consecutive_denials": self.consecutive_denials,
             "closed_on_denials": self.closed_on_denials,
             "consecutive_depth_strong": self.consecutive_depth_strong,
@@ -152,6 +168,7 @@ class TopicState:
         obj.last_score = float(d["last_score"]) if d.get("last_score") is not None else None
         obj.clarification_request_count = int(d.get("clarification_request_count", 0) or 0)
         obj.consecutive_zero_scores = int(d.get("consecutive_zero_scores", 0) or 0)
+        obj.consecutive_stalled_turns = int(d.get("consecutive_stalled_turns", 0) or 0)
         obj.consecutive_denials = int(d.get("consecutive_denials", 0) or 0)
         obj.closed_on_denials = bool(d.get("closed_on_denials", False))
         obj.consecutive_depth_strong = int(d.get("consecutive_depth_strong", 0) or 0)
@@ -306,14 +323,28 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     is_saturated = current_topic_state.is_saturated if current_topic_state else False
     _weak_exit = bool(current_topic_state and current_topic_state.is_weak_candidate_exit())
     _dry_topic = bool(current_topic_state and current_topic_state.is_dry_topic())
+    _stalled = bool(current_topic_state and current_topic_state.is_stalled_topic())
     _denial_exit = bool(current_topic_state and current_topic_state.should_exit_on_denials())
 
     sat_score = current_topic_state.saturation_score if current_topic_state else 0.0
     sat_threshold = current_topic_state.saturation_threshold if current_topic_state else 0.0
 
+    # Exit conditions outrank forced routes. A REDIRECT/REPHRASE only decides how the NEXT
+    # question is framed — it must never keep a topic alive that has already earned an exit,
+    # which is how a redirect loop could run until the candidate gave up.
+    _exhausted = _dry_topic or _weak_exit or _stalled
+
     if _denial_exit:
         action = "MOVE_ON"
         logger.info("[DECISION] MOVE_ON reason=pure_denial turn=%d", p.turn)
+    elif _exhausted and action != "REPHRASE":
+        _why = "dry_topic" if _dry_topic else "stalled_topic" if _stalled else "weak_exit"
+        action = "MOVE_ON"
+        logger.info(
+            "[DECISION] MOVE_ON reason=%s turn=%d sat=%.2f/%.2f turns=%d",
+            _why, p.turn, sat_score, sat_threshold,
+            current_topic_state.follow_up_turns if current_topic_state else 0,
+        )
     elif _forced_response and current_topic_state:
         if action == "REPHRASE" and current_topic_state.clarification_request_count >= 3:
             action = "MOVE_ON"
@@ -322,12 +353,6 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             logger.info("[DECISION] %s (forced route) turn=%d", action, p.turn)
     elif _forced_response:
         logger.info("[DECISION] %s (forced route) turn=%d", action, p.turn)
-    elif _dry_topic:
-        action = "MOVE_ON"
-        logger.info("[DECISION] MOVE_ON reason=dry_topic turn=%d", p.turn)
-    elif _weak_exit:
-        action = "MOVE_ON"
-        logger.info("[DECISION] MOVE_ON reason=weak_exit turn=%d", p.turn)
     elif is_saturated:
         action = "MOVE_ON"
         logger.info("[DECISION] MOVE_ON reason=saturated turn=%d", p.turn)
@@ -358,6 +383,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         "is_saturated": is_saturated,
         "weak_exit": _weak_exit,
         "dry_topic": _dry_topic,
+        "stalled_topic": _stalled,
         "topic_follow_ups": _follow_up_count,
         "is_eval_recovery": bool(raw.get("is_eval_recovery")),
     }
@@ -378,6 +404,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             "is_saturated": is_saturated,
             "weak_exit": _weak_exit,
             "dry_topic": _dry_topic,
+            "stalled_topic": _stalled,
             "topic_state_dict": current_topic_state.to_dict() if current_topic_state else None,
         },
         "eval_llm_usages": list(_captured_usage),

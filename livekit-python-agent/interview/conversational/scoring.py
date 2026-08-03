@@ -56,7 +56,14 @@ RESPONSE_SIGNALS = {
     },
 }
 DENIAL_SIGNALS: frozenset[str] = frozenset({"pure_denial"})
-NON_FOLLOWUP_SIGNALS: frozenset[str] = frozenset(RESPONSE_ROUTES)
+# Turns that do NOT count as a follow-up attempt. off_topic is deliberately excluded:
+# a candidate who answers the wrong thing has still burned a turn, and counting it is what
+# lets a redirect loop reach an exit instead of running forever. Must stay in sync with
+# TopicState._NON_FOLLOWUP_SIGNALS in conversational/eval.py.
+NON_FOLLOWUP_SIGNALS: frozenset[str] = frozenset({
+    "clarification_request",
+    "rephrase_request",
+})
 CONTENT_SIGNAL_DEFINITIONS: dict[str, dict] = {}
 ALL_SIGNALS: frozenset[str] = ROUTE_SET | frozenset({"mastery_demonstrated", "probe"})
 
@@ -242,10 +249,20 @@ PHASE A — RESPONSE-SHAPE GATES (check FIRST, exclusive, empty points)
    Mechanical test: strip denial phrases; if NOTHING substantive remains → pure_denial.
    → route=pure_denial, points=["Step down warmly on the SAME topic — easier adjacent question"]
 
-4) off_topic — They answered a COMPLETELY DIFFERENT subject than the active topic/question (e.g. talking about their weekend or a completely unrelated domain).
-   STILL ON-TOPIC (use probe, NOT off_topic):
-     - vague, shallow, wrong, or confused answers ABOUT the asked topic
-   When off_topic fires, points MUST tell the interviewer how to STEER BACK.
+4) off_topic — SUBJECT MISMATCH ONLY. They talked about a COMPLETELY DIFFERENT subject
+   than the active topic (their weekend, an unrelated domain, a different job).
+   Mechanical test: name the subject of their answer. Is it a DIFFERENT subject from the
+   question's subject? Only then → off_topic.
+
+   NEVER off_topic (these are route=probe — they are ON the subject, just badly):
+     - vague, hand-wavy, or unclear answers about the asked topic
+     - circular answers that restate the question back at you
+     - confidently wrong answers about the asked topic
+     - generic best-practice language with no substance behind it
+   VAGUENESS IS NOT OFF-TOPIC. If your `reason` would be "this is vague" or "no specifics",
+   the route is probe, not off_topic. off_topic is about WHAT they talked about, never about
+   HOW WELL they talked about it.
+   When off_topic genuinely fires, points MUST tell the interviewer how to STEER BACK.
    → route=off_topic
 
 5) mastery — answer already has clear metrics, personal ownership, customer focus, and reasoning.
@@ -261,19 +278,34 @@ active topic, what was already asked. Invent 1–3 POINTS that are:
   - The highest-value missing angles a sharp sales leader would chase next
   - Aware of prior turns on this topic (do not repeat covered ground — put those in avoid)
 
-Good point shapes (pick what fits — do NOT output these labels as the point text):
-  - Missing metrics / Numbers (quota, ACV, deal size, win rate)
-  - Personal ownership ("what did YOU do" vs "we did")
-  - Real constraints / Friction ("what was the hardest part", "who was the blocker")
-  - Customer focus (pain points, business goals, why they bought)
-  - Pipeline logic (stage criteria, forecast reasoning)
-  - Specific objections a real client raised and how they handled it
+COVERAGE DIMENSIONS — a real sales leader works a topic from several sides, not one.
+Look at ALREADY ASKED to see which of these this topic has already had, then pick a
+dimension that has NOT been covered yet:
+
+  METRICS     — the actual number: quota, ACV, deal size, win rate, cycle length.
+  OWNERSHIP   — what THEY did, when the answer is all "we" or passive voice.
+  TOOLS       — what they actually run their pipeline on, and why that one.
+  EXAMPLE     — one specific deal or call. Named, concrete, not a general pattern.
+  CUSTOMER    — the buyer's pain, their business goal, why they actually bought.
+  FRICTION    — the hardest part, the blocker, the objection a real client raised.
+  PROCESS     — stage criteria, forecast reasoning, how they qualify or disqualify.
+  OUTCOME     — what happened in the end, including when it went badly.
 
 Rules for points:
   - Max 3. Prefer 1–2 sharp points over a checklist.
+  - ROTATE DIMENSIONS. If the last question on this topic was METRICS and they answered
+    it at all, the next one should NOT be METRICS again. A topic that got three metrics
+    questions in a row was interviewed badly, however sharp each one was on its own.
+  - Prefix each point with its dimension in caps, e.g.
+    "OWNERSHIP: they said 'we closed it' — find out what they personally did on that deal".
   - Each point = one concrete angle the speaking LLM can turn into ONE question.
   - Never script the exact spoken question — give the angle + why it matters.
   - avoid[] = angles/facts already covered or declined — speaking LLM must not re-ask these.
+
+WHEN THE LAST ANSWER WAS EMPTY OR VAGUE: do not re-ask the same dimension in new words.
+Either go much smaller and more concrete within it (one deal, one number, one call), or
+switch dimension entirely — EXAMPLE and CUSTOMER often unlock a candidate who is drowning
+in an abstract PROCESS question, because they can talk about what actually happened.
 
 self_corrected: true only if they caught and fixed their OWN error mid-answer.
 
@@ -496,7 +528,10 @@ async def evaluate_answer(
             ]
             reason = reason or "unrelated to the question"
 
-        if answers_question is False or route in RESPONSE_ROUTES:
+        # Zero only where the candidate never took a swing at the subject. off_topic keeps its
+        # (near-zero) scores so the turn counts as a real attempt and the topic can reach
+        # weak_exit/stalled instead of looping on redirects forever.
+        if answers_question is False or route in ("clarification_request", "rephrase_request"):
             clarity = depth = specificity = grounding = overall = 0.0
         else:
             clarity = _clamp(scoring_data.get("clarity", 0))
@@ -522,7 +557,8 @@ async def evaluate_answer(
         if route == "rephrase_request":
             action, forced, zero_scores = "ACCEPT_REPHRASE", True, True
         elif route == "off_topic":
-            action, forced, zero_scores = "REDIRECT", True, True
+            # REDIRECT frames the next question; the turn is still scored and counted.
+            action, forced, zero_scores = "REDIRECT", True, False
         elif route == "pure_denial":
             pass  # TopicState closes on denial; keep scored lows if any
         elif route == "mastery":

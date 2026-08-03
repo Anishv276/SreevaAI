@@ -42,6 +42,13 @@ HOW TO BUILD:
 ABSOLUTELY NO COMPOUND QUESTIONS. You must ask EXACTLY ONE thing. Do not use 'and' to chain two questions together.
 Stay on the ACTIVE TOPIC LOCK below. If points say redirect (off-topic), steer back.
 
+NEVER RE-ASK: if they already failed or dodged an angle, asking it again in different words is
+not a follow-up — it is the same question wearing a hat, and it reads as not listening. Each turn
+must open a genuinely NEW angle. When an answer came back empty, go SMALLER and more concrete
+(one input, one line of code, one yes/no call) rather than rephrasing the same abstract ask.
+Do not open with "Imagine"/"Picture this"/"Let's say" — vary the shape of your question every
+turn, and never start two questions in a row with the same word.
+
 {code_card_contract}
 """
 
@@ -146,12 +153,19 @@ def get_probe_context(
             f"ACTIVE TOPIC: {active_topic or '(unknown)'}",
             f"YOU ASKED: {prev_question or '(unavailable)'}",
             f"THEY SAID (aside): {prev_answer}",
-            "Acknowledge the aside in ONE short clause, then redirect to the original topic/question — sharper, not identical.",
-            "HARD RULE: Every word of your question must pull them back onto the active topic. Do not chase their tangent.",
+            "Acknowledge the aside in ONE short clause, then get back on the active topic.",
+            "HARD RULE: Do not chase their tangent — the question must be about the active topic.",
+            "HARD RULE: Ask a DIFFERENT question, not a reworded version of what you just asked. "
+            "They already failed that angle; asking it again in new words teaches you nothing and "
+            "makes you sound like you weren't listening. Change the angle: make it smaller and "
+            "more concrete, or come at the same skill from another direction entirely.",
         ]
         if pts:
             lines.append("REDIRECT POINTS:")
             lines += [f"  {i}. {p}" for i, p in enumerate(pts, 1)]
+        if av:
+            lines.append("AVOID (already asked / already failed — do not re-ask):")
+            lines += [f"  - {a}" for a in av]
         return "\n".join(lines)
 
     # Branch A — resume project (once per topic)
@@ -185,6 +199,11 @@ def get_probe_context(
     if pts:
         lines.append("POINTS FOR NEXT QUESTION (hit #1; weave #2 only if natural):")
         lines += [f"  {i}. {p}" for i, p in enumerate(pts, 1)]
+        lines.append(
+            "A point may carry a COVERAGE DIMENSION tag (MECHANISM / TOOLS / APPLICATION / "
+            "EXAMPLE / OWNERSHIP / TRADEOFF / FAILURE / OUTCOME). That tag is the ANGLE to take "
+            "— ask the topic from that side. Never say the tag out loud."
+        )
     else:
         lines.append("POINTS: (none) — ask one concrete follow-up on what they just said, stay on topic.")
     if av:

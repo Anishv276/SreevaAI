@@ -53,7 +53,7 @@ logger = logging.getLogger("report-worker")
 from billing.billing import (
     flush_billing as flush_pending_manual_billing,
     record_manual_usage as persist_org_manual_billing_usage,
-    save_org_usage,
+    save_org_usage_metrics,
     deduct_interview_quota,
 )
 
@@ -62,6 +62,30 @@ def _namespace_topic_pool(topic_pool: Optional[list]) -> list:
     """build_debug_pdf() reads topic items via getattr(t, "title"/"topic_type"/...) --
     same reasoning as _namespace_usage above."""
     return [SimpleNamespace(**item) for item in (topic_pool or [])]
+
+
+def _namespace_usage(session_usage: Optional[dict]) -> Optional[SimpleNamespace]:
+    """Rebuild a getattr-friendly object from _usage_to_dict()'s JSON-safe dict
+    (agent_runtime.py) so UsageSummarizer.from_session() -- which reads
+    session_usage.model_usage[].type/provider/model/input_tokens/output_tokens
+    via getattr -- can consume it."""
+    if not session_usage:
+        return None
+    model_usage = [
+        SimpleNamespace(
+            type=item.get("type", ""),
+            provider=item.get("provider", ""),
+            model=item.get("model", ""),
+            input_tokens=item.get("inputTokens", 0),
+            output_tokens=item.get("outputTokens", 0),
+        )
+        for item in (session_usage.get("modelUsage") or [])
+    ]
+    return SimpleNamespace(
+        model_usage=model_usage,
+        input_tokens=session_usage.get("input_tokens", 0),
+        output_tokens=session_usage.get("output_tokens", 0),
+    )
 
 
 async def _run(payload: dict) -> None:
@@ -174,13 +198,16 @@ async def _run(payload: dict) -> None:
     if org_id and session_usage and not app_id.startswith("demo_"):
         try:
             logger.info("[BILLING] Running final session billing for %s", app_id)
-            await save_org_usage(
-                org_id=org_id,
-                session_summary=session_usage,
+            await save_org_usage_metrics(
+                org_id,
+                _namespace_usage(session_usage),
                 tts_provider=billing_data.get("ttsProvider"),
                 tts_model=billing_data.get("ttsModel"),
                 stt_provider=billing_data.get("sttProvider"),
                 stt_model=billing_data.get("sttModel"),
+                plugin_tts_characters=billing_data.get("ttsCharacters") or 0,
+                plugin_tts_audio_seconds=billing_data.get("ttsAudioSeconds") or 0.0,
+                plugin_stt_audio_seconds=billing_data.get("sttAudioSeconds") or 0.0,
                 app_id=app_id,
                 candidate_name=candidate_name,
                 job_title=job_title,

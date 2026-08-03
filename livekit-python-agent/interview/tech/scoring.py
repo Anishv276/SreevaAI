@@ -56,7 +56,16 @@ RESPONSE_SIGNALS = {
     },
 }
 DENIAL_SIGNALS: frozenset[str] = frozenset({"pure_denial"})
-NON_FOLLOWUP_SIGNALS: frozenset[str] = frozenset(RESPONSE_ROUTES)
+# Turns that do NOT count as a follow-up attempt on the topic. Only routes where the
+# candidate never actually took a swing belong here: they asked US to repeat, or they
+# asked to restart their own answer. off_topic is deliberately NOT in this set — a
+# candidate who answers the wrong thing has still burned a turn, and excluding it made
+# redirect loops unexitable (follow_up_turns/consecutive_zero_scores never advanced, so
+# weak_exit and dry_topic could never fire).
+NON_FOLLOWUP_SIGNALS: frozenset[str] = frozenset({
+    "clarification_request",
+    "rephrase_request",
+})
 # Deprecated empty stubs — keep import sites from breaking during transition
 CONTENT_SIGNAL_DEFINITIONS: dict[str, dict] = {}
 ALL_SIGNALS: frozenset[str] = ROUTE_SET | frozenset({"mastery_demonstrated", "probe"})
@@ -100,8 +109,15 @@ async def _call_scoring(
         "Output ONLY valid JSON:\n"
         '{"answers_question":true/false,"clarity":0-10,"depth":0-10,"specificity":0-10,'
         '"grounding":0-10,"reason":"<one phrase from their answer>"}\n\n'
-        "answers_question=false ONLY when the subject is completely unrelated to the question "
-        "(or pure filler like 'I am ready'). Vague/shallow attempts are still true — score them low.\n"
+        "answers_question=false ONLY when the SUBJECT MATTER is completely unrelated to the "
+        "question — they talked about their weekend, or a different technology entirely, or pure "
+        "filler like 'I am ready'.\n"
+        "answers_question=true for EVERY attempt that is about the asked subject, no matter how "
+        "bad: vague, hand-wavy, circular, restating the question back, or flatly wrong. These are "
+        "on-topic failures — score them low (0-3), do NOT mark them unrelated.\n"
+        "Test: strip the filler. Is what remains ABOUT the asked subject? If yes → true.\n"
+        "Example: asked about catching database exceptions, they say 'the specific catches help "
+        "a lot in doing this kind of task' → true, about the subject, score ~1.\n"
         "If answers_question=false, set all four scores to 0.\n\n"
         "Voice transcript — score meaning, not grammar. Self-correction is good: score the landing.\n"
         "Active wrong claims score LOWER than 'I don't know'. Fluency is not correctness.\n\n"
@@ -190,10 +206,20 @@ PHASE A — RESPONSE-SHAPE GATES (check FIRST, exclusive, empty points)
    Mechanical test: strip denial phrases; if NOTHING technical remains → pure_denial.
    → route=pure_denial, points=["Step down warmly on the SAME skill — easier adjacent question"]
 
-4) off_topic — They answered a COMPLETELY DIFFERENT subject than the active topic/question (e.g. talking about their weekend or a completely unrelated technology).
-   STILL ON-TOPIC (use probe, NOT off_topic):
-     - vague, shallow, wrong, or confused answers ABOUT the asked topic
-   When off_topic fires, points MUST tell the interviewer how to STEER BACK.
+4) off_topic — SUBJECT MISMATCH ONLY. They talked about a COMPLETELY DIFFERENT subject
+   than the active topic (their weekend, an unrelated technology, a different job).
+   Mechanical test: name the subject of their answer. Is it a DIFFERENT subject from the
+   question's subject? Only then → off_topic.
+
+   NEVER off_topic (these are route=probe — they are ON the subject, just badly):
+     - vague, hand-wavy, or unclear answers about the asked topic
+     - circular answers that restate the question back at you
+     - confidently wrong answers about the asked topic
+     - answers that name the right concepts with no substance behind them
+   VAGUENESS IS NOT OFF-TOPIC. If your `reason` would be "this is vague" or "no specifics",
+   the route is probe, not off_topic. off_topic is about WHAT they talked about, never about
+   HOW WELL they talked about it.
+   When off_topic genuinely fires, points MUST tell the interviewer how to STEER BACK.
    → route=off_topic
 
 5) mastery — answer already has mechanism + cost/tradeoff + edge/failure awareness (+ ownership if real work).
@@ -209,20 +235,37 @@ active topic, what was already asked. Invent 1–3 POINTS that are:
   - The highest-value missing angles a sharp interviewer would chase next
   - Aware of prior turns on this topic (do not repeat covered ground — put those in avoid)
 
-Good point shapes (pick what fits — do NOT output these labels as the point text):
-  - Open the box / TRACE a concrete input through the mechanism
-  - Forced tradeoff under a named constraint (scale, latency, memory)
-  - Concrete failure/boundary (null, empty, concurrent, queue full)
-  - Personal ownership ("what did YOU decide") when answer is all "we"
-  - Socratic falsify if they stated something actively wrong (do not correct them)
-  - Business/user outcome when answer is textbook checklist
-  - Missing constraint if they jumped on a vague design ask
+COVERAGE DIMENSIONS — a real interviewer works a topic from several sides, not one.
+Look at ALREADY ASKED to see which of these this topic has already had, then pick a
+dimension that has NOT been covered yet:
+
+  MECHANISM   — how it actually works. Trace a concrete input through it.
+  TOOLS       — what they actually reach for, and why that one over the alternative.
+  APPLICATION — where they'd use it, and where they would NOT (the boundary matters).
+  EXAMPLE     — a specific time this came up in real work. Concrete, not hypothetical.
+  OWNERSHIP   — what THEY decided, when the answer is all "we" or passive voice.
+  TRADEOFF    — what it costs, under a named constraint (scale, latency, memory, team).
+  FAILURE     — what breaks: null, empty, concurrent, retry storm, queue full.
+  OUTCOME     — what it changed for the user or the business, when the answer is a
+                textbook checklist with no consequences attached.
 
 Rules for points:
   - Max 3. Prefer 1–2 sharp points over a checklist.
+  - ROTATE DIMENSIONS. If the last question on this topic was MECHANISM and they
+    answered it at all, the next one should NOT be MECHANISM again. A topic that got
+    three mechanism questions in a row was interviewed badly, however sharp each one
+    was on its own.
+  - Prefix each point with its dimension in caps, e.g.
+    "OWNERSHIP: they said 'we chose Postgres' — find out whether that call was theirs".
   - Each point = one concrete angle the speaking LLM can turn into ONE question.
   - Never script the exact spoken question — give the angle + why it matters.
+  - Socratic falsify if they stated something actively wrong (do not correct them).
   - avoid[] = angles/facts already covered or declined — speaking LLM must not re-ask these.
+
+WHEN THE LAST ANSWER WAS EMPTY OR VAGUE: do not re-ask the same dimension in new words.
+Either go much smaller and more concrete within it (one input, one line, one yes/no call),
+or switch dimension entirely — EXAMPLE and TOOLS often unlock a candidate who is drowning
+in an abstract MECHANISM question, because they can talk about what they actually did.
 
 self_corrected: true only if they caught and fixed their OWN error mid-answer.
 
@@ -448,7 +491,11 @@ async def evaluate_answer(
             ]
             reason = reason or "unrelated to the question"
 
-        if answers_question is False or route in RESPONSE_ROUTES:
+        # Zero only where the candidate never took a swing at the subject: an unrelated
+        # answer, or a request aimed at us rather than an attempt. off_topic keeps whatever
+        # the scorer gave it (near-zero anyway) so the turn registers as a real attempt and
+        # the topic can reach weak_exit/dry_topic instead of looping forever.
+        if answers_question is False or route in ("clarification_request", "rephrase_request"):
             clarity = depth = specificity = grounding = overall = 0.0
         else:
             clarity = _clamp(scoring_data.get("clarity", 0))
@@ -474,7 +521,9 @@ async def evaluate_answer(
         if route == "rephrase_request":
             action, forced, zero_scores = "ACCEPT_REPHRASE", True, True
         elif route == "off_topic":
-            action, forced, zero_scores = "REDIRECT", True, True
+            # REDIRECT frames the question, but the turn is scored and counted like any
+            # other attempt — a wrong-subject answer is still a turn the candidate spent.
+            action, forced, zero_scores = "REDIRECT", True, False
         elif route == "pure_denial":
             pass  # TopicState closes on denial; keep scored lows if any
         elif route == "mastery":

@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
 
-from interview.conversational.scoring import evaluate_answer
+from interview.conversational.scoring import evaluate_answer, NON_FOLLOWUP_SIGNALS
 from interview.slack_error_logger import log_llm_error
 
 logger = logging.getLogger("interview-agent")
@@ -53,6 +53,7 @@ class TopicState:
 
         self.last_score = None
         self.consecutive_zero_scores = 0
+        self.consecutive_stalled_turns = 0
         self.consecutive_denials = 0
         self.consecutive_depth_strong = 0
         self.closed_on_denials = False
@@ -63,6 +64,10 @@ class TopicState:
     _HARD_CAP_TURNS: int = 5
     _DRY_TOPIC_ZEROS: int = 2
     _DEPTH_STRONG_SATURATION_STREAK: int = 2
+    # A near-zero answer counts as "stalled". Two in a row and the topic is going nowhere.
+    # Exact 0.0 (_DRY_TOPIC_ZEROS) rarely repeats, since a vague answer scores 0.5-2.0.
+    _STALL_SCORE_CEILING: float = 2.0
+    _STALL_TURNS: int = 2
 
     def is_weak_candidate_exit(self) -> bool:
         if self.saturation_threshold <= 0:
@@ -80,6 +85,10 @@ class TopicState:
             and self.follow_up_turns >= self._DRY_TOPIC_ZEROS
         )
 
+    def is_stalled_topic(self) -> bool:
+        """Two consecutive near-zero answers -- the topic is not producing signal."""
+        return self.consecutive_stalled_turns >= self._STALL_TURNS
+
     def should_exit_on_denials(self) -> bool:
         """Single pure_denial signal -> close the topic."""
         return self.consecutive_denials >= 1
@@ -87,11 +96,11 @@ class TopicState:
     def should_exit_on_depth_strong_streak(self) -> bool:
         return self.consecutive_depth_strong >= self._DEPTH_STRONG_SATURATION_STREAK
 
-    _NON_FOLLOWUP_SIGNALS = frozenset({
-        "clarification_request",
-        "rephrase_request",
-        "off_topic",
-    })
+    # Sourced from scoring so the two can't drift. off_topic is deliberately absent: a
+    # candidate who answers the wrong thing has still burned a turn. Excluding it made
+    # redirect loops unexitable — follow_up_turns never advanced, so weak_exit and
+    # dry_topic could never fire.
+    _NON_FOLLOWUP_SIGNALS = NON_FOLLOWUP_SIGNALS
 
     def add_contribution(self, weighted: float, signal: str | None, turn: int | None = None) -> None:
         if signal in self._NON_FOLLOWUP_SIGNALS:
@@ -120,6 +129,10 @@ class TopicState:
             self.consecutive_zero_scores += 1
         else:
             self.consecutive_zero_scores = 0
+        if weighted <= self._STALL_SCORE_CEILING:
+            self.consecutive_stalled_turns += 1
+        else:
+            self.consecutive_stalled_turns = 0
         if signal:
             self.signals_fired.append(signal)
         self.last_score = weighted
@@ -148,6 +161,7 @@ class TopicState:
             "last_score":          self.last_score,
             "clarification_request_count": self.clarification_request_count,
             "consecutive_zero_scores": self.consecutive_zero_scores,
+            "consecutive_stalled_turns": self.consecutive_stalled_turns,
             "consecutive_denials": self.consecutive_denials,
             "closed_on_denials":   self.closed_on_denials,
             "consecutive_depth_strong": self.consecutive_depth_strong,
@@ -169,6 +183,7 @@ class TopicState:
         obj.last_score          = float(d.get("last_score")) if d.get("last_score") is not None else None
         obj.clarification_request_count = int(d.get("clarification_request_count", 0) or 0)
         obj.consecutive_zero_scores = int(d.get("consecutive_zero_scores", 0) or 0)
+        obj.consecutive_stalled_turns = int(d.get("consecutive_stalled_turns", 0) or 0)
         obj.consecutive_denials = int(d.get("consecutive_denials", 0) or 0)
         obj.closed_on_denials   = bool(d.get("closed_on_denials", False))
         obj.consecutive_depth_strong = int(d.get("consecutive_depth_strong", 0) or 0)
@@ -375,6 +390,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     is_saturated = current_topic_state.is_saturated if current_topic_state else False
     _weak_exit = current_topic_state is not None and current_topic_state.is_weak_candidate_exit()
     _dry_topic = current_topic_state is not None and current_topic_state.is_dry_topic()
+    _stalled = current_topic_state is not None and current_topic_state.is_stalled_topic()
     _denial_exit = current_topic_state is not None and current_topic_state.should_exit_on_denials()
 
     sat_score = current_topic_state.saturation_score if current_topic_state else 0.0
@@ -387,29 +403,32 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     else:
         logger.info("[SAT:sales] %.0f%% done | score=%.1f need %.1f more", pct_done, sat_score, remaining)
 
-    _escalate_to_move_on = False
+    # Exit conditions outrank forced routes. A REDIRECT only decides how the NEXT question is
+    # framed — it must never keep alive a topic that has already earned an exit, which is how a
+    # redirect loop could run until the candidate gave up. REPHRASE is exempt: a candidate asking
+    # us to repeat ourselves hasn't failed the topic.
+    _exhausted = _dry_topic or _weak_exit or _stalled
+
     if _denial_exit:
         action = "MOVE_ON"
         logger.info("[DECISION:sales] MOVE_ON reason=topic_floor_reached (pure_denial) turn=%d", p.turn)
+    elif _exhausted and action != "REPHRASE":
+        _why = "dry_topic" if _dry_topic else "stalled_topic" if _stalled else "weak_exit"
+        action = "MOVE_ON"
+        logger.info(
+            "[DECISION:sales] MOVE_ON reason=%s turn=%d sat=%.0f%% turns=%d",
+            _why, p.turn,
+            (sat_score / sat_threshold * 100) if sat_threshold > 0 else 0,
+            current_topic_state.follow_up_turns if current_topic_state else 0,
+        )
     elif _forced_response_signal and current_topic_state:
         if action == "REPHRASE" and current_topic_state.clarification_request_count >= 2:
             action = "MOVE_ON"
-            _escalate_to_move_on = True
             logger.info("[DECISION:sales] MOVE_ON reason=clarification_escalation (asked 2x) turn=%d", p.turn)
         else:
             logger.info("[DECISION:sales] %s (forced response signal) reason=%s turn=%d", action, raw.get("reason", "forced"), p.turn)
     elif _forced_response_signal:
         logger.info("[DECISION:sales] %s (forced response signal) reason=%s turn=%d", action, raw.get("reason", "forced"), p.turn)
-    elif not _escalate_to_move_on and _dry_topic:
-        action = "MOVE_ON"
-        logger.info("[DECISION:sales] MOVE_ON reason=dry_topic (two consecutive zero scores) turn=%d", p.turn)
-    elif _weak_exit:
-        action = "MOVE_ON"
-        logger.info(
-            "[DECISION:sales] MOVE_ON reason=weak_exit (turn=%d sat=%.0f%%)",
-            current_topic_state.follow_up_turns if current_topic_state else p.turn,
-            (sat_score / sat_threshold * 100) if sat_threshold > 0 else 0,
-        )
     elif is_saturated:
         action = "MOVE_ON"
         logger.info("[DECISION:sales] MOVE_ON reason=saturated turn=%d", p.turn)
@@ -446,6 +465,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         "is_saturated":            is_saturated,
         "weak_exit":               _weak_exit,
         "dry_topic":               _dry_topic,
+        "stalled_topic":           _stalled,
         "topic_follow_ups":        _follow_up_count,
         "is_eval_recovery":        bool(raw.get("is_eval_recovery")),
     }
@@ -470,6 +490,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             "is_saturated": is_saturated,
             "weak_exit":    _weak_exit,
             "dry_topic":    _dry_topic,
+            "stalled_topic": _stalled,
             "topic_state_dict": current_topic_state.to_dict() if current_topic_state else None,
         },
         "eval_llm_usages": list(_captured_usage),
